@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -9,6 +10,7 @@ import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:xterm/src/ui/render.dart';
 import 'package:xterm/xterm.dart';
 
 class _TestHost extends StatelessWidget {
@@ -43,7 +45,9 @@ void main() {
   testWidgets('a line feed starts the next line at the first column', (
     tester,
   ) async {
-    await tester.pumpWidget(_TestHost(const CommandOutput(text: 'first\nsecond')));
+    await tester.pumpWidget(
+      _TestHost(const CommandOutput(text: 'first\nsecond')),
+    );
     expect(_lines(tester), ['first', 'second']);
   });
 
@@ -104,14 +108,21 @@ void main() {
     expect(find.text(l10n.runExitCode(1)), findsOneWidget);
   });
 
-  testWidgets('cursor is visible only while the command runs', (tester) async {
+  testWidgets('cursor is hidden while and after the command runs', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _TestHost(const CommandOutput(text: 'running', active: true)),
     );
-    expect(_terminalOf(tester).cursorVisibleMode, isTrue);
-
     await tester.pumpWidget(
       _TestHost(const CommandOutput(text: 'running', exitCode: 0)),
+    );
+    expect(_terminalOf(tester).cursorVisibleMode, isFalse);
+  });
+
+  testWidgets('output cannot show the cursor again', (tester) async {
+    await tester.pumpWidget(
+      _TestHost(const CommandOutput(text: '\x1b[?25hshown', active: true)),
     );
     expect(_terminalOf(tester).cursorVisibleMode, isFalse);
   });
@@ -124,7 +135,9 @@ void main() {
     expect(short, lessThan(60));
 
     final long = List.generate(100, (i) => 'line $i').join('\n');
-    await tester.pumpWidget(_TestHost(CommandOutput(text: long, maxHeight: 200)));
+    await tester.pumpWidget(
+      _TestHost(CommandOutput(text: long, maxHeight: 200)),
+    );
     final tall = tester.getSize(find.byType(TerminalView)).height;
     expect(tall, greaterThan(150));
     expect(tall, lessThanOrEqualTo(200));
@@ -189,6 +202,76 @@ class _FakeHostTerminal implements HostTerminal {
 }
 
 void _liveGroup() {
+  testWidgets('scrolled-up view keeps its line when the buffer drops lines', (
+    tester,
+  ) async {
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(text: '', active: true, terminal: host, maxHeight: 200),
+      ),
+    );
+    final big = StringBuffer();
+    for (var i = 0; i < 10050; i++) {
+      big.write('L${i.toString().padLeft(5, '0')}\r\n');
+    }
+    host.print(big.toString());
+    await tester.pump();
+
+    final terminal = _terminalOf(tester);
+    final render = tester.renderObject<RenderTerminal>(
+      find.byWidgetPredicate(
+        (w) => w.runtimeType.toString() == '_TerminalView',
+      ),
+    );
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(TerminalView),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    String topLine() =>
+        terminal.buffer.lines[position.pixels ~/ render.lineHeight].toString();
+
+    tester.binding.handlePointerEvent(
+      PointerScrollEvent(
+        position: tester.getCenter(find.byType(TerminalView)),
+        scrollDelta: const Offset(0, -600),
+      ),
+    );
+    await tester.pump();
+    final before = topLine();
+    for (var i = 0; i < 5; i++) {
+      host.print('X$i\r\n');
+      await tester.pump();
+    }
+    expect(topLine(), before);
+  });
+
+  testWidgets('view at the end keeps following new output', (tester) async {
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(text: '', active: true, terminal: host, maxHeight: 200),
+      ),
+    );
+    final position = tester
+        .state<ScrollableState>(
+          find.descendant(
+            of: find.byType(TerminalView),
+            matching: find.byType(Scrollable),
+          ),
+        )
+        .position;
+    for (var i = 0; i < 100; i++) {
+      host.print('line $i\r\n');
+      await tester.pump();
+    }
+    expect(position.pixels, closeTo(position.maxScrollExtent, 1));
+  });
+
   testWidgets('live terminal shows PTY output', (tester) async {
     final host = _FakeHostTerminal();
     await tester.pumpWidget(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -66,8 +67,6 @@ class _CommandOutputState extends State<CommandOutput> {
     AppSpacing.md,
   );
   static const _maxLines = 10000;
-  static const _showCursor = '\x1b[?25h';
-  static const _hideCursor = '\x1b[?25l';
 
   /// Одиночный перевод строки без возврата каретки: в терминале он сдвигает строку без сброса столбца.
   static final _lineFeed = RegExp(r'(?<!\r)\n');
@@ -82,14 +81,18 @@ class _CommandOutputState extends State<CommandOutput> {
   /// Текст, уже записанный в терминал (режим текста).
   var _written = '';
 
-  /// Курсор виден, пока команда выполняется: в завершённом выводе он не нужен.
-  var _cursorShown = true;
   var _copied = false;
 
   /// Терминал Host, к которому подключён виджет. `null` — режим текста.
   HostTerminal? _host;
   StreamSubscription<Uint8List>? _feed;
   var _decoder = Utf8ChunkDecoder();
+
+  /// Прокрутка TerminalView. Нужна, чтобы сохранять вид, когда вывод вытесняет строки из буфера.
+  final _scroll = ScrollController();
+
+  /// Допуск, с которым считаем, что вид стоит внизу (там xterm сам держит конец вывода).
+  static const _atBottomSlack = 0.5;
 
   @override
   void initState() {
@@ -118,6 +121,7 @@ class _CommandOutputState extends State<CommandOutput> {
   @override
   void dispose() {
     unawaited(_feed?.cancel());
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -125,10 +129,9 @@ class _CommandOutputState extends State<CommandOutput> {
   String get _prompt => commandPromptLine(widget.command ?? '');
 
   void _reset() {
-    _terminal = Terminal(maxLines: _maxLines);
+    _terminal = Terminal(maxLines: _maxLines)..setCursorVisibleMode(false);
     _terminal.write(_prompt);
     _written = '';
-    _cursorShown = true;
     _generation++;
   }
 
@@ -143,9 +146,43 @@ class _CommandOutputState extends State<CommandOutput> {
         host.write(Uint8List.fromList(utf8.encode(data)));
     _terminal.onResize = (columns, rows, _, _) => host.resize(columns, rows);
     _feed = host.attach().listen(
-      (bytes) => _terminal.write(_decoder.add(bytes)),
-      onDone: () => _terminal.write(_decoder.close()),
+      (bytes) => _write(_decoder.add(bytes)),
+      onDone: () => _write(_decoder.close()),
     );
+  }
+
+  /// Пишет в терминал. Курсор выключен всегда, в том числе когда программа сама включает его (`?25h`).
+  void _write(String data) {
+    _writeKeepingView(data);
+    _terminal.setCursorVisibleMode(false);
+  }
+
+  /// Пишет в терминал и сохраняет вид, если пользователь прокрутил вверх.
+  ///
+  /// Когда буфер полон, новые строки вытесняют самые старые. Видимые строки при этом сдвигаются,
+  /// а позиция прокрутки в пикселях остаётся прежней, и вид уезжает к новому выводу. Поэтому
+  /// позицию сдвигаем на число вытесненных строк. Число находим по индексу последней строки:
+  /// вытеснение уменьшает её индекс, а сама она вытеснена только при записи целого буфера.
+  void _writeKeepingView(String data) {
+    final position = _scroll.hasClients && _scroll.positions.length == 1
+        ? _scroll.position
+        : null;
+    if (position == null ||
+        position.pixels >= position.maxScrollExtent - _atBottomSlack) {
+      _terminal.write(data);
+      return;
+    }
+    final lines = _terminal.buffer.lines;
+    final last = lines[lines.length - 1];
+    final indexBefore = last.index;
+    // Высота строки: вся прокручиваемая высота делится на число строк буфера.
+    final lineHeight =
+        (position.maxScrollExtent + position.viewportDimension) / lines.length;
+    _terminal.write(data);
+    if (!last.attached) return;
+    final dropped = indexBefore - last.index;
+    if (dropped <= 0) return;
+    position.jumpTo(max(0, position.pixels - dropped * lineHeight));
   }
 
   /// Режим текста: дописывает в терминал то, что добавилось с прошлого раза. Если вывод перестал быть
@@ -156,7 +193,7 @@ class _CommandOutputState extends State<CommandOutput> {
       final text = widget.text;
       if (!text.startsWith(_written)) _reset();
       if (text.length > _written.length) {
-        _terminal.write(
+        _write(
           text.characters
               .skip(_written.characters.length)
               .string
@@ -164,10 +201,6 @@ class _CommandOutputState extends State<CommandOutput> {
         );
         _written = text;
       }
-    }
-    if (_cursorShown != widget.active) {
-      _cursorShown = widget.active;
-      _terminal.write(widget.active ? _showCursor : _hideCursor);
     }
   }
 
@@ -193,7 +226,6 @@ class _CommandOutputState extends State<CommandOutput> {
     final exitCode = widget.exitCode;
     final live = _host != null;
     final interactive = live && widget.active;
-
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.codeSurface,
@@ -231,6 +263,7 @@ class _CommandOutputState extends State<CommandOutput> {
                       child: TerminalView(
                         _terminal,
                         key: ValueKey(_generation),
+                        scrollController: _scroll,
                         theme: _terminalTheme(colors, theme.colorScheme),
                         textStyle: _style,
                         padding: _padding,

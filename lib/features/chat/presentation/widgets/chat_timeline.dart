@@ -53,6 +53,9 @@ class _ChatTimelineState extends State<ChatTimeline> {
   /// Ключи элементов ленты. По ним находим место элемента на экране, чтобы держать его на месте.
   final _itemKeys = <String, GlobalKey>{};
 
+  /// Id элементов, построенных в текущем проходе. По ним убираем ключи тех, кого больше нет.
+  final _liveIds = <String>{};
+
   /// Элемент, который держим на месте, пока пользователь читает историю.
   _Anchor? _anchor;
   var _anchorScheduled = false;
@@ -232,14 +235,14 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     // Ключ у каждого элемента: без него Flutter переиспользует состояние по индексу, и при вставке
     // в начало раскрытие шагов или наведение уехали бы на соседний элемент.
-    final used = <String>{};
+    _liveIds.clear();
 
     // Порядок от нового к старому: лента перевёрнута, нулевой индекс стоит у низа.
     final children = <Widget>[
       if (state.streamText.isNotEmpty)
         _KeyedTimelineItem(
           id: 'stream',
-          used: used,
+          liveIds: _liveIds,
           itemKeys: _itemKeys,
           child: ChatColumn.item(AppMarkdown(data: state.streamText)),
         ),
@@ -247,7 +250,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
         if (runsByMessage[visible[i].id] case final runs?)
           _KeyedTimelineItem(
             id: 'ledger:${visible[i].id}',
-            used: used,
+            liveIds: _liveIds,
             itemKeys: _itemKeys,
             child: ChatColumn.item(
               ChatStepLedger(
@@ -259,7 +262,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           ),
         _KeyedTimelineItem(
           id: visible[i].id,
-          used: used,
+          liveIds: _liveIds,
           itemKeys: _itemKeys,
           child: ChatColumn.item(
             ChatMessageTile(message: visible[i], editable: !state.isRunning),
@@ -268,7 +271,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
         if (i == boundary)
           _KeyedTimelineItem(
             id: 'compaction',
-            used: used,
+            liveIds: _liveIds,
             itemKeys: _itemKeys,
             child: ChatColumn.item(
               ChatCompactionMarker(summary: chat?.compactionSummary),
@@ -276,7 +279,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           ),
       ],
     ];
-    _itemKeys.removeWhere((id, _) => !used.contains(id));
+    _itemKeys.removeWhere((id, _) => !_liveIds.contains(id));
     if (!_follow) _scheduleAnchor();
 
     return Stack(
@@ -314,22 +317,24 @@ class _ChatTimelineState extends State<ChatTimeline> {
   }
 }
 
+/// Элемент ленты с ключом по id. Ключ выдаём при построении списка, а не при отрисовке элемента:
+/// очистка ключей в [ChatTimeline.build] должна видеть все живые id.
 class _KeyedTimelineItem extends StatelessWidget {
   const _KeyedTimelineItem({
     required this.id,
-    required this.used,
+    required this.liveIds,
     required this.itemKeys,
     required this.child,
   });
 
   final String id;
-  final Set<String> used;
+  final Set<String> liveIds;
   final Map<String, GlobalKey> itemKeys;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    used.add(id);
+    liveIds.add(id);
     return KeyedSubtree(
       key: itemKeys.putIfAbsent(id, GlobalKey.new),
       child: child,
