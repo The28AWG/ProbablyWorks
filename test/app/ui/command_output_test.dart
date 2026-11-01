@@ -47,6 +47,27 @@ void main() {
     expect(_lines(tester), ['first', 'second']);
   });
 
+  testWidgets('command is shown as a prompt line above the output', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestHost(const CommandOutput(text: 'ok', command: 'ls -la')),
+    );
+    expect(_lines(tester), ['\$ ls -la', 'ok']);
+  });
+
+  testWidgets('prompt line is rewritten when the command changes', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestHost(const CommandOutput(text: 'a', command: 'echo a')),
+    );
+    await tester.pumpWidget(
+      _TestHost(const CommandOutput(text: 'b', command: 'echo b')),
+    );
+    expect(_lines(tester), ['\$ echo b', 'b']);
+  });
+
   testWidgets('growing output appends only the new part', (tester) async {
     await tester.pumpWidget(_TestHost(const CommandOutput(text: 'a')));
     await tester.pumpWidget(_TestHost(const CommandOutput(text: 'a\nb')));
@@ -176,6 +197,25 @@ void _liveGroup() {
     host.print('hello\r\n');
     await tester.pump();
     expect(_lines(tester), ['hello']);
+  });
+
+  testWidgets('live terminal shows the command before PTY output', (
+    tester,
+  ) async {
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(
+          text: '',
+          command: 'echo hello',
+          active: true,
+          terminal: host,
+        ),
+      ),
+    );
+    host.print('hello\r\n');
+    await tester.pump();
+    expect(_lines(tester), ['\$ echo hello', 'hello']);
   });
 
   testWidgets('typing in the live terminal reaches the process', (

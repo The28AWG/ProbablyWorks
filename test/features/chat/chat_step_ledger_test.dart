@@ -90,7 +90,7 @@ void main() {
           .trimRight()
           .split('\n')
           .map((l) => l.trimRight()),
-      ['step 1', 'step 2'],
+      ['\$ flutter test', 'step 1', 'step 2'],
     );
   });
 }

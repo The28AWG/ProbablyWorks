@@ -322,6 +322,7 @@ class _StepRowState extends State<_StepRow> {
                     children: [
                       CommandOutput(
                         text: output,
+                        command: run.command,
                         exitCode: run.exitCode,
                         active: active,
                         terminal: terminal,

@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_colors.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/command_prompt.dart';
 import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -17,15 +18,21 @@ import 'package:xterm/xterm.dart';
 ///
 /// Занимает всю доступную ширину. Высота активного терминала фиксирована (как у настоящей консоли),
 /// завершённого — растёт по содержимому до [maxHeight].
+///
+/// Если передана [command], первой строкой выводится `$ команда` с подсветкой (см. [commandPromptLine]).
 class CommandOutput extends StatefulWidget {
   const CommandOutput({
     required this.text,
+    this.command,
     this.exitCode,
     this.active = false,
     this.terminal,
     this.maxHeight = 240,
     super.key,
   });
+
+  /// Команда, которая выполняется. Выводится строкой промпта перед выводом.
+  final String? command;
 
   /// Весь вывод команды. Используется, когда терминала нет. Живой вывод только растёт в конце,
   /// поэтому дописывается разница.
@@ -96,6 +103,13 @@ class _CommandOutputState extends State<CommandOutput> {
   @override
   void didUpdateWidget(covariant CommandOutput oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.command != oldWidget.command) {
+      // Строка команды стоит в начале терминала: при смене команды терминал пересоздаётся.
+      unawaited(_feed?.cancel());
+      _feed = null;
+      _host = null;
+      _reset();
+    }
     final host = widget.terminal;
     if (host != null && !identical(host, _host)) _attach(host);
     _sync();
@@ -107,8 +121,12 @@ class _CommandOutputState extends State<CommandOutput> {
     super.dispose();
   }
 
+  /// Строка `$ команда` для терминала; пустая строка, если команды нет.
+  String get _prompt => commandPromptLine(widget.command ?? '');
+
   void _reset() {
     _terminal = Terminal(maxLines: _maxLines);
+    _terminal.write(_prompt);
     _written = '';
     _cursorShown = true;
     _generation++;
@@ -200,7 +218,7 @@ class _CommandOutputState extends State<CommandOutput> {
                     _rowsFor(_terminal.buffer.getText(), columns),
                     maxRows,
                   )
-                : _clampRows(_rowsFor(widget.text, columns), maxRows);
+                : _clampRows(_rowsFor(_prompt + widget.text, columns), maxRows);
 
             return Stack(
               children: [
