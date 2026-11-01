@@ -16,7 +16,8 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 ///
 /// Лента перевёрнута: новое внизу, и прокрутка от низа не зависит от высоты элементов выше.
 /// Пока пользователь внизу, конец последнего сообщения стоит у низа окна, нижний отступ остаётся
-/// под ним. Прокрутка вверх отключает слежение, и текст под взглядом не уезжает, даже когда
+/// под ним. Отступ есть только у ленты выше окна: короткий чат стоит у низа без пустого места.
+/// Прокрутка вверх отключает слежение, и текст под взглядом не уезжает, даже когда
 /// элементы над ним дорисовываются или растут. Прокрутка вниз (до конца ответа или дальше, в
 /// отступ) включает слежение снова. Кнопка «к новым сообщениям» возвращает к концу. Отправка своего
 /// сообщения всегда прокручивает вниз.
@@ -36,15 +37,14 @@ class _ChatTimelineState extends State<ChatTimeline> {
   /// Расстояние до конца, в пределах которого считаем, что пользователь «внизу».
   static const _followThreshold = 80.0;
 
-  /// Доля высоты экрана, которая остаётся пустой под последним сообщением.
-  static const _bottomInsetFraction = 2 / 3;
+  /// Доля высоты окна ленты, которая остаётся пустой под последним сообщением.
+  static const _bottomInsetFraction = 1 / 3;
 
   late final ScrollController _scroll;
-  var _attached = false;
   var _follow = true;
   var _showJump = false;
 
-  /// Высота нижнего отступа ленты. Пересчитывается при смене размера окна.
+  /// Нижний отступ ленты, который сейчас применён. Ноль, пока лента умещается в окно: см. [_onMetrics].
   var _bottomInset = 0.0;
 
   /// Пользователь сам прокрутил в пустой отступ под ответом: слежение не тянет его обратно.
@@ -64,18 +64,26 @@ class _ChatTimelineState extends State<ChatTimeline> {
   double get _followOffset => _bottomInset;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final inset = MediaQuery.sizeOf(context).height * _bottomInsetFraction;
-    if (!_attached) {
-      _attached = true;
-      // Сразу стартуем с конца ответа, чтобы первый кадр не показывал пустой отступ.
-      _scroll = ScrollController(initialScrollOffset: inset)
-        ..addListener(_onScroll);
+  void initState() {
+    super.initState();
+    _scroll = ScrollController()..addListener(_onScroll);
+  }
+
+  /// Пересчитывает отступ по размерам ленты. Содержимое переполняет окно, когда maxScrollExtent
+  /// больше уже применённого отступа: тогда отступ нужен. Иначе прокрутка до него не доходит,
+  /// и пустое место остаётся под последним сообщением.
+  bool _onMetrics(ScrollMetricsNotification notification) {
+    final metrics = notification.metrics;
+    if (metrics.axisDirection != .up) return false;
+    final overflow = metrics.maxScrollExtent > _bottomInset;
+    final inset = overflow
+        ? metrics.viewportDimension * _bottomInsetFraction
+        : 0.0;
+    if (inset != _bottomInset) {
+      setState(() => _bottomInset = inset);
+      if (_follow) _scheduleFollow();
     }
-    _bottomInset = inset;
-    // Смена размера окна меняет отступ: если следим, снова ставим конец ответа в низ окна.
-    if (_follow) _scheduleFollow();
+    return false;
   }
 
   @override
@@ -233,11 +241,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
     }
     final boundary = _compactionBoundary(chat, visible);
 
-    // Ключ у каждого элемента: без него Flutter переиспользует состояние по индексу, и при вставке
-    // в начало раскрытие шагов или наведение уехали бы на соседний элемент.
-    _liveIds.clear();
-
     // Порядок от нового к старому: лента перевёрнута, нулевой индекс стоит у низа.
+    _liveIds.clear();
     final children = <Widget>[
       if (state.streamText.isNotEmpty)
         _KeyedTimelineItem(
@@ -284,12 +289,15 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     return Stack(
       children: [
-        ListView(
-          controller: _scroll,
-          reverse: true,
-          // Снизу — две трети высоты окна: конец ответа стоит у низа окна, отступ остаётся под ним.
-          padding: EdgeInsets.only(top: AppSpacing.md, bottom: _bottomInset),
-          children: children,
+        NotificationListener<ScrollMetricsNotification>(
+          onNotification: _onMetrics,
+          // Снизу — треть высоты окна, если лента выше окна: конец ответа стоит у низа окна.
+          child: ListView(
+            controller: _scroll,
+            reverse: true,
+            padding: EdgeInsets.only(top: AppSpacing.md, bottom: _bottomInset),
+            children: children,
+          ),
         ),
         if (_showJump)
           Positioned(
@@ -317,8 +325,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
   }
 }
 
-/// Элемент ленты с ключом по id. Ключ выдаём при построении списка, а не при отрисовке элемента:
-/// очистка ключей в [ChatTimeline.build] должна видеть все живые id.
+/// Элемент ленты с ключом по id. Id попадает в живые в [ChatTimeline.build], а не при отрисовке.
 class _KeyedTimelineItem extends StatelessWidget {
   const _KeyedTimelineItem({
     required this.id,

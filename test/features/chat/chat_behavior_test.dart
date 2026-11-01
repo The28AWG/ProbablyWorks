@@ -89,9 +89,8 @@ ChatState _state({
 ScrollPosition _position(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable).first).position;
 
-/// Позиция, при которой конец ответа касается низа окна: под ним остаётся нижний отступ в две трети высоты окна.
-double _followOffset(WidgetTester tester) =>
-    MediaQuery.sizeOf(tester.element(find.byType(ChatTimeline))).height * 2 / 3;
+/// Позиция, при которой конец ответа касается низа окна: под ним остаётся нижний отступ в треть высоты окна ленты.
+double _followOffset(WidgetTester tester) => _position(tester).viewportDimension / 3;
 
 /// Верхние края сообщений, которые сейчас видны в окне ленты.
 Map<String, double> _visibleTops(WidgetTester tester) {
@@ -446,7 +445,7 @@ void main() {
   });
 
   testWidgets(
-    'the list keeps two thirds of the screen free below the last message',
+    'the list keeps a third of its height free below the last message',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(800, 600));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -455,9 +454,24 @@ void main() {
 
       final list = tester.widget<ListView>(find.byType(ListView));
       final padding = list.padding! as EdgeInsets;
-      expect(padding.bottom, closeTo(600 * 2 / 3, 0.5));
+      expect(padding.bottom, closeTo(600 / 3, 0.5));
     },
   );
+
+  testWidgets('short chat has no empty inset below its messages', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(ChatTimeline(state: _state(count: 2))),
+    );
+    await tester.pumpAndSettle();
+
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect((list.padding! as EdgeInsets).bottom, 0);
+    expect(_position(tester).maxScrollExtent, 0);
+  });
 
   testWidgets('streamed answer keeps its end at the bottom of the window', (
     tester,

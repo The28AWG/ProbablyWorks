@@ -31,12 +31,23 @@ class ChatStepLedger extends StatefulWidget {
   State<ChatStepLedger> createState() => _ChatStepLedgerState();
 }
 
-class _ChatStepLedgerState extends State<ChatStepLedger> {
+class _ChatStepLedgerState extends State<ChatStepLedger>
+    with AutomaticKeepAliveClientMixin<ChatStepLedger> {
   /// Выбор пользователя; `null` — раскрытие определяется состоянием шагов.
   bool? _userExpanded;
 
+  /// Выбор пользователя нельзя потерять, когда группа уходит за край ленты: держим элемент живым.
+  @override
+  bool get wantKeepAlive => _userExpanded != null;
+
+  void _toggleGroupExpanded(bool expanded) {
+    setState(() => _userExpanded = !expanded);
+    updateKeepAlive();
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final runs = widget.runs;
@@ -75,7 +86,7 @@ class _ChatStepLedgerState extends State<ChatStepLedger> {
         children: [
           InkWell(
             borderRadius: AppRadius.smAll,
-            onTap: () => setState(() => _userExpanded = !expanded),
+            onTap: () => _toggleGroupExpanded(expanded),
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.xs),
               child: Row(
@@ -211,18 +222,30 @@ class _StepRow extends StatefulWidget {
   State<_StepRow> createState() => _StepRowState();
 }
 
-class _StepRowState extends State<_StepRow> {
+class _StepRowState extends State<_StepRow>
+    with AutomaticKeepAliveClientMixin<_StepRow> {
   late var _expanded = widget.run.isActive;
+
+  /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
+  var _toggled = false;
+
+  /// Строка, которую держим живой: её раскрытие не совпадает со значением по умолчанию.
+  @override
+  bool get wantKeepAlive => _toggled || _expanded;
 
   @override
   void didUpdateWidget(covariant _StepRow oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Активный шаг раскрываем, чтобы был виден вывод; завершённый не трогаем.
-    if (!oldWidget.run.isActive && widget.run.isActive) _expanded = true;
+    if (!oldWidget.run.isActive && widget.run.isActive) {
+      _expanded = true;
+      updateKeepAlive();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final run = widget.run;
@@ -248,7 +271,13 @@ class _StepRowState extends State<_StepRow> {
         InkWell(
           borderRadius: AppRadius.smAll,
           onTap: canExpand
-              ? () => setState(() => _expanded = !_expanded)
+              ? () {
+                  setState(() {
+                    _toggled = true;
+                    _expanded = !_expanded;
+                  });
+                  updateKeepAlive();
+                }
               : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
