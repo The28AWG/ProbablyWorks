@@ -128,19 +128,68 @@ void main() {
   });
 
   testWidgets('height follows the output up to maxHeight', (tester) async {
+    final viewport = find.byKey(const ValueKey('command-output-viewport'));
     await tester.pumpWidget(
       _TestHost(const CommandOutput(text: 'one', maxHeight: 200)),
     );
-    final short = tester.getSize(find.byType(TerminalView)).height;
+    final short = tester.getSize(viewport).height;
     expect(short, lessThan(60));
 
     final long = List.generate(100, (i) => 'line $i').join('\n');
     await tester.pumpWidget(
       _TestHost(CommandOutput(text: long, maxHeight: 200)),
     );
-    final tall = tester.getSize(find.byType(TerminalView)).height;
+    final tall = tester.getSize(viewport).height;
     expect(tall, greaterThan(150));
     expect(tall, lessThanOrEqualTo(200));
+  });
+
+  testWidgets('running terminal starts one line high and grows with output', (
+    tester,
+  ) async {
+    final host = _FakeHostTerminal();
+    final viewport = find.byKey(const ValueKey('command-output-viewport'));
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(
+          text: '',
+          command: 'make',
+          active: true,
+          terminal: host,
+          maxHeight: 200,
+        ),
+      ),
+    );
+    final oneLine = tester.getSize(viewport).height;
+    expect(oneLine, lessThan(60));
+
+    host.print('step 1\r\nstep 2\r\n');
+    await tester.pumpAndSettle();
+    final twoLines = tester.getSize(viewport).height;
+    expect(twoLines, greaterThan(oneLine));
+
+    host.print(List.generate(100, (i) => 'line $i\r\n').join());
+    await tester.pumpAndSettle();
+    final full = tester.getSize(viewport).height;
+    expect(full, greaterThan(150));
+    expect(full, lessThanOrEqualTo(200));
+  });
+
+  testWidgets('terminal keeps the full screen size for the process', (
+    tester,
+  ) async {
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(text: '', active: true, terminal: host, maxHeight: 200),
+      ),
+    );
+    await tester.pump();
+    final screen = tester.getSize(find.byType(TerminalView)).height;
+    expect(screen, greaterThan(150));
+    expect(screen, lessThanOrEqualTo(200));
+    expect(host.sizes.last.$2, _terminalOf(tester).viewHeight);
+    expect(_terminalOf(tester).viewHeight, greaterThan(5));
   });
 
   testWidgets('copy puts the visible text on the clipboard', (tester) async {

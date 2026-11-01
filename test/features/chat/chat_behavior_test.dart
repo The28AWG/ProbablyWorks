@@ -6,6 +6,7 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_attention_dock.dart';
@@ -90,7 +91,8 @@ ScrollPosition _position(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable).first).position;
 
 /// Позиция, при которой конец ответа касается низа окна: под ним остаётся нижний отступ в треть высоты окна ленты.
-double _followOffset(WidgetTester tester) => _position(tester).viewportDimension / 3;
+double _followOffset(WidgetTester tester) =>
+    _position(tester).viewportDimension / 3;
 
 /// Верхние края сообщений, которые сейчас видны в окне ленты.
 Map<String, double> _visibleTops(WidgetTester tester) {
@@ -264,7 +266,7 @@ void main() {
     expect(find.text('Earlier: the user asked for a review.'), findsOneWidget);
   });
 
-  testWidgets('step ledger stays collapsed when all steps succeeded', (
+  testWidgets('single successful step shows its command without a group', (
     tester,
   ) async {
     final start = DateTime(2026);
@@ -276,6 +278,7 @@ void main() {
         toolName: 'run_command',
         argsJson: '{}',
         command: 'flutter analyze',
+        outputText: 'No issues found!',
         status: ToolRunStatus.done,
         startedAt: start,
         finishedAt: start.add(const Duration(seconds: 3)),
@@ -292,12 +295,51 @@ void main() {
     final l10n = AppLocalizations.of(
       tester.element(find.byType(ChatStepLedger)),
     );
-    expect(find.text(l10n.stepsGroupDone(1)), findsOneWidget);
-    expect(find.text('flutter analyze'), findsNothing);
-
-    await tester.tap(find.text(l10n.stepsGroupDone(1)));
-    await tester.pumpAndSettle();
+    expect(find.text(l10n.stepsGroupDone(1)), findsNothing);
     expect(find.text('flutter analyze'), findsOneWidget);
+    expect(find.byType(CommandOutput), findsNothing);
+
+    await tester.tap(find.text('flutter analyze'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CommandOutput), findsOneWidget);
+  });
+
+  testWidgets('several steps collapse into a group that stays collapsed', (
+    tester,
+  ) async {
+    final start = DateTime(2026);
+    final runs = [
+      for (final id in ['r1', 'r2'])
+        ToolRun(
+          id: id,
+          chatId: 'c',
+          messageId: 'a',
+          toolName: 'run_command',
+          argsJson: '{}',
+          command: 'command $id',
+          status: ToolRunStatus.done,
+          startedAt: start,
+          finishedAt: start.add(const Duration(seconds: 3)),
+        ),
+    ];
+    await tester.pumpWidget(
+      _TestApp(
+        SingleChildScrollView(
+          child: ChatStepLedger(runs: runs, live: const {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatStepLedger)),
+    );
+    expect(find.text(l10n.stepsGroupDone(2)), findsOneWidget);
+    expect(find.text('command r1'), findsNothing);
+
+    await tester.tap(find.text(l10n.stepsGroupDone(2)));
+    await tester.pumpAndSettle();
+    expect(find.text('command r1'), findsOneWidget);
+    expect(find.text('command r2'), findsOneWidget);
   });
 
   testWidgets('step ledger keeps failed steps visible without expanding', (
@@ -329,7 +371,7 @@ void main() {
       tester.element(find.byType(ChatStepLedger)),
     );
     expect(find.text('flutter test test/core'), findsOneWidget);
-    expect(find.textContaining(l10n.stepsGroupFailed(1)), findsOneWidget);
+    expect(find.text(l10n.runStatusFailed), findsOneWidget);
   });
 
   testWidgets('approval waits in the dock, not in the timeline', (
@@ -405,20 +447,28 @@ void main() {
     await tester.pumpAndSettle();
 
     final l10n = AppLocalizations.of(tester.element(find.byType(ChatBody)));
-    expect(tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed, isNull);
+    expect(
+      tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
+      isNull,
+    );
 
     await tester.tap(find.text(l10n.chatSuggestion1));
     await tester.pumpAndSettle();
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.controller?.text, l10n.chatSuggestion1);
-    expect(tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed, isNotNull);
+    expect(
+      tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
+      isNotNull,
+    );
   });
 
   testWidgets('message actions appear on hover', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
-      _TestApp(SizedBox(height: 500, child: ChatTimeline(state: _state(count: 2)))),
+      _TestApp(
+        SizedBox(height: 500, child: ChatTimeline(state: _state(count: 2))),
+      ),
     );
     await tester.pumpAndSettle();
     // Панель действий каждого сообщения живёт внутри его плитки.
@@ -463,9 +513,7 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      _TestApp(ChatTimeline(state: _state(count: 2))),
-    );
+    await tester.pumpWidget(_TestApp(ChatTimeline(state: _state(count: 2))));
     await tester.pumpAndSettle();
 
     final list = tester.widget<ListView>(find.byType(ListView));
@@ -516,7 +564,7 @@ void main() {
     expect(find.text(l10n.chatScrollToLatest), findsNothing);
   });
 
-  testWidgets('an opened step group stays open when a newer message arrives', (
+  testWidgets('an opened step output stays open when a newer message arrives', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
@@ -530,6 +578,7 @@ void main() {
         toolName: 'run_command',
         argsJson: '{}',
         command: 'flutter analyze',
+        outputText: 'No issues found!',
         status: ToolRunStatus.done,
         startedAt: start,
         finishedAt: start.add(const Duration(seconds: 3)),
@@ -538,10 +587,9 @@ void main() {
     final base = _state(count: 2, runs: runs);
     await tester.pumpWidget(_TestApp(ChatTimeline(state: base)));
     await tester.pumpAndSettle();
-    final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
-    await tester.tap(find.text(l10n.stepsGroupDone(1)));
+    await tester.tap(find.text('flutter analyze'));
     await tester.pumpAndSettle();
-    expect(find.text('flutter analyze'), findsOneWidget);
+    expect(find.byType(CommandOutput), findsOneWidget);
 
     // Новое сообщение встаёт в начало списка, и элементы сдвигаются по индексу. Раскрытая группа
     // должна остаться на своём сообщении, а не перейти к соседнему.
@@ -565,6 +613,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.text('flutter analyze'), findsOneWidget);
   });
 
   testWidgets('reading history keeps the text under the reader still', (

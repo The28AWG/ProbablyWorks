@@ -10,8 +10,9 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Журнал шагов одного ответа ассистента: все команды, которые он выполнил.
 ///
-/// Свернутая группа занимает одну строку с итогом. Раскрывается сама, пока есть активные шаги
-/// или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся
+/// Одна команда выводится просто строкой: заголовок группы без неё лишний шаг до текста команды.
+/// Несколько команд сворачиваются в группу с итогом в одну строку. Группа раскрывается сама, пока
+/// есть активные шаги или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся
 /// в свёрнутом виде: без них история не читается.
 class ChatStepLedger extends StatefulWidget {
   const ChatStepLedger({
@@ -51,6 +52,19 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final runs = widget.runs;
+
+    if (runs.length == 1) {
+      final run = runs.single;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: _StepRow(
+          key: ValueKey(run.id),
+          run: run,
+          live: widget.live[run.id],
+          terminal: widget.terminalFor?.call(run.id),
+        ),
+      );
+    }
 
     var active = 0;
     var failed = 0;

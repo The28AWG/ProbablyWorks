@@ -82,35 +82,31 @@ ScrollPosition _position(WidgetTester tester) => tester
     .position;
 
 void main() {
-  testWidgets(
-    'expanded step group and step output survive scrolling far away and back',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(800, 500));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(_TestApp(_state(runs: [_run()])));
-      await tester.pumpAndSettle();
-      final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
-      final scroll = _position(tester);
-      final historyTop = scroll.maxScrollExtent;
+  testWidgets('expanded step output survives scrolling far away and back', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_TestApp(_state(runs: [_run()])));
+    await tester.pumpAndSettle();
+    final scroll = _position(tester);
+    final historyTop = scroll.maxScrollExtent;
 
-      // Старое сообщение с группой шагов: прокручиваем к началу ленты и раскрываем группу и строку.
-      scroll.jumpTo(historyTop);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(l10n.stepsGroupDone(1)));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('flutter analyze'));
-      await tester.pumpAndSettle();
-      expect(find.byType(CommandOutput), findsOneWidget);
+    // Старое сообщение с шагом: прокручиваем к началу ленты и раскрываем строку команды.
+    scroll.jumpTo(historyTop);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('flutter analyze'));
+    await tester.pumpAndSettle();
+    expect(find.byType(CommandOutput), findsOneWidget);
 
-      // Уводим группу далеко за край ленты: элементы вне кэша прокрутки уничтожаются.
-      scroll.jumpTo(0);
-      await tester.pumpAndSettle();
-      expect(find.text('flutter analyze'), findsNothing);
+    // Уводим группу далеко за край ленты: элементы вне кэша прокрутки уничтожаются.
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(find.text('flutter analyze'), findsNothing);
 
-      // Возвращаемся: группа и вывод команды остаются раскрытыми.
-      scroll.jumpTo(historyTop);
-      await tester.pumpAndSettle();
-      expect(find.text('flutter analyze'), findsOneWidget);
-    },
-  );
+    // Возвращаемся: группа и вывод команды остаются раскрытыми.
+    scroll.jumpTo(historyTop);
+    await tester.pumpAndSettle();
+    expect(find.text('flutter analyze'), findsOneWidget);
+  });
 }

@@ -86,6 +86,13 @@ class _ChatTimelineState extends State<ChatTimeline> {
     return false;
   }
 
+  /// Элемент сменил высоту. Чаще всего это живой терминал, который растёт сам, без перестройки ленты:
+  /// якорь пересчитываем, иначе читаемый текст уедет.
+  bool _onItemResized(SizeChangedLayoutNotification notification) {
+    if (!_follow) _scheduleAnchor();
+    return false;
+  }
+
   @override
   void didUpdateWidget(covariant ChatTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -284,6 +291,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           ),
       ],
     ];
+    // Ключи строятся вместе с элементами, поэтому убираем только те, кого в ленте больше нет.
     _itemKeys.removeWhere((id, _) => !_liveIds.contains(id));
     if (!_follow) _scheduleAnchor();
 
@@ -291,12 +299,18 @@ class _ChatTimelineState extends State<ChatTimeline> {
       children: [
         NotificationListener<ScrollMetricsNotification>(
           onNotification: _onMetrics,
-          // Снизу — треть высоты окна, если лента выше окна: конец ответа стоит у низа окна.
-          child: ListView(
-            controller: _scroll,
-            reverse: true,
-            padding: EdgeInsets.only(top: AppSpacing.md, bottom: _bottomInset),
-            children: children,
+          child: NotificationListener<SizeChangedLayoutNotification>(
+            onNotification: _onItemResized,
+            // Снизу — треть высоты окна, если лента выше окна: конец ответа стоит у низа окна.
+            child: ListView(
+              controller: _scroll,
+              reverse: true,
+              padding: EdgeInsets.only(
+                top: AppSpacing.md,
+                bottom: _bottomInset,
+              ),
+              children: children,
+            ),
           ),
         ),
         if (_showJump)
@@ -325,7 +339,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
   }
 }
 
-/// Элемент ленты с ключом по id. Id попадает в живые в [ChatTimeline.build], а не при отрисовке.
+/// Элемент ленты с ключами по id для стабильного состояния и якоря прокрутки.
 class _KeyedTimelineItem extends StatelessWidget {
   const _KeyedTimelineItem({
     required this.id,
@@ -343,8 +357,13 @@ class _KeyedTimelineItem extends StatelessWidget {
   Widget build(BuildContext context) {
     liveIds.add(id);
     return KeyedSubtree(
-      key: itemKeys.putIfAbsent(id, GlobalKey.new),
-      child: child,
+      key: ValueKey(id),
+      child: SizeChangedLayoutNotifier(
+        child: KeyedSubtree(
+          key: itemKeys.putIfAbsent(id, GlobalKey.new),
+          child: child,
+        ),
+      ),
     );
   }
 }

@@ -17,8 +17,8 @@ import 'package:xterm/xterm.dart';
 /// вывод идёт из Host, клавиши уходят в команду, размер окна передаётся в PTY.
 /// Без [terminal] (завершённый или сохранённый запуск) вывод воспроизводится из [text].
 ///
-/// Занимает всю доступную ширину. Высота активного терминала фиксирована (как у настоящей консоли),
-/// завершённого — растёт по содержимому до [maxHeight].
+/// Занимает всю доступную ширину. Экран терминала всегда [maxHeight] (как у настоящей консоли, PTY
+/// получает стабильный размер), а видимая часть растёт по содержимому от одной строки до [maxHeight].
 ///
 /// Если передана [command], первой строкой выводится `$ команда` с подсветкой (см. [commandPromptLine]).
 class CommandOutput extends StatefulWidget {
@@ -130,9 +130,23 @@ class _CommandOutputState extends State<CommandOutput> {
 
   void _reset() {
     _terminal = Terminal(maxLines: _maxLines)..setCursorVisibleMode(false);
+    _terminal.onResize = _onResize;
     _terminal.write(_prompt);
     _written = '';
     _generation++;
+  }
+
+  /// Экран терминала меняет размер при раскладке. Видимые строки зависят от буфера, который при этом
+  /// переразбивается по ширине, поэтому перестраиваемся уже после кадра.
+  void _onResize(int columns, int rows, int _, int _) {
+    _host?.resize(columns, rows);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          return;
+        });
+      }
+    });
   }
 
   /// Подключает терминал Host: вывод PTY (с историей) пишется в терминал, ввод и размер уходят обратно.
@@ -144,10 +158,9 @@ class _CommandOutputState extends State<CommandOutput> {
     _decoder = Utf8ChunkDecoder();
     _terminal.onOutput = (data) =>
         host.write(Uint8List.fromList(utf8.encode(data)));
-    _terminal.onResize = (columns, rows, _, _) => host.resize(columns, rows);
     _feed = host.attach().listen(
-      (bytes) => _write(_decoder.add(bytes)),
-      onDone: () => _write(_decoder.close()),
+      (bytes) => setState(() => _write(_decoder.add(bytes))),
+      onDone: () => setState(() => _write(_decoder.close())),
     );
   }
 
@@ -243,14 +256,11 @@ class _CommandOutputState extends State<CommandOutput> {
             final maxRows = ((widget.maxHeight - vertical) / cell.height)
                 .floor()
                 .clamp(1, 1 << 20);
-            final rows = interactive
-                ? maxRows
-                : live
-                ? _clampRows(
-                    _rowsFor(_terminal.buffer.getText(), columns),
-                    maxRows,
-                  )
-                : _clampRows(_rowsFor(_prompt + widget.text, columns), maxRows);
+            final screenHeight = maxRows * cell.height + vertical;
+            final rows = _clampRows(
+              live ? _terminalRows() : _rowsFor(_prompt + widget.text, columns),
+              maxRows,
+            );
 
             return Stack(
               children: [
@@ -258,16 +268,25 @@ class _CommandOutputState extends State<CommandOutput> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Экран терминала остаётся полной высоты, видна только часть по содержимому.
                     SizedBox(
+                      key: const ValueKey('command-output-viewport'),
                       height: rows * cell.height + vertical,
-                      child: TerminalView(
-                        _terminal,
-                        key: ValueKey(_generation),
-                        scrollController: _scroll,
-                        theme: _terminalTheme(colors, theme.colorScheme),
-                        textStyle: _style,
-                        padding: _padding,
-                        readOnly: !interactive,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topCenter,
+                          minHeight: screenHeight,
+                          maxHeight: screenHeight,
+                          child: TerminalView(
+                            _terminal,
+                            key: ValueKey(_generation),
+                            scrollController: _scroll,
+                            theme: _terminalTheme(colors, theme.colorScheme),
+                            textStyle: _style,
+                            padding: _padding,
+                            readOnly: !interactive,
+                          ),
+                        ),
                       ),
                     ),
                     if (exitCode case final code? when !widget.active)
@@ -323,6 +342,16 @@ class _CommandOutputState extends State<CommandOutput> {
     final cell = (width: painter.width / sample.length, height: painter.height);
     painter.dispose();
     return cell;
+  }
+
+  /// Строки буфера терминала до последней непустой. Буфер всегда занимает весь экран, поэтому пустые
+  /// строки внизу не считаем: вывод растёт от одной строки. Пустой терминал занимает одну строку.
+  int _terminalRows() {
+    final lines = _terminal.buffer.lines;
+    for (var i = lines.length - 1; i > 0; i--) {
+      if (lines[i].getText().trim().isNotEmpty) return i + 1;
+    }
+    return 1;
   }
 
   /// Число строк экрана, которое займёт вывод при переносе по [columns] столбцам.

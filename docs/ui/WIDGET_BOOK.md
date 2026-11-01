@@ -212,9 +212,10 @@ ANSI-последовательности и возврат каретки.
 Два режима:
 - **Живой** (`terminal` передан, команда выполняется): терминал подключён к PTY команды на Host.
   Вывод PTY пишется в терминал, клавиши уходят в команду, изменение размера окна передаётся в PTY.
-  Высота фиксирована (`maxHeight`), как у настоящей консоли.
+  Экран терминала всегда `maxHeight` (PTY получает стабильный размер, как у настоящей консоли),
+  а видимая часть растёт по содержимому от одной строки до `maxHeight`.
 - **Текстовый** (`terminal` не передан, завершённый или сохранённый запуск): вывод воспроизводится из `text`.
-  Высота растёт по содержимому до `maxHeight`.
+  Высота растёт по содержимому от одной строки до `maxHeight`.
 
 `exitCode` выводит код выхода под выводом, когда команда завершилась.
 
@@ -304,7 +305,7 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `ChatWelcome` | `lib/features/chat/presentation/widgets/chat_welcome.dart` | Приветствие пустого чата: иконка, заголовок, хост и три подсказки (`ActionChip`), которые заполняют поле ввода |
 | `ChatMessageTile` | `lib/features/chat/presentation/widgets/chat_message_tile.dart` | Сообщение: пользователь (правка и удаление после) и ассистент (копирование). Действия появляются при наведении или фокусе, в том же блоке что и текст |
 | `ChatCompactionMarker` | `lib/features/chat/presentation/widgets/chat_message_tile.dart` | Метка над сообщениями, которые модель видит через сводку. Сводку можно раскрыть |
-| `ChatStepLedger` | `lib/features/chat/presentation/widgets/chat_step_ledger.dart` | Группа шагов ответа: заголовок «N действий · Ошибок: M», длительность, раскрываемые строки с выводом. Свёрнута, если всё успешно; раскрыта при активной работе или внимании |
+| `ChatStepLedger` | `lib/features/chat/presentation/widgets/chat_step_ledger.dart` | Шаги ответа: одна команда — строка без группы; несколько — группа с заголовком «N действий · Ошибок: M», длительностью и раскрываемыми строками с выводом. Группа свёрнута, если всё успешно; раскрыта при активной работе или внимании |
 | `ChatAttentionDock` | `lib/features/chat/presentation/widgets/chat_attention_dock.dart` | Панель над композером: ошибка, доверие к папке, лимит шагов, подтверждение (`ActionCard` с `DiffView`), вопрос агента, очередь. Пустая, если решений нет |
 | `ChatComposer` | `lib/features/chat/presentation/widgets/chat_composer.dart` | Карточка ввода: поле, отправка и остановка в строке поля, вложения, строка настроек `ChatMetaBar` и подсказка по клавишам. Подсвечивается при перетаскивании файлов |
 | `ChatColumn` | `lib/features/chat/presentation/widgets/chat_column.dart` | Единая колонка чата: `item` для элементов ленты, `fixed` для шапки, панели и композера. Ширина из `AppLayout.chatMaxWidth` |
