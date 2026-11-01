@@ -13,6 +13,7 @@ import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/line_diff.dart';
 import 'package:probably_works/core/util/text_clip.dart';
@@ -183,6 +184,8 @@ class ToolExecutor {
     final command = _str(args, 'command');
     final background = args['background'] == true;
     final cwd = (args['cwd'] as String?) ?? ctx.chat.workspace;
+    // Один id на всю жизнь команды: ожидание подтверждения и выполнение — одна строка в журнале.
+    final runId = _uuid.v4();
     final decision = ctx.policy.decide(call.name, args);
     switch (decision) {
       case PolicyDecision.deny:
@@ -192,6 +195,7 @@ class ToolExecutor {
           ctx,
           call,
           args,
+          runId: runId,
           summary: command,
           reason: ctx.policy.reasonFor(call.name, args),
         );
@@ -207,6 +211,8 @@ class ToolExecutor {
       command: command,
       cwd: cwd,
       background: background,
+      presetRunId: runId,
+      inTerminal: true,
     );
   }
 
@@ -286,19 +292,22 @@ class ToolExecutor {
     if (decision == PolicyDecision.deny) {
       return _denied(ctx, call, args, 'write denied by policy');
     }
+    // Один id на всю жизнь записи: ожидание подтверждения и выполнение — одна строка в журнале.
+    // Бэкап привязан к нему: предыдущие версии не затираются при повторной записи.
+    final runId = _uuid.v4();
     if (decision == PolicyDecision.ask) {
       final approved = await _approve(
         ctx,
         call,
         args,
+        runId: runId,
+        command: 'write $path',
         summary: path,
         reason: 'write operation',
         diff: diff,
       );
       if (!approved) return _rejected(path);
     }
-    // Бэкап привязан к запуску: предыдущие версии не затираются при повторной записи.
-    final runId = _uuid.v4();
     final command = ShellAdapter(ctx.host.os)
         .writeFile(path, after, backupPath: '$path.pw-bak-$runId');
     return _exec(
@@ -453,6 +462,7 @@ class ToolExecutor {
     String? cwd,
     String? displayCommand,
     String? presetRunId,
+    bool inTerminal = false,
   }) async {
     final runId = presetRunId ?? _uuid.v4();
     var run = _newRun(
@@ -475,6 +485,7 @@ class ToolExecutor {
       cwd: cwd,
       limits: ctx.limits,
       background: background,
+      inTerminal: inTerminal,
     );
     run = run.copyWith(logPath: handle.logPath);
     await _saveRun(run);
@@ -532,12 +543,20 @@ class ToolExecutor {
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args, {
+    required String runId,
     required String summary,
     required String reason,
+    String? command,
     String? diff,
   }) async {
-    final runId = _uuid.v4();
-    final run = _newRun(ctx, runId, call, args, ToolRunStatus.waitingApproval);
+    final run = _newRun(
+      ctx,
+      runId,
+      call,
+      args,
+      ToolRunStatus.waitingApproval,
+      command: command,
+    );
     await _saveRun(run);
     final allowed = await _broker.requestApproval(
       ApprovalRequest(
@@ -648,14 +667,16 @@ class ToolExecutor {
       if (outcome.outputTruncated) 'output: truncated (head and tail kept)',
     ].join('\n');
     final body = TextClip.headTail(
-      outcome.outputText,
+      plainTerminalText(outcome.outputText),
       maxChars: limits.toolOutputForModelChars,
     );
     return body.isEmpty ? header : '$header\n$body';
   }
 
   static String _preview(String text, {int max = 200}) {
-    final single = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final single = plainTerminalText(text)
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     return single.length <= max ? single : '${charPrefix(single, max)}…';
   }
 

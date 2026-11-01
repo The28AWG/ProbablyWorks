@@ -3,13 +3,22 @@ import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/host/flutter_pty_launcher.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/host_terminal.dart';
+import 'package:probably_works/host/pty_launcher.dart';
 import 'package:probably_works/host/wrapped_exec_runtime.dart';
 
 /// Исполнение на локальной машине: `Process.start` через оболочку ОС.
 final class LocalHostRuntime extends WrappedExecRuntime {
-  LocalHostRuntime({required HostOs os, String? shell})
-    : super(os, shell: shell);
+  LocalHostRuntime({
+    required HostOs os,
+    String? shell,
+    this.pty = const FlutterPtyLauncher(),
+  }) : super(os, shell: shell);
+
+  /// Создание PTY для команд терминала (см. [openTerminal]).
+  final PtyLauncher pty;
 
   @override
   Future<ExecChannel> spawn(String wrappedScript) async {
@@ -27,6 +36,19 @@ final class LocalHostRuntime extends WrappedExecRuntime {
       );
     }
   }
+
+  @override
+  Future<PtyChannel> spawnPty(
+    String wrappedScript, {
+    required int columns,
+    required int rows,
+  }) => pty.start(
+    control.shellExecutable,
+    control.shellArgs(wrappedScript),
+    environment: {...Platform.environment, 'TERM': 'xterm-256color'},
+    columns: columns,
+    rows: rows,
+  );
 }
 
 class _ProcessChannel implements ExecChannel {

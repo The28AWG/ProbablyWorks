@@ -6,8 +6,10 @@ import 'package:probably_works/agent/exec/active_exec_registry.dart';
 import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/core/config/app_limits.dart';
+import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/host_terminal.dart';
 
 /// Итог запуска команды. Текст уже ограничен лимитом БД (голова+хвост).
 class ExecOutcome {
@@ -49,6 +51,7 @@ class ExecHandle {
 }
 
 /// Исполняет команду через HostRuntime: лог-файл, живой вывод, таймауты, компакция в БД.
+/// С [CommandExecutor.start] `inTerminal` команда запускается в PTY-терминале Host.
 /// Не пишет в БД сам — результат возвращается вызывающему (ToolExecutor).
 @lazySingleton
 class CommandExecutor {
@@ -67,6 +70,7 @@ class CommandExecutor {
     required AppLimits limits,
     required bool background,
     String? cwd,
+    bool inTerminal = false,
   }) async {
     final release = await _registry.acquireSlot(
       hostId,
@@ -83,6 +87,9 @@ class CommandExecutor {
     );
     _registry.register(exec);
     final logPath = await _logs.open(chatId, toolCallId);
+    final events = inTerminal
+        ? await _terminalEvents(exec, runtime, command, cwd)
+        : runtime.run(command, cwd: cwd);
 
     final started = Completer<int?>();
     final finished = Completer<ExecOutcome>();
@@ -121,28 +128,26 @@ class CommandExecutor {
       );
     }
 
-    runtime
-        .run(command, cwd: cwd)
-        .listen(
-          (event) {
-            switch (event) {
-              case ExecStarted e:
-                exec.pid = e.pid;
-                if (exec.stopRequested) {
-                  unawaited(_registry.stop(exec, force: true));
-                }
-                if (!started.isCompleted) started.complete(e.pid);
-              case ExecStdout e:
-                _emit(toolCallId, chatId, outDecoder.add(e.bytes));
-              case ExecStderr e:
-                _emit(toolCallId, chatId, errDecoder.add(e.bytes));
-              case ExecDone e:
-                unawaited(finalize(done: e));
+    events.listen(
+      (event) {
+        switch (event) {
+          case ExecStarted e:
+            exec.pid = e.pid;
+            if (exec.stopRequested) {
+              unawaited(_registry.stop(exec, force: true));
             }
-          },
-          onError: (Object error) => unawaited(finalize(error: error)),
-          onDone: () => unawaited(finalize()),
-        );
+            if (!started.isCompleted) started.complete(e.pid);
+          case ExecStdout e:
+            _emit(toolCallId, chatId, outDecoder.add(e.bytes));
+          case ExecStderr e:
+            _emit(toolCallId, chatId, errDecoder.add(e.bytes));
+          case ExecDone e:
+            unawaited(finalize(done: e));
+        }
+      },
+      onError: (Object error) => unawaited(finalize(error: error)),
+      onDone: () => unawaited(finalize()),
+    );
 
     watchdog = Timer(limit, () {
       timedOut = true;
@@ -158,6 +163,24 @@ class CommandExecutor {
       started: started.future,
       finished: finished.future,
     );
+  }
+
+  /// Открывает PTY и отдаёт его события. Ошибка открытия становится итогом запуска, а не исключением.
+  Future<Stream<ExecEvent>> _terminalEvents(
+    ActiveExec exec,
+    HostRuntime runtime,
+    String command,
+    String? cwd,
+  ) async {
+    try {
+      final terminal = await runtime.openTerminal(command, cwd: cwd);
+      exec.terminal = terminal;
+      // Остановка могла быть запрошена, пока PTY открывался.
+      if (exec.stopRequested) unawaited(_registry.stop(exec, force: true));
+      return execEventsOf(terminal);
+    } on HostFailure catch (error) {
+      return Stream.value(ExecDone(spawnFailed: true, message: error.message));
+    }
   }
 
   void _emit(String toolCallId, String chatId, String text) {

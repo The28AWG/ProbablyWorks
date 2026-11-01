@@ -5,6 +5,7 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/pid_marker_parser.dart';
 import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/process_control.dart';
 
 /// Канал одного запуска: локальный Process или SSH-сессия.
@@ -35,11 +36,34 @@ abstract base class WrappedExecRuntime implements HostRuntime {
   /// Создаёт канал для уже обёрнутой команды. Бросает [HostFailure] при сбое.
   Future<ExecChannel> spawn(String wrappedScript);
 
+  /// Создаёт PTY для уже обёрнутой команды нужного размера. Бросает [HostFailure] при сбое.
+  Future<PtyChannel> spawnPty(
+    String wrappedScript, {
+    required int columns,
+    required int rows,
+  });
+
   @override
   Stream<ExecEvent> run(String command, {String? cwd}) {
     final controller = StreamController<ExecEvent>();
     unawaited(_drive(controller, command, cwd));
     return controller.stream;
+  }
+
+  @override
+  Future<HostTerminal> openTerminal(
+    String command, {
+    String? cwd,
+    int columns = defaultTerminalColumns,
+    int rows = defaultTerminalRows,
+  }) async {
+    final script = cwd == null ? command : 'cd ${shQuote(cwd)} && $command';
+    final channel = await spawnPty(
+      control.wrapTerminal(script),
+      columns: columns,
+      rows: rows,
+    );
+    return PtyHostTerminal(channel, markers: control.hasPidMarker);
   }
 
   Future<void> _drive(

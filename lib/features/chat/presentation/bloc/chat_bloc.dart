@@ -10,7 +10,9 @@ import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/core/config/app_limits.dart';
+import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
 // ---- events -----------------------------------------------------------------
@@ -169,6 +171,16 @@ final class ChatQueueEdited extends ChatEvent {
   List<Object?> get props => [index];
 }
 
+/// Подставить текст в поле ввода (стартовая подсказка пустого чата). Пользователь дописывает и отправляет сам.
+final class ChatSuggestionPicked extends ChatEvent {
+  const ChatSuggestionPicked(this.text);
+
+  final String text;
+
+  @override
+  List<Object?> get props => [text];
+}
+
 /// Закрепить или открепить модель в быстром списке.
 final class ChatModelPinToggled extends ChatEvent {
   const ChatModelPinToggled(this.modelId);
@@ -226,6 +238,7 @@ class ChatState extends Equatable {
     this.hosts = const [],
     this.models = const [],
     this.pinnedModels = const [],
+    this.defaultModelId,
     this.limits = AppLimits.defaults,
     this.streamText = '',
     this.live = const {},
@@ -252,7 +265,20 @@ class ChatState extends Equatable {
 
   /// Закреплённые id моделей из Settings (показываются первыми в picker).
   final List<String> pinnedModels;
+
+  /// Модель по умолчанию из Settings. Новый чат её не копирует: агент берёт её, пока у чата нет своей.
+  final String? defaultModelId;
   final AppLimits limits;
+
+  /// Модель, которую агент реально использует в этом чате: своя или по умолчанию. Null, если ничего не выбрано.
+  String? get effectiveModelId {
+    final own = chat?.model;
+    if (own != null && own.isNotEmpty) return own;
+    if (defaultModelId != null && defaultModelId!.isNotEmpty) {
+      return defaultModelId;
+    }
+    return null;
+  }
 
   /// Текст шага, который ещё не записан в БД (живой стрим).
   final String streamText;
@@ -282,6 +308,7 @@ class ChatState extends Equatable {
     List<Host>? hosts,
     List<LlmModelInfo>? models,
     List<String>? pinnedModels,
+    String? defaultModelId,
     AppLimits? limits,
     String? streamText,
     Map<String, String>? live,
@@ -306,6 +333,7 @@ class ChatState extends Equatable {
     hosts: hosts ?? this.hosts,
     models: models ?? this.models,
     pinnedModels: pinnedModels ?? this.pinnedModels,
+    defaultModelId: defaultModelId ?? this.defaultModelId,
     limits: limits ?? this.limits,
     streamText: streamText ?? this.streamText,
     live: live ?? this.live,
@@ -332,6 +360,7 @@ class ChatState extends Equatable {
     hosts,
     models,
     pinnedModels,
+    defaultModelId,
     limits,
     streamText,
     live,
@@ -372,6 +401,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
     on<ChatQueueRemoved>((event, _) async => _session?.takeQueued(event.index));
     on<ChatQueueEdited>(_onQueueEdited);
+    on<ChatSuggestionPicked>(_onSuggestionPicked);
     on<ChatCompactRequested>(_onCompactRequested);
     on<_SessionEvent>(_onSessionEvent);
     on<_LiveChunk>(_onLiveChunk);
@@ -391,6 +421,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Timer? _liveTimer;
 
   static const _liveThrottle = Duration(milliseconds: 100);
+
+  /// Терминал, в котором сейчас выполняется запуск; `null`, если он не выполняется в PTY или уже завершён.
+  HostTerminal? terminalFor(String runId) =>
+      _hub.registry.find(runId)?.terminal;
 
   @override
   Future<void> close() async {
@@ -430,12 +464,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       models = const [];
     }
     final pinned = await _hub.settings.readPinnedModels();
+    final defaultModel = await _hub.settings.read(
+      SettingsRepository.keyDefaultModel,
+    );
     emit(
       state.copyWith(
         hosts: hosts,
         limits: limits,
         models: models,
         pinnedModels: pinned,
+        defaultModelId: defaultModel,
       ),
     );
     await _reload(emit);
@@ -517,6 +555,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (!pins.remove(event.modelId)) pins.add(event.modelId);
     await _hub.settings.savePinnedModels(pins);
     emit(state.copyWith(pinnedModels: pins));
+  }
+
+  void _onSuggestionPicked(
+    ChatSuggestionPicked event,
+    Emitter<ChatState> emit,
+  ) {
+    emit(state.copyWith(draft: event.text, draftId: state.draftId + 1));
   }
 
   void _onQueueEdited(ChatQueueEdited event, Emitter<ChatState> emit) {

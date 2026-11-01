@@ -1,4 +1,5 @@
-import 'package:flutter_localizations/flutter_localizations.dart' as flutter_l10n;
+import 'package:flutter_localizations/flutter_localizations.dart'
+    as flutter_l10n;
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 

@@ -27,6 +27,8 @@ import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
+import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной сценарий ответа.
 class _FakeLlm implements LlmProvider {
   final List<List<LlmEvent>> script = [];
@@ -86,7 +88,7 @@ void main() {
       chats,
       settings,
       hosts,
-      HostRuntimeFactory(pool),
+      HostRuntimeFactory(pool, const PipePtyLauncher()),
       llm,
       builder,
       compactor,
@@ -220,6 +222,36 @@ void main() {
       expect(tool.text, contains('rejected'));
       final runs = await hub.chats.toolRunsForChat(chatId);
       expect(runs.single.status, ToolRunStatus.denied);
+    },
+  );
+
+  test(
+    'ask mode: approved command stays one run that moves from waiting to done',
+    () async {
+      final chatId = await createChat(mode: PolicyMode.ask);
+      final requested = <String>[];
+      final approvals = broker.approvalRequests.listen((request) {
+        requested.add(request.id);
+        broker.resolveApproval(request.id, allow: true);
+      });
+      addTearDown(approvals.cancel);
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call('c1', 'run_command', '{"command":"printf approved"}'),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'say approved');
+
+      final runs = await hub.chats.toolRunsForChat(chatId);
+      expect(runs, hasLength(1), reason: 'approval must not duplicate the run');
+      expect(runs.single.id, requested.single);
+      expect(runs.single.status, ToolRunStatus.done);
+      expect(runs.single.outputText, contains('approved'));
     },
   );
 

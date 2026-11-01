@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/core/util/async_semaphore.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/host_terminal.dart';
 
 /// Один запущенный процесс команды, известный агенту.
 class ActiveExec {
@@ -27,6 +30,9 @@ class ActiveExec {
 
   /// Остановка запрошена пользователем или политикой (нужен статус interrupted, а не failed).
   bool stopRequested = false;
+
+  /// Терминал, в котором выполняется команда; появляется после открытия PTY.
+  HostTerminal? terminal;
 }
 
 /// Реестр запущенных команд и лимит параллельности на Host.
@@ -60,11 +66,15 @@ class ActiveExecRegistry {
   int get activeCount => _execs.length;
 
   /// Мягкая остановка (TERM), при [force] — немедленная (KILL).
+  /// Если pid неизвестен (нет маркера, например Windows по SSH), прерываем Ctrl+C в терминале.
   Future<void> stop(ActiveExec exec, {required bool force}) async {
     exec.stopRequested = true;
     final pid = exec.pid;
-    if (pid == null) return;
-    await exec.runtime.killProcess(pid, force: force);
+    if (pid != null) {
+      await exec.runtime.killProcess(pid, force: force);
+    } else {
+      exec.terminal?.write(Uint8List.fromList(const [0x03]));
+    }
   }
 
   /// Останавливает все процессы чата (Stop). Очередь промптов от этого не меняется.

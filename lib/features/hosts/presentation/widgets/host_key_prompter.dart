@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -48,42 +49,21 @@ class _HostKeyPrompterState extends State<HostKeyPrompter> {
     _showing = true;
     final request = _queue.removeAt(0);
     final l10n = AppLocalizations.of(context);
-    final trusted = await showDialog<bool>(
-      context: context,
+    final host = request.host.address ?? request.host.name;
+    final trusted = await ConfirmDialog.confirm(
+      context,
+      title: request.isChanged
+          ? l10n.hostKeyChangedTitle
+          : l10n.hostKeyFirstUseTitle,
+      message: request.isChanged
+          ? l10n.hostKeyChangedBody(host, request.fingerprint)
+          : l10n.hostKeyFirstUseBody(host, request.fingerprint),
+      cancelLabel: l10n.hostKeyReject,
+      confirmLabel: l10n.hostKeyTrust,
+      destructive: request.isChanged,
       barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          request.isChanged
-              ? l10n.hostKeyChangedTitle
-              : l10n.hostKeyFirstUseTitle,
-        ),
-        content: Text(
-          request.isChanged
-              ? l10n.hostKeyChangedBody(
-                  request.host.address ?? request.host.name,
-                  request.fingerprint,
-                )
-              : l10n.hostKeyFirstUseBody(
-                  request.host.address ?? request.host.name,
-                  request.fingerprint,
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.hostKeyReject),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.hostKeyTrust),
-          ),
-        ],
-      ),
     );
-    getIt<HostKeyConfirmations>().resolve(
-      request.id,
-      trusted: trusted ?? false,
-    );
+    getIt<HostKeyConfirmations>().resolve(request.id, trusted: trusted);
     _showing = false;
     unawaited(_showNext());
   }

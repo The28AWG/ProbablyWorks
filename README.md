@@ -86,6 +86,7 @@ Dart-файлы с переводами генерируются командо�
 ```
 lib/
   app/        # запуск, DI, маршруты, тема, локализация, guards
+    ui/       # собственные виджеты (AppCard, ActionCard, ConfirmDialog, ...), см. docs/ui/WIDGET_BOOK.md
   core/       # база (drift), настройки, хосты, секреты, логи, утилиты
   agent/      # ядро агента: цикл, контекст, инструменты, политика, exec, состояние
   host/       # исполнение команд на хосте: local и SSH, управление процессами
@@ -101,7 +102,7 @@ lib/
 - `agent/context/` — сборка контекста (`ContextBuilder`) и сжатие истории (`ContextCompactor`).
 - `agent/policy/` — классификатор команд и политика Ask/Yolo.
 - `agent/state/` — ревизии состояния задачи: при каждом сообщении пользователя текущая ревизия запечатывается.
-- `host/` — `HostRuntime` для local и SSH, kill группы процессов и дерева детей.
+- `host/` — `HostRuntime` для local и SSH: служебные команды через pipe (`run`), команды агента в PTY (`openTerminal`), kill группы процессов и дерева детей.
 
 ## Данные и файлы
 
@@ -139,6 +140,16 @@ docker rm -f pw-sshd
 ```bash
 dart analyze lib test
 ```
+
+## UI
+
+Оформление строится на собственной теме (`lib/app/theme/`) и наборе виджетов `lib/app/ui/`:
+
+- [docs/ui/RULEBOOK.md](docs/ui/RULEBOOK.md) — правила UI/UX: токены, раскладка, состояния, клавиатура, доступность.
+- [docs/ui/WIDGET_BOOK.md](docs/ui/WIDGET_BOOK.md) — каталог собственных виджетов и таблица замен стандартных виджетов Material.
+
+Шрифты Inter и JetBrains Mono входят в `assets/fonts/`. Визуальные эталоны ключевых компонентов
+лежат в `test/app/ui/goldens/`, обновляются командой `flutter test --update-goldens test/app/ui/ui_kit_golden_test.dart`.
 
 ## Сборка
 

@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
@@ -53,44 +55,88 @@ class _OnboardingViewState extends State<_OnboardingView> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     return BlocConsumer<OnboardingCubit, OnboardingState>(
       listenWhen: (previous, current) =>
           current.created != null && previous.created != current.created,
       listener: _onChatCreated,
       builder: (context, state) {
         final cubit = context.read<OnboardingCubit>();
-        return Scaffold(
+        final steps = OnboardingStep.values;
+        final index = state.step.index;
+        return AppScaffold(
           body: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 640),
-              child: ListView(
-                padding: const EdgeInsets.all(24),
-                children: [
-                  Text(
-                    l10n.onboardingTitle,
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  const SizedBox(height: 12),
-                  Stepper(
-                    currentStep: state.step.index,
-                    controlsBuilder: (_, _) => const SizedBox.shrink(),
-                    steps: [
-                      for (final step in OnboardingStep.values)
-                        Step(
-                          title: Text(_stepTitle(step, l10n)),
-                          isActive: step == state.step,
-                          state: step.index < state.step.index
-                              ? StepState.complete
-                              : StepState.indexed,
-                          content: step == state.step
-                              ? _content(step, state, cubit, l10n)
-                              : const SizedBox.shrink(),
+              constraints: const BoxConstraints(
+                maxWidth: AppLayout.formMaxWidth,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      l10n.onboardingTitle,
+                      style: theme.textTheme.headlineSmall,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    OnboardingStepper(
+                      index: index,
+                      total: steps.length,
+                      counterLabel: l10n.onboardingStepCounter(
+                        index + 1,
+                        steps.length,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    Expanded(
+                      child: AppCard(
+                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primaryContainer,
+                                    borderRadius: AppRadius.mdAll,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(
+                                      AppSpacing.md,
+                                    ),
+                                    child: Icon(
+                                      _stepIcon(state.step),
+                                      color:
+                                          theme.colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Text(
+                                    _stepTitle(state.step, l10n),
+                                    style: theme.textTheme.titleLarge,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: _content(state, cubit, l10n),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            _controls(state, cubit, l10n),
+                          ],
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _controls(state, cubit, l10n),
-                ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -104,6 +150,15 @@ class _OnboardingViewState extends State<_OnboardingView> {
     context.router.push(ChatRoute(chatId: state.created!));
   }
 
+  static IconData _stepIcon(OnboardingStep step) => switch (step) {
+    OnboardingStep.welcome => Icons.auto_awesome_outlined,
+    OnboardingStep.key => Icons.key_outlined,
+    OnboardingStep.model => Icons.memory,
+    OnboardingStep.workspace => Icons.folder_open,
+    OnboardingStep.ssh => Icons.dns_outlined,
+    OnboardingStep.finish => Icons.chat_bubble_outline,
+  };
+
   String _stepTitle(OnboardingStep step, AppLocalizations l10n) =>
       switch (step) {
         OnboardingStep.welcome => l10n.onboardingStepWelcome,
@@ -114,46 +169,62 @@ class _OnboardingViewState extends State<_OnboardingView> {
         OnboardingStep.finish => l10n.onboardingStepFinish,
       };
 
+  void _onDefaultModelSelected(OnboardingCubit cubit, String? value) {
+    if (value != null) cubit.selectModel(value);
+  }
+
   Widget _content(
-    OnboardingStep step,
     OnboardingState state,
     OnboardingCubit cubit,
     AppLocalizations l10n,
-  ) => switch (step) {
-    OnboardingStep.welcome => Text(l10n.onboardingWelcome),
+  ) => switch (state.step) {
+    OnboardingStep.welcome => Text(
+      l10n.onboardingWelcome,
+      style: Theme.of(context).textTheme.bodyLarge,
+    ),
     OnboardingStep.key => Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(l10n.onboardingBody),
-        const SizedBox(height: 12),
-        TextField(
+        const SizedBox(height: AppSpacing.lg),
+        AppTextField(
           controller: _key,
-          obscureText: true,
+          obscure: true,
           enabled: !state.checking,
+          label: l10n.apiKeyLabel,
+          hint: l10n.apiKeyHint,
+          prefixIcon: Icons.key_outlined,
           onSubmitted: (_) => cubit.verifyKey(_key.text),
-          decoration: InputDecoration(
-            labelText: l10n.apiKeyLabel,
-            hintText: l10n.apiKeyHint,
-          ),
         ),
-        const SizedBox(height: 8),
-        if (state.checking) const LinearProgressIndicator(),
+        if (state.checking) ...[
+          const SizedBox(height: AppSpacing.md),
+          const LinearProgressIndicator(),
+        ],
         if (state.keyError != null)
-          Text(
-            l10n.commonError(TextClip.headTail(state.keyError!, maxChars: 300)),
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          AppBanner(
+            margin: EdgeInsets.zero,
+            tone: AppTone.danger,
+            icon: Icons.error_outline,
+            message: l10n.commonError(
+              TextClip.headTail(state.keyError!, maxChars: 300),
+            ),
           ),
         if (state.keyVerified)
-          Text(l10n.onboardingKeyVerified(state.models.length)),
+          AppBanner(
+            margin: EdgeInsets.zero,
+            tone: AppTone.success,
+            icon: Icons.check_circle_outline,
+            message: l10n.onboardingKeyVerified(state.models.length),
+          ),
       ],
     ),
     OnboardingStep.model => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(l10n.onboardingModelHint),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.lg),
         DropdownMenu<String>(
-          width: 480,
+          expandedInsets: EdgeInsets.zero,
           enableFilter: true,
           initialSelection: state.defaultModel,
           label: Text(l10n.settingsDefaultModel),
@@ -162,7 +233,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
               if (model.supportsTools)
                 DropdownMenuEntry(value: model.id, label: model.name),
           ],
-          onSelected: (value) => _onModelSelected(cubit, value),
+          onSelected: (value) => _onDefaultModelSelected(cubit, value),
         ),
       ],
     ),
@@ -170,16 +241,15 @@ class _OnboardingViewState extends State<_OnboardingView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(l10n.onboardingWorkspaceBody),
-        const SizedBox(height: 12),
-        TextField(
+        const SizedBox(height: AppSpacing.lg),
+        AppTextField(
           controller: _workspace,
-          decoration: InputDecoration(
-            labelText: l10n.hostDefaultWorkspaceLabel,
-            suffixIcon: IconButton(
-              tooltip: l10n.hostPickFolder,
-              icon: const Icon(Icons.folder_open),
-              onPressed: _pickWorkspaceFolder,
-            ),
+          label: l10n.hostDefaultWorkspaceLabel,
+          mono: true,
+          suffix: IconButton(
+            tooltip: l10n.hostPickFolder,
+            icon: const Icon(Icons.folder_open),
+            onPressed: _pickWorkspaceFolder,
           ),
         ),
       ],
@@ -187,10 +257,6 @@ class _OnboardingViewState extends State<_OnboardingView> {
     OnboardingStep.ssh => Text(l10n.onboardingSshBody),
     OnboardingStep.finish => Text(l10n.chatEmptyState),
   };
-
-  void _onModelSelected(OnboardingCubit cubit, String? value) {
-    if (value != null) cubit.selectModel(value);
-  }
 
   Future<void> _pickWorkspaceFolder() async {
     final path = await getDirectoryPath();
@@ -245,8 +311,8 @@ class _OnboardingViewState extends State<_OnboardingView> {
         step == OnboardingStep.ssh;
     return Wrap(
       alignment: WrapAlignment.end,
-      spacing: 8,
-      runSpacing: 8,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
       children: [
         if (step.index > 0)
           TextButton(onPressed: cubit.back, child: Text(l10n.onboardingBack)),

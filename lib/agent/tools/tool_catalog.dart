@@ -88,7 +88,9 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.runCommand,
       description:
-          'Run a shell command on the host. Read-only commands run automatically; others need user approval. '
+          'Run a shell command on the host in a real terminal (PTY) of the command\'s own size. The user sees the output live and can type into it. '
+          'Read-only commands run automatically; others need user approval. '
+          'You cannot type input: a command that waits for input blocks until it times out, so use non-interactive flags (for example -y or --no-pager). '
           'Privilege escalation (sudo, su, doas, pkexec) is forbidden. Set background=true for long-running commands; '
           'you will be notified when they finish.',
       parameters: {

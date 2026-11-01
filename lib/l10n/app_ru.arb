@@ -110,9 +110,9 @@
   "@chatModelLabel": {
     "description": "Подпись выбора модели для чата."
   },
-  "chatModelNotSelected": "Модель не выбрана. Выберите её в шапке чата или в настройках.",
-  "@chatModelNotSelected": {
-    "description": "Ошибка, если ход начат без выбранной модели."
+  "chatModelPick": "Выбрать модель",
+  "@chatModelPick": {
+    "description": "Значение чипа модели, когда не выбрана ни модель чата, ни модель по умолчанию. Чип подсвечен как предупреждение."
   },
   "chatWorkspaceLabel": "Рабочая папка",
   "@chatWorkspaceLabel": {
@@ -129,10 +129,6 @@
   "composerSend": "Отправить",
   "@composerSend": {
     "description": "Кнопка отправки: сообщение уйдёт после текущего шага агента."
-  },
-  "composerSendNow": "Отправить сейчас",
-  "@composerSendNow": {
-    "description": "Кнопка: прервать текущий шаг модели и отправить сообщение немедленно."
   },
   "composerStop": "Стоп",
   "@composerStop": {
@@ -642,6 +638,15 @@
       }
     }
   },
+  "runExitCode": "Код выхода {code}",
+  "@runExitCode": {
+    "description": "Под выводом команды: код выхода завершившегося процесса.",
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "runDuration": "{seconds} с",
   "@runDuration": {
     "description": "Tool card header: how long the command ran.",
@@ -756,5 +761,216 @@
   "onboardingStepFinish": "Первый чат",
   "@onboardingStepFinish": {
     "description": "Onboarding step title: create the first chat."
+  },
+  "chatsGroupToday": "Сегодня",
+  "@chatsGroupToday": {
+    "description": "Chat list group header: chats updated today."
+  },
+  "chatsGroupYesterday": "Вчера",
+  "@chatsGroupYesterday": {
+    "description": "Chat list group header: chats updated yesterday."
+  },
+  "chatsGroupEarlier": "Ранее",
+  "@chatsGroupEarlier": {
+    "description": "Chat list group header: chats updated before yesterday."
+  },
+  "chatsSearchHint": "Поиск по чатам",
+  "@chatsSearchHint": {
+    "description": "Placeholder of the chat search field."
+  },
+  "chatsSearchEmpty": "Ничего не найдено",
+  "@chatsSearchEmpty": {
+    "description": "Chat list message when search matches nothing."
+  },
+  "chatContextTitle": "Контекст чата",
+  "@chatContextTitle": {
+    "description": "Title of the side panel with workspace and context usage; also its toolbar tooltip."
+  },
+  "chatContextHint": "Окно контекста модели заполняется по мере диалога. Сжатие заменяет старую часть истории краткой сводкой и освобождает место.",
+  "@chatContextHint": {
+    "description": "Hint in the chat context panel."
+  },
+  "commonCopy": "Копировать",
+  "@commonCopy": {
+    "description": "Generic copy button tooltip."
+  },
+  "commonMore": "Ещё",
+  "@commonMore": {
+    "description": "Generic tooltip of the overflow menu button."
+  },
+  "runShowOutput": "Показать вывод",
+  "@runShowOutput": {
+    "description": "Tooltip of the tool step button that expands the command output."
+  },
+  "runHideOutput": "Скрыть вывод",
+  "@runHideOutput": {
+    "description": "Tooltip of the tool step button that collapses the command output."
+  },
+  "onboardingStepCounter": "Шаг {current} из {total}",
+  "@onboardingStepCounter": {
+    "description": "Onboarding progress label, for example Step 2 of 6.",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "hostStatusOnline": "Доступен",
+  "@hostStatusOnline": {
+    "description": "Host status chip: last connection check succeeded."
+  },
+  "hostStatusFailed": "Недоступен",
+  "@hostStatusFailed": {
+    "description": "Host status chip: last connection check failed."
+  },
+  "hostStatusUnknown": "Не проверен",
+  "@hostStatusUnknown": {
+    "description": "Host status chip: connection was never checked."
+  },
+  "hostFormSectionConnection": "Подключение",
+  "@hostFormSectionConnection": {
+    "description": "Host form section: address, port, user."
+  },
+  "hostFormSectionAuth": "Аутентификация",
+  "@hostFormSectionAuth": {
+    "description": "Host form section: SSH auth type and secret."
+  },
+  "hostFormSectionEnvironment": "Окружение",
+  "@hostFormSectionEnvironment": {
+    "description": "Host form section: workspace, shell, timeout and notes."
+  },
+  "settingsGroupAccount": "API и модели",
+  "@settingsGroupAccount": {
+    "description": "Settings group: OpenRouter key and models."
+  },
+  "settingsGroupAccountHint": "Ключ OpenRouter и модели для агента и заголовков чатов.",
+  "@settingsGroupAccountHint": {
+    "description": "Description of the API and models settings group."
+  },
+  "settingsGroupInterface": "Интерфейс",
+  "@settingsGroupInterface": {
+    "description": "Settings group: interface options."
+  },
+  "settingsGroupInterfaceHint": "Язык интерфейса.",
+  "@settingsGroupInterfaceHint": {
+    "description": "Description of the interface settings group."
+  },
+  "settingsGroupSafety": "Безопасность",
+  "@settingsGroupSafety": {
+    "description": "Settings group: execution policy and denylist."
+  },
+  "settingsGroupSafetyHint": "Политика по умолчанию для новых чатов и команды, которые запрещены всегда.",
+  "@settingsGroupSafetyHint": {
+    "description": "Description of the safety settings group."
+  },
+  "settingsGroupAdvanced": "Дополнительно",
+  "@settingsGroupAdvanced": {
+    "description": "Settings group: limits in JSON."
+  },
+  "settingsGroupAdvancedHint": "Лимиты вложений и рантайма в формате JSON.",
+  "@settingsGroupAdvancedHint": {
+    "description": "Description of the advanced settings group."
+  },
+  "policyAskHint": "Подтверждать команды с риском и любые правки файлов.",
+  "policyYoloHint": "Выполнять команды и правки без подтверждения. Запрещённые команды всё равно блокируются.",
+  "@policyAskHint": {
+    "description": "Подсказка под режимом «Спрашивать» в меню политики чата."
+  },
+  "@policyYoloHint": {
+    "description": "Подсказка под режимом «Авто-подтверждение» в меню политики чата."
+  },
+  "chatWorkspaceHint": "Папка, в которой агент выполняет команды на выбранном хосте. Сохраняется по кнопке «Сохранить».",
+  "@chatWorkspaceHint": {
+    "description": "Пояснение в диалоге смены рабочей папки."
+  },
+  "contextNoData": "Данных пока нет. Они появятся после первого ответа модели.",
+  "@contextNoData": {
+    "description": "Текст в диалоге контекста до первого ответа модели."
+  },
+  "chatWelcomeTitle": "С чего начнём?",
+  "@chatWelcomeTitle": {
+    "description": "Заголовок пустого чата."
+  },
+  "chatWelcomeSubtitle": "Агент выполняет команды на «{host}». Опишите задачу или начните с подсказки.",
+  "@chatWelcomeSubtitle": {
+    "description": "Подзаголовок пустого чата с названием хоста, где выполняются команды.",
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "chatSuggestion1": "Объясни структуру проекта и основные точки входа",
+  "@chatSuggestion1": {
+    "description": "Стартовый запрос в пустом чате; подставляется в поле ввода."
+  },
+  "chatSuggestion2": "Найди причину падающих тестов и предложи исправление",
+  "@chatSuggestion2": {
+    "description": "Стартовый запрос в пустом чате; подставляется в поле ввода."
+  },
+  "chatSuggestion3": "Покажи, что изменилось с последнего коммита",
+  "@chatSuggestion3": {
+    "description": "Стартовый запрос в пустом чате; подставляется в поле ввода."
+  },
+  "messageCopied": "Скопировано",
+  "@messageCopied": {
+    "description": "Уведомление после копирования сообщения в буфер обмена."
+  },
+  "chatScrollToLatest": "К новым сообщениям",
+  "@chatScrollToLatest": {
+    "description": "Кнопка возврата к последнему сообщению чата."
+  },
+  "compactionMarker": "Ранние сообщения сжаты в сводку",
+  "@compactionMarker": {
+    "description": "Метка в ленте над сообщениями, которые вошли в сводку."
+  },
+  "compactionShowSummary": "Показать сводку",
+  "@compactionShowSummary": {
+    "description": "Раскрывает текст сводки под меткой сжатия."
+  },
+  "compactionHideSummary": "Скрыть сводку",
+  "@compactionHideSummary": {
+    "description": "Скрывает текст сводки под меткой сжатия."
+  },
+  "stepsGroupDone": "{count, plural, one{1 действие} few{{count} действия} many{{count} действий} other{{count} действия}}",
+  "@stepsGroupDone": {
+    "description": "Заголовок завершённой группы шагов инструментов.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stepsGroupActive": "Выполняется: {done} из {total}",
+  "@stepsGroupActive": {
+    "description": "Заголовок группы шагов, которая ещё выполняется.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "stepsGroupFailed": "Ошибок: {count}",
+  "@stepsGroupFailed": {
+    "description": "Часть заголовка группы шагов: сколько шагов завершились ошибкой.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composerHintIdle": "Enter — отправить · Shift+Enter — новая строка",
+  "@composerHintIdle": {
+    "description": "Подсказка клавиш под композером, когда агент не работает."
+  },
+  "composerHintBusy": "Enter — в очередь · Ctrl+Enter — отправить сразу",
+  "@composerHintBusy": {
+    "description": "Подсказка клавиш под композером во время работы агента."
   }
 }

@@ -36,6 +36,29 @@ class ProcessControl {
     _ => _posixWrap(script),
   };
 
+  /// Обёртка для запуска в PTY. `setsid` не нужен: PTY делает процесс лидером сессии и группы сам.
+  /// `exec` сохраняет pid, поэтому маркер `$$` совпадает с pid группы, и kill по нему работает.
+  /// Пейджеры отключаются: интерактивный `less` иначе повиснет без ввода агента.
+  ///
+  /// Конец команды: обёртка печатает маркер кода выхода в самом потоке вывода и ждёт строку
+  /// подтверждения (см. [exitMarkerPrefix]). Так весь вывод доставлен до того, как процесс завершится:
+  /// flutter_pty закрывает вывод сразу при получении кода выхода и мог бы потерять хвост.
+  String wrapTerminal(String script) => switch (os) {
+    HostOs.windows => script,
+    _ =>
+      'exec $_shell -c ${shQuote('$_terminalEnv echo $markerPrefix\$\$; ( $script\n); $_terminalEpilogue')}',
+  };
+
+  static const _terminalEnv =
+      'export TERM=xterm-256color PAGER=cat GIT_PAGER=cat;';
+
+  static const _terminalEpilogue =
+      r'pw_rc=$?; stty -echo 2>/dev/null; '
+      r'printf "\033]PW;EXIT=%s\007" "$pw_rc"; read -r pw_ack; exit "$pw_rc"';
+
+  /// Начало маркера кода выхода в выводе PTY: `ESC ] PW;EXIT=`. Завершается BEL и кодом.
+  static const exitMarkerPrefix = '\x1b]PW;EXIT=';
+
   /// `setsid -w` есть в util-linux, но не в BusyBox (Alpine), где он падает с ошибкой опции.
   /// Если `setsid -w` недоступен, команда запускается напрямую: на SSH она уже лидер группы (sshd).
   String _posixWrap(String script) {

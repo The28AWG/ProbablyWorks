@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/process_control.dart';
 
 /// События одного запуска команды на Host.
@@ -49,7 +50,18 @@ abstract interface class HostRuntime {
   HostOs get os;
 
   /// Запускает [command] и отдаёт поток событий. Отписка от потока НЕ останавливает процесс.
+  /// Для служебных команд: stdout и stderr разделены, TTY нет.
   Stream<ExecEvent> run(String command, {String? cwd});
+
+  /// Запускает [command] в PTY-терминале Host: команда видит настоящий TTY размера
+  /// [columns]×[rows]. Размер меняется через [HostTerminal.resize]. Бросает [HostFailure],
+  /// если запуск не удался.
+  Future<HostTerminal> openTerminal(
+    String command, {
+    String? cwd,
+    int columns = defaultTerminalColumns,
+    int rows = defaultTerminalRows,
+  });
 }
 
 extension HostRuntimeKill on HostRuntime {

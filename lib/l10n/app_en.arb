@@ -110,9 +110,9 @@
   "@chatModelLabel": {
     "description": "Label of the model selector for a chat."
   },
-  "chatModelNotSelected": "Model is not selected. Choose one in the chat header or in Settings.",
-  "@chatModelNotSelected": {
-    "description": "Error shown when a turn starts without a selected model."
+  "chatModelPick": "Choose model",
+  "@chatModelPick": {
+    "description": "Model chip value when neither the chat nor the default settings have a model. The chip is highlighted as a warning."
   },
   "chatWorkspaceLabel": "Workspace",
   "@chatWorkspaceLabel": {
@@ -129,10 +129,6 @@
   "composerSend": "Send",
   "@composerSend": {
     "description": "Button that sends the message after the agent finishes its current step."
-  },
-  "composerSendNow": "Send now",
-  "@composerSendNow": {
-    "description": "Button that interrupts the current model step and sends the message immediately."
   },
   "composerStop": "Stop",
   "@composerStop": {
@@ -642,6 +638,15 @@
       }
     }
   },
+  "runExitCode": "Exit code {code}",
+  "@runExitCode": {
+    "description": "Under the command output: exit code of the finished process.",
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "runDuration": "{seconds} s",
   "@runDuration": {
     "description": "Tool card header: how long the command ran.",
@@ -756,5 +761,216 @@
   "onboardingStepFinish": "First chat",
   "@onboardingStepFinish": {
     "description": "Onboarding step title: create the first chat."
+  },
+  "chatsGroupToday": "Today",
+  "@chatsGroupToday": {
+    "description": "Chat list group header: chats updated today."
+  },
+  "chatsGroupYesterday": "Yesterday",
+  "@chatsGroupYesterday": {
+    "description": "Chat list group header: chats updated yesterday."
+  },
+  "chatsGroupEarlier": "Earlier",
+  "@chatsGroupEarlier": {
+    "description": "Chat list group header: chats updated before yesterday."
+  },
+  "chatsSearchHint": "Search chats",
+  "@chatsSearchHint": {
+    "description": "Placeholder of the chat search field."
+  },
+  "chatsSearchEmpty": "Nothing found",
+  "@chatsSearchEmpty": {
+    "description": "Chat list message when search matches nothing."
+  },
+  "chatContextTitle": "Chat context",
+  "@chatContextTitle": {
+    "description": "Title of the side panel with workspace and context usage; also its toolbar tooltip."
+  },
+  "chatContextHint": "The model's context window fills up as the chat grows. Compacting replaces the older part of the history with a short summary and frees space.",
+  "@chatContextHint": {
+    "description": "Hint in the chat context panel."
+  },
+  "commonCopy": "Copy",
+  "@commonCopy": {
+    "description": "Generic copy button tooltip."
+  },
+  "commonMore": "More",
+  "@commonMore": {
+    "description": "Generic tooltip of the overflow menu button."
+  },
+  "runShowOutput": "Show output",
+  "@runShowOutput": {
+    "description": "Tooltip of the tool step button that expands the command output."
+  },
+  "runHideOutput": "Hide output",
+  "@runHideOutput": {
+    "description": "Tooltip of the tool step button that collapses the command output."
+  },
+  "onboardingStepCounter": "Step {current} of {total}",
+  "@onboardingStepCounter": {
+    "description": "Onboarding progress label, for example Step 2 of 6.",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "hostStatusOnline": "Online",
+  "@hostStatusOnline": {
+    "description": "Host status chip: last connection check succeeded."
+  },
+  "hostStatusFailed": "Unreachable",
+  "@hostStatusFailed": {
+    "description": "Host status chip: last connection check failed."
+  },
+  "hostStatusUnknown": "Not checked",
+  "@hostStatusUnknown": {
+    "description": "Host status chip: connection was never checked."
+  },
+  "hostFormSectionConnection": "Connection",
+  "@hostFormSectionConnection": {
+    "description": "Host form section: address, port, user."
+  },
+  "hostFormSectionAuth": "Authentication",
+  "@hostFormSectionAuth": {
+    "description": "Host form section: SSH auth type and secret."
+  },
+  "hostFormSectionEnvironment": "Environment",
+  "@hostFormSectionEnvironment": {
+    "description": "Host form section: workspace, shell, timeout and notes."
+  },
+  "settingsGroupAccount": "API and models",
+  "@settingsGroupAccount": {
+    "description": "Settings group: OpenRouter key and models."
+  },
+  "settingsGroupAccountHint": "OpenRouter key and models for the agent and chat titles.",
+  "@settingsGroupAccountHint": {
+    "description": "Description of the API and models settings group."
+  },
+  "settingsGroupInterface": "Interface",
+  "@settingsGroupInterface": {
+    "description": "Settings group: interface options."
+  },
+  "settingsGroupInterfaceHint": "Interface language.",
+  "@settingsGroupInterfaceHint": {
+    "description": "Description of the interface settings group."
+  },
+  "settingsGroupSafety": "Safety",
+  "@settingsGroupSafety": {
+    "description": "Settings group: execution policy and denylist."
+  },
+  "settingsGroupSafetyHint": "Default policy for new chats and commands that are always denied.",
+  "@settingsGroupSafetyHint": {
+    "description": "Description of the safety settings group."
+  },
+  "settingsGroupAdvanced": "Advanced",
+  "@settingsGroupAdvanced": {
+    "description": "Settings group: limits in JSON."
+  },
+  "settingsGroupAdvancedHint": "Attachment limits and runtime limits in JSON.",
+  "@settingsGroupAdvancedHint": {
+    "description": "Description of the advanced settings group."
+  },
+  "policyAskHint": "Ask before risky commands and any file edits.",
+  "policyYoloHint": "Run commands and edits without asking. Denied commands are still blocked.",
+  "@policyAskHint": {
+    "description": "Hint under the Ask policy in the chat policy menu."
+  },
+  "@policyYoloHint": {
+    "description": "Hint under the Auto-approve policy in the chat policy menu."
+  },
+  "chatWorkspaceHint": "The folder where the agent runs commands on the selected host. Saved with the Save button.",
+  "@chatWorkspaceHint": {
+    "description": "Hint in the workspace change dialog."
+  },
+  "contextNoData": "No data yet. It appears after the model's first reply.",
+  "@contextNoData": {
+    "description": "Text in the context dialog before the first model reply."
+  },
+  "chatWelcomeTitle": "What should we work on?",
+  "@chatWelcomeTitle": {
+    "description": "Heading of the empty chat."
+  },
+  "chatWelcomeSubtitle": "The agent runs commands on “{host}”. Describe a task or start from a suggestion.",
+  "@chatWelcomeSubtitle": {
+    "description": "Empty chat subtitle naming the host where commands run.",
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "chatSuggestion1": "Explain the project structure and its main entry points",
+  "@chatSuggestion1": {
+    "description": "Starter prompt in the empty chat; fills the composer."
+  },
+  "chatSuggestion2": "Find why the tests fail and suggest a fix",
+  "@chatSuggestion2": {
+    "description": "Starter prompt in the empty chat; fills the composer."
+  },
+  "chatSuggestion3": "Show what changed since the last commit",
+  "@chatSuggestion3": {
+    "description": "Starter prompt in the empty chat; fills the composer."
+  },
+  "messageCopied": "Copied",
+  "@messageCopied": {
+    "description": "Snackbar after copying a message to the clipboard."
+  },
+  "chatScrollToLatest": "Jump to latest",
+  "@chatScrollToLatest": {
+    "description": "Button that returns the chat to the newest message."
+  },
+  "compactionMarker": "Earlier messages were compacted into a summary",
+  "@compactionMarker": {
+    "description": "Marker in the transcript above the messages that were summarized."
+  },
+  "compactionShowSummary": "Show summary",
+  "@compactionShowSummary": {
+    "description": "Expands the compaction summary under the marker."
+  },
+  "compactionHideSummary": "Hide summary",
+  "@compactionHideSummary": {
+    "description": "Collapses the compaction summary under the marker."
+  },
+  "stepsGroupDone": "{count, plural, one{1 action} other{{count} actions}}",
+  "@stepsGroupDone": {
+    "description": "Header of a finished group of tool steps.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stepsGroupActive": "Running: {done} of {total}",
+  "@stepsGroupActive": {
+    "description": "Header of a running group of tool steps.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "stepsGroupFailed": "Errors: {count}",
+  "@stepsGroupFailed": {
+    "description": "Header part showing how many steps in a group failed.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composerHintIdle": "Enter sends · Shift+Enter adds a line",
+  "@composerHintIdle": {
+    "description": "Keyboard hint under the composer when the agent is idle."
+  },
+  "composerHintBusy": "Enter queues the message · Ctrl+Enter sends it now",
+  "@composerHintBusy": {
+    "description": "Keyboard hint under the composer while the agent is working."
   }
 }

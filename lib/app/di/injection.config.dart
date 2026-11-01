@@ -32,7 +32,9 @@ import '../../core/data/settings_repository.dart' as _i913;
 import '../../core/db/app_database.dart' as _i386;
 import '../../core/notify/desktop_notifier.dart' as _i458;
 import '../../core/security/secret_store.dart' as _i617;
+import '../../host/flutter_pty_launcher.dart' as _i348;
 import '../../host/host_runtime_factory.dart' as _i559;
+import '../../host/pty_launcher.dart' as _i532;
 import '../../host/ssh_connection_pool.dart' as _i719;
 import '../../providers/ai/llm_port.dart' as _i432;
 import '../bootstrap/app_paths.dart' as _i859;
@@ -89,6 +91,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i913.SettingsRepository>(),
       ),
     );
+    gh.lazySingleton<_i532.PtyLauncher>(() => const _i348.FlutterPtyLauncher());
     gh.singleton<_i432.LlmProvider>(
       () => coreModule.llmProvider(gh<_i617.SecretStore>()),
     );
@@ -123,11 +126,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i531.ContextBuilder>(),
       ),
     );
-    gh.lazySingleton<_i559.HostRuntimeFactory>(
-      () => _i559.HostRuntimeFactory(gh<_i719.SshConnectionPool>()),
-    );
     gh.singleton<_i81.AppRouter>(
       () => coreModule.appRouter(gh<_i519.ApiKeyGuard>()),
+    );
+    gh.lazySingleton<_i559.HostRuntimeFactory>(
+      () => _i559.HostRuntimeFactory(
+        gh<_i719.SshConnectionPool>(),
+        gh<_i532.PtyLauncher>(),
+      ),
     );
     gh.lazySingleton<_i125.ToolExecutor>(
       () => _i125.ToolExecutor(

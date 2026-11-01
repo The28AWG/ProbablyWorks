@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
@@ -27,6 +29,9 @@ class SettingsPage extends StatelessWidget {
   );
 }
 
+/// Группы настроек. На широком экране выбирается одна группа слева, на узком — все группы списком.
+enum _Group { account, interface, safety, advanced }
+
 class _SettingsView extends StatefulWidget {
   const _SettingsView();
 
@@ -42,6 +47,7 @@ class _SettingsViewState extends State<_SettingsView> {
   final _attachMaxBytes = TextEditingController();
   String? _attachError;
   bool _initialized = false;
+  var _group = _Group.account;
 
   @override
   void dispose() {
@@ -51,15 +57,6 @@ class _SettingsViewState extends State<_SettingsView> {
     _attachPerMessage.dispose();
     _attachMaxBytes.dispose();
     super.dispose();
-  }
-
-  Future<void> _saveApiKey(SettingsCubit cubit) async {
-    await cubit.saveApiKey(_apiKey.text);
-    _apiKey.clear();
-  }
-
-  void _onPinSelected(SettingsCubit cubit, String? value) {
-    if (value != null) cubit.togglePin(value);
   }
 
   void _saveAttachLimits(SettingsCubit cubit, AppLocalizations l10n) {
@@ -76,14 +73,22 @@ class _SettingsViewState extends State<_SettingsView> {
     cubit.saveAttachLimits(perMessage: perMessage, maxBytes: maxBytes);
   }
 
+  Future<void> _saveApiKey(SettingsCubit cubit) async {
+    await cubit.saveApiKey(_apiKey.text);
+    _apiKey.clear();
+  }
+
+  void _onPinModelSelected(SettingsCubit cubit, String? value) {
+    if (value != null) cubit.togglePin(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(l10n.settingsSaved))),
+          AppSnackBar.show(context, l10n.settingsSaved),
       builder: (context, state) {
         if (!_initialized && state.limitsJson.isNotEmpty) {
           _denylist.text = state.denylist;
@@ -94,280 +99,446 @@ class _SettingsViewState extends State<_SettingsView> {
           _initialized = true;
         }
         final cubit = context.read<SettingsCubit>();
-        // Модель по умолчанию ведёт агента, поэтому без tool calling она недоступна; для заголовков подходит любая.
-        final defaultEntries = [
-          for (final m in state.models)
-            DropdownMenuEntry(
-              value: m.id,
-              label: m.supportsTools
-                  ? m.name
-                  : '${m.name} · ${l10n.modelNoTools}',
-              enabled: m.supportsTools,
-            ),
-        ];
-        final titleEntries = [
-          for (final m in state.models)
-            DropdownMenuEntry(value: m.id, label: m.name),
-        ];
-        final defaultLacksTools = state.models.any(
-          (m) => m.id == state.defaultModel && !m.supportsTools,
-        );
-        final unpinned = [
-          for (final m in state.models)
-            if (!state.pinnedModels.contains(m.id))
-              DropdownMenuEntry(value: m.id, label: m.name),
-        ];
-        return Scaffold(
+        final groups = <_Group, List<Widget>>{
+          _Group.account: _accountSections(state, cubit, l10n),
+          _Group.interface: _interfaceSections(state, cubit, l10n),
+          _Group.safety: _safetySections(state, cubit, l10n),
+          _Group.advanced: _advancedSections(state, cubit, l10n),
+        };
+        final titles = <_Group, (String, String)>{
+          _Group.account: (
+            l10n.settingsGroupAccount,
+            l10n.settingsGroupAccountHint,
+          ),
+          _Group.interface: (
+            l10n.settingsGroupInterface,
+            l10n.settingsGroupInterfaceHint,
+          ),
+          _Group.safety: (
+            l10n.settingsGroupSafety,
+            l10n.settingsGroupSafetyHint,
+          ),
+          _Group.advanced: (
+            l10n.settingsGroupAdvanced,
+            l10n.settingsGroupAdvancedHint,
+          ),
+        };
+        return AppScaffold(
           appBar: AppBar(title: Text(l10n.settingsTitle)),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _Section(
-                title: l10n.settingsApiKey,
-                children: [
-                  TextField(
-                    controller: _apiKey,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.apiKeyLabel,
-                      hintText: state.apiKeySet ? '••••••••' : l10n.apiKeyHint,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(
-                      onPressed: () => _saveApiKey(cubit),
-                      child: Text(l10n.commonSave),
-                    ),
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsDefaultModel,
-                children: [
-                  DropdownMenu<String>(
-                    width: 420,
-                    enableFilter: true,
-                    initialSelection: state.defaultModel.isEmpty
-                        ? null
-                        : state.defaultModel,
-                    dropdownMenuEntries: defaultEntries,
-                    label: Text(l10n.settingsDefaultModel),
-                    onSelected: (value) => cubit.saveModels(
-                      defaultModel: value ?? '',
-                      titleModel: state.titleModel,
-                    ),
-                  ),
-                  if (defaultLacksTools)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        l10n.settingsNoToolsWarning,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= AppBreakpoints.medium;
+              if (wide) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 240,
+                      child: ListView(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        children: [
+                          for (final group in _Group.values)
+                            _GroupTile(
+                              icon: _groupIcon(group),
+                              title: titles[group]!.$1,
+                              selected: group == _group,
+                              onTap: () => setState(() => _group = group),
+                            ),
+                        ],
                       ),
                     ),
-                  const SizedBox(height: 12),
-                  DropdownMenu<String>(
-                    width: 420,
-                    enableFilter: true,
-                    initialSelection: state.titleModel.isEmpty
-                        ? null
-                        : state.titleModel,
-                    dropdownMenuEntries: titleEntries,
-                    label: Text(l10n.settingsTitleModel),
-                    onSelected: (value) => cubit.saveModels(
-                      defaultModel: state.defaultModel,
-                      titleModel: value ?? '',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        icon: state.modelsLoading
-                            ? const SizedBox.square(
-                                dimension: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.refresh),
-                        label: Text(l10n.settingsModelsRefresh),
-                        onPressed: state.modelsLoading
-                            ? null
-                            : cubit.refreshModels,
-                      ),
-                      if (state.modelsError != null) ...[
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            l10n.commonError(state.modelsError!),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                    const VerticalDivider(width: 1),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        children: [
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: AppLayout.pageMaxWidth,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _GroupHeader(
+                                    title: titles[_group]!.$1,
+                                    hint: titles[_group]!.$2,
+                                  ),
+                                  const SizedBox(height: AppSpacing.xl),
+                                  for (final section in groups[_group]!) ...[
+                                    section,
+                                    const SizedBox(height: AppSpacing.xl),
+                                  ],
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsPinnedModels,
-                children: [
-                  Text(l10n.settingsPinnedHint),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final id in state.pinnedModels)
-                        InputChip(
-                          label: Text(_modelName(id, state.models)),
-                          onDeleted: () => cubit.togglePin(id),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownMenu<String>(
-                    key: ValueKey('pin-${state.pinnedModels.length}'),
-                    width: 420,
-                    enableFilter: true,
-                    label: Text(l10n.settingsPinnedModels),
-                    dropdownMenuEntries: unpinned,
-                    onSelected: (value) => _onPinSelected(cubit, value),
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsLanguage,
-                children: [
-                  DropdownMenu<String>(
-                    initialSelection: state.language,
-                    dropdownMenuEntries: [
-                      DropdownMenuEntry(
-                        value: 'system',
-                        label: l10n.settingsLanguageSystem,
+                        ],
                       ),
-                      const DropdownMenuEntry(value: 'en', label: 'English'),
-                      const DropdownMenuEntry(value: 'ru', label: 'Русский'),
-                    ],
-                    onSelected: (value) =>
-                        cubit.saveLanguage(value ?? 'system'),
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsDefaultPolicy,
-                children: [
-                  SegmentedButton<PolicyMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: PolicyMode.ask,
-                        label: Text(l10n.policyAsk),
-                      ),
-                      ButtonSegment(
-                        value: PolicyMode.yolo,
-                        label: Text(l10n.policyYolo),
-                      ),
-                    ],
-                    selected: {state.defaultPolicy},
-                    onSelectionChanged: (value) =>
-                        cubit.saveDefaultPolicy(value.first),
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsDenylist,
-                children: [
-                  TextField(
-                    controller: _denylist,
-                    minLines: 3,
-                    maxLines: 8,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(
-                      onPressed: () => cubit.saveDenylist(_denylist.text),
-                      child: Text(l10n.commonSave),
+                  ],
+                );
+              }
+              return ListView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: AppLayout.pageMaxWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final group in _Group.values) ...[
+                            _GroupHeader(
+                              title: titles[group]!.$1,
+                              hint: titles[group]!.$2,
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            for (final section in groups[group]!) ...[
+                              section,
+                              const SizedBox(height: AppSpacing.xl),
+                            ],
+                            const SizedBox(height: AppSpacing.lg),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
-              ),
-              _Section(
-                title: l10n.settingsAttachLimits,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _attachPerMessage,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: l10n.settingsAttachPerMessage,
-                            errorText: _attachError,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: _attachMaxBytes,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: l10n.settingsAttachMaxBytes,
-                            errorText: _attachError,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(
-                      onPressed: () => _saveAttachLimits(cubit, l10n),
-                      child: Text(l10n.commonSave),
-                    ),
-                  ),
-                ],
-              ),
-              _Section(
-                title: l10n.settingsLimits,
-                children: [
-                  TextField(
-                    controller: _limits,
-                    minLines: 6,
-                    maxLines: 16,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                    decoration: InputDecoration(
-                      border: const OutlineInputBorder(),
-                      errorText: state.limitsError
-                          ? l10n.settingsLimitsInvalid
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton(
-                      onPressed: () => cubit.saveLimits(_limits.text),
-                      child: Text(l10n.commonSave),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              );
+            },
           ),
         );
       },
+    );
+  }
+
+  List<Widget> _accountSections(
+    SettingsState state,
+    SettingsCubit cubit,
+    AppLocalizations l10n,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    // Модель по умолчанию ведёт агента, поэтому без tool calling она недоступна; для заголовков подходит любая.
+    final defaultEntries = [
+      for (final m in state.models)
+        DropdownMenuEntry(
+          value: m.id,
+          label: m.supportsTools ? m.name : '${m.name} · ${l10n.modelNoTools}',
+          enabled: m.supportsTools,
+        ),
+    ];
+    final titleEntries = [
+      for (final m in state.models)
+        DropdownMenuEntry(value: m.id, label: m.name),
+    ];
+    final defaultLacksTools = state.models.any(
+      (m) => m.id == state.defaultModel && !m.supportsTools,
+    );
+    final unpinned = [
+      for (final m in state.models)
+        if (!state.pinnedModels.contains(m.id))
+          DropdownMenuEntry(value: m.id, label: m.name),
+    ];
+    return [
+      AppSection(
+        title: l10n.settingsApiKey,
+        trailing: FilledButton(
+          onPressed: () => _saveApiKey(cubit),
+          child: Text(l10n.commonSave),
+        ),
+        children: [
+          AppTextField(
+            controller: _apiKey,
+            obscure: true,
+            label: l10n.apiKeyLabel,
+            hint: state.apiKeySet ? '••••••••' : l10n.apiKeyHint,
+            prefixIcon: Icons.key_outlined,
+          ),
+        ],
+      ),
+      AppSection(
+        title: l10n.settingsDefaultModel,
+        children: [
+          DropdownMenu<String>(
+            expandedInsets: EdgeInsets.zero,
+            enableFilter: true,
+            initialSelection: state.defaultModel.isEmpty
+                ? null
+                : state.defaultModel,
+            dropdownMenuEntries: defaultEntries,
+            label: Text(l10n.settingsDefaultModel),
+            onSelected: (value) => cubit.saveModels(
+              defaultModel: value ?? '',
+              titleModel: state.titleModel,
+            ),
+          ),
+          if (defaultLacksTools)
+            Text(
+              l10n.settingsNoToolsWarning,
+              style: TextStyle(color: scheme.error),
+            ),
+          DropdownMenu<String>(
+            expandedInsets: EdgeInsets.zero,
+            enableFilter: true,
+            initialSelection: state.titleModel.isEmpty
+                ? null
+                : state.titleModel,
+            dropdownMenuEntries: titleEntries,
+            label: Text(l10n.settingsTitleModel),
+            onSelected: (value) => cubit.saveModels(
+              defaultModel: state.defaultModel,
+              titleModel: value ?? '',
+            ),
+          ),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                icon: state.modelsLoading
+                    ? const SizedBox.square(
+                        dimension: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                label: Text(l10n.settingsModelsRefresh),
+                onPressed: state.modelsLoading ? null : cubit.refreshModels,
+              ),
+              if (state.modelsError != null) ...[
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    l10n.commonError(state.modelsError!),
+                    style: TextStyle(color: scheme.error),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+      AppSection(
+        title: l10n.settingsPinnedModels,
+        description: l10n.settingsPinnedHint,
+        children: [
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final id in state.pinnedModels)
+                InputChip(
+                  label: Text(_modelName(id, state.models)),
+                  onDeleted: () => cubit.togglePin(id),
+                ),
+            ],
+          ),
+          DropdownMenu<String>(
+            key: ValueKey('pin-${state.pinnedModels.length}'),
+            expandedInsets: EdgeInsets.zero,
+            enableFilter: true,
+            label: Text(l10n.settingsPinnedModels),
+            dropdownMenuEntries: unpinned,
+            onSelected: (value) => _onPinModelSelected(cubit, value),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  List<Widget> _interfaceSections(
+    SettingsState state,
+    SettingsCubit cubit,
+    AppLocalizations l10n,
+  ) => [
+    AppSection(
+      title: l10n.settingsLanguage,
+      children: [
+        DropdownMenu<String>(
+          expandedInsets: EdgeInsets.zero,
+          initialSelection: state.language,
+          label: Text(l10n.settingsLanguage),
+          dropdownMenuEntries: [
+            DropdownMenuEntry(
+              value: 'system',
+              label: l10n.settingsLanguageSystem,
+            ),
+            const DropdownMenuEntry(value: 'en', label: 'English'),
+            const DropdownMenuEntry(value: 'ru', label: 'Русский'),
+          ],
+          onSelected: (value) => cubit.saveLanguage(value ?? 'system'),
+        ),
+      ],
+    ),
+  ];
+
+  List<Widget> _safetySections(
+    SettingsState state,
+    SettingsCubit cubit,
+    AppLocalizations l10n,
+  ) => [
+    AppSection(
+      title: l10n.settingsDefaultPolicy,
+      children: [
+        SegmentedButton<PolicyMode>(
+          segments: [
+            ButtonSegment(value: PolicyMode.ask, label: Text(l10n.policyAsk)),
+            ButtonSegment(value: PolicyMode.yolo, label: Text(l10n.policyYolo)),
+          ],
+          selected: {state.defaultPolicy},
+          onSelectionChanged: (value) => cubit.saveDefaultPolicy(value.first),
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.settingsDenylist,
+      trailing: FilledButton(
+        onPressed: () => cubit.saveDenylist(_denylist.text),
+        child: Text(l10n.commonSave),
+      ),
+      children: [
+        AppTextField(
+          controller: _denylist,
+          minLines: 3,
+          maxLines: 8,
+          mono: true,
+        ),
+      ],
+    ),
+  ];
+
+  List<Widget> _advancedSections(
+    SettingsState state,
+    SettingsCubit cubit,
+    AppLocalizations l10n,
+  ) => [
+    AppSection(
+      title: l10n.settingsAttachLimits,
+      trailing: FilledButton(
+        onPressed: () => _saveAttachLimits(cubit, l10n),
+        child: Text(l10n.commonSave),
+      ),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: AppTextField(
+                controller: _attachPerMessage,
+                label: l10n.settingsAttachPerMessage,
+                error: _attachError,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: AppTextField(
+                controller: _attachMaxBytes,
+                label: l10n.settingsAttachMaxBytes,
+                error: _attachError,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.settingsLimits,
+      trailing: FilledButton(
+        onPressed: () => cubit.saveLimits(_limits.text),
+        child: Text(l10n.commonSave),
+      ),
+      children: [
+        AppTextField(
+          controller: _limits,
+          minLines: 6,
+          maxLines: 16,
+          mono: true,
+          error: state.limitsError ? l10n.settingsLimitsInvalid : null,
+        ),
+      ],
+    ),
+  ];
+
+  static IconData _groupIcon(_Group group) => switch (group) {
+    _Group.account => Icons.key_outlined,
+    _Group.interface => Icons.translate,
+    _Group.safety => Icons.shield_outlined,
+    _Group.advanced => Icons.tune,
+  };
+}
+
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({required this.title, required this.hint});
+
+  final String title;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: theme.textTheme.titleLarge),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          hint,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroupTile extends StatelessWidget {
+  const _GroupTile({
+    required this.icon,
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+      child: Material(
+        color: selected ? scheme.secondaryContainer : Colors.transparent,
+        borderRadius: AppRadius.mdAll,
+        child: InkWell(
+          borderRadius: AppRadius.mdAll,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 20),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -377,26 +548,4 @@ String _modelName(String id, List<LlmModelInfo> models) {
     if (model.id == id) return model.name;
   }
   return id;
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          ...children,
-        ],
-      ),
-    ),
-  );
 }

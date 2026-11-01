@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -11,6 +12,7 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/host/ssh_host_runtime.dart';
 
@@ -223,4 +225,85 @@ void main() {
     final result = await captureRun(runtime, 'printf "привет"');
     expect(utf8.decode(utf8.encode(result.stdout)), contains('привет'));
   });
+
+  test(
+    'command runs in an SSH terminal with the requested size',
+    skip: _skip,
+    () async {
+      final sub = autoAnswer(trusted: true);
+      addTearDown(sub.cancel);
+
+      final runtime = SshHostRuntime(host: host, pool: pool);
+      final terminal = await runtime.openTerminal(
+        '[ -t 0 ] && stty size',
+        columns: 100,
+        rows: 40,
+      );
+      final output = await _drainTerminal(terminal);
+      expect(output, contains('40 100'));
+      expect(await terminal.exitCode, 0);
+    },
+  );
+
+  test(
+    'resize of an SSH terminal reaches the running command',
+    skip: _skip,
+    () async {
+      final sub = autoAnswer(trusted: true);
+      addTearDown(sub.cancel);
+
+      final runtime = SshHostRuntime(host: host, pool: pool);
+      final terminal = await runtime.openTerminal(
+        'sleep 1; stty size',
+        columns: 100,
+        rows: 40,
+      );
+      terminal.resize(90, 33);
+      final output = await _drainTerminal(terminal);
+      expect(output, contains('33 90'));
+    },
+  );
+
+  test(
+    'input typed into an SSH terminal reaches the command',
+    skip: _skip,
+    () async {
+      final sub = autoAnswer(trusted: true);
+      addTearDown(sub.cancel);
+
+      final runtime = SshHostRuntime(host: host, pool: pool);
+      final terminal = await runtime.openTerminal(
+        r'read line; echo "got:$line"',
+      );
+      terminal.write(Uint8List.fromList(utf8.encode('hello\r')));
+      final output = await _drainTerminal(terminal);
+      expect(output, contains('got:hello'));
+    },
+  );
+
+  test(
+    'pid of an SSH terminal command is known and kill stops it',
+    skip: _skip,
+    () async {
+      final sub = autoAnswer(trusted: true);
+      addTearDown(sub.cancel);
+
+      final runtime = SshHostRuntime(host: host, pool: pool);
+      final terminal = await runtime.openTerminal('sleep 30');
+      final pid = await terminal.pid.timeout(const Duration(seconds: 15));
+      expect(pid, greaterThan(1));
+      await runtime.killProcess(pid!, force: true);
+      await _drainTerminal(terminal).timeout(const Duration(seconds: 15));
+      expect(await terminal.exitCode, isNot(0));
+    },
+  );
+}
+
+/// Читает весь вывод терминала до его завершения.
+Future<String> _drainTerminal(HostTerminal terminal) async {
+  final out = BytesBuilder();
+  await for (final chunk in terminal.attach()) {
+    out.add(chunk);
+  }
+  return utf8.decode(out.takeBytes(), allowMalformed: true);
 }
