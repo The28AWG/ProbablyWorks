@@ -1,0 +1,760 @@
+{
+  "@@locale": "en",
+  "appTitle": "ProbablyWorks",
+  "@appTitle": {
+    "description": "Application name shown in the window title and about dialogs."
+  },
+  "commonCancel": "Cancel",
+  "@commonCancel": {
+    "description": "Generic cancel button label."
+  },
+  "commonSave": "Save",
+  "@commonSave": {
+    "description": "Generic save button label."
+  },
+  "commonDelete": "Delete",
+  "@commonDelete": {
+    "description": "Generic delete button label."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Generic close button label."
+  },
+  "commonRetry": "Retry",
+  "@commonRetry": {
+    "description": "Button that retries a failed operation."
+  },
+  "commonRename": "Rename",
+  "@commonRename": {
+    "description": "Menu action that renames a chat."
+  },
+  "commonError": "Error: {message}",
+  "@commonError": {
+    "description": "Generic error line shown in snackbars and cards.",
+    "placeholders": {
+      "message": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
+  "navChats": "Chats",
+  "@navChats": {
+    "description": "Navigation item that opens the chat list."
+  },
+  "navHosts": "Hosts",
+  "@navHosts": {
+    "description": "Navigation item that opens host management."
+  },
+  "navSettings": "Settings",
+  "@navSettings": {
+    "description": "Navigation item that opens application settings."
+  },
+  "onboardingTitle": "Connect OpenRouter",
+  "@onboardingTitle": {
+    "description": "Title of the first-run screen that asks for the API key."
+  },
+  "onboardingBody": "ProbablyWorks runs an AI agent on your machines. The model is served by OpenRouter, so an API key is required. The key is stored in the system secure storage.",
+  "@onboardingBody": {
+    "description": "Explanation on the first-run screen of why the key is needed and where it is stored."
+  },
+  "apiKeyLabel": "OpenRouter API key",
+  "@apiKeyLabel": {
+    "description": "Label of the text field for the OpenRouter API key."
+  },
+  "apiKeyHint": "sk-or-...",
+  "@apiKeyHint": {
+    "description": "Placeholder example for the OpenRouter API key field. Not a real key."
+  },
+  "onboardingContinue": "Continue",
+  "@onboardingContinue": {
+    "description": "Button that saves the API key and opens the application."
+  },
+  "chatsTitle": "Chats",
+  "@chatsTitle": {
+    "description": "Header of the chat list panel."
+  },
+  "chatsEmpty": "No chats yet. Create one to start.",
+  "@chatsEmpty": {
+    "description": "Empty state of the chat list."
+  },
+  "chatsNew": "New chat",
+  "@chatsNew": {
+    "description": "Button that creates a new chat."
+  },
+  "chatsDeleteConfirm": "Delete this chat and all its history?",
+  "@chatsDeleteConfirm": {
+    "description": "Confirmation text before a chat and its messages are deleted."
+  },
+  "chatsSelectHint": "Select a chat or create a new one.",
+  "@chatsSelectHint": {
+    "description": "Placeholder shown in the main area when no chat is selected."
+  },
+  "chatHostLabel": "Host",
+  "@chatHostLabel": {
+    "description": "Label of the host selector for a chat."
+  },
+  "chatPolicyLabel": "Policy",
+  "@chatPolicyLabel": {
+    "description": "Label of the policy mode selector for a chat."
+  },
+  "policyAsk": "Ask",
+  "@policyAsk": {
+    "description": "Policy mode: write and unknown actions need user approval."
+  },
+  "policyYolo": "Auto-approve",
+  "@policyYolo": {
+    "description": "Policy mode: ask-level actions run without approval. Deny rules still apply."
+  },
+  "chatModelLabel": "Model",
+  "@chatModelLabel": {
+    "description": "Label of the model selector for a chat."
+  },
+  "chatModelNotSelected": "Model is not selected. Choose one in the chat header or in Settings.",
+  "@chatModelNotSelected": {
+    "description": "Error shown when a turn starts without a selected model."
+  },
+  "chatWorkspaceLabel": "Workspace",
+  "@chatWorkspaceLabel": {
+    "description": "Label of the workspace folder field in a chat (path on the host)."
+  },
+  "alreadyRunning": "ProbablyWorks is already running",
+  "@alreadyRunning": {
+    "description": "Shown when a second instance of the app tries to open the same database."
+  },
+  "composerHint": "Describe the task or ask a question",
+  "@composerHint": {
+    "description": "Placeholder of the message composer."
+  },
+  "composerSend": "Send",
+  "@composerSend": {
+    "description": "Button that sends the message after the agent finishes its current step."
+  },
+  "composerSendNow": "Send now",
+  "@composerSendNow": {
+    "description": "Button that interrupts the current model step and sends the message immediately."
+  },
+  "composerStop": "Stop",
+  "@composerStop": {
+    "description": "Button that stops the running turn and its processes. Queued messages are kept."
+  },
+  "composerAttach": "Attach file",
+  "@composerAttach": {
+    "description": "Tooltip of the button that attaches a file to the message."
+  },
+  "composerDropHint": "Drop files here",
+  "@composerDropHint": {
+    "description": "Hint shown while files are dragged over the composer."
+  },
+  "queueTitle": "Queued ({count})",
+  "@queueTitle": {
+    "description": "Header of the queued messages list.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "messageEdit": "Edit",
+  "@messageEdit": {
+    "description": "Menu action that edits a user message and re-runs from it."
+  },
+  "messageDeleteAfter": "Delete from here",
+  "@messageDeleteAfter": {
+    "description": "Menu action that removes this message and everything after it."
+  },
+  "messageDeleteAfterConfirm": "Remove this message and all later messages?",
+  "@messageDeleteAfterConfirm": {
+    "description": "Confirmation before deleting messages after a point."
+  },
+  "approvalTitle": "Approval required",
+  "@approvalTitle": {
+    "description": "Title of the approval card shown before a risky action runs."
+  },
+  "approvalApprove": "Approve",
+  "@approvalApprove": {
+    "description": "Button that approves the pending action."
+  },
+  "approvalDeny": "Deny",
+  "@approvalDeny": {
+    "description": "Button that rejects the pending action."
+  },
+  "questionTitle": "The agent asks",
+  "@questionTitle": {
+    "description": "Title of the card in which the agent asks the user a question."
+  },
+  "questionAnswerHint": "Your answer",
+  "@questionAnswerHint": {
+    "description": "Placeholder of the answer field for an agent question."
+  },
+  "questionSubmit": "Answer",
+  "@questionSubmit": {
+    "description": "Button that sends the answer to the agent."
+  },
+  "runStatusRunning": "Running",
+  "@runStatusRunning": {
+    "description": "Tool run status: the command is still running."
+  },
+  "runStatusBackground": "In background",
+  "@runStatusBackground": {
+    "description": "Tool run status: the command runs in the background."
+  },
+  "runStatusDone": "Done",
+  "@runStatusDone": {
+    "description": "Tool run status: finished successfully."
+  },
+  "runStatusFailed": "Failed",
+  "@runStatusFailed": {
+    "description": "Tool run status: finished with a non-zero exit code or an error."
+  },
+  "runStatusTimedOut": "Timed out",
+  "@runStatusTimedOut": {
+    "description": "Tool run status: stopped by the execution timeout."
+  },
+  "runStatusInterrupted": "Interrupted",
+  "@runStatusInterrupted": {
+    "description": "Tool run status: stopped by the user or by an application restart."
+  },
+  "runStatusDenied": "Denied",
+  "@runStatusDenied": {
+    "description": "Tool run status: blocked by policy or rejected by the user."
+  },
+  "runStatusConnectionLost": "Connection lost",
+  "@runStatusConnectionLost": {
+    "description": "Tool run status: the SSH connection dropped during the run."
+  },
+  "runStatusSpawnFailed": "Could not start",
+  "@runStatusSpawnFailed": {
+    "description": "Tool run status: the process could not be started on the host."
+  },
+  "runStatusWaitingApproval": "Waiting for approval",
+  "@runStatusWaitingApproval": {
+    "description": "Tool run status: waiting for the user to approve the action."
+  },
+  "runStatusWaitingUser": "Waiting for answer",
+  "@runStatusWaitingUser": {
+    "description": "Tool run status: waiting for the user to answer a question."
+  },
+  "runStop": "Stop process",
+  "@runStop": {
+    "description": "Button on a running command card that stops its process."
+  },
+  "runOutputTruncated": "Output was shortened to fit the limit.",
+  "@runOutputTruncated": {
+    "description": "Note shown under command output when it was cut to the head and tail."
+  },
+  "stepLimitReached": "The agent reached the step limit for one turn.",
+  "@stepLimitReached": {
+    "description": "Notice shown when a turn stops because of the step limit."
+  },
+  "stepLimitContinue": "Continue",
+  "@stepLimitContinue": {
+    "description": "Button that resumes the agent after the step limit."
+  },
+  "trustTitle": "Trust this workspace?",
+  "@trustTitle": {
+    "description": "Title of the banner asking to trust a workspace that has AGENTS.md or skills."
+  },
+  "trustBody": "The workspace contains AGENTS.md or skills. They are loaded into the agent context only after you trust this folder.",
+  "@trustBody": {
+    "description": "Explanation of what trusting a workspace enables."
+  },
+  "trustAction": "Trust folder",
+  "@trustAction": {
+    "description": "Button that trusts the workspace."
+  },
+  "contextUsage": "Context {used} / {limit} tokens",
+  "@contextUsage": {
+    "description": "Context meter label showing estimated prompt tokens against the model window.",
+    "placeholders": {
+      "used": {
+        "type": "String",
+        "example": "12 400"
+      },
+      "limit": {
+        "type": "String",
+        "example": "128 000"
+      }
+    }
+  },
+  "chatEmptyState": "Send a task to the agent. It will use the selected host to run commands.",
+  "@chatEmptyState": {
+    "description": "Empty state of a new chat."
+  },
+  "hostsTitle": "Hosts",
+  "@hostsTitle": {
+    "description": "Header of the hosts management page."
+  },
+  "hostsAdd": "Add SSH host",
+  "@hostsAdd": {
+    "description": "Button that opens the form for a new SSH host."
+  },
+  "hostLocalName": "This computer",
+  "@hostLocalName": {
+    "description": "Name of the built-in local host."
+  },
+  "hostNameLabel": "Name",
+  "@hostNameLabel": {
+    "description": "Label of the host display name field."
+  },
+  "hostAddressLabel": "Address",
+  "@hostAddressLabel": {
+    "description": "Label of the SSH host address field (hostname or IP)."
+  },
+  "hostPortLabel": "Port",
+  "@hostPortLabel": {
+    "description": "Label of the SSH port field."
+  },
+  "hostUserLabel": "User",
+  "@hostUserLabel": {
+    "description": "Label of the SSH username field."
+  },
+  "hostAuthPassword": "Password",
+  "@hostAuthPassword": {
+    "description": "Authentication option: password."
+  },
+  "hostAuthKey": "Private key",
+  "@hostAuthKey": {
+    "description": "Authentication option: private key file."
+  },
+  "hostKeyPathLabel": "Private key path",
+  "@hostKeyPathLabel": {
+    "description": "Label of the private key file path field."
+  },
+  "hostSecretLabel": "Password or passphrase",
+  "@hostSecretLabel": {
+    "description": "Label of the secret field: password or key passphrase. Stored in secure storage."
+  },
+  "hostTest": "Test connection",
+  "@hostTest": {
+    "description": "Button that checks SSH connectivity and runs a harmless command."
+  },
+  "hostTestOk": "Connected: {info}",
+  "@hostTestOk": {
+    "description": "Result of a successful connection test.",
+    "placeholders": {
+      "info": {
+        "type": "String",
+        "example": "Linux 6.8"
+      }
+    }
+  },
+  "hostTestFailed": "Connection failed: {message}",
+  "@hostTestFailed": {
+    "description": "Result of a failed connection test.",
+    "placeholders": {
+      "message": {
+        "type": "String",
+        "example": "timeout"
+      }
+    }
+  },
+  "hostDeleteConfirm": "Delete this host? Chats that use it will stop working until a new host is set.",
+  "@hostDeleteConfirm": {
+    "description": "Confirmation before deleting an SSH host."
+  },
+  "hostKeyFirstUseTitle": "Unknown host key",
+  "@hostKeyFirstUseTitle": {
+    "description": "Title of the dialog shown when an SSH host is connected for the first time."
+  },
+  "hostKeyFirstUseBody": "Host {host} presents fingerprint {fingerprint}. Trust it and continue?",
+  "@hostKeyFirstUseBody": {
+    "description": "Body of the first-use host key dialog.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "example.com"
+      },
+      "fingerprint": {
+        "type": "String",
+        "example": "SHA256:abc..."
+      }
+    }
+  },
+  "hostKeyChangedTitle": "Host key changed",
+  "@hostKeyChangedTitle": {
+    "description": "Title of the warning dialog when a known SSH host presents a different key."
+  },
+  "hostKeyChangedBody": "The key for {host} changed to {fingerprint}. This can mean a man-in-the-middle attack. Connection is blocked until you confirm the new key.",
+  "@hostKeyChangedBody": {
+    "description": "Warning body when the SSH host key changed compared to the trusted one.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "example.com"
+      },
+      "fingerprint": {
+        "type": "String",
+        "example": "SHA256:def..."
+      }
+    }
+  },
+  "hostKeyTrust": "Trust",
+  "@hostKeyTrust": {
+    "description": "Button that accepts the SSH host key."
+  },
+  "hostKeyReject": "Reject",
+  "@hostKeyReject": {
+    "description": "Button that rejects the SSH host key and aborts the connection."
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Header of the settings page."
+  },
+  "settingsApiKey": "OpenRouter API key",
+  "@settingsApiKey": {
+    "description": "Section title for the API key in settings."
+  },
+  "settingsApiKeySaved": "API key saved",
+  "@settingsApiKeySaved": {
+    "description": "Snackbar after the API key is saved."
+  },
+  "settingsDefaultModel": "Default model",
+  "@settingsDefaultModel": {
+    "description": "Setting: model used for new chats when none is chosen."
+  },
+  "settingsTitleModel": "Title model",
+  "@settingsTitleModel": {
+    "description": "Setting: cheap model used to generate chat titles and summaries."
+  },
+  "settingsModelsRefresh": "Refresh models",
+  "@settingsModelsRefresh": {
+    "description": "Button that reloads the model list from OpenRouter."
+  },
+  "settingsLanguage": "Language",
+  "@settingsLanguage": {
+    "description": "Setting: interface language."
+  },
+  "settingsLanguageSystem": "System",
+  "@settingsLanguageSystem": {
+    "description": "Language option: follow the system locale."
+  },
+  "settingsDefaultPolicy": "Default policy for new chats",
+  "@settingsDefaultPolicy": {
+    "description": "Setting: policy mode applied to new chats."
+  },
+  "settingsDenylist": "Denylist (regular expressions, one per line)",
+  "@settingsDenylist": {
+    "description": "Setting: patterns of commands that are always denied. It is a UX guard, not a security boundary."
+  },
+  "settingsLimits": "Limits (JSON)",
+  "@settingsLimits": {
+    "description": "Setting: timeouts and limits as JSON. Hard safety rules cannot be disabled here."
+  },
+  "settingsLimitsInvalid": "Limits JSON is invalid",
+  "@settingsLimitsInvalid": {
+    "description": "Error shown when the limits JSON cannot be parsed."
+  },
+  "settingsSaved": "Settings saved",
+  "@settingsSaved": {
+    "description": "Snackbar after settings are saved."
+  },
+  "queueSendNow": "Send now",
+  "@queueSendNow": {
+    "description": "Tooltip on a queued message: interrupt the current step and send this message now."
+  },
+  "queueEdit": "Edit",
+  "@queueEdit": {
+    "description": "Tooltip on a queued message: move its text back into the input field for editing."
+  },
+  "queueRemove": "Remove",
+  "@queueRemove": {
+    "description": "Tooltip on a queued message: remove it from the queue."
+  },
+  "compactHistory": "Compact",
+  "@compactHistory": {
+    "description": "Button in the context meter: compress the older part of the chat history now."
+  },
+  "chatsFilterAll": "All hosts",
+  "@chatsFilterAll": {
+    "description": "Chip in the chat list: show chats from every host."
+  },
+  "chatBadgeRunning": "Running",
+  "@chatBadgeRunning": {
+    "description": "Tooltip for the spinner badge: the agent is working in this chat."
+  },
+  "chatBadgeWaiting": "Waiting for you",
+  "@chatBadgeWaiting": {
+    "description": "Tooltip for the badge: the agent waits for an approval or an answer in this chat."
+  },
+  "hostNotesLabel": "Notes",
+  "@hostNotesLabel": {
+    "description": "Label of the free-text notes field of a host (for example, 'prod API box')."
+  },
+  "hostDefaultWorkspaceLabel": "Default workspace",
+  "@hostDefaultWorkspaceLabel": {
+    "description": "Label of the default workspace path field of a host. New chats on this host start in this folder."
+  },
+  "hostShellLabel": "Shell override",
+  "@hostShellLabel": {
+    "description": "Label of the field that overrides the shell used to run commands on a host."
+  },
+  "hostShellHint": "Executable name or path, e.g. bash. Empty means sh.",
+  "@hostShellHint": {
+    "description": "Helper text under the shell override field."
+  },
+  "hostTimeoutLabel": "Connection timeout, seconds",
+  "@hostTimeoutLabel": {
+    "description": "Label of the SSH connection timeout field of a host. Empty means the limit from Settings."
+  },
+  "hostPortInvalid": "Port must be between 1 and 65535",
+  "@hostPortInvalid": {
+    "description": "Validation error for the SSH port field."
+  },
+  "hostAddressRequired": "Enter the address",
+  "@hostAddressRequired": {
+    "description": "Validation error when the SSH host address is empty."
+  },
+  "hostTimeoutInvalid": "Enter a whole number of seconds above 0",
+  "@hostTimeoutInvalid": {
+    "description": "Validation error for the connection timeout field."
+  },
+  "hostShellInvalid": "Only letters, digits and / . _ - are allowed",
+  "@hostShellInvalid": {
+    "description": "Validation error for the shell override field."
+  },
+  "hostPickFolder": "Choose folder",
+  "@hostPickFolder": {
+    "description": "Tooltip of the button that opens a folder picker for the local host default workspace."
+  },
+  "hostLocalSettingsTitle": "This computer",
+  "@hostLocalSettingsTitle": {
+    "description": "Title of the dialog that edits the local host settings."
+  },
+  "hostNeverChecked": "Not checked yet",
+  "@hostNeverChecked": {
+    "description": "Host list status line when the connection was never tested."
+  },
+  "hostLastCheckOk": "Checked {time}, {latency} ms",
+  "@hostLastCheckOk": {
+    "description": "Host list status line after a successful connection test.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "latency": {
+        "type": "int"
+      }
+    }
+  },
+  "hostLastCheckFailed": "Check failed {time}: {message}",
+  "@hostLastCheckFailed": {
+    "description": "Host list status line after a failed connection test.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPinnedSection": "Pinned",
+  "@modelPinnedSection": {
+    "description": "Section header in the model picker for models pinned by the user."
+  },
+  "modelSearchHint": "Search by name or id",
+  "@modelSearchHint": {
+    "description": "Placeholder of the search field in the model picker."
+  },
+  "modelFilterToolsOnly": "Only models with tool calling",
+  "@modelFilterToolsOnly": {
+    "description": "Switch in the model picker: hide models without tool calling support."
+  },
+  "modelPickerEmpty": "No models match",
+  "@modelPickerEmpty": {
+    "description": "Empty state of the model picker when the filter hides everything."
+  },
+  "modelNoTools": "no tool calling",
+  "@modelNoTools": {
+    "description": "Marker for a model that does not support tool calling; the agent cannot use it."
+  },
+  "modelPin": "Pin",
+  "@modelPin": {
+    "description": "Tooltip of the star button: pin the model to the top of the picker."
+  },
+  "modelUnpin": "Unpin",
+  "@modelUnpin": {
+    "description": "Tooltip of the filled star button: remove the model from the pinned list."
+  },
+  "modelMetaContext": "ctx {tokens}",
+  "@modelMetaContext": {
+    "description": "Model metadata: context window size, for example 128k.",
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "modelMetaPrice": "in {input} / out {output} per 1M",
+  "@modelMetaPrice": {
+    "description": "Model metadata: price per one million input and output tokens.",
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "statusThinking": "Thinking…",
+  "@statusThinking": {
+    "description": "Status strip under the composer: the model is generating a reply."
+  },
+  "statusRunningCommands": "Running {count, plural, one {1 command} other {{count} commands}}",
+  "@statusRunningCommands": {
+    "description": "Status strip: number of foreground commands running now.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusBackgroundCommands": "Background: {count}",
+  "@statusBackgroundCommands": {
+    "description": "Status strip: number of background commands still running.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusWaitingApproval": "Waiting for your approval",
+  "@statusWaitingApproval": {
+    "description": "Status strip: the agent is blocked until the user approves a tool call."
+  },
+  "statusWaitingUser": "Waiting for your answer",
+  "@statusWaitingUser": {
+    "description": "Status strip: the agent asked the user a question and waits."
+  },
+  "runBackgroundBadge": "bg",
+  "@runBackgroundBadge": {
+    "description": "Badge on a tool card of a background command (kept short on purpose)."
+  },
+  "runPid": "pid {pid}",
+  "@runPid": {
+    "description": "Tool card header: process id of the command.",
+    "placeholders": {
+      "pid": {
+        "type": "int"
+      }
+    }
+  },
+  "runDuration": "{seconds} s",
+  "@runDuration": {
+    "description": "Tool card header: how long the command ran.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "chatModelSwitched": "Model switched to {name}",
+  "@chatModelSwitched": {
+    "description": "Snackbar after the user changes the model in the middle of a chat.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPinnedModels": "Pinned models",
+  "@settingsPinnedModels": {
+    "description": "Settings section title: models shown first in the model picker."
+  },
+  "settingsPinnedHint": "Pinned models appear first in the chat model picker.",
+  "@settingsPinnedHint": {
+    "description": "Helper text of the pinned models section in Settings."
+  },
+  "settingsAttachLimits": "Attachment limits",
+  "@settingsAttachLimits": {
+    "description": "Settings section title: how many files and how many bytes can be attached to a message."
+  },
+  "settingsAttachPerMessage": "Files per message",
+  "@settingsAttachPerMessage": {
+    "description": "Settings field: maximum number of attachments per message."
+  },
+  "settingsAttachMaxBytes": "Max file size in context, bytes",
+  "@settingsAttachMaxBytes": {
+    "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+  },
+  "settingsNoToolsWarning": "This model does not support tool calling: the agent cannot work with it.",
+  "@settingsNoToolsWarning": {
+    "description": "Warning in Settings when the selected default model has no tool calling support."
+  },
+  "settingsAttachInvalid": "Enter a whole number above 0",
+  "@settingsAttachInvalid": {
+    "description": "Validation error for the attachment limit fields in Settings."
+  },
+  "onboardingWelcome": "ProbablyWorks is an AI agent that completes tasks on your computer or an SSH server. Describe the task, and the agent reads files, runs commands and makes changes on its own. You approve risky actions, and progress is visible in the chat.",
+  "@onboardingWelcome": {
+    "description": "Onboarding welcome text: what the product does."
+  },
+  "onboardingVerifyKey": "Check and save",
+  "@onboardingVerifyKey": {
+    "description": "Button in onboarding: checks the OpenRouter key by loading the model list, then stores it."
+  },
+  "onboardingKeyVerified": "Key works. Models available: {count}",
+  "@onboardingKeyVerified": {
+    "description": "Onboarding status after the OpenRouter key was verified.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingModelHint": "The agent needs tool calling. Models without it are not listed here; you can change the model later in the chat header or Settings.",
+  "@onboardingModelHint": {
+    "description": "Onboarding hint on the model step."
+  },
+  "onboardingWorkspaceBody": "Folder on this computer where the agent starts new chats. You can change it later in Hosts.",
+  "@onboardingWorkspaceBody": {
+    "description": "Onboarding text on the workspace step."
+  },
+  "onboardingSshBody": "Optional. Add a remote machine over SSH to run the agent there. The host key is confirmed on first connection.",
+  "@onboardingSshBody": {
+    "description": "Onboarding text on the optional SSH step."
+  },
+  "onboardingAddSsh": "Add SSH host",
+  "@onboardingAddSsh": {
+    "description": "Button in onboarding that opens the Hosts screen to add an SSH host."
+  },
+  "onboardingSkip": "Skip",
+  "@onboardingSkip": {
+    "description": "Button in onboarding: skip an optional step."
+  },
+  "onboardingBack": "Back",
+  "@onboardingBack": {
+    "description": "Button in onboarding: go to the previous step."
+  },
+  "onboardingFinish": "Create first chat",
+  "@onboardingFinish": {
+    "description": "Final onboarding button: creates the first chat and opens the workspace."
+  },
+  "onboardingStepWelcome": "Welcome",
+  "@onboardingStepWelcome": {
+    "description": "Onboarding step title: welcome."
+  },
+  "onboardingStepKey": "OpenRouter key",
+  "@onboardingStepKey": {
+    "description": "Onboarding step title: API key."
+  },
+  "onboardingStepModel": "Default model",
+  "@onboardingStepModel": {
+    "description": "Onboarding step title: default model."
+  },
+  "onboardingStepWorkspace": "Local workspace",
+  "@onboardingStepWorkspace": {
+    "description": "Onboarding step title: workspace folder of the local host."
+  },
+  "onboardingStepSsh": "SSH host (optional)",
+  "@onboardingStepSsh": {
+    "description": "Onboarding step title: optional SSH host."
+  },
+  "onboardingStepFinish": "First chat",
+  "@onboardingStepFinish": {
+    "description": "Onboarding step title: create the first chat."
+  }
+}

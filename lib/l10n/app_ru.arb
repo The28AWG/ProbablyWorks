@@ -1,0 +1,760 @@
+{
+  "@@locale": "ru",
+  "appTitle": "ProbablyWorks",
+  "@appTitle": {
+    "description": "Название приложения в заголовке окна и диалогах о программе."
+  },
+  "commonCancel": "Отмена",
+  "@commonCancel": {
+    "description": "Подпись общей кнопки отмены."
+  },
+  "commonSave": "Сохранить",
+  "@commonSave": {
+    "description": "Подпись общей кнопки сохранения."
+  },
+  "commonDelete": "Удалить",
+  "@commonDelete": {
+    "description": "Подпись общей кнопки удаления."
+  },
+  "commonClose": "Закрыть",
+  "@commonClose": {
+    "description": "Подпись общей кнопки закрытия."
+  },
+  "commonRetry": "Повторить",
+  "@commonRetry": {
+    "description": "Кнопка повтора неудавшейся операции."
+  },
+  "commonRename": "Переименовать",
+  "@commonRename": {
+    "description": "Действие меню, которое переименовывает чат."
+  },
+  "commonError": "Ошибка: {message}",
+  "@commonError": {
+    "description": "Общая строка ошибки в снекбарах и карточках.",
+    "placeholders": {
+      "message": {
+        "type": "String",
+        "example": "Нет сети"
+      }
+    }
+  },
+  "navChats": "Чаты",
+  "@navChats": {
+    "description": "Пункт навигации, открывающий список чатов."
+  },
+  "navHosts": "Хосты",
+  "@navHosts": {
+    "description": "Пункт навигации, открывающий управление хостами."
+  },
+  "navSettings": "Настройки",
+  "@navSettings": {
+    "description": "Пункт навигации, открывающий настройки приложения."
+  },
+  "onboardingTitle": "Подключите OpenRouter",
+  "@onboardingTitle": {
+    "description": "Заголовок первого экрана, который запрашивает API-ключ."
+  },
+  "onboardingBody": "ProbablyWorks запускает ИИ-агента на ваших машинах. Модель работает через OpenRouter, поэтому нужен API-ключ. Ключ хранится в защищённом хранилище системы.",
+  "@onboardingBody": {
+    "description": "Пояснение на первом экране: зачем нужен ключ и где он хранится."
+  },
+  "apiKeyLabel": "API-ключ OpenRouter",
+  "@apiKeyLabel": {
+    "description": "Подпись поля ввода API-ключа OpenRouter."
+  },
+  "apiKeyHint": "sk-or-...",
+  "@apiKeyHint": {
+    "description": "Пример формы ключа в поле ввода. Не настоящий ключ."
+  },
+  "onboardingContinue": "Продолжить",
+  "@onboardingContinue": {
+    "description": "Кнопка сохранения API-ключа и открытия приложения."
+  },
+  "chatsTitle": "Чаты",
+  "@chatsTitle": {
+    "description": "Заголовок панели списка чатов."
+  },
+  "chatsEmpty": "Чатов пока нет. Создайте первый, чтобы начать.",
+  "@chatsEmpty": {
+    "description": "Пустое состояние списка чатов."
+  },
+  "chatsNew": "Новый чат",
+  "@chatsNew": {
+    "description": "Кнопка создания нового чата."
+  },
+  "chatsDeleteConfirm": "Удалить этот чат и всю его историю?",
+  "@chatsDeleteConfirm": {
+    "description": "Подтверждение перед удалением чата и его сообщений."
+  },
+  "chatsSelectHint": "Выберите чат или создайте новый.",
+  "@chatsSelectHint": {
+    "description": "Подсказка в основной области, когда чат не выбран."
+  },
+  "chatHostLabel": "Хост",
+  "@chatHostLabel": {
+    "description": "Подпись выбора хоста для чата."
+  },
+  "chatPolicyLabel": "Политика",
+  "@chatPolicyLabel": {
+    "description": "Подпись выбора режима политики для чата."
+  },
+  "policyAsk": "Спрашивать",
+  "@policyAsk": {
+    "description": "Режим политики: запись и неизвестные действия требуют подтверждения."
+  },
+  "policyYolo": "Авто-подтверждение",
+  "@policyYolo": {
+    "description": "Режим политики: действия уровня Ask выполняются без подтверждения. Запреты Deny действуют."
+  },
+  "chatModelLabel": "Модель",
+  "@chatModelLabel": {
+    "description": "Подпись выбора модели для чата."
+  },
+  "chatModelNotSelected": "Модель не выбрана. Выберите её в шапке чата или в настройках.",
+  "@chatModelNotSelected": {
+    "description": "Ошибка, если ход начат без выбранной модели."
+  },
+  "chatWorkspaceLabel": "Рабочая папка",
+  "@chatWorkspaceLabel": {
+    "description": "Подпись поля рабочей папки (workspace) чата: путь на хосте."
+  },
+  "alreadyRunning": "ProbablyWorks уже запущен",
+  "@alreadyRunning": {
+    "description": "Показывается, когда второй экземпляр пытается открыть ту же базу."
+  },
+  "composerHint": "Опишите задачу или задайте вопрос",
+  "@composerHint": {
+    "description": "Подсказка в поле ввода сообщения."
+  },
+  "composerSend": "Отправить",
+  "@composerSend": {
+    "description": "Кнопка отправки: сообщение уйдёт после текущего шага агента."
+  },
+  "composerSendNow": "Отправить сейчас",
+  "@composerSendNow": {
+    "description": "Кнопка: прервать текущий шаг модели и отправить сообщение немедленно."
+  },
+  "composerStop": "Стоп",
+  "@composerStop": {
+    "description": "Кнопка остановки хода и его процессов. Очередь сообщений сохраняется."
+  },
+  "composerAttach": "Прикрепить файл",
+  "@composerAttach": {
+    "description": "Подсказка кнопки прикрепления файла к сообщению."
+  },
+  "composerDropHint": "Перетащите файлы сюда",
+  "@composerDropHint": {
+    "description": "Подсказка при перетаскивании файлов над полем ввода."
+  },
+  "queueTitle": "В очереди ({count})",
+  "@queueTitle": {
+    "description": "Заголовок списка сообщений в очереди.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "messageEdit": "Изменить",
+  "@messageEdit": {
+    "description": "Действие меню: изменить сообщение пользователя и запустить ход заново."
+  },
+  "messageDeleteAfter": "Удалить отсюда",
+  "@messageDeleteAfter": {
+    "description": "Действие меню: удалить это сообщение и всё после него."
+  },
+  "messageDeleteAfterConfirm": "Удалить это сообщение и все последующие?",
+  "@messageDeleteAfterConfirm": {
+    "description": "Подтверждение удаления сообщений начиная с выбранного."
+  },
+  "approvalTitle": "Нужно подтверждение",
+  "@approvalTitle": {
+    "description": "Заголовок карточки подтверждения перед рискованным действием."
+  },
+  "approvalApprove": "Подтвердить",
+  "@approvalApprove": {
+    "description": "Кнопка подтверждения ожидающего действия."
+  },
+  "approvalDeny": "Отклонить",
+  "@approvalDeny": {
+    "description": "Кнопка отклонения ожидающего действия."
+  },
+  "questionTitle": "Агент спрашивает",
+  "@questionTitle": {
+    "description": "Заголовок карточки, в которой агент задаёт вопрос пользователю."
+  },
+  "questionAnswerHint": "Ваш ответ",
+  "@questionAnswerHint": {
+    "description": "Подсказка поля ответа на вопрос агента."
+  },
+  "questionSubmit": "Ответить",
+  "@questionSubmit": {
+    "description": "Кнопка отправки ответа агенту."
+  },
+  "runStatusRunning": "Выполняется",
+  "@runStatusRunning": {
+    "description": "Статус запуска: команда ещё выполняется."
+  },
+  "runStatusBackground": "В фоне",
+  "@runStatusBackground": {
+    "description": "Статус запуска: команда работает в фоне."
+  },
+  "runStatusDone": "Готово",
+  "@runStatusDone": {
+    "description": "Статус запуска: успешно завершено."
+  },
+  "runStatusFailed": "Ошибка",
+  "@runStatusFailed": {
+    "description": "Статус запуска: ненулевой код выхода или ошибка."
+  },
+  "runStatusTimedOut": "Таймаут",
+  "@runStatusTimedOut": {
+    "description": "Статус запуска: остановлено по таймауту выполнения."
+  },
+  "runStatusInterrupted": "Прервано",
+  "@runStatusInterrupted": {
+    "description": "Статус запуска: остановлено пользователем или перезапуском приложения."
+  },
+  "runStatusDenied": "Запрещено",
+  "@runStatusDenied": {
+    "description": "Статус запуска: заблокировано политикой или отклонено пользователем."
+  },
+  "runStatusConnectionLost": "Связь потеряна",
+  "@runStatusConnectionLost": {
+    "description": "Статус запуска: SSH-соединение оборвалось во время выполнения."
+  },
+  "runStatusSpawnFailed": "Не удалось запустить",
+  "@runStatusSpawnFailed": {
+    "description": "Статус запуска: процесс не удалось стартовать на хосте."
+  },
+  "runStatusWaitingApproval": "Ждёт подтверждения",
+  "@runStatusWaitingApproval": {
+    "description": "Статус запуска: ожидает подтверждения пользователя."
+  },
+  "runStatusWaitingUser": "Ждёт ответа",
+  "@runStatusWaitingUser": {
+    "description": "Статус запуска: ожидает ответа пользователя на вопрос."
+  },
+  "runStop": "Остановить процесс",
+  "@runStop": {
+    "description": "Кнопка на карточке выполняющейся команды: остановить процесс."
+  },
+  "runOutputTruncated": "Вывод сокращён, чтобы уложиться в лимит.",
+  "@runOutputTruncated": {
+    "description": "Пометка под выводом, если он обрезан до начала и конца."
+  },
+  "stepLimitReached": "Агент достиг лимита шагов за один ход.",
+  "@stepLimitReached": {
+    "description": "Уведомление, когда ход остановлен лимитом шагов."
+  },
+  "stepLimitContinue": "Продолжить",
+  "@stepLimitContinue": {
+    "description": "Кнопка продолжения работы агента после лимита шагов."
+  },
+  "trustTitle": "Доверять этому workspace?",
+  "@trustTitle": {
+    "description": "Заголовок баннера с просьбой доверить workspace с AGENTS.md или skills."
+  },
+  "trustBody": "В workspace есть AGENTS.md или skills. Они попадут в контекст агента только после того, как вы доверите эту папку.",
+  "@trustBody": {
+    "description": "Пояснение, что даёт доверие workspace."
+  },
+  "trustAction": "Доверять папке",
+  "@trustAction": {
+    "description": "Кнопка доверия workspace."
+  },
+  "contextUsage": "Контекст {used} / {limit} токенов",
+  "@contextUsage": {
+    "description": "Индикатор контекста: оценка токенов промпта относительно окна модели.",
+    "placeholders": {
+      "used": {
+        "type": "String",
+        "example": "12 400"
+      },
+      "limit": {
+        "type": "String",
+        "example": "128 000"
+      }
+    }
+  },
+  "chatEmptyState": "Отправьте задачу агенту. Он будет выполнять команды на выбранном хосте.",
+  "@chatEmptyState": {
+    "description": "Пустое состояние нового чата."
+  },
+  "hostsTitle": "Хосты",
+  "@hostsTitle": {
+    "description": "Заголовок страницы управления хостами."
+  },
+  "hostsAdd": "Добавить SSH-хост",
+  "@hostsAdd": {
+    "description": "Кнопка открытия формы нового SSH-хоста."
+  },
+  "hostLocalName": "Этот компьютер",
+  "@hostLocalName": {
+    "description": "Название встроенного локального хоста."
+  },
+  "hostNameLabel": "Название",
+  "@hostNameLabel": {
+    "description": "Подпись поля отображаемого имени хоста."
+  },
+  "hostAddressLabel": "Адрес",
+  "@hostAddressLabel": {
+    "description": "Подпись поля адреса SSH-хоста (имя или IP)."
+  },
+  "hostPortLabel": "Порт",
+  "@hostPortLabel": {
+    "description": "Подпись поля порта SSH."
+  },
+  "hostUserLabel": "Пользователь",
+  "@hostUserLabel": {
+    "description": "Подпись поля имени пользователя SSH."
+  },
+  "hostAuthPassword": "Пароль",
+  "@hostAuthPassword": {
+    "description": "Способ аутентификации: пароль."
+  },
+  "hostAuthKey": "Приватный ключ",
+  "@hostAuthKey": {
+    "description": "Способ аутентификации: файл приватного ключа."
+  },
+  "hostKeyPathLabel": "Путь к приватному ключу",
+  "@hostKeyPathLabel": {
+    "description": "Подпись поля пути к файлу приватного ключа."
+  },
+  "hostSecretLabel": "Пароль или парольная фраза",
+  "@hostSecretLabel": {
+    "description": "Подпись поля секрета: пароль или парольная фраза ключа. Хранится в защищённом хранилище."
+  },
+  "hostTest": "Проверить подключение",
+  "@hostTest": {
+    "description": "Кнопка проверки SSH-подключения безопасной командой."
+  },
+  "hostTestOk": "Подключено: {info}",
+  "@hostTestOk": {
+    "description": "Результат успешной проверки подключения.",
+    "placeholders": {
+      "info": {
+        "type": "String",
+        "example": "Linux 6.8"
+      }
+    }
+  },
+  "hostTestFailed": "Не удалось подключиться: {message}",
+  "@hostTestFailed": {
+    "description": "Результат неудачной проверки подключения.",
+    "placeholders": {
+      "message": {
+        "type": "String",
+        "example": "таймаут"
+      }
+    }
+  },
+  "hostDeleteConfirm": "Удалить этот хост? Чаты, которые его используют, перестанут работать, пока не будет выбран другой хост.",
+  "@hostDeleteConfirm": {
+    "description": "Подтверждение удаления SSH-хоста."
+  },
+  "hostKeyFirstUseTitle": "Неизвестный ключ хоста",
+  "@hostKeyFirstUseTitle": {
+    "description": "Заголовок диалога при первом подключении к SSH-хосту."
+  },
+  "hostKeyFirstUseBody": "Хост {host} предъявил отпечаток {fingerprint}. Доверять ему и продолжить?",
+  "@hostKeyFirstUseBody": {
+    "description": "Текст диалога первого подключения к хосту.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "example.com"
+      },
+      "fingerprint": {
+        "type": "String",
+        "example": "SHA256:abc..."
+      }
+    }
+  },
+  "hostKeyChangedTitle": "Ключ хоста изменился",
+  "@hostKeyChangedTitle": {
+    "description": "Заголовок предупреждения, если известный хост предъявил другой ключ."
+  },
+  "hostKeyChangedBody": "Ключ для {host} изменился на {fingerprint}. Это может быть атака «человек посередине». Подключение заблокировано, пока вы не подтвердите новый ключ.",
+  "@hostKeyChangedBody": {
+    "description": "Текст предупреждения, если ключ хоста отличается от доверенного.",
+    "placeholders": {
+      "host": {
+        "type": "String",
+        "example": "example.com"
+      },
+      "fingerprint": {
+        "type": "String",
+        "example": "SHA256:def..."
+      }
+    }
+  },
+  "hostKeyTrust": "Доверять",
+  "@hostKeyTrust": {
+    "description": "Кнопка принятия ключа SSH-хоста."
+  },
+  "hostKeyReject": "Отклонить",
+  "@hostKeyReject": {
+    "description": "Кнопка отказа от ключа SSH-хоста: подключение прерывается."
+  },
+  "settingsTitle": "Настройки",
+  "@settingsTitle": {
+    "description": "Заголовок страницы настроек."
+  },
+  "settingsApiKey": "API-ключ OpenRouter",
+  "@settingsApiKey": {
+    "description": "Заголовок раздела API-ключа в настройках."
+  },
+  "settingsApiKeySaved": "API-ключ сохранён",
+  "@settingsApiKeySaved": {
+    "description": "Снекбар после сохранения API-ключа."
+  },
+  "settingsDefaultModel": "Модель по умолчанию",
+  "@settingsDefaultModel": {
+    "description": "Настройка: модель для новых чатов, если не выбрана другая."
+  },
+  "settingsTitleModel": "Модель для заголовков",
+  "@settingsTitleModel": {
+    "description": "Настройка: дешёвая модель для заголовков чатов и сводок."
+  },
+  "settingsModelsRefresh": "Обновить список моделей",
+  "@settingsModelsRefresh": {
+    "description": "Кнопка перезагрузки списка моделей из OpenRouter."
+  },
+  "settingsLanguage": "Язык",
+  "@settingsLanguage": {
+    "description": "Настройка языка интерфейса."
+  },
+  "settingsLanguageSystem": "Как в системе",
+  "@settingsLanguageSystem": {
+    "description": "Вариант языка: следовать языку системы."
+  },
+  "settingsDefaultPolicy": "Политика для новых чатов",
+  "@settingsDefaultPolicy": {
+    "description": "Настройка: режим политики для новых чатов."
+  },
+  "settingsDenylist": "Denylist (регулярные выражения, по одному в строке)",
+  "@settingsDenylist": {
+    "description": "Настройка: шаблоны команд, которые всегда запрещены. Это UX-страховка, а не граница безопасности."
+  },
+  "settingsLimits": "Лимиты (JSON)",
+  "@settingsLimits": {
+    "description": "Настройка: таймауты и лимиты в JSON. Жёсткие правила безопасности здесь не отключаются."
+  },
+  "settingsLimitsInvalid": "JSON лимитов некорректен",
+  "@settingsLimitsInvalid": {
+    "description": "Ошибка, если JSON лимитов не разбирается."
+  },
+  "settingsSaved": "Настройки сохранены",
+  "@settingsSaved": {
+    "description": "Снекбар после сохранения настроек."
+  },
+  "queueSendNow": "Отправить сейчас",
+  "@queueSendNow": {
+    "description": "Tooltip on a queued message: interrupt the current step and send this message now."
+  },
+  "queueEdit": "Изменить",
+  "@queueEdit": {
+    "description": "Tooltip on a queued message: move its text back into the input field for editing."
+  },
+  "queueRemove": "Удалить",
+  "@queueRemove": {
+    "description": "Tooltip on a queued message: remove it from the queue."
+  },
+  "compactHistory": "Сжать историю",
+  "@compactHistory": {
+    "description": "Button in the context meter: compress the older part of the chat history now."
+  },
+  "chatsFilterAll": "Все хосты",
+  "@chatsFilterAll": {
+    "description": "Chip in the chat list: show chats from every host."
+  },
+  "chatBadgeRunning": "Выполняется",
+  "@chatBadgeRunning": {
+    "description": "Tooltip for the spinner badge: the agent is working in this chat."
+  },
+  "chatBadgeWaiting": "Ждёт подтверждения",
+  "@chatBadgeWaiting": {
+    "description": "Tooltip for the badge: the agent waits for an approval or an answer in this chat."
+  },
+  "hostNotesLabel": "Заметки",
+  "@hostNotesLabel": {
+    "description": "Label of the free-text notes field of a host (for example, 'prod API box')."
+  },
+  "hostDefaultWorkspaceLabel": "Рабочая папка по умолчанию",
+  "@hostDefaultWorkspaceLabel": {
+    "description": "Label of the default workspace path field of a host. New chats on this host start in this folder."
+  },
+  "hostShellLabel": "Оболочка",
+  "@hostShellLabel": {
+    "description": "Label of the field that overrides the shell used to run commands on a host."
+  },
+  "hostShellHint": "Имя или путь исполняемого файла, например bash. Пусто — sh.",
+  "@hostShellHint": {
+    "description": "Helper text under the shell override field."
+  },
+  "hostTimeoutLabel": "Таймаут подключения, сек",
+  "@hostTimeoutLabel": {
+    "description": "Label of the SSH connection timeout field of a host. Empty means the limit from Settings."
+  },
+  "hostPortInvalid": "Порт должен быть от 1 до 65535",
+  "@hostPortInvalid": {
+    "description": "Validation error for the SSH port field."
+  },
+  "hostAddressRequired": "Укажите адрес",
+  "@hostAddressRequired": {
+    "description": "Validation error when the SSH host address is empty."
+  },
+  "hostTimeoutInvalid": "Целое число секунд больше 0",
+  "@hostTimeoutInvalid": {
+    "description": "Validation error for the connection timeout field."
+  },
+  "hostShellInvalid": "Допустимы буквы, цифры и символы / . _ -",
+  "@hostShellInvalid": {
+    "description": "Validation error for the shell override field."
+  },
+  "hostPickFolder": "Выбрать папку",
+  "@hostPickFolder": {
+    "description": "Tooltip of the button that opens a folder picker for the local host default workspace."
+  },
+  "hostLocalSettingsTitle": "Этот компьютер",
+  "@hostLocalSettingsTitle": {
+    "description": "Title of the dialog that edits the local host settings."
+  },
+  "hostNeverChecked": "Ещё не проверялся",
+  "@hostNeverChecked": {
+    "description": "Host list status line when the connection was never tested."
+  },
+  "hostLastCheckOk": "Проверен {time}, {latency} мс",
+  "@hostLastCheckOk": {
+    "description": "Host list status line after a successful connection test.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "latency": {
+        "type": "int"
+      }
+    }
+  },
+  "hostLastCheckFailed": "Проверка не прошла {time}: {message}",
+  "@hostLastCheckFailed": {
+    "description": "Host list status line after a failed connection test.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPinnedSection": "Закреплённые",
+  "@modelPinnedSection": {
+    "description": "Section header in the model picker for models pinned by the user."
+  },
+  "modelSearchHint": "Поиск по имени или id",
+  "@modelSearchHint": {
+    "description": "Placeholder of the search field in the model picker."
+  },
+  "modelFilterToolsOnly": "Только с tool calling",
+  "@modelFilterToolsOnly": {
+    "description": "Switch in the model picker: hide models without tool calling support."
+  },
+  "modelPickerEmpty": "Ничего не найдено",
+  "@modelPickerEmpty": {
+    "description": "Empty state of the model picker when the filter hides everything."
+  },
+  "modelNoTools": "без tool calling",
+  "@modelNoTools": {
+    "description": "Marker for a model that does not support tool calling; the agent cannot use it."
+  },
+  "modelPin": "Закрепить",
+  "@modelPin": {
+    "description": "Tooltip of the star button: pin the model to the top of the picker."
+  },
+  "modelUnpin": "Открепить",
+  "@modelUnpin": {
+    "description": "Tooltip of the filled star button: remove the model from the pinned list."
+  },
+  "modelMetaContext": "контекст {tokens}",
+  "@modelMetaContext": {
+    "description": "Model metadata: context window size, for example 128k.",
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "modelMetaPrice": "вход {input} / выход {output} за 1M",
+  "@modelMetaPrice": {
+    "description": "Model metadata: price per one million input and output tokens.",
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "statusThinking": "Думает…",
+  "@statusThinking": {
+    "description": "Status strip under the composer: the model is generating a reply."
+  },
+  "statusRunningCommands": "Выполняет команд: {count}",
+  "@statusRunningCommands": {
+    "description": "Status strip: number of foreground commands running now.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusBackgroundCommands": "В фоне: {count}",
+  "@statusBackgroundCommands": {
+    "description": "Status strip: number of background commands still running.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusWaitingApproval": "Ждёт подтверждения",
+  "@statusWaitingApproval": {
+    "description": "Status strip: the agent is blocked until the user approves a tool call."
+  },
+  "statusWaitingUser": "Ждёт ответа",
+  "@statusWaitingUser": {
+    "description": "Status strip: the agent asked the user a question and waits."
+  },
+  "runBackgroundBadge": "bg",
+  "@runBackgroundBadge": {
+    "description": "Badge on a tool card of a background command (kept short on purpose)."
+  },
+  "runPid": "pid {pid}",
+  "@runPid": {
+    "description": "Tool card header: process id of the command.",
+    "placeholders": {
+      "pid": {
+        "type": "int"
+      }
+    }
+  },
+  "runDuration": "{seconds} с",
+  "@runDuration": {
+    "description": "Tool card header: how long the command ran.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "chatModelSwitched": "Модель сменена: {name}",
+  "@chatModelSwitched": {
+    "description": "Snackbar after the user changes the model in the middle of a chat.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPinnedModels": "Закреплённые модели",
+  "@settingsPinnedModels": {
+    "description": "Settings section title: models shown first in the model picker."
+  },
+  "settingsPinnedHint": "Закреплённые модели показываются первыми в выборе модели чата.",
+  "@settingsPinnedHint": {
+    "description": "Helper text of the pinned models section in Settings."
+  },
+  "settingsAttachLimits": "Лимиты вложений",
+  "@settingsAttachLimits": {
+    "description": "Settings section title: how many files and how many bytes can be attached to a message."
+  },
+  "settingsAttachPerMessage": "Файлов в сообщении",
+  "@settingsAttachPerMessage": {
+    "description": "Settings field: maximum number of attachments per message."
+  },
+  "settingsAttachMaxBytes": "Макс. размер файла в контексте, байт",
+  "@settingsAttachMaxBytes": {
+    "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+  },
+  "settingsNoToolsWarning": "Модель без tool calling: агент не сможет с ней работать.",
+  "@settingsNoToolsWarning": {
+    "description": "Warning in Settings when the selected default model has no tool calling support."
+  },
+  "settingsAttachInvalid": "Целое число больше 0",
+  "@settingsAttachInvalid": {
+    "description": "Validation error for the attachment limit fields in Settings."
+  },
+  "onboardingWelcome": "ProbablyWorks — ИИ-агент, который выполняет задачи на вашем компьютере или SSH-сервере. Опишите задачу, а агент сам прочитает файлы, запустит команды и внесёт изменения. Рискованные действия подтверждаете вы, а ход работы видно в чате.",
+  "@onboardingWelcome": {
+    "description": "Onboarding welcome text: what the product does."
+  },
+  "onboardingVerifyKey": "Проверить и сохранить",
+  "@onboardingVerifyKey": {
+    "description": "Button in onboarding: checks the OpenRouter key by loading the model list, then stores it."
+  },
+  "onboardingKeyVerified": "Ключ работает. Доступно моделей: {count}",
+  "@onboardingKeyVerified": {
+    "description": "Onboarding status after the OpenRouter key was verified.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "onboardingModelHint": "Агенту нужен tool calling. Модели без него здесь не показываются; модель можно сменить позже в шапке чата или в Settings.",
+  "@onboardingModelHint": {
+    "description": "Onboarding hint on the model step."
+  },
+  "onboardingWorkspaceBody": "Папка на этом компьютере, в которой агент начинает новые чаты. Позже её можно изменить в Hosts.",
+  "@onboardingWorkspaceBody": {
+    "description": "Onboarding text on the workspace step."
+  },
+  "onboardingSshBody": "Необязательно. Добавьте удалённую машину по SSH, чтобы агент работал там. Отпечаток ключа хоста подтверждается при первом подключении.",
+  "@onboardingSshBody": {
+    "description": "Onboarding text on the optional SSH step."
+  },
+  "onboardingAddSsh": "Добавить SSH-хост",
+  "@onboardingAddSsh": {
+    "description": "Button in onboarding that opens the Hosts screen to add an SSH host."
+  },
+  "onboardingSkip": "Пропустить",
+  "@onboardingSkip": {
+    "description": "Button in onboarding: skip an optional step."
+  },
+  "onboardingBack": "Назад",
+  "@onboardingBack": {
+    "description": "Button in onboarding: go to the previous step."
+  },
+  "onboardingFinish": "Создать первый чат",
+  "@onboardingFinish": {
+    "description": "Final onboarding button: creates the first chat and opens the workspace."
+  },
+  "onboardingStepWelcome": "Добро пожаловать",
+  "@onboardingStepWelcome": {
+    "description": "Onboarding step title: welcome."
+  },
+  "onboardingStepKey": "Ключ OpenRouter",
+  "@onboardingStepKey": {
+    "description": "Onboarding step title: API key."
+  },
+  "onboardingStepModel": "Модель по умолчанию",
+  "@onboardingStepModel": {
+    "description": "Onboarding step title: default model."
+  },
+  "onboardingStepWorkspace": "Рабочая папка",
+  "@onboardingStepWorkspace": {
+    "description": "Onboarding step title: workspace folder of the local host."
+  },
+  "onboardingStepSsh": "SSH-хост (необязательно)",
+  "@onboardingStepSsh": {
+    "description": "Onboarding step title: optional SSH host."
+  },
+  "onboardingStepFinish": "Первый чат",
+  "@onboardingStepFinish": {
+    "description": "Onboarding step title: create the first chat."
+  }
+}

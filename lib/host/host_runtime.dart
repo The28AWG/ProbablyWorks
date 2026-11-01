@@ -1,0 +1,60 @@
+import 'dart:typed_data';
+
+import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/host/process_control.dart';
+
+/// События одного запуска команды на Host.
+sealed class ExecEvent {
+  const ExecEvent();
+}
+
+/// Процесс запущен. [pid] — pid процесса команды на Host (local или remote).
+final class ExecStarted extends ExecEvent {
+  const ExecStarted(this.pid);
+
+  final int pid;
+}
+
+/// Сырые байты stdout (UTF-8 декодируется инкрементально потребителем).
+final class ExecStdout extends ExecEvent {
+  const ExecStdout(this.bytes);
+
+  final Uint8List bytes;
+}
+
+final class ExecStderr extends ExecEvent {
+  const ExecStderr(this.bytes);
+
+  final Uint8List bytes;
+}
+
+/// Команда завершилась. Причина сбоя отличается от кода выхода.
+final class ExecDone extends ExecEvent {
+  const ExecDone({
+    this.exitCode,
+    this.connectionLost = false,
+    this.spawnFailed = false,
+    this.message,
+  });
+
+  final int? exitCode;
+  final bool connectionLost;
+  final bool spawnFailed;
+  final String? message;
+}
+
+/// Единственный транспорт исполнения: только запуск команд. Файлы и listing —
+/// это команды, собранные ShellAdapter. Остановка — тоже команда (kill).
+abstract interface class HostRuntime {
+  HostOs get os;
+
+  /// Запускает [command] и отдаёт поток событий. Отписка от потока НЕ останавливает процесс.
+  Stream<ExecEvent> run(String command, {String? cwd});
+}
+
+extension HostRuntimeKill on HostRuntime {
+  /// Остановка процесса — это обычная команда на Host (`kill`), без отдельного API.
+  Future<void> killProcess(int pid, {bool force = false}) async {
+    await run(ProcessControl(os).killCommand(pid, force: force)).drain<void>();
+  }
+}
