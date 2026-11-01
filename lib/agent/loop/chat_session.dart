@@ -8,6 +8,7 @@ import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
@@ -18,7 +19,6 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/cancel_token.dart';
-import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/host/host_capture.dart';
@@ -71,7 +71,6 @@ class ChatSession {
 
   static const _uuid = Uuid();
   static const _maxRetries = 3;
-  static const _maxTitleChars = 60;
 
   bool _running = false;
   CancelToken? _turnCancel;
@@ -527,7 +526,7 @@ class ChatSession {
         refreshed.titleSource == ChatTitleSource.none &&
         prompt.text.isNotEmpty) {
       await _hub.chats.saveChat(
-        refreshed.copyWith(title: _fallbackTitle(prompt.text)),
+        refreshed.copyWith(title: ChatTitle.fallback(prompt.text)),
       );
       _emit(AgentStateChanged(chatId));
       unawaited(_generateTitle(prompt.text));
@@ -635,49 +634,54 @@ class ChatSession {
 
   // ---- title -------------------------------------------------------------
 
-  static String _fallbackTitle(String text) {
-    final single = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return single.length <= _maxTitleChars
-        ? single
-        : '${charPrefix(single, _maxTitleChars)}…';
+  /// Модель для заголовка: отдельная из настроек, иначе модель по умолчанию.
+  /// Пустая строка в настройках означает «не задана» (очистка поля пишет именно её).
+  Future<String?> _titleModel() async {
+    final titleModel = await _hub.settings.read(
+      SettingsRepository.keyTitleModel,
+    );
+    if (titleModel != null && titleModel.isNotEmpty) return titleModel;
+    final defaultModel = await _hub.settings.read(
+      SettingsRepository.keyDefaultModel,
+    );
+    return defaultModel == null || defaultModel.isEmpty ? null : defaultModel;
   }
 
   Future<void> _generateTitle(String prompt) async {
     try {
-      final model =
-          await _hub.settings.read(SettingsRepository.keyTitleModel) ??
-          await _hub.settings.read(SettingsRepository.keyDefaultModel);
-      if (model == null || model.isEmpty) return;
+      final model = await _titleModel();
+      if (model == null) {
+        _log.warning('title generation skipped: no model configured');
+        return;
+      }
       final request = LlmRequest(
         model: model,
         messages: [
-          const LlmMessage.system(
-            'Write a short chat title (at most 6 words) for the user request. Reply with the title only, no quotes.',
-          ),
+          const LlmMessage.system(ChatTitle.systemPrompt),
           LlmMessage.user(TextClip.headTail(prompt, maxChars: 1000)),
         ],
-        maxTokens: 24,
+        maxTokens: ChatTitle.maxTokens,
+        skipReasoning: true,
       );
       final buffer = StringBuffer();
       await for (final event in _hub.llm.stream(request)) {
         if (event is LlmTextDelta) buffer.write(event.text);
       }
-      final title = buffer.toString().trim().replaceAll(
-        RegExp(r'^["«»]+|["«»]+$'),
-        '',
-      );
-      if (title.isEmpty) return;
+      final title = ChatTitle.sanitize(buffer.toString());
+      if (title == null) {
+        _log.warning(
+          'title generation: unusable model reply, keeping fallback',
+        );
+        return;
+      }
       final chat = await _hub.chats.chat(chatId);
       if (chat == null || chat.titleSource == ChatTitleSource.user) return;
       await _hub.chats.saveChat(
-        chat.copyWith(
-          title: _fallbackTitle(title),
-          titleSource: ChatTitleSource.generated,
-        ),
+        chat.copyWith(title: title, titleSource: ChatTitleSource.generated),
       );
       _emit(AgentStateChanged(chatId));
-    } on AppFailure catch (error) {
-      _log.fine('title generation skipped: ${error.message}');
+    } on Object catch (error, stack) {
+      _log.warning('title generation failed', error, stack);
     }
   }
 

@@ -57,6 +57,7 @@ class LlmRequest {
     this.tools = const [],
     this.maxTokens,
     this.temperature,
+    this.skipReasoning = false,
   });
 
   final String model;
@@ -64,6 +65,9 @@ class LlmRequest {
   final List<LlmToolSpec> tools;
   final int? maxTokens;
   final double? temperature;
+
+  /// Просит модель не тратить токены на рассуждения (для коротких служебных ответов).
+  final bool skipReasoning;
 }
 
 class LlmUsage {

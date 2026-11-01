@@ -123,6 +123,11 @@ class OpenRouterLlmProvider implements LlmProvider {
         : [for (final t in request.tools) _toTool(t)],
     maxTokens: request.maxTokens,
     temperature: request.temperature,
+    reasoning: request.skipReasoning
+        ? const ChatRequestReasoningValue(
+            effort: ChatRequestReasoningValueEffortValue.none,
+          )
+        : null,
   );
 
   ChatMessages _toMessage(LlmMessage message) => switch (message.role) {

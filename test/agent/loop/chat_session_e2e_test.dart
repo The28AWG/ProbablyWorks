@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
@@ -13,6 +14,7 @@ import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
+import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
@@ -33,9 +35,20 @@ import 'package:probably_works/test_support/pipe_pty_launcher.dart';
 class _FakeLlm implements LlmProvider {
   final List<List<LlmEvent>> script = [];
   final List<LlmRequest> requests = [];
+  final List<LlmRequest> titleRequests = [];
+
+  /// Ответ модели на запрос заголовка (отдельно от сценария хода).
+  String titleReply = '';
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
+    if (request.messages.first.content == ChatTitle.systemPrompt) {
+      titleRequests.add(request);
+      return Stream.fromIterable([
+        LlmTextDelta(titleReply),
+        const LlmCompleted(),
+      ]);
+    }
     requests.add(request);
     return Stream.fromIterable(script.removeAt(0));
   }
@@ -109,14 +122,17 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
-  Future<String> createChat({PolicyMode mode = PolicyMode.yolo}) async {
+  Future<String> createChat({
+    PolicyMode mode = PolicyMode.yolo,
+    ChatTitleSource titleSource = ChatTitleSource.user,
+  }) async {
     final now = DateTime.now();
     await hub.chats.saveChat(
       Chat(
         id: 'chat-1',
         hostId: 'local',
         title: 'test',
-        titleSource: ChatTitleSource.user,
+        titleSource: titleSource,
         createdAt: now,
         updatedAt: now,
         policyMode: mode,
@@ -286,4 +302,76 @@ void main() {
       expect(await hub.chats.toolRunsForChat(chatId), isEmpty);
     },
   );
+
+  /// Ждёт, пока фоновая генерация заголовка сохранит результат.
+  Future<Chat> waitForGeneratedTitle(String chatId) async {
+    for (var i = 0; i < 500; i++) {
+      final chat = await hub.chats.chat(chatId);
+      if (chat != null && chat.titleSource != ChatTitleSource.none) {
+        return chat;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    fail('title was not generated');
+  }
+
+  group('chat title', () {
+    test('generated title replaces the fallback and is sanitized', () async {
+      final chatId = await createChat(titleSource: ChatTitleSource.none);
+      llm
+        ..titleReply = '"Счётчик от 1 до 40".'
+        ..script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'запусти счётчик от 1 до 40');
+
+      final chat = await waitForGeneratedTitle(chatId);
+      expect(chat.title, 'Счётчик от 1 до 40');
+      expect(chat.titleSource, ChatTitleSource.generated);
+      expect(llm.titleRequests.single.skipReasoning, isTrue);
+      expect(llm.titleRequests.single.maxTokens, ChatTitle.maxTokens);
+    });
+
+    test('empty title model setting falls back to the default model', () async {
+      final chatId = await createChat(titleSource: ChatTitleSource.none);
+      await hub.settings.write(SettingsRepository.keyTitleModel, '');
+      llm
+        ..titleReply = 'Заголовок'
+        ..script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'задача');
+
+      await waitForGeneratedTitle(chatId);
+      expect(llm.titleRequests.single.model, 'fake/model');
+    });
+
+    test('configured title model is used for the title request', () async {
+      final chatId = await createChat(titleSource: ChatTitleSource.none);
+      await hub.settings.write(SettingsRepository.keyTitleModel, 'title/model');
+      llm
+        ..titleReply = 'Заголовок'
+        ..script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'задача');
+
+      await waitForGeneratedTitle(chatId);
+      expect(llm.titleRequests.single.model, 'title/model');
+    });
+
+    test('unusable reply keeps the fallback and is logged', () async {
+      final chatId = await createChat(titleSource: ChatTitleSource.none);
+      llm
+        ..titleReply = 'The user wants a short chat title for their request'
+        ..script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+      final logged = Logger.root.onRecord.firstWhere(
+        (r) => r.message.contains('unusable model reply'),
+      );
+
+      await runTurn(hub.session(chatId), 'запусти счётчик');
+
+      await logged;
+      final chat = await hub.chats.chat(chatId);
+      expect(chat!.titleSource, ChatTitleSource.none);
+      expect(chat.title, 'запусти счётчик');
+    });
+  });
 }
