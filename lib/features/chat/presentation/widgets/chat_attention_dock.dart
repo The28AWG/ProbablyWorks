@@ -11,7 +11,8 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 /// Док над композером: всё, что требует решения пользователя, и ошибки.
 ///
 /// Подтверждения и вопросы живут здесь, а не в ленте: при прокрутке вверх агент не может
-/// ждать ответа незаметно. Док пуст, когда решений не нужно, и не занимает место.
+/// ждать ответа незаметно. Док пуст, когда решений не нужно, и не занимает место. Карточки
+/// появляются, уходят и сдвигают соседей плавно: см. [_DockList].
 class ChatAttentionDock extends StatelessWidget {
   const ChatAttentionDock({required this.state, super.key});
 
@@ -20,64 +21,189 @@ class ChatAttentionDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final items = <Widget>[
+    final items = <_DockItem>[
       if (state.failure != null)
-        AppBanner(
-          message: l10n.commonError(
-            TextClip.headTail(state.failure!, maxChars: 400),
+        _DockItem(
+          'failure',
+          AppBanner(
+            message: l10n.commonError(
+              TextClip.headTail(state.failure!, maxChars: 400),
+            ),
+            icon: Icons.error_outline,
+            tone: AppTone.danger,
           ),
-          icon: Icons.error_outline,
-          tone: AppTone.danger,
         ),
       if (state.trustNeeded)
-        AppBanner(
-          title: l10n.trustTitle,
-          message: l10n.trustBody,
-          icon: Icons.shield_outlined,
-          tone: AppTone.warning,
-          action: FilledButton(
-            onPressed: () =>
-                context.read<ChatBloc>().add(const ChatWorkspaceTrusted()),
-            child: Text(l10n.trustAction),
-          ),
-        ),
-      if (state.stepLimitReached)
-        AppBanner(
-          message: l10n.stepLimitReached,
-          icon: Icons.pause_circle_outline,
-          tone: AppTone.warning,
-          action: FilledButton(
-            onPressed: () =>
-                context.read<ChatBloc>().add(const ChatContinued()),
-            child: Text(l10n.stepLimitContinue),
-          ),
-        ),
-      for (final approval in state.approvals) _ApprovalCard(request: approval),
-      for (final question in state.questions) _QuestionCard(question: question),
-      if (state.queue.isNotEmpty) _QueueCard(items: state.queue),
-    ];
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: ChatColumn.fixed(
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 320),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < items.length; i++) ...[
-                  if (i > 0) const SizedBox(height: AppSpacing.sm),
-                  items[i],
-                ],
-              ],
+        _DockItem(
+          'trust',
+          AppBanner(
+            title: l10n.trustTitle,
+            message: l10n.trustBody,
+            icon: Icons.shield_outlined,
+            tone: AppTone.warning,
+            action: FilledButton(
+              onPressed: () =>
+                  context.read<ChatBloc>().add(const ChatWorkspaceTrusted()),
+              child: Text(l10n.trustAction),
             ),
           ),
         ),
+      if (state.stepLimitReached)
+        _DockItem(
+          'step-limit',
+          AppBanner(
+            message: l10n.stepLimitReached,
+            icon: Icons.pause_circle_outline,
+            tone: AppTone.warning,
+            action: FilledButton(
+              onPressed: () =>
+                  context.read<ChatBloc>().add(const ChatContinued()),
+              child: Text(l10n.stepLimitContinue),
+            ),
+          ),
+        ),
+      for (final approval in state.approvals)
+        _DockItem('approval:${approval.id}', _ApprovalCard(request: approval)),
+      for (final question in state.questions)
+        _DockItem('question:${question.id}', _QuestionCard(question: question)),
+      if (state.queue.isNotEmpty)
+        _DockItem('queue', _QueueCard(items: state.queue)),
+    ];
+    return ChatColumn.fixed(
+      ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 320),
+        child: SingleChildScrollView(child: _DockList(items: items)),
       ),
     );
   }
+}
+
+/// Элемент дока с идентификатором: по нему список понимает, что карточка новая, а что ушла.
+class _DockItem {
+  const _DockItem(this.id, this.child);
+
+  final String id;
+  final Widget child;
+}
+
+/// Список карточек дока. Новая карточка выезжает по высоте и проявляется, ушедшая сворачивается
+/// и гаснет, соседи плавно смещаются. Элементы идентифицируются по id, поэтому состояние
+/// карточек (например, поле ответа на вопрос) сохраняется при перестройке.
+class _DockList extends StatefulWidget {
+  const _DockList({required this.items});
+
+  final List<_DockItem> items;
+
+  @override
+  State<_DockList> createState() => _DockListState();
+}
+
+class _DockListState extends State<_DockList> with TickerProviderStateMixin {
+  final _entries = <_DockEntry>[];
+
+  @override
+  void initState() {
+    super.initState();
+    for (final item in widget.items) {
+      final entry = _DockEntry(item.id, item.child, this)..controller.value = 1;
+      _entries.add(entry);
+      _track(entry);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DockList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incoming = {for (final item in widget.items) item.id: item};
+    for (final entry in _entries) {
+      final item = incoming[entry.id];
+      if (item == null) {
+        if (!entry.leaving) {
+          entry.leaving = true;
+          entry.controller.reverse();
+        }
+        continue;
+      }
+      // Свежий child нужен всегда: в нём актуальные данные карточки.
+      entry.child = item.child;
+      if (entry.leaving) {
+        entry.leaving = false;
+        entry.controller.forward();
+      }
+    }
+    for (var i = 0; i < widget.items.length; i++) {
+      final item = widget.items[i];
+      if (_entries.any((e) => e.id == item.id)) continue;
+      final entry = _DockEntry(item.id, item.child, this)..controller.forward();
+      _entries.insert(i < _entries.length ? i : _entries.length, entry);
+      _track(entry);
+    }
+  }
+
+  /// Убирает карточку, когда она полностью свернулась. Контроллер освобождаем после кадра,
+  /// чтобы не освободить его во время собственного уведомления.
+  void _track(_DockEntry entry) {
+    entry.controller.addStatusListener((status) {
+      if (status != AnimationStatus.dismissed || !entry.leaving) return;
+      if (!mounted) return;
+      setState(() => _entries.remove(entry));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => entry.controller.dispose(),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final entry in _entries) {
+      entry.controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      for (final entry in _entries)
+        KeyedSubtree(
+          key: ValueKey(entry.id),
+          child: SizeTransition(
+            sizeFactor: entry.animation,
+            alignment: Alignment.topCenter,
+            child: FadeTransition(
+              opacity: entry.animation,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: entry.child,
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+/// Состояние одной карточки списка: контроллер появления и ухода и признак ухода.
+class _DockEntry {
+  _DockEntry(this.id, this.child, TickerProvider vsync)
+    : controller = AnimationController(
+        vsync: vsync,
+        duration: AppDurations.fast,
+      ) {
+    animation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  final String id;
+  Widget child;
+  final AnimationController controller;
+  late final Animation<double> animation;
+  var leaving = false;
 }
 
 class _ApprovalCard extends StatelessWidget {
@@ -176,12 +302,12 @@ class _QueueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final bloc = context.read<ChatBloc>();
-    return ActionCard(
-      title: l10n.queueTitle(items.length),
-      icon: Icons.queue_outlined,
-      tone: AppTone.info,
-      children: [
-        for (var i = 0; i < items.length; i++)
+    // Строка очереди идентифицируется текстом и номером повтора: удаление из середины не перезапускает соседей.
+    final seen = <String, int>{};
+    final rows = <_DockItem>[
+      for (var i = 0; i < items.length; i++)
+        _DockItem(
+          '${items[i]}#${seen.update(items[i], (n) => n + 1, ifAbsent: () => 0)}',
           Row(
             children: [
               Expanded(
@@ -211,7 +337,13 @@ class _QueueCard extends StatelessWidget {
               ),
             ],
           ),
-      ],
+        ),
+    ];
+    return ActionCard(
+      title: l10n.queueTitle(items.length),
+      icon: Icons.queue_outlined,
+      tone: AppTone.info,
+      children: [_DockList(items: rows)],
     );
   }
 }

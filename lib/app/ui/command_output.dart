@@ -68,6 +68,9 @@ class _CommandOutputState extends State<CommandOutput> {
   );
   static const _maxLines = 10000;
 
+  /// Толщина скроллбара терминала. Кнопка копирования сдвинута левее него.
+  static const _scrollbarThickness = 8.0;
+
   /// Одиночный перевод строки без возврата каретки: в терминале он сдвигает строку без сброса столбца.
   static final _lineFeed = RegExp(r'(?<!\r)\n');
   static final _escape = RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]');
@@ -269,22 +272,41 @@ class _CommandOutputState extends State<CommandOutput> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Экран терминала остаётся полной высоты, видна только часть по содержимому.
-                    SizedBox(
-                      key: const ValueKey('command-output-viewport'),
-                      height: rows * cell.height + vertical,
-                      child: ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topCenter,
-                          minHeight: screenHeight,
-                          maxHeight: screenHeight,
-                          child: TerminalView(
-                            _terminal,
-                            key: ValueKey(_generation),
-                            scrollController: _scroll,
-                            theme: _terminalTheme(colors, theme.colorScheme),
-                            textStyle: _style,
-                            padding: _padding,
-                            readOnly: !interactive,
+                    // Высота видимой части растёт плавно. Обрезка снаружи не даёт выйти за анимируемую высоту.
+                    ClipRect(
+                      child: AnimatedSize(
+                        duration: AppDurations.fast,
+                        curve: Curves.easeOutCubic,
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          key: const ValueKey('command-output-viewport'),
+                          height: rows * cell.height + vertical,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.topCenter,
+                              minHeight: screenHeight,
+                              maxHeight: screenHeight,
+                              // Толщина скроллбара фиксирована: кнопка копирования стоит ровно левее него.
+                              child: ScrollbarTheme(
+                                data: const ScrollbarThemeData(
+                                  thickness: WidgetStatePropertyAll(
+                                    _scrollbarThickness,
+                                  ),
+                                ),
+                                child: TerminalView(
+                                  _terminal,
+                                  key: ValueKey(_generation),
+                                  scrollController: _scroll,
+                                  theme: _terminalTheme(
+                                    colors,
+                                    theme.colorScheme,
+                                  ),
+                                  textStyle: _style,
+                                  padding: _padding,
+                                  readOnly: !interactive,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -309,16 +331,20 @@ class _CommandOutputState extends State<CommandOutput> {
                 ),
                 Positioned(
                   top: AppSpacing.xs,
-                  right: AppSpacing.xs,
-                  child: IconButton(
-                    tooltip: l10n.commonCopy,
-                    visualDensity: VisualDensity.compact,
-                    color: colors.codeText,
-                    icon: Icon(
-                      _copied ? Icons.check : Icons.copy_outlined,
-                      size: 16,
+                  right: AppSpacing.xs + _scrollbarThickness,
+                  child: AnimatedSwitcher(
+                    duration: AppDurations.fast,
+                    child: IconButton(
+                      key: ValueKey(_copied),
+                      tooltip: l10n.commonCopy,
+                      visualDensity: VisualDensity.compact,
+                      color: colors.codeText,
+                      icon: Icon(
+                        _copied ? Icons.check : Icons.copy_outlined,
+                        size: 16,
+                      ),
+                      onPressed: _copy,
                     ),
-                    onPressed: _copy,
                   ),
                 ),
               ],

@@ -265,7 +265,8 @@ void _liveGroup() {
       big.write('L${i.toString().padLeft(5, '0')}\r\n');
     }
     host.print(big.toString());
-    await tester.pump();
+    // Видимая высота анимируется: ждём, пока она установится, иначе позиция считается по меняющемуся окну.
+    await tester.pumpAndSettle();
 
     final terminal = _terminalOf(tester);
     final render = tester.renderObject<RenderTerminal>(

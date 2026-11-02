@@ -3,8 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -61,21 +63,6 @@ class _TestApp extends StatelessWidget {
   );
 }
 
-/// Пустое место между низом последнего сообщения и низом ленты.
-double _gapBelowLast(WidgetTester tester, int count) {
-  final timeline = tester.renderObject<RenderBox>(
-    find.byType(ChatTimeline).first,
-  );
-  final timelineBottom = timeline.localToGlobal(
-    Offset(0, timeline.size.height),
-  ).dy;
-  final last = tester.renderObject<RenderBox>(
-    find.text('Message $count').first,
-  );
-  final lastBottom = last.localToGlobal(Offset(0, last.size.height)).dy;
-  return timelineBottom - lastBottom;
-}
-
 ScrollPosition _position(WidgetTester tester) => tester
     .stateList<ScrollableState>(
       find.descendant(
@@ -95,38 +82,45 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('short chat sits at the bottom without an empty inset', (
+  testWidgets('short chat keeps the window third free below the gap', (
     tester,
   ) async {
     await pump(tester, 1);
 
-    expect(_position(tester).maxScrollExtent, 0);
-    expect(_gapBelowLast(tester, 1), lessThan(80));
-  });
-
-  testWidgets('long chat follows the end with the inset hidden below', (
-    tester,
-  ) async {
-    await pump(tester, 40);
-
     final viewport = _position(tester).viewportDimension;
-    expect(_position(tester).pixels, closeTo(viewport / 3, 1));
-    expect(_gapBelowLast(tester, 40), lessThan(80));
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect((list.padding! as EdgeInsets).bottom, closeTo(viewport / 3, 0.5));
+    expect(_position(tester).pixels, 0);
   });
 
-  testWidgets('user can scroll down into the inset of a long chat', (
+  testWidgets('the newest question sits under the top edge of the window', (
+    tester,
+  ) async {
+    await pump(tester, 1);
+
+    final window = tester.getRect(find.byType(ChatTimeline));
+    final question = tester.getRect(find.byType(ChatMessageTile).first);
+    expect(question.top - window.top, closeTo(AppSpacing.md, 0.5));
+  });
+
+  testWidgets('long chat rests at the end, pinned to the same gap', (
     tester,
   ) async {
     await pump(tester, 40);
-    final followGap = _gapBelowLast(tester, 40);
+
+    expect(_position(tester).pixels, 0);
+    expect(_position(tester).maxScrollExtent, greaterThan(0));
+  });
+
+  testWidgets('scrolling up and back down returns to the end', (tester) async {
+    await pump(tester, 40);
+
+    _position(tester).jumpTo(200);
+    await tester.pumpAndSettle();
+    expect(_position(tester).pixels, 200);
 
     _position(tester).jumpTo(0);
     await tester.pumpAndSettle();
-
-    final viewport = _position(tester).viewportDimension;
-    expect(
-      _gapBelowLast(tester, 40) - followGap,
-      closeTo(viewport / 3, 1),
-    );
+    expect(_position(tester).pixels, 0);
   });
 }

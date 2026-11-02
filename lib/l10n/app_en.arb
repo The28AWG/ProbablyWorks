@@ -987,12 +987,12 @@
       }
     }
   },
-  "composerHintIdle": "Enter sends · Shift+Enter adds a line",
-  "@composerHintIdle": {
-    "description": "Keyboard hint under the composer when the agent is idle."
+  "composerAddTooltip": "Add",
+  "@composerAddTooltip": {
+    "description": "Tooltip of the \"+\" button in the composer: attach file, working folder and execution mode."
   },
-  "composerHintBusy": "Enter queues the message · Ctrl+Enter sends it now",
-  "@composerHintBusy": {
-    "description": "Keyboard hint under the composer while the agent is working."
+  "composerModeLabel": "Execution mode",
+  "@composerModeLabel": {
+    "description": "Submenu in the \"+\" menu: choosing between asking for approval and auto-approve."
   }
 }

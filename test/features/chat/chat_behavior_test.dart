@@ -6,6 +6,7 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
@@ -90,9 +91,8 @@ ChatState _state({
 ScrollPosition _position(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable).first).position;
 
-/// Позиция, при которой конец ответа касается низа окна: под ним остаётся нижний отступ в треть высоты окна ленты.
-double _followOffset(WidgetTester tester) =>
-    _position(tester).viewportDimension / 3;
+/// Лента перевёрнута: при слежении смещение ноль, внизу виден нижний отступ, а ход прижат к верху окна.
+const _followOffset = 0.0;
 
 /// Верхние края сообщений, которые сейчас видны в окне ленты.
 Map<String, double> _visibleTops(WidgetTester tester) {
@@ -144,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
     final position = _position(tester);
     expect(position.maxScrollExtent, greaterThan(0));
-    expect(position.pixels, closeTo(_followOffset(tester), 1));
+    expect(position.pixels, closeTo(_followOffset, 1));
   });
 
   testWidgets(
@@ -165,7 +165,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
       final away = position.pixels;
-      expect(away, greaterThan(_followOffset(tester) + 100));
+      expect(away, greaterThan(_followOffset + 100));
 
       // Новый ответ ассистента не должен увести читателя от места, на котором он остановился.
       final before = _visibleTops(tester);
@@ -177,16 +177,28 @@ void main() {
           ),
         ),
       );
+      // Кнопка копирования уходит с прошлого ответа анимацией. Изменение лежит ниже сообщений, которые
+      // читает пользователь: они стоят на месте (якорь), ход с новым вопросом ниже сдвигается.
+      // Якорь догоняет изменение после кадра, поэтому в кадре отставание до одного шага анимации (16 px).
+      final reading = before.keys.where((id) => id == 'm18');
+      expect(reading, isNotEmpty);
+      for (var frame = 0; frame < 15; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        final now = _visibleTops(tester);
+        for (final id in reading.where(now.containsKey)) {
+          expect(now[id], closeTo(before[id]!, 16), reason: '$id, кадр $frame');
+        }
+      }
       await tester.pumpAndSettle();
       final after = _visibleTops(tester);
-      for (final id in before.keys.where(after.containsKey)) {
+      for (final id in reading.where(after.containsKey)) {
         expect(after[id], closeTo(before[id]!, 0.5), reason: id);
       }
 
       await tester.tap(find.text(l10n.chatScrollToLatest));
       await tester.pumpAndSettle();
       expect(find.text(l10n.chatScrollToLatest), findsNothing);
-      expect(position.pixels, closeTo(_followOffset(tester), 1));
+      expect(position.pixels, closeTo(_followOffset, 1));
     },
   );
 
@@ -234,7 +246,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text(l10n.chatScrollToLatest), findsNothing);
-    expect(position.pixels, closeTo(_followOffset(tester), 1));
+    expect(position.pixels, closeTo(_followOffset, 1));
   });
 
   testWidgets('compaction marker shows and expands the summary', (
@@ -471,7 +483,30 @@ void main() {
     );
   });
 
-  testWidgets('message actions appear on hover', (tester) async {
+  testWidgets('copy under an answer exists only for the last answer', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(height: 500, child: ChatTimeline(state: _state(count: 3))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder copyIn(String id) => find.descendant(
+      of: find.byWidgetPredicate(
+        (w) => w is ChatMessageTile && w.message.id == id,
+      ),
+      matching: find.byIcon(Icons.copy_outlined),
+    );
+    // Ответ агента: кнопка только у последнего ответа, без резерва места у остальных.
+    expect(copyIn('m1'), findsNothing);
+    expect(copyIn('m3'), findsOneWidget);
+  });
+
+  testWidgets('user message actions appear on hover', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -480,7 +515,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // Панель действий каждого сообщения живёт внутри его плитки.
+    // Панель действий сообщения пользователя живёт внутри его плитки.
     double actionsOf(String id) => tester
         .widget<AnimatedOpacity>(
           find.descendant(
@@ -496,7 +531,6 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(-10, -10));
     addTearDown(mouse.removePointer);
-    expect(actionsOf('m1'), 0);
     expect(actionsOf('m2'), 0);
     await mouse.moveTo(tester.getCenter(find.text('Question 2')));
     await tester.pumpAndSettle();
@@ -517,7 +551,7 @@ void main() {
     },
   );
 
-  testWidgets('short chat has no empty inset below its messages', (
+  testWidgets('a short chat still pins its last question to the top', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
@@ -525,9 +559,12 @@ void main() {
     await tester.pumpWidget(_TestApp(ChatTimeline(state: _state(count: 2))));
     await tester.pumpAndSettle();
 
-    final list = tester.widget<ListView>(find.byType(ListView));
-    expect((list.padding! as EdgeInsets).bottom, 0);
-    expect(_position(tester).maxScrollExtent, 0);
+    // Короткий чат тоже занимает окно до отступа: вопрос стоит у верха, отступ внизу не пропадает.
+    expect(_position(tester).pixels, closeTo(_followOffset, 1));
+    final window = tester.getRect(find.byType(ListView));
+    final question = _visibleTops(tester)['m2'];
+    expect(question, isNotNull);
+    expect(question! - window.top, closeTo(AppSpacing.md, 0.5));
   });
 
   testWidgets('streamed answer keeps its end at the bottom of the window', (
@@ -548,11 +585,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(_position(tester).pixels, closeTo(_followOffset(tester), 1));
+      expect(_position(tester).pixels, closeTo(_followOffset, 1));
     }
   });
 
-  testWidgets('scrolling into the empty inset counts as being at the end', (
+  testWidgets('scrolling back down to the newest message resumes following', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 600));
@@ -569,7 +606,7 @@ void main() {
 
     await tester.drag(find.byType(ListView), const Offset(0, -1000));
     await tester.pumpAndSettle();
-    expect(_position(tester).pixels, lessThan(_followOffset(tester)));
+    expect(_position(tester).pixels, closeTo(_followOffset, 1));
     expect(find.text(l10n.chatScrollToLatest), findsNothing);
   });
 

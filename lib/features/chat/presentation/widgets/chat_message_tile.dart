@@ -8,12 +8,13 @@ import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Сообщение в ленте. Пользователь — нейтральный пузырь справа, ассистент — текст на всю колонку,
-/// служебные события — одна приглушённая строка. Действия под сообщением видны при наведении
-/// и при фокусе с клавиатуры.
+/// служебные события — одна приглушённая строка. Действия сообщения пользователя видны при наведении
+/// и при фокусе с клавиатуры. У ответа агента кнопка «Копировать» есть только у последнего ответа.
 class ChatMessageTile extends StatelessWidget {
   const ChatMessageTile({
     required this.message,
     required this.editable,
+    this.isLastAnswer = false,
     super.key,
   });
 
@@ -22,10 +23,16 @@ class ChatMessageTile extends StatelessWidget {
   /// Правка и удаление недоступны, пока агент работает: история меняется только между шагами.
   final bool editable;
 
+  /// Ответ агента — последний в ленте: только у него есть кнопка «Копировать».
+  final bool isLastAnswer;
+
   @override
   Widget build(BuildContext context) => switch (message.role) {
     MessageRole.user => _UserMessage(message: message, editable: editable),
-    MessageRole.assistant => _AssistantMessage(message: message),
+    MessageRole.assistant => _AssistantMessage(
+      message: message,
+      isLastAnswer: isLastAnswer,
+    ),
     MessageRole.event => _EventLine(text: message.text),
     MessageRole.tool => const SizedBox.shrink(),
   };
@@ -122,9 +129,10 @@ class _UserMessage extends StatelessWidget {
 }
 
 class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage({required this.message});
+  const _AssistantMessage({required this.message, required this.isLastAnswer});
 
   final ChatMessage message;
+  final bool isLastAnswer;
 
   @override
   Widget build(BuildContext context) {
@@ -133,16 +141,36 @@ class _AssistantMessage extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: _HoverActions(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        actions: [
-          _ActionIcon(
-            tooltip: l10n.commonCopy,
-            icon: Icons.copy_outlined,
-            onPressed: () => _copy(context, message.text, l10n),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppMarkdown(data: message.text),
+          // Строка с кнопкой занимает место только у последнего ответа. Появление и уход плавные.
+          AnimatedSize(
+            duration: AppDurations.fast,
+            alignment: Alignment.topLeft,
+            child: AnimatedSwitcher(
+              duration: AppDurations.fast,
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
+              child: isLastAnswer
+                  ? Padding(
+                      key: const ValueKey('copy'),
+                      padding: const EdgeInsets.only(top: AppSpacing.xs),
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: _ActionIcon(
+                          tooltip: l10n.commonCopy,
+                          icon: Icons.copy_outlined,
+                          onPressed: () => _copy(context, message.text, l10n),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('none')),
+            ),
           ),
         ],
-        child: AppMarkdown(data: message.text),
       ),
     );
   }

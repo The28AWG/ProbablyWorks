@@ -70,70 +70,87 @@ class _ChatBodyState extends State<ChatBody> {
       listener: _onChatState,
       builder: (context, state) {
         final chat = state.chat;
+        // Загрузка и тело чата сменяют друг друга плавно, а не мгновенно.
         if (state.loading || chat == null) {
-          return const Center(child: CircularProgressIndicator());
+          return AnimatedSwitcher(
+            duration: AppDurations.normal,
+            child: const Center(
+              key: ValueKey('loading'),
+              child: CircularProgressIndicator(),
+            ),
+          );
         }
         final bloc = context.read<ChatBloc>();
         final fraction = state.promptTokens == null
             ? null
             : state.promptTokens! /
                   (state.contextLimit ?? _defaultContextLimit);
-        return DropTarget(
-          onDragEntered: (_) => setState(() => _dragging = true),
-          onDragExited: (_) => setState(() => _dragging = false),
-          onDragDone: _onDragDone,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  _Header(
-                    title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
-                  ),
-                  Expanded(
-                    child: ChatTimeline(
-                      state: state,
-                      terminalFor: context.read<ChatBloc>().terminalFor,
+        return AnimatedSwitcher(
+          duration: AppDurations.normal,
+          child: DropTarget(
+            key: const ValueKey('body'),
+            onDragEntered: (_) => setState(() => _dragging = true),
+            onDragExited: (_) => setState(() => _dragging = false),
+            onDragDone: _onDragDone,
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    _Header(
+                      title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
                     ),
-                  ),
-                  ChatAttentionDock(state: state),
-                  ChatComposer(
-                    state: state,
-                    controller: _composer,
-                    attachments: _attachments,
-                    dragging: _dragging,
-                    settings: ChatMetaBar(
-                      hosts: state.hosts,
-                      hostId: chat.hostId,
-                      onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
-                      workspace: chat.workspace,
-                      onPickWorkspace: () => _pickWorkspace(bloc, chat),
-                      modelLabel: _modelLabel(
-                        state.effectiveModelId,
-                        state.models,
+                    Expanded(
+                      child: ChatTimeline(
+                        state: state,
+                        terminalFor: context.read<ChatBloc>().terminalFor,
                       ),
-                      onPickModel: () => _pickModel(bloc, state, chat),
+                    ),
+                    ChatAttentionDock(state: state),
+                    ChatComposer(
+                      state: state,
+                      controller: _composer,
+                      attachments: _attachments,
+                      dragging: _dragging,
+                      workspace: chat.workspace,
                       policy: chat.policyMode,
+                      onPickWorkspace: () => _pickWorkspace(bloc, chat),
                       onPolicySelected: (mode) =>
                           bloc.add(ChatPolicyChanged(mode)),
-                      contextFraction: fraction,
-                      onOpenContext: () => _openContext(bloc),
-                      running: state.isRunning,
+                      settings: ChatMetaBar(
+                        hosts: state.hosts,
+                        hostId: chat.hostId,
+                        onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
+                        workspace: chat.workspace,
+                        onPickWorkspace: () => _pickWorkspace(bloc, chat),
+                        modelLabel: _modelLabel(
+                          state.effectiveModelId,
+                          state.models,
+                        ),
+                        onPickModel: () => _pickModel(bloc, state, chat),
+                        contextFraction: fraction,
+                        onOpenContext: () => _openContext(bloc),
+                        running: state.isRunning,
+                      ),
+                      onAttach: _pickFiles,
+                      onRemoveAttachment: (index) =>
+                          setState(() => _attachments.removeAt(index)),
+                      onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
+                      onStop: () => bloc.add(const ChatStopped()),
                     ),
-                    onAttach: _pickFiles,
-                    onRemoveAttachment: (index) =>
-                        setState(() => _attachments.removeAt(index)),
-                    onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
-                    onStop: () => bloc.add(const ChatStopped()),
-                  ),
-                ],
-              ),
-              if (_dragging)
+                  ],
+                ),
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: ChatDropOverlay(label: l10n.composerDropHint),
+                    ignoring: !_dragging,
+                    child: AnimatedOpacity(
+                      opacity: _dragging ? 1 : 0,
+                      duration: AppDurations.fast,
+                      child: ChatDropOverlay(label: l10n.composerDropHint),
+                    ),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -281,11 +298,15 @@ class _Header extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: AnimatedSwitcher(
+                duration: AppDurations.fast,
+                child: Text(
+                  title,
+                  key: ValueKey(title),
+                  style: theme.textTheme.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ],

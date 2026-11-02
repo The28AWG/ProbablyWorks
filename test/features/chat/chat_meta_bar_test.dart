@@ -1,12 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-
 import 'package:probably_works/test_support/golden_fonts.dart';
 
 final _hosts = [
@@ -47,9 +45,7 @@ class _TestHost extends StatelessWidget {
 
 class _TestChatMetaBar extends StatelessWidget {
   const _TestChatMetaBar({
-    this.policy = PolicyMode.ask,
     this.running = false,
-    this.onPolicySelected,
     this.onHostSelected,
     this.workspace,
     this.onPickWorkspace,
@@ -58,19 +54,13 @@ class _TestChatMetaBar extends StatelessWidget {
     this.noModel = false,
   });
 
-  final PolicyMode policy;
   final bool running;
-  final ValueChanged<PolicyMode>? onPolicySelected;
   final ValueChanged<String>? onHostSelected;
   final String? workspace;
   final VoidCallback? onPickWorkspace;
   final double? contextFraction;
   final VoidCallback? onOpenContext;
   final bool noModel;
-
-  static void _noopPolicy(PolicyMode _) {
-    return;
-  }
 
   static void _noopHost(String _) {
     return;
@@ -89,8 +79,6 @@ class _TestChatMetaBar extends StatelessWidget {
     onPickWorkspace: onPickWorkspace ?? _noop,
     modelLabel: noModel ? null : 'Claude Sonnet',
     onPickModel: _noop,
-    policy: policy,
-    onPolicySelected: onPolicySelected ?? _noopPolicy,
     contextFraction: contextFraction,
     onOpenContext: onOpenContext ?? _noop,
     running: running,
@@ -110,9 +98,12 @@ void main() {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _TestChatMetaBar(workspace: '/home/me/projects/app', contextFraction: 0.42),
+              _TestChatMetaBar(
+                workspace: '/home/me/projects/app',
+                contextFraction: 0.42,
+              ),
               const SizedBox(height: 16),
-              _TestChatMetaBar(policy: PolicyMode.yolo, contextFraction: 0.93),
+              _TestChatMetaBar(contextFraction: 0.93),
             ],
           ),
           brightness == Brightness.light ? AppTheme.light : AppTheme.dark,
@@ -126,29 +117,19 @@ void main() {
     });
   }
 
-  testWidgets('policy menu explains both modes and reports the choice', (
-    tester,
-  ) async {
-    PolicyMode? picked;
-    await tester.pumpWidget(
-      _TestHost(_TestChatMetaBar(onPolicySelected: (m) => picked = m), AppTheme.light),
-    );
-    await tester.tap(find.text('Ask'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Ask before risky commands and any file edits.'),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-        'Run commands and edits without asking. Denied commands are still blocked.',
-      ),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Auto-approve').last);
-    await tester.pumpAndSettle();
-    expect(picked, PolicyMode.yolo);
-  });
+  testWidgets(
+    'there is no execution mode chip: it lives in the composer menu',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestHost(
+          _TestChatMetaBar(workspace: '/home/me/projects/app'),
+          AppTheme.light,
+        ),
+      );
+      expect(find.text('Ask'), findsNothing);
+      expect(find.text('Auto-approve'), findsNothing);
+    },
+  );
 
   testWidgets('host cannot be changed while the agent is running', (
     tester,
@@ -175,7 +156,10 @@ void main() {
   ) async {
     String? picked;
     await tester.pumpWidget(
-      _TestHost(_TestChatMetaBar(onHostSelected: (id) => picked = id), AppTheme.light),
+      _TestHost(
+        _TestChatMetaBar(onHostSelected: (id) => picked = id),
+        AppTheme.light,
+      ),
     );
     await tester.tap(find.text('This computer'));
     await tester.pumpAndSettle();
@@ -198,6 +182,7 @@ void main() {
         AppTheme.light,
       ),
     );
+    await tester.pumpAndSettle();
     expect(find.text('app'), findsOneWidget);
     expect(find.text('42%'), findsOneWidget);
     await tester.tap(find.text('app'));
@@ -226,19 +211,46 @@ void main() {
     expect(pickedFolder, 0);
   });
 
-  testWidgets('empty folder shows only its icon and missing usage a dash', (
+  testWidgets('folder chip is absent until a folder is assigned', (
     tester,
   ) async {
     await tester.pumpWidget(_TestHost(_TestChatMetaBar(), AppTheme.light));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.folder_outlined), findsNothing);
+
+    await tester.pumpWidget(
+      _TestHost(
+        _TestChatMetaBar(workspace: '/home/me/projects/app'),
+        AppTheme.light,
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
-    expect(find.text('not set'), findsNothing);
-    expect(find.text('—'), findsOneWidget);
   });
 
-  testWidgets('icon-only folder chip is as tall as the chips with text', (
+  testWidgets('context chip is absent until the model reports usage', (
     tester,
   ) async {
     await tester.pumpWidget(_TestHost(_TestChatMetaBar(), AppTheme.light));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.data_usage), findsNothing);
+    expect(find.text('—'), findsNothing);
+
+    await tester.pumpWidget(
+      _TestHost(_TestChatMetaBar(contextFraction: 0.1), AppTheme.light),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.data_usage), findsOneWidget);
+  });
+
+  testWidgets('folder chip is as tall as the chips with text', (tester) async {
+    await tester.pumpWidget(
+      _TestHost(
+        _TestChatMetaBar(workspace: '/home/me/projects/app'),
+        AppTheme.light,
+      ),
+    );
+    await tester.pumpAndSettle();
     final folder = tester.getSize(
       find.ancestor(
         of: find.byIcon(Icons.folder_outlined),
@@ -252,21 +264,12 @@ void main() {
       ),
     );
     expect(folder.height, model.height);
-    expect(folder.width, folder.height);
-
-    final chip = tester.getRect(
-      find.ancestor(
-        of: find.byIcon(Icons.folder_outlined),
-        matching: find.byType(InkWell),
-      ),
-    );
-    final icon = tester.getRect(find.byIcon(Icons.folder_outlined));
-    expect(icon.center.dx, closeTo(chip.center.dx, 0.5));
-    expect(icon.center.dy, closeTo(chip.center.dy, 0.5));
   });
 
   testWidgets('missing model asks to choose one', (tester) async {
-    await tester.pumpWidget(_TestHost(_TestChatMetaBar(noModel: true), AppTheme.light));
+    await tester.pumpWidget(
+      _TestHost(_TestChatMetaBar(noModel: true), AppTheme.light),
+    );
     expect(find.text('Claude Sonnet'), findsNothing);
     expect(find.text('Choose model'), findsOneWidget);
   });

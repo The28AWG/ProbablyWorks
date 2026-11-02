@@ -5,6 +5,7 @@ import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -40,6 +41,7 @@ final class RunStep extends LedgerStep {
 /// Один шаг выводится просто строкой: заголовок группы без него лишний шаг до текста. Несколько шагов
 /// сворачиваются в группу с итогом в одну строку. Группа раскрывается сама, пока есть активные шаги
 /// или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся в свёрнутом виде.
+/// Раскрытие, переход между одиночным шагом и группой и смена статуса идут плавно.
 class ChatStepLedger extends StatefulWidget {
   const ChatStepLedger({
     required this.steps,
@@ -142,8 +144,9 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (grouped)
-            InkWell(
+          ChatReveal(
+            open: grouped,
+            child: InkWell(
               borderRadius: AppRadius.smAll,
               onTap: () => _toggleGroupExpanded(expanded),
               child: Padding(
@@ -178,46 +181,50 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
                       ),
                     ],
                     const SizedBox(width: AppSpacing.xs),
-                    Icon(
-                      expanded ? Icons.expand_less : Icons.expand_more,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: AppDurations.fast,
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.expand_more,
+                        size: 18,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
               ),
-            )
-          else
-            const SizedBox.shrink(),
-          expanded
-              ? Padding(
-                  padding: EdgeInsets.only(
-                    left: grouped ? AppSpacing.sm : 0.0,
-                    top: grouped ? AppSpacing.xs : 0.0,
-                  ),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        left: grouped
-                            ? BorderSide(
-                                color: theme.colorScheme.outlineVariant,
-                              )
-                            : BorderSide.none,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        left: grouped ? AppSpacing.md : 0.0,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: rows,
-                      ),
+            ),
+          ),
+          ChatReveal(
+            open: expanded,
+            child: AnimatedPadding(
+              duration: AppDurations.fast,
+              curve: Curves.easeOutCubic,
+              padding: EdgeInsets.only(
+                left: grouped ? AppSpacing.sm : 0.0,
+                top: grouped ? AppSpacing.xs : 0.0,
+              ),
+              child: AnimatedContainer(
+                duration: AppDurations.fast,
+                curve: Curves.easeOutCubic,
+                padding: EdgeInsets.only(left: grouped ? AppSpacing.md : 0.0),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: theme.colorScheme.outlineVariant,
+                      width: grouped ? 1 : 0,
                     ),
                   ),
-                )
-              : const SizedBox.shrink(),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: rows,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -390,44 +397,46 @@ class _ThoughtRowState extends State<_ThoughtRow>
                   ),
                 ),
                 if (canExpand)
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 18,
-                    color: scheme.onSurfaceVariant,
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: AppDurations.fast,
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
               ],
             ),
           ),
         ),
-        AnimatedSize(
-          duration: AppDurations.fast,
-          alignment: Alignment.topCenter,
-          child: _expanded && canExpand
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerLow,
-                      borderRadius: AppRadius.mdAll,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        child: SingleChildScrollView(
-                          controller: _scroll,
-                          child: SelectableText(
-                            text,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
+        ChatReveal(
+          open: _expanded && canExpand,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: AppRadius.mdAll,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: SingleChildScrollView(
+                    controller: _scroll,
+                    child: SelectableText(
+                      text,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                   ),
-                )
-              : const SizedBox(width: double.infinity),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -491,6 +500,7 @@ class _StepRowState extends State<_StepRow>
     final terminal = active ? widget.terminal : null;
     final canExpand = output.isNotEmpty || terminal != null;
     final tone = toneColors(context, visual.tone).foreground;
+    final showStop = active && run.status != ToolRunStatus.waitingApproval;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -511,7 +521,14 @@ class _StepRowState extends State<_StepRow>
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
             child: Row(
               children: [
-                Icon(visual.icon, size: 16, color: tone),
+                ChatMorph(
+                  child: Icon(
+                    visual.icon,
+                    key: ValueKey(visual.icon),
+                    size: 16,
+                    color: tone,
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
@@ -525,79 +542,108 @@ class _StepRowState extends State<_StepRow>
                     ),
                   ),
                 ),
-                if (meta.isNotEmpty) ...[
-                  Text(
-                    meta.join(' · '),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                ],
-                if (run.background) ...[
-                  Text(
-                    l10n.runBackgroundBadge,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                ],
-                Text(
-                  visual.label,
-                  style: theme.textTheme.labelMedium?.copyWith(color: tone),
+                ChatMorph(
+                  child: meta.isEmpty
+                      ? const SizedBox.shrink(key: ValueKey('no-meta'))
+                      : Row(
+                          key: ValueKey(meta.join(' · ')),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              meta.join(' · '),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                          ],
+                        ),
                 ),
-                if (active && run.status != ToolRunStatus.waitingApproval)
-                  IconButton(
-                    tooltip: l10n.runStop,
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    onPressed: () => context.read<ChatBloc>().add(
-                      ChatRunStopRequested(run.id),
-                    ),
+                ChatMorph(
+                  child: run.background
+                      ? Row(
+                          key: const ValueKey('background'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              l10n.runBackgroundBadge,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.sm),
+                          ],
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no-background')),
+                ),
+                ChatMorph(
+                  child: Text(
+                    visual.label,
+                    key: ValueKey(visual.label),
+                    style: theme.textTheme.labelMedium?.copyWith(color: tone),
                   ),
-                if (canExpand)
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                ),
+                ChatMorph(
+                  child: showStop
+                      ? IconButton(
+                          key: const ValueKey('stop'),
+                          tooltip: l10n.runStop,
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          icon: const Icon(Icons.stop_circle_outlined),
+                          onPressed: () => context.read<ChatBloc>().add(
+                            ChatRunStopRequested(run.id),
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no-stop')),
+                ),
+                ChatMorph(
+                  child: canExpand
+                      ? AnimatedRotation(
+                          key: const ValueKey('chevron'),
+                          turns: _expanded ? 0.5 : 0,
+                          duration: AppDurations.fast,
+                          curve: Curves.easeOutCubic,
+                          child: Icon(
+                            Icons.expand_more,
+                            size: 18,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        )
+                      : const SizedBox.shrink(key: ValueKey('no-chevron')),
+                ),
               ],
             ),
           ),
         ),
-        AnimatedSize(
-          duration: AppDurations.fast,
-          alignment: Alignment.topCenter,
-          child: _expanded && canExpand
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CommandOutput(
-                        text: output,
-                        command: run.command,
-                        exitCode: run.exitCode,
-                        active: active,
-                        terminal: terminal,
-                        maxHeight: active ? 320 : 220,
-                      ),
-                      if (run.outputTruncated) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          l10n.runOutputTruncated,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ],
+        ChatReveal(
+          open: _expanded && canExpand,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CommandOutput(
+                  text: output,
+                  command: run.command,
+                  exitCode: run.exitCode,
+                  active: active,
+                  terminal: terminal,
+                  maxHeight: active ? 320 : 220,
+                ),
+                if (run.outputTruncated) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    l10n.runOutputTruncated,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                )
-              : const SizedBox(width: double.infinity),
+                ],
+              ],
+            ),
+          ),
         ),
       ],
     );

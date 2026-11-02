@@ -987,12 +987,12 @@
       }
     }
   },
-  "composerHintIdle": "Enter — отправить · Shift+Enter — новая строка",
-  "@composerHintIdle": {
-    "description": "Подсказка клавиш под композером, когда агент не работает."
+  "composerAddTooltip": "Добавить",
+  "@composerAddTooltip": {
+    "description": "Подсказка кнопки «+» в композере: прикрепление, рабочая папка и режим выполнения."
   },
-  "composerHintBusy": "Enter — в очередь · Ctrl+Enter — отправить сразу",
-  "@composerHintBusy": {
-    "description": "Подсказка клавиш под композером во время работы агента."
+  "composerModeLabel": "Режим выполнения",
+  "@composerModeLabel": {
+    "description": "Подменю в меню «+»: выбор между запросом подтверждений и авто-подтверждением."
   }
 }

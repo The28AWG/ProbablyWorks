@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Название хоста для интерфейса: локальный хост показываем переводом.
@@ -12,13 +12,21 @@ String hostLabelOf(List<Host> hosts, String hostId, AppLocalizations l10n) {
   return host.isLocal ? l10n.hostLocalName : host.name;
 }
 
-/// Настройки чата в нижней панели композера: где агент работает и с какими правами.
+/// Имя последней папки пути рабочей папки; null, если папка не назначена.
+String? workspaceFolderName(String? path) {
+  if (path == null) return null;
+  final parts = path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty);
+  return parts.isEmpty ? path : parts.last;
+}
+
+/// Строка настроек чата под полем ввода: хост, модель и окно контекста.
 ///
 /// Единое правило для всех элементов: тихий чип показывает текущее значение и стрелку `▾`
-/// и всегда открывает редактор — меню (хост, политика) или диалог (папка, модель, контекст).
-/// Хост и папка меняют место выполнения, поэтому во время работы они неактивны. Политику можно
-/// менять всегда: переход на «Спрашивать» во время автоматического режима — главная страховка.
-/// Режим «Авто-подтверждение» выделяется тоном предупреждения.
+/// и открывает редактор — меню (хост) или диалог (папка, модель, контекст). Хост и папка меняют
+/// место выполнения, поэтому во время работы они неактивны. Режим выполнения живёт в меню «+» композера.
+///
+/// Чип папки появляется только когда папка назначена, чип контекста — только когда модель сообщила
+/// заполнение окна. Появление и исчезновение плавные, строка не переносится на вторую линию.
 class ChatMetaBar extends StatelessWidget {
   const ChatMetaBar({
     required this.hosts,
@@ -28,8 +36,6 @@ class ChatMetaBar extends StatelessWidget {
     required this.onPickWorkspace,
     required this.modelLabel,
     required this.onPickModel,
-    required this.policy,
-    required this.onPolicySelected,
     required this.contextFraction,
     required this.onOpenContext,
     required this.running,
@@ -45,8 +51,6 @@ class ChatMetaBar extends StatelessWidget {
   /// Null — модель не выбрана: чип предлагает выбрать её и подсвечивается предупреждением.
   final String? modelLabel;
   final VoidCallback onPickModel;
-  final PolicyMode policy;
-  final ValueChanged<PolicyMode> onPolicySelected;
 
   /// Доля заполненного окна контекста (0..1) или `null`, пока модель не отчиталась.
   final double? contextFraction;
@@ -58,131 +62,111 @@ class ChatMetaBar extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final current = hosts.where((h) => h.id == hostId).firstOrNull;
     final fraction = contextFraction;
+    final folder = workspaceFolderName(workspace);
 
-    return Wrap(
-      spacing: AppSpacing.xs,
-      runSpacing: AppSpacing.xs,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        PopupMenuButton<String>(
-          tooltip: l10n.chatHostLabel,
-          enabled: !running,
-          onSelected: onHostSelected,
-          itemBuilder: (_) => [
-            for (final host in hosts)
-              PopupMenuItem(
-                value: host.id,
-                child: _CheckedRow(
-                  checked: host.id == hostId,
-                  child: Text(host.isLocal ? l10n.hostLocalName : host.name),
-                ),
-              ),
-          ],
-          child: _MetaChip(
-            icon: current?.isLocal ?? true
-                ? Icons.computer_outlined
-                : Icons.dns_outlined,
-            label: hostLabelOf(hosts, hostId, l10n),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PopupMenuButton<String>(
+            tooltip: l10n.chatHostLabel,
             enabled: !running,
-          ),
-        ),
-        // Без папки чип — только иконка: подсказка объясняет, что это такое.
-        _ActionChip(
-          tooltip: workspace ?? l10n.chatWorkspaceHint,
-          icon: Icons.folder_outlined,
-          label: _folderName(workspace),
-          maxWidth: 140,
-          onTap: running ? null : onPickWorkspace,
-        ),
-        _ActionChip(
-          tooltip: l10n.chatModelLabel,
-          icon: Icons.memory,
-          label: modelLabel ?? l10n.chatModelPick,
-          tone: modelLabel == null ? AppTone.warning : null,
-          maxWidth: 180,
-          onTap: onPickModel,
-        ),
-        PopupMenuButton<PolicyMode>(
-          tooltip: l10n.chatPolicyLabel,
-          onSelected: onPolicySelected,
-          itemBuilder: (_) => [
-            _policyItem(
-              context,
-              mode: PolicyMode.ask,
-              title: l10n.policyAsk,
-              hint: l10n.policyAskHint,
+            onSelected: onHostSelected,
+            itemBuilder: (_) => [
+              for (final host in hosts)
+                PopupMenuItem(
+                  value: host.id,
+                  child: _CheckedRow(
+                    checked: host.id == hostId,
+                    child: Text(host.isLocal ? l10n.hostLocalName : host.name),
+                  ),
+                ),
+            ],
+            child: _MetaChip(
+              icon: current?.isLocal ?? true
+                  ? Icons.computer_outlined
+                  : Icons.dns_outlined,
+              label: hostLabelOf(hosts, hostId, l10n),
+              enabled: !running,
             ),
-            _policyItem(
-              context,
-              mode: PolicyMode.yolo,
-              title: l10n.policyYolo,
-              hint: l10n.policyYoloHint,
-            ),
-          ],
-          child: _MetaChip(
-            icon: _policyIcon(policy),
-            label: policy == PolicyMode.ask ? l10n.policyAsk : l10n.policyYolo,
-            tone: policy == PolicyMode.yolo ? AppTone.warning : null,
           ),
-        ),
-        _ActionChip(
-          tooltip: l10n.chatContextTitle,
-          icon: Icons.data_usage,
-          label: fraction == null ? '—' : '${(fraction * 100).round()}%',
-          tone: fraction != null && fraction >= _warnFraction
-              ? AppTone.warning
-              : null,
-          onTap: onOpenContext,
-        ),
-      ],
+          // Папка появляется, когда назначена: без неё чип не нужен.
+          ChatMorph(
+            child: folder == null
+                ? const SizedBox.shrink(key: ValueKey('no-folder'))
+                : Row(
+                    key: const ValueKey('folder'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: AppSpacing.xs),
+                      _ActionChip(
+                        tooltip: workspace ?? l10n.chatWorkspaceHint,
+                        icon: Icons.folder_outlined,
+                        label: folder,
+                        maxWidth: 140,
+                        onTap: running ? null : onPickWorkspace,
+                      ),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          _ActionChip(
+            tooltip: l10n.chatModelLabel,
+            icon: Icons.memory,
+            label: modelLabel ?? l10n.chatModelPick,
+            tone: modelLabel == null ? AppTone.warning : null,
+            maxWidth: 180,
+            onTap: onPickModel,
+          ),
+          // Окно контекста появляется, когда модель сообщила заполнение.
+          ChatMorph(
+            child: fraction == null
+                ? const SizedBox.shrink(key: ValueKey('no-context'))
+                : Row(
+                    key: const ValueKey('context'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(width: AppSpacing.xs),
+                      _ActionChip(
+                        tooltip: l10n.chatContextTitle,
+                        icon: Icons.data_usage,
+                        label: '${(fraction * 100).round()}%',
+                        tone: fraction >= _warnFraction
+                            ? AppTone.warning
+                            : null,
+                        onTap: onOpenContext,
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
   /// Порог, с которого окно контекста подсвечивается (совпадает с порогом сжатия в агенте).
   static const _warnFraction = 0.9;
+}
 
-  static String? _folderName(String? path) {
-    if (path == null) return null;
-    final parts = path.split(RegExp(r'[/\\]')).where((p) => p.isNotEmpty);
-    return parts.isEmpty ? path : parts.last;
-  }
+/// Строка меню с галочкой у выбранного пункта.
+class _CheckedRow extends StatelessWidget {
+  const _CheckedRow({required this.checked, required this.child});
 
-  PopupMenuItem<PolicyMode> _policyItem(
-    BuildContext context, {
-    required PolicyMode mode,
-    required String title,
-    required String hint,
-  }) {
-    final theme = Theme.of(context);
-    return PopupMenuItem(
-      value: mode,
-      child: SizedBox(
-        width: 300,
-        child: _CheckedRow(
-          checked: mode == policy,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(title, style: theme.textTheme.titleSmall),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                hint,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
+  final bool checked;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 24,
+        child: checked ? const Icon(Icons.check, size: 18) : null,
       ),
-    );
-  }
-
-  static IconData _policyIcon(PolicyMode mode) => switch (mode) {
-    PolicyMode.ask => Icons.shield_outlined,
-    PolicyMode.yolo => Icons.bolt_outlined,
-  };
+      Expanded(child: child),
+    ],
+  );
 }
 
 /// Интерактивный чип для диалога: нажимается целиком, показывает стрелку и подсказку.
@@ -231,14 +215,14 @@ class _ActionChip extends StatelessWidget {
 }
 
 /// Минимальная высота чипа: одинакова у всех чипов, в том числе у чипа из одной иконки.
-const _chipMinSize = 32.0;
+const _chipMinSize = 28.0;
 
 /// Размер иконки в чипе и толщина рамки. Рамка входит в размер чипа.
 const _chipIconSize = 14.0;
 const _chipBorderWidth = 1.0;
 
 /// Чип настройки: иконка, значение и стрелка `▾` на собственной заливке и рамке.
-/// `tone` подсвечивает состояние, которое стоит заметить: режим без подтверждений, почти полный контекст.
+/// `tone` подсвечивает состояние, которое стоит заметить: почти полный контекст.
 class _MetaChip extends StatelessWidget {
   const _MetaChip({
     required this.icon,
@@ -272,7 +256,7 @@ class _MetaChip extends StatelessWidget {
               )
             : const EdgeInsets.symmetric(
                 horizontal: AppSpacing.xs + 2,
-                vertical: AppSpacing.xs,
+                vertical: 2,
               ),
         // Чип — отдельная кнопка, а не текст: своя заливка и рамка отличают его от фона карточки ввода.
         decoration: BoxDecoration(
@@ -314,24 +298,4 @@ class _MetaChip extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Строка меню с галочкой у выбранного пункта.
-class _CheckedRow extends StatelessWidget {
-  const _CheckedRow({required this.checked, required this.child});
-
-  final bool checked;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(
-        width: 24,
-        child: checked ? const Icon(Icons.check, size: 18) : null,
-      ),
-      Expanded(child: child),
-    ],
-  );
 }
