@@ -58,6 +58,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('flutter test'));
+    await tester.pumpAndSettle();
 
     final ledger = tester.getRect(find.byType(ChatStepLedger));
     final card = tester.getRect(find.byType(CommandOutput));
@@ -77,6 +79,8 @@ void main() {
       ),
     );
     await tester.pumpWidget(ledger('step 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('flutter test'));
     await tester.pumpAndSettle();
     await tester.pumpWidget(ledger('step 1\nstep 2'));
     await tester.pumpAndSettle();
@@ -166,6 +170,24 @@ void main() {
     expect(find.text('Running: 1 of 2'), findsOneWidget);
     expect(find.text('Ищу конфиг'), findsOneWidget);
     expect(find.byType(SelectableText), findsNothing);
+  });
+
+  testWidgets('a running command starts collapsed', (tester) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [RunStep(_run('r1', ToolRunStatus.running))],
+            live: const {'r1': 'step 1'},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('flutter test'), findsOneWidget);
+    expect(find.byType(CommandOutput), findsNothing);
   });
 
   group('thought row identity', () {

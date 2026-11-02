@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
@@ -23,6 +24,7 @@ class SettingsState extends Equatable {
     this.limitsJson = '',
     this.limitsError = false,
     this.pinnedModels = const [],
+    this.stepsDisplay = StepsDisplay.defaults,
     this.saved = 0,
   });
 
@@ -41,6 +43,9 @@ class SettingsState extends Equatable {
   /// Закреплённые id моделей (порядок — порядок добавления).
   final List<String> pinnedModels;
 
+  /// Поведение журнала шагов в чате по умолчанию.
+  final StepsDisplay stepsDisplay;
+
   /// Увеличивается при каждом сохранении: страница показывает снекбар по изменению.
   final int saved;
 
@@ -58,6 +63,7 @@ class SettingsState extends Equatable {
     String? limitsJson,
     bool? limitsError,
     List<String>? pinnedModels,
+    StepsDisplay? stepsDisplay,
     int? saved,
   }) => SettingsState(
     apiKeySet: apiKeySet ?? this.apiKeySet,
@@ -72,6 +78,7 @@ class SettingsState extends Equatable {
     limitsJson: limitsJson ?? this.limitsJson,
     limitsError: limitsError ?? this.limitsError,
     pinnedModels: pinnedModels ?? this.pinnedModels,
+    stepsDisplay: stepsDisplay ?? this.stepsDisplay,
     saved: saved ?? this.saved,
   );
 
@@ -89,6 +96,7 @@ class SettingsState extends Equatable {
     limitsJson,
     limitsError,
     pinnedModels,
+    stepsDisplay,
     saved,
   ];
 }
@@ -120,6 +128,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         denylist: (await _settings.readDenylist()).join('\n'),
         limitsJson: const JsonEncoder.withIndent('  ').convert(limits.toMap()),
         pinnedModels: await _settings.readPinnedModels(),
+        stepsDisplay: await _settings.readStepsDisplay(),
       ),
     );
     await refreshModels();
@@ -167,6 +176,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> saveDefaultPolicy(PolicyMode mode) async {
     await _settings.write(SettingsRepository.keyDefaultPolicy, mode.name);
     emit(state.copyWith(defaultPolicy: mode, saved: state.saved + 1));
+  }
+
+  Future<void> saveStepsDisplay(StepsDisplay value) async {
+    await _settings.saveStepsDisplay(value);
+    emit(state.copyWith(stepsDisplay: value, saved: state.saved + 1));
   }
 
   Future<void> togglePin(String modelId) async {

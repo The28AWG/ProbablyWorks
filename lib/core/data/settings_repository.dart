@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/db/app_database.dart';
 
@@ -20,6 +21,9 @@ class SettingsRepository {
   static const keyDenylist = 'denylist';
   static const keyLimits = 'limits';
   static const keyPinnedModels = 'pinnedModels';
+  static const keyStepsGroup = 'stepsGroup';
+  static const keyStepsThoughts = 'stepsThoughts';
+  static const keyStepsTools = 'stepsTools';
   static const keyLastUsageContextPrefix = 'contextLength:';
 
   Future<String?> read(String key) async {
@@ -75,6 +79,26 @@ class SettingsRepository {
 
   Future<void> savePinnedModels(List<String> ids) =>
       write(keyPinnedModels, jsonEncode(ids));
+
+  /// Журнал шагов по умолчанию. Неизвестное значение в kv-таблице даёт поведение по умолчанию.
+  Future<StepsDisplay> readStepsDisplay() async {
+    const defaults = StepsDisplay.defaults;
+    return StepsDisplay(
+      group: (await read(keyStepsGroup)) != 'no',
+      thoughts:
+          ThoughtsVisibility.values.asNameMap()[await read(keyStepsThoughts)] ??
+          defaults.thoughts,
+      tools:
+          ToolsVisibility.values.asNameMap()[await read(keyStepsTools)] ??
+          defaults.tools,
+    );
+  }
+
+  Future<void> saveStepsDisplay(StepsDisplay value) async {
+    await write(keyStepsGroup, value.group ? 'yes' : 'no');
+    await write(keyStepsThoughts, value.thoughts.name);
+    await write(keyStepsTools, value.tools.name);
+  }
 
   Future<List<String>> readDenylist() async {
     final raw = await read(keyDenylist);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
@@ -224,6 +225,11 @@ final class _Refresh extends ChatEvent {
   const _Refresh();
 }
 
+/// Настройки журнала шагов изменились в Settings: перечитать их, даже если чат уже открыт.
+final class _StepsChanged extends ChatEvent {
+  const _StepsChanged();
+}
+
 // ---- state ------------------------------------------------------------------
 
 class ChatState extends Equatable {
@@ -238,6 +244,7 @@ class ChatState extends Equatable {
     this.hosts = const [],
     this.models = const [],
     this.pinnedModels = const [],
+    this.stepsDisplay = StepsDisplay.defaults,
     this.defaultModelId,
     this.limits = AppLimits.defaults,
     this.streamText = '',
@@ -266,6 +273,9 @@ class ChatState extends Equatable {
 
   /// Закреплённые id моделей из Settings (показываются первыми в picker).
   final List<String> pinnedModels;
+
+  /// Поведение журнала шагов из Settings: группировка, видимость мыслей и вызовов.
+  final StepsDisplay stepsDisplay;
 
   /// Модель по умолчанию из Settings. Новый чат её не копирует: агент берёт её, пока у чата нет своей.
   final String? defaultModelId;
@@ -312,6 +322,7 @@ class ChatState extends Equatable {
     List<Host>? hosts,
     List<LlmModelInfo>? models,
     List<String>? pinnedModels,
+    StepsDisplay? stepsDisplay,
     String? defaultModelId,
     AppLimits? limits,
     String? streamText,
@@ -338,6 +349,7 @@ class ChatState extends Equatable {
     hosts: hosts ?? this.hosts,
     models: models ?? this.models,
     pinnedModels: pinnedModels ?? this.pinnedModels,
+    stepsDisplay: stepsDisplay ?? this.stepsDisplay,
     defaultModelId: defaultModelId ?? this.defaultModelId,
     limits: limits ?? this.limits,
     streamText: streamText ?? this.streamText,
@@ -366,6 +378,7 @@ class ChatState extends Equatable {
     hosts,
     models,
     pinnedModels,
+    stepsDisplay,
     defaultModelId,
     limits,
     streamText,
@@ -414,6 +427,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_LiveChunk>(_onLiveChunk);
     on<_LiveFlush>(_onLiveFlush);
     on<_Refresh>(_onRefresh);
+    on<_StepsChanged>(_onStepsChanged);
   }
 
   final AgentHub _hub;
@@ -424,6 +438,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<LiveChunk>? _liveSub;
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
+  final _stepsSubs = <StreamSubscription<String?>>[];
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
 
@@ -436,6 +451,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   @override
   Future<void> close() async {
     _liveTimer?.cancel();
+    for (final sub in _stepsSubs) {
+      await sub.cancel();
+    }
     await _sessionSub?.cancel();
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
@@ -448,6 +466,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
+    for (final sub in _stepsSubs) {
+      await sub.cancel();
+    }
+    _stepsSubs.clear();
     _pendingLive.clear();
     _session = _hub.session(event.chatId);
     emit(ChatState(chatId: event.chatId, loading: true));
@@ -461,6 +483,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == event.chatId)
         .listen((_) => add(const _Refresh()));
+    for (final key in [
+      SettingsRepository.keyStepsGroup,
+      SettingsRepository.keyStepsThoughts,
+      SettingsRepository.keyStepsTools,
+    ]) {
+      _stepsSubs.add(
+        _hub.settings.watch(key).listen((_) => add(const _StepsChanged())),
+      );
+    }
 
     final hosts = await _hub.hosts.all();
     final limits = await _hub.limits();
@@ -471,6 +502,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       models = const [];
     }
     final pinned = await _hub.settings.readPinnedModels();
+    final stepsDisplay = await _hub.settings.readStepsDisplay();
     final defaultModel = await _hub.settings.read(
       SettingsRepository.keyDefaultModel,
     );
@@ -480,6 +512,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         limits: limits,
         models: models,
         pinnedModels: pinned,
+        stepsDisplay: stepsDisplay,
         defaultModelId: defaultModel,
       ),
     );
@@ -713,6 +746,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
     _pendingLive.clear();
     emit(state.copyWith(live: next));
+  }
+
+  Future<void> _onStepsChanged(
+    _StepsChanged event,
+    Emitter<ChatState> emit,
+  ) async {
+    emit(state.copyWith(stepsDisplay: await _hub.settings.readStepsDisplay()));
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {

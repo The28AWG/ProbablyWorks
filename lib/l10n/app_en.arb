@@ -426,6 +426,54 @@
   "@settingsLanguageSystem": {
     "description": "Language option: follow the system locale."
   },
+  "settingsStepsGroup": "Group steps",
+  "@settingsStepsGroup": {
+    "description": "Section: group the steps of one response into one journal."
+  },
+  "settingsStepsGroupHint": "Steps of one response go into one journal. One by one: each step is a separate row.",
+  "@settingsStepsGroupHint": {
+    "description": "Hint under the group steps setting."
+  },
+  "settingsStepsGroupOn": "Grouped",
+  "@settingsStepsGroupOn": {
+    "description": "Option: steps of a response are grouped into one journal."
+  },
+  "settingsStepsGroupOff": "One by one",
+  "@settingsStepsGroupOff": {
+    "description": "Option: each step is a separate row."
+  },
+  "settingsStepsThoughts": "Show thoughts",
+  "@settingsStepsThoughts": {
+    "description": "Section: which model reasoning is shown in the chat journal."
+  },
+  "settingsStepsThoughtsHint": "Current only: the reasoning the model is writing right now. All: every reasoning of the response.",
+  "@settingsStepsThoughtsHint": {
+    "description": "Hint under the thoughts setting explaining both options."
+  },
+  "settingsStepsTools": "Show tool calls",
+  "@settingsStepsTools": {
+    "description": "Section: which tool calls are shown in the chat journal."
+  },
+  "settingsStepsToolsHint": "Active only: running or waiting for an answer. All: every tool call of the response.",
+  "@settingsStepsToolsHint": {
+    "description": "Hint under the tool calls setting explaining both options."
+  },
+  "settingsStepsThoughtsCurrent": "Current only",
+  "@settingsStepsThoughtsCurrent": {
+    "description": "Option: show only the reasoning being written right now."
+  },
+  "settingsStepsThoughtsAll": "All",
+  "@settingsStepsThoughtsAll": {
+    "description": "Option: show all reasoning of the response."
+  },
+  "settingsStepsToolsActive": "Active only",
+  "@settingsStepsToolsActive": {
+    "description": "Option: show only tool calls that are running or waiting."
+  },
+  "settingsStepsToolsAll": "All",
+  "@settingsStepsToolsAll": {
+    "description": "Option: show all tool calls of the response."
+  },
   "settingsDefaultPolicy": "Default policy for new chats",
   "@settingsDefaultPolicy": {
     "description": "Setting: policy mode applied to new chats."
@@ -828,7 +876,7 @@
   "@settingsGroupInterface": {
     "description": "Settings group: interface options."
   },
-  "settingsGroupInterfaceHint": "Interface language.",
+  "settingsGroupInterfaceHint": "Interface language and chat steps.",
   "@settingsGroupInterfaceHint": {
     "description": "Description of the interface settings group."
   },

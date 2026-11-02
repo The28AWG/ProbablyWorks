@@ -2,6 +2,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
@@ -367,6 +368,69 @@ class _SettingsViewState extends State<_SettingsView> {
             const DropdownMenuEntry(value: 'ru', label: 'Русский'),
           ],
           onSelected: (value) => cubit.saveLanguage(value ?? 'system'),
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.settingsStepsGroup,
+      description: l10n.settingsStepsGroupHint,
+      children: [
+        SegmentedButton<bool>(
+          segments: [
+            ButtonSegment(value: true, label: Text(l10n.settingsStepsGroupOn)),
+            ButtonSegment(
+              value: false,
+              label: Text(l10n.settingsStepsGroupOff),
+            ),
+          ],
+          selected: {state.stepsDisplay.group},
+          onSelectionChanged: (value) => cubit.saveStepsDisplay(
+            state.stepsDisplay.copyWith(group: value.first),
+          ),
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.settingsStepsThoughts,
+      description: l10n.settingsStepsThoughtsHint,
+      children: [
+        SegmentedButton<ThoughtsVisibility>(
+          segments: [
+            ButtonSegment(
+              value: ThoughtsVisibility.current,
+              label: Text(l10n.settingsStepsThoughtsCurrent),
+            ),
+            ButtonSegment(
+              value: ThoughtsVisibility.all,
+              label: Text(l10n.settingsStepsThoughtsAll),
+            ),
+          ],
+          selected: {state.stepsDisplay.thoughts},
+          onSelectionChanged: (value) => cubit.saveStepsDisplay(
+            state.stepsDisplay.copyWith(thoughts: value.first),
+          ),
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.settingsStepsTools,
+      description: l10n.settingsStepsToolsHint,
+      children: [
+        SegmentedButton<ToolsVisibility>(
+          segments: [
+            ButtonSegment(
+              value: ToolsVisibility.active,
+              label: Text(l10n.settingsStepsToolsActive),
+            ),
+            ButtonSegment(
+              value: ToolsVisibility.all,
+              label: Text(l10n.settingsStepsToolsAll),
+            ),
+          ],
+          selected: {state.stepsDisplay.tools},
+          onSelectionChanged: (value) => cubit.saveStepsDisplay(
+            state.stepsDisplay.copyWith(tools: value.first),
+          ),
         ),
       ],
     ),

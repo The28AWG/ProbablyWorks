@@ -461,7 +461,8 @@ class _StepRow extends StatefulWidget {
 
 class _StepRowState extends State<_StepRow>
     with AutomaticKeepAliveClientMixin<_StepRow> {
-  late var _expanded = widget.run.isActive;
+  /// Команда всегда стартует свёрнутой, в том числе во время выполнения: вывод открывает пользователь.
+  var _expanded = false;
 
   /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
   var _toggled = false;
@@ -469,16 +470,6 @@ class _StepRowState extends State<_StepRow>
   /// Строка, которую держим живой: её раскрытие не совпадает со значением по умолчанию.
   @override
   bool get wantKeepAlive => _toggled || _expanded;
-
-  @override
-  void didUpdateWidget(covariant _StepRow oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Активный шаг раскрываем, чтобы был виден вывод; завершённый не трогаем.
-    if (!oldWidget.run.isActive && widget.run.isActive) {
-      _expanded = true;
-      updateKeepAlive();
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
@@ -78,5 +79,29 @@ void main() {
       'openai/gpt-4o',
       'anthropic/claude',
     ]);
+  });
+
+  test('steps display defaults to grouped, all thoughts, all tools', () async {
+    final settings = SettingsRepository(db);
+    expect(await settings.readStepsDisplay(), StepsDisplay.defaults);
+  });
+
+  test('steps display round-trips and ignores unknown stored values', () async {
+    final settings = SettingsRepository(db);
+    const display = StepsDisplay(
+      group: false,
+      thoughts: ThoughtsVisibility.current,
+      tools: ToolsVisibility.active,
+    );
+
+    await settings.saveStepsDisplay(display);
+    expect(await settings.readStepsDisplay(), display);
+
+    await settings.write(SettingsRepository.keyStepsThoughts, 'bogus');
+    await settings.write(SettingsRepository.keyStepsTools, null);
+    expect(
+      await settings.readStepsDisplay(),
+      const StepsDisplay(group: false, thoughts: ThoughtsVisibility.all),
+    );
   });
 }

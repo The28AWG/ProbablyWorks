@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
@@ -251,33 +252,52 @@ class _ChatTimelineState extends State<ChatTimeline> {
     // Строки собираем от старого к новому и только потом переворачиваем: лента перевёрнута.
     // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
     _liveIds.clear();
+    final display = state.stepsDisplay;
     final rows = <Widget>[];
     var anchor = 'start';
     var steps = <LedgerStep>[];
+    // Слоты шагов сегмента дают стабильные ключи строкам, когда группировка выключена.
+    var slots = <String>[];
     var stepsAnchor = anchor;
+    var thoughts = 0;
 
-    void flush() {
-      if (steps.isEmpty) return;
-      _liveIds.add('steps:$stepsAnchor');
+    void ledger(String id, List<LedgerStep> value) {
+      _liveIds.add(id);
       rows.add(
         _KeyedTimelineItem(
-          id: 'steps:$stepsAnchor',
+          id: id,
           itemKeys: _itemKeys,
           child: ChatColumn.item(
             ChatStepLedger(
-              steps: steps,
+              steps: value,
               live: state.live,
               terminalFor: widget.terminalFor,
             ),
           ),
         ),
       );
-      steps = [];
     }
 
-    void step(LedgerStep value) {
+    void flush() {
+      final segment = steps;
+      final segmentSlots = slots;
+      steps = [];
+      slots = [];
+      thoughts = 0;
+      if (segment.isEmpty) return;
+      if (display.group) {
+        ledger('steps:$stepsAnchor', segment);
+        return;
+      }
+      for (var i = 0; i < segment.length; i++) {
+        ledger('steps:$stepsAnchor/${segmentSlots[i]}', [segment[i]]);
+      }
+    }
+
+    void step(LedgerStep value, String slot) {
       if (steps.isEmpty) stepsAnchor = anchor;
       steps.add(value);
+      slots.add(slot);
     }
 
     void item(String id, Widget child) {
@@ -303,7 +323,14 @@ class _ChatTimelineState extends State<ChatTimeline> {
       }
       final isAssistant = message.role == MessageRole.assistant;
       if (isAssistant && message.reasoning.isNotEmpty) {
-        step(ThoughtStep(id: 'thought:${message.id}', text: message.reasoning));
+        // Номер считаем и для скрытых мыслей: ключ строки не должен зависеть от настройки.
+        final slot = 'thought#${thoughts++}';
+        if (display.thoughts == ThoughtsVisibility.all) {
+          step(
+            ThoughtStep(id: 'thought:${message.id}', text: message.reasoning),
+            slot,
+          );
+        }
       }
       // Пустой текст ассистента не рисуем, но его шаги остаются в журнале.
       if (!isAssistant || message.text.trim().isNotEmpty) {
@@ -313,10 +340,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
         );
       }
       for (final run in runsByMessage[message.id] ?? const <ToolRun>[]) {
-        step(RunStep(run));
+        if (display.tools == ToolsVisibility.all || run.isActive) {
+          step(RunStep(run), run.id);
+        }
       }
     }
-    // Рассуждения, которые ещё стримятся: они новее всех записанных шагов.
+    // Рассуждение, которое ещё стримится, новее всех записанных шагов и всегда видно.
     if (state.streamReasoning.isNotEmpty) {
       step(
         ThoughtStep(
@@ -324,6 +353,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           text: state.streamReasoning,
           live: state.streamText.isEmpty,
         ),
+        'thought#${thoughts++}',
       );
     }
     flush();

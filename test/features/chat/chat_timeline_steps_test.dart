@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
@@ -201,4 +202,126 @@ void main() {
       expect(find.text('flutter analyze'), findsOneWidget);
     },
   );
+
+  /// Один ответ: вопрос, мысль с текстом и команды. Настройки задаются по тесту.
+  ChatState response({
+    required StepsDisplay display,
+    String? streamReasoning,
+    List<ToolRun>? runs,
+  }) => ChatState(
+    chatId: 'c',
+    chat: Chat(
+      id: 'c',
+      hostId: 'local',
+      title: 'Chat',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    ),
+    messages: [
+      ChatMessage(
+        id: 'm1',
+        chatId: 'c',
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: DateTime(2026),
+        text: 'Вопрос',
+      ),
+      ChatMessage(
+        id: 'm2',
+        chatId: 'c',
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: DateTime(2026),
+        reasoning: 'Старая мысль',
+        toolCalls: const [
+          ToolCallRef(id: 'k1', name: 'run_command', arguments: '{}'),
+        ],
+      ),
+      ChatMessage(
+        id: 'm3',
+        chatId: 'c',
+        seq: 3,
+        role: MessageRole.assistant,
+        createdAt: DateTime(2026),
+        text: 'Готово',
+      ),
+    ],
+    runs: runs ?? [_run()],
+    streamReasoning: streamReasoning ?? '',
+    stepsDisplay: display,
+  );
+
+  ToolRun runningRun() => ToolRun(
+    id: 'r2',
+    chatId: 'c',
+    messageId: 'm2',
+    toolName: 'run_command',
+    argsJson: '{}',
+    command: 'npm test',
+    status: ToolRunStatus.running,
+    startedAt: DateTime(2026),
+  );
+
+  testWidgets(
+    'thoughts "current" hides saved thoughts and keeps the streamed one',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _TestApp(
+          response(
+            display: const StepsDisplay(thoughts: ThoughtsVisibility.current),
+            streamReasoning: 'Новая мысль',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Старая мысль'), findsNothing);
+      expect(find.text('Новая мысль'), findsOneWidget);
+    },
+  );
+
+  testWidgets('tool calls "active" hide finished calls and keep running ones', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(
+        response(
+          display: const StepsDisplay(tools: ToolsVisibility.active),
+          runs: [_run(), runningRun()],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('flutter analyze'), findsNothing);
+    expect(find.text('npm test'), findsOneWidget);
+  });
+
+  testWidgets('ungrouped steps are separate rows without a group title', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(response(display: const StepsDisplay(group: false))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 steps'), findsNothing);
+    expect(find.text('Старая мысль'), findsOneWidget);
+    expect(find.text('flutter analyze'), findsOneWidget);
+  });
+
+  testWidgets('steps of one response are grouped by default', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(_TestApp(response(display: StepsDisplay.defaults)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 steps'), findsOneWidget);
+  });
 }
