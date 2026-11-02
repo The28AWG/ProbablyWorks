@@ -52,6 +52,8 @@ class _TestChatMetaBar extends StatelessWidget {
     this.contextFraction,
     this.onOpenContext,
     this.noModel = false,
+    this.modelUnavailable = false,
+    this.modelLoading = false,
   });
 
   final bool running;
@@ -61,6 +63,8 @@ class _TestChatMetaBar extends StatelessWidget {
   final double? contextFraction;
   final VoidCallback? onOpenContext;
   final bool noModel;
+  final bool modelUnavailable;
+  final bool modelLoading;
 
   static void _noopHost(String _) {
     return;
@@ -78,6 +82,8 @@ class _TestChatMetaBar extends StatelessWidget {
     workspace: workspace,
     onPickWorkspace: onPickWorkspace ?? _noop,
     modelLabel: noModel ? null : 'Claude Sonnet',
+    modelUnavailable: modelUnavailable,
+    modelLoading: modelLoading,
     onPickModel: _noop,
     contextFraction: contextFraction,
     onOpenContext: onOpenContext ?? _noop,
@@ -272,5 +278,32 @@ void main() {
     );
     expect(find.text('Claude Sonnet'), findsNothing);
     expect(find.text('Choose model'), findsOneWidget);
+  });
+
+  testWidgets('unavailable model keeps its name with a ! marker', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestHost(_TestChatMetaBar(modelUnavailable: true), AppTheme.light),
+    );
+    expect(find.text('! Claude Sonnet'), findsOneWidget);
+    expect(find.text('Claude Sonnet'), findsNothing);
+  });
+
+  testWidgets('model chip shows a spinner while the first list loads', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestHost(_TestChatMetaBar(modelLoading: true), AppTheme.light),
+    );
+    await tester.pump();
+    expect(find.text('Claude Sonnet'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChatMetaBar),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
   });
 }

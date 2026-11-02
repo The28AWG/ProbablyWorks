@@ -1,6 +1,8 @@
 /// Порт провайдера ИИ. AgentLoop зависит только от этих типов, не от OpenRouter.
 library;
 
+import 'package:equatable/equatable.dart';
+
 enum LlmRole { system, user, assistant, tool }
 
 class LlmToolCall {
@@ -115,6 +117,7 @@ class LlmModelInfo {
     this.supportsTools = false,
     this.promptPrice,
     this.completionPrice,
+    this.created,
   });
 
   final String id;
@@ -123,6 +126,27 @@ class LlmModelInfo {
   final bool supportsTools;
   final String? promptPrice;
   final String? completionPrice;
+
+  /// Время создания модели в OpenRouter (unix, секунды). Null — неизвестно.
+  final int? created;
+}
+
+/// Выбранная модель с деталями, сохранённая в БД. Показывается до загрузки каталога.
+class SavedModel extends Equatable {
+  const SavedModel({
+    required this.id,
+    required this.name,
+    this.contextLength,
+    this.supportsTools = false,
+  });
+
+  final String id;
+  final String name;
+  final int? contextLength;
+  final bool supportsTools;
+
+  @override
+  List<Object?> get props => [id, name, contextLength, supportsTools];
 }
 
 abstract interface class LlmProvider {

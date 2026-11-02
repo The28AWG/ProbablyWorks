@@ -5,12 +5,20 @@ part 'app_database.g.dart';
 
 /// Единая SQLite-база приложения (drift). Миграции — через [schemaVersion].
 @DriftDatabase(
-  tables: [Hosts, Chats, Messages, ToolRuns, SessionRevisions, KvSettings],
+  tables: [
+    Hosts,
+    Chats,
+    Messages,
+    ToolRuns,
+    SessionRevisions,
+    KvSettings,
+    SavedModels,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 2;
+  static const currentSchemaVersion = 4;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -31,6 +39,11 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(hosts, hosts.lastCheckAt);
         await m.addColumn(hosts, hosts.lastLatencyMs);
         await m.addColumn(hosts, hosts.lastCheckError);
+      }
+      // v3 создавал кеш всего каталога моделей; v4 его убирает и хранит только выбранные модели.
+      if (from < 4) {
+        await customStatement('DROP TABLE IF EXISTS llm_models');
+        await m.createTable(savedModels);
       }
     },
   );

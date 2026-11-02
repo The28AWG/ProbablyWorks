@@ -50,6 +50,8 @@ class ChatComposer extends StatelessWidget {
   final void Function(bool sendNow) onSubmit;
   final VoidCallback onStop;
 
+  /// Модель недоступна: отправка заблокирована, пока модель не сменят.
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);

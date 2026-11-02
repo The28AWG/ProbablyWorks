@@ -110,6 +110,19 @@
   "@chatModelLabel": {
     "description": "Label of the model selector for a chat."
   },
+  "chatModelUnavailableTooltip": "The model is no longer in OpenRouter. Choose another one.",
+  "@chatModelUnavailableTooltip": {
+    "description": "Tooltip of the model chip when the selected model is no longer available."
+  },
+  "chatModelUnavailableBanner": "Model {name} is no longer available in OpenRouter. Sending may fail: choose another model.",
+  "@chatModelUnavailableBanner": {
+    "description": "Banner in the chat dock when the chat model is no longer in OpenRouter (missing in the list or rejected by the server). Sending is not blocked.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chatModelPick": "Choose model",
   "@chatModelPick": {
     "description": "Model chip value when neither the chat nor the default settings have a model. The chip is highlighted as a warning."
@@ -606,6 +619,63 @@
   "@modelFilterToolsOnly": {
     "description": "Switch in the model picker: hide models without tool calling support."
   },
+  "modelFilterFree": "Free only",
+  "@modelFilterFree": {
+    "description": "Switch in the model picker: show only models with zero price."
+  },
+  "modelFilterProvider": "Provider",
+  "@modelFilterProvider": {
+    "description": "Dropdown label in the model picker: filter by provider."
+  },
+  "modelFilterAllProviders": "All providers",
+  "@modelFilterAllProviders": {
+    "description": "Option of the provider filter: no provider filter applied."
+  },
+  "modelSortLabel": "Sort",
+  "@modelSortLabel": {
+    "description": "Dropdown label in the model picker: sort order of the list."
+  },
+  "modelSortProvider": "By provider",
+  "@modelSortProvider": {
+    "description": "Sort option: group models by provider."
+  },
+  "modelSortName": "By name",
+  "@modelSortName": {
+    "description": "Sort option: alphabetical order by model name."
+  },
+  "modelSortContext": "By context",
+  "@modelSortContext": {
+    "description": "Sort option: largest context window first."
+  },
+  "modelSortPrice": "By price",
+  "@modelSortPrice": {
+    "description": "Sort option: cheapest per token first."
+  },
+  "modelSortNewest": "Newest first",
+  "@modelSortNewest": {
+    "description": "Sort option: most recently created models first."
+  },
+  "modelCurrentUnavailable": "Current model is unavailable",
+  "@modelCurrentUnavailable": {
+    "description": "Section header in the model picker for the selected model that is no longer in OpenRouter."
+  },
+  "modelUnavailableBadge": "unavailable",
+  "@modelUnavailableBadge": {
+    "description": "Badge after the name of a model that OpenRouter no longer lists. Shown after a '!' marker."
+  },
+  "modelsNeverSynced": "Model list not loaded yet. Press refresh.",
+  "@modelsNeverSynced": {
+    "description": "Shown when the model list has never been loaded from OpenRouter."
+  },
+  "modelsSyncedAt": "Updated {when}",
+  "@modelsSyncedAt": {
+    "description": "Time of the last model list update, for example 'Updated 02.11 20:54'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
   "modelPickerEmpty": "No models match",
   "@modelPickerEmpty": {
     "description": "Empty state of the model picker when the filter hides everything."
@@ -706,6 +776,10 @@
   "settingsAttachMaxBytes": "Max file size in context, bytes",
   "@settingsAttachMaxBytes": {
     "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+  },
+  "settingsModelUnavailable": "This model is no longer available in OpenRouter: choose another one.",
+  "@settingsModelUnavailable": {
+    "description": "Warning in Settings when the selected model is no longer listed by OpenRouter."
   },
   "settingsNoToolsWarning": "This model does not support tool calling: the agent cannot work with it.",
   "@settingsNoToolsWarning": {

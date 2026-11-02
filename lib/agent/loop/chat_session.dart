@@ -187,6 +187,15 @@ class ChatSession {
 
   // ---- turn loop ---------------------------------------------------------
 
+  /// Модель не найдена на сервере: перечитываем список, чтобы в чате сразу появилась отметка `!`.
+  Future<void> _recheckCatalog() async {
+    try {
+      await _hub.models.refresh();
+    } on Object catch (error) {
+      _log.warning('catalog recheck after missing model failed: $error');
+    }
+  }
+
   Future<void> _runTurn() async {
     final turn = _turnCancel = CancelToken();
     _emit(AgentTurnStarted(chatId));
@@ -195,6 +204,9 @@ class ChatSession {
       end = await _loop(turn);
     } on AppFailure catch (failure) {
       end = TurnEnd.failed;
+      if (failure is LlmFailure && failure.modelNotFound) {
+        await _recheckCatalog();
+      }
       _emit(AgentFailureRaised(chatId, failure));
     } on Object catch (error, stack) {
       _log.severe('turn crashed', error, stack);

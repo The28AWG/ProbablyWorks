@@ -13,7 +13,7 @@ import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/onboarding/presentation/bloc/onboarding_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Мастер первого запуска: ключ OpenRouter с проверкой, модель по умолчанию, папка локального Host,
 /// необязательный SSH-хост и первый чат. Без рабочего ключа приложение не пускает дальше настроек.
@@ -25,7 +25,7 @@ class OnboardingPage extends StatelessWidget {
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => OnboardingCubit(
       getIt<SecretStore>(),
-      getIt<LlmProvider>(),
+      getIt<ModelCatalogService>(),
       getIt<SettingsRepository>(),
       getIt<HostRepository>(),
       getIt<AgentHub>(),

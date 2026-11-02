@@ -145,6 +145,22 @@ void main() {
     expect(picked, PolicyMode.yolo);
   });
 
+  testWidgets('send is enabled with text', (tester) async {
+    await tester.pumpWidget(const _Harness());
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(ChatComposer)));
+    await tester.enterText(find.byType(TextField).first, 'hello');
+    await tester.pumpAndSettle();
+
+    final send = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byTooltip(l10n.composerSend),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(send.onPressed, isNotNull);
+  });
+
   testWidgets('working folder cannot change while the agent runs', (
     tester,
   ) async {

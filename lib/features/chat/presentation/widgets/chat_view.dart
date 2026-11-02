@@ -20,7 +20,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Окно контекста, когда модель не сообщила свой лимит.
 const _defaultContextLimit = 128000;
@@ -124,8 +124,10 @@ class _ChatBodyState extends State<ChatBody> {
                         onPickWorkspace: () => _pickWorkspace(bloc, chat),
                         modelLabel: _modelLabel(
                           state.effectiveModelId,
-                          state.models,
+                          state.catalog,
                         ),
+                        modelUnavailable: state.modelUnavailable,
+                        modelLoading: state.catalog.initialLoading,
                         onPickModel: () => _pickModel(bloc, state, chat),
                         contextFraction: fraction,
                         onOpenContext: () => _openContext(bloc),
@@ -259,7 +261,7 @@ class _ChatBodyState extends State<ChatBody> {
     final l10n = AppLocalizations.of(context);
     final picked = await showModelPickerDialog(
       context,
-      models: state.models,
+      catalog: getIt<ModelCatalogService>(),
       pinned: state.pinnedModels,
       currentId: state.effectiveModelId,
       onTogglePin: (id) => bloc.add(ChatModelPinToggled(id)),
@@ -270,13 +272,8 @@ class _ChatBodyState extends State<ChatBody> {
   }
 
   /// Название модели для чипа; null — модель не выбрана ни в чате, ни в настройках.
-  static String? _modelLabel(String? id, List<LlmModelInfo> models) {
-    if (id == null) return null;
-    for (final model in models) {
-      if (model.id == id) return model.name;
-    }
-    return id;
-  }
+  static String? _modelLabel(String? id, ModelCatalogState catalog) =>
+      id == null ? null : catalog.nameOf(id);
 }
 
 /// Шапка чата: только название. Ни одного управляющего элемента:

@@ -10,9 +10,11 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 @RoutePage()
 class SettingsPage extends StatelessWidget {
@@ -23,7 +25,7 @@ class SettingsPage extends StatelessWidget {
     create: (_) => SettingsCubit(
       getIt<SettingsRepository>(),
       getIt<SecretStore>(),
-      getIt<LlmProvider>(),
+      getIt<ModelCatalogService>(),
       getIt<LocaleController>(),
     )..load(),
     child: const _SettingsView(),
@@ -216,6 +218,41 @@ class _SettingsViewState extends State<_SettingsView> {
     );
   }
 
+  /// Записи выпадающего списка модели. Выбранная модель, которой нет в загруженном списке, добавляется
+  /// неактивной записью с сохранённым названием: поле сразу показывает модель, а не пустое значение.
+  static List<DropdownMenuEntry<String>> _modelEntries(
+    String selected,
+    ModelCatalogState catalog,
+    AppLocalizations l10n, {
+    required bool withTools,
+  }) => [
+    for (final m in catalog.models)
+      DropdownMenuEntry(
+        value: m.id,
+        label: _entryLabel(m, l10n, withTools: withTools),
+        enabled: !withTools || m.supportsTools,
+      ),
+    if (selected.isNotEmpty && catalog.modelOf(selected) == null)
+      DropdownMenuEntry(
+        value: selected,
+        label: catalog.loaded
+            ? '! ${catalog.nameOf(selected)}'
+            : catalog.nameOf(selected),
+        enabled: false,
+      ),
+  ];
+
+  static String _entryLabel(
+    LlmModelInfo model,
+    AppLocalizations l10n, {
+    required bool withTools,
+  }) {
+    if (withTools && !model.supportsTools) {
+      return '${model.name} · ${l10n.modelNoTools}';
+    }
+    return model.name;
+  }
+
   List<Widget> _accountSections(
     SettingsState state,
     SettingsCubit cubit,
@@ -223,23 +260,28 @@ class _SettingsViewState extends State<_SettingsView> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     // Модель по умолчанию ведёт агента, поэтому без tool calling она недоступна; для заголовков подходит любая.
-    final defaultEntries = [
-      for (final m in state.models)
-        DropdownMenuEntry(
-          value: m.id,
-          label: m.supportsTools ? m.name : '${m.name} · ${l10n.modelNoTools}',
-          enabled: m.supportsTools,
-        ),
-    ];
-    final titleEntries = [
-      for (final m in state.models)
-        DropdownMenuEntry(value: m.id, label: m.name),
-    ];
-    final defaultLacksTools = state.models.any(
+    final catalog = state.catalog;
+    final defaultEntries = _modelEntries(
+      state.defaultModel,
+      catalog,
+      l10n,
+      withTools: true,
+    );
+    final titleEntries = _modelEntries(
+      state.titleModel,
+      catalog,
+      l10n,
+      withTools: false,
+    );
+    final defaultLacksTools = catalog.models.any(
       (m) => m.id == state.defaultModel && !m.supportsTools,
     );
+    final defaultUnavailable =
+        catalog.statusOf(state.defaultModel) == ModelStatus.unavailable;
+    final titleUnavailable =
+        catalog.statusOf(state.titleModel) == ModelStatus.unavailable;
     final unpinned = [
-      for (final m in state.models)
+      for (final m in catalog.models)
         if (!state.pinnedModels.contains(m.id))
           DropdownMenuEntry(value: m.id, label: m.name),
     ];
@@ -270,6 +312,9 @@ class _SettingsViewState extends State<_SettingsView> {
                 ? null
                 : state.defaultModel,
             dropdownMenuEntries: defaultEntries,
+            trailingIcon: catalog.initialLoading
+                ? const _LoadingSpinner()
+                : null,
             label: Text(l10n.settingsDefaultModel),
             onSelected: (value) => cubit.saveModels(
               defaultModel: value ?? '',
@@ -281,6 +326,11 @@ class _SettingsViewState extends State<_SettingsView> {
               l10n.settingsNoToolsWarning,
               style: TextStyle(color: scheme.error),
             ),
+          if (defaultUnavailable)
+            Text(
+              l10n.settingsModelUnavailable,
+              style: TextStyle(color: scheme.error),
+            ),
           DropdownMenu<String>(
             expandedInsets: EdgeInsets.zero,
             enableFilter: true,
@@ -288,33 +338,48 @@ class _SettingsViewState extends State<_SettingsView> {
                 ? null
                 : state.titleModel,
             dropdownMenuEntries: titleEntries,
+            trailingIcon: catalog.initialLoading
+                ? const _LoadingSpinner()
+                : null,
             label: Text(l10n.settingsTitleModel),
             onSelected: (value) => cubit.saveModels(
               defaultModel: state.defaultModel,
               titleModel: value ?? '',
             ),
           ),
+          if (titleUnavailable)
+            Text(
+              l10n.settingsModelUnavailable,
+              style: TextStyle(color: scheme.error),
+            ),
           Row(
             children: [
               OutlinedButton.icon(
-                icon: state.modelsLoading
+                icon: catalog.loading
                     ? const SizedBox.square(
                         dimension: 14,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh),
                 label: Text(l10n.settingsModelsRefresh),
-                onPressed: state.modelsLoading ? null : cubit.refreshModels,
+                onPressed: catalog.loading ? null : cubit.refreshModels,
               ),
-              if (state.modelsError != null) ...[
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text(
-                    l10n.commonError(state.modelsError!),
-                    style: TextStyle(color: scheme.error),
-                  ),
-                ),
-              ],
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: catalog.error != null
+                    ? Text(
+                        l10n.commonError(catalog.error!),
+                        style: TextStyle(color: scheme.error),
+                      )
+                    : Text(
+                        catalog.syncedAt == null
+                            ? l10n.modelsNeverSynced
+                            : l10n.modelsSyncedAt(
+                                formatModelSyncTime(catalog.syncedAt!),
+                              ),
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+              ),
             ],
           ),
         ],
@@ -329,7 +394,7 @@ class _SettingsViewState extends State<_SettingsView> {
             children: [
               for (final id in state.pinnedModels)
                 InputChip(
-                  label: Text(_modelName(id, state.models)),
+                  label: Text(_modelName(id, catalog)),
                   onDeleted: () => cubit.togglePin(id),
                 ),
             ],
@@ -532,6 +597,17 @@ class _SettingsViewState extends State<_SettingsView> {
   };
 }
 
+/// Спиннер в поле выбора, пока список грузится впервые.
+class _LoadingSpinner extends StatelessWidget {
+  const _LoadingSpinner();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.square(
+    dimension: 16,
+    child: CircularProgressIndicator(strokeWidth: 2),
+  );
+}
+
 class _GroupHeader extends StatelessWidget {
   const _GroupHeader({required this.title, required this.hint});
 
@@ -607,9 +683,8 @@ class _GroupTile extends StatelessWidget {
   }
 }
 
-String _modelName(String id, List<LlmModelInfo> models) {
-  for (final model in models) {
-    if (model.id == id) return model.name;
-  }
-  return id;
-}
+/// Подпись закреплённой модели: недоступная помечается `!`.
+String _modelName(String id, ModelCatalogState catalog) =>
+    catalog.statusOf(id) == ModelStatus.unavailable
+    ? '! ${catalog.nameOf(id)}'
+    : catalog.nameOf(id);

@@ -19,6 +19,7 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/notify/desktop_notifier.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:uuid/uuid.dart';
 
 /// Точка входа агента: зависимости хода и одна сессия на чат.
@@ -31,6 +32,7 @@ class AgentHub {
     this.hosts,
     this.runtimes,
     this.llm,
+    this.models,
     this.builder,
     this.compactor,
     this.tools,
@@ -47,6 +49,7 @@ class AgentHub {
   final HostRepository hosts;
   final HostRuntimeFactory runtimes;
   final LlmProvider llm;
+  final ModelCatalogService models;
   final ContextBuilder builder;
   final ContextCompactor compactor;
   final ToolExecutor tools;

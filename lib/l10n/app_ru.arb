@@ -110,6 +110,19 @@
   "@chatModelLabel": {
     "description": "Подпись выбора модели для чата."
   },
+  "chatModelUnavailableTooltip": "Модели больше нет в OpenRouter. Выберите другую.",
+  "@chatModelUnavailableTooltip": {
+    "description": "Tooltip of the model chip when the selected model is no longer available."
+  },
+  "chatModelUnavailableBanner": "Модель {name} больше недоступна в OpenRouter. Отправка может завершиться ошибкой: выберите другую модель.",
+  "@chatModelUnavailableBanner": {
+    "description": "Banner above the composer when the chat model is no longer available; sending is blocked.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chatModelPick": "Выбрать модель",
   "@chatModelPick": {
     "description": "Значение чипа модели, когда не выбрана ни модель чата, ни модель по умолчанию. Чип подсвечен как предупреждение."
@@ -606,6 +619,63 @@
   "@modelFilterToolsOnly": {
     "description": "Switch in the model picker: hide models without tool calling support."
   },
+  "modelFilterFree": "Только бесплатные",
+  "@modelFilterFree": {
+    "description": "Switch in the model picker: show only models with zero price."
+  },
+  "modelFilterProvider": "Провайдер",
+  "@modelFilterProvider": {
+    "description": "Dropdown label in the model picker: filter by provider."
+  },
+  "modelFilterAllProviders": "Все провайдеры",
+  "@modelFilterAllProviders": {
+    "description": "Option of the provider filter: no provider filter applied."
+  },
+  "modelSortLabel": "Сортировка",
+  "@modelSortLabel": {
+    "description": "Dropdown label in the model picker: sort order of the list."
+  },
+  "modelSortProvider": "По провайдеру",
+  "@modelSortProvider": {
+    "description": "Sort option: group models by provider."
+  },
+  "modelSortName": "По названию",
+  "@modelSortName": {
+    "description": "Sort option: alphabetical order by model name."
+  },
+  "modelSortContext": "По контексту",
+  "@modelSortContext": {
+    "description": "Sort option: largest context window first."
+  },
+  "modelSortPrice": "По цене",
+  "@modelSortPrice": {
+    "description": "Sort option: cheapest per token first."
+  },
+  "modelSortNewest": "Сначала новые",
+  "@modelSortNewest": {
+    "description": "Sort option: most recently created models first."
+  },
+  "modelCurrentUnavailable": "Текущая модель недоступна",
+  "@modelCurrentUnavailable": {
+    "description": "Section header in the model picker for the selected model that is no longer in OpenRouter."
+  },
+  "modelUnavailableBadge": "недоступна",
+  "@modelUnavailableBadge": {
+    "description": "Badge after the name of a model that OpenRouter no longer lists. Shown after a '!' marker."
+  },
+  "modelsNeverSynced": "Список моделей ещё не загружен. Нажмите «Обновить».",
+  "@modelsNeverSynced": {
+    "description": "Shown when the model list has never been loaded from OpenRouter."
+  },
+  "modelsSyncedAt": "Обновлено {when}",
+  "@modelsSyncedAt": {
+    "description": "Time of the last model list update, for example 'Updated 02.11 20:54'.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
   "modelPickerEmpty": "Ничего не найдено",
   "@modelPickerEmpty": {
     "description": "Empty state of the model picker when the filter hides everything."
@@ -706,6 +776,10 @@
   "settingsAttachMaxBytes": "Макс. размер файла в контексте, байт",
   "@settingsAttachMaxBytes": {
     "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+  },
+  "settingsModelUnavailable": "Модель больше недоступна в OpenRouter: выберите другую.",
+  "@settingsModelUnavailable": {
+    "description": "Warning in Settings when the selected model is no longer listed by OpenRouter."
   },
   "settingsNoToolsWarning": "Модель без tool calling: агент не сможет с ней работать.",
   "@settingsNoToolsWarning": {

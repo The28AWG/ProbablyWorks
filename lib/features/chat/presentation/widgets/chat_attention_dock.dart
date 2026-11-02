@@ -22,7 +22,7 @@ class ChatAttentionDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final items = <_DockItem>[
-      if (state.failure != null)
+      if (state.failure != null && !state.failureIsModelMissing)
         _DockItem(
           'failure',
           AppBanner(
@@ -31,6 +31,17 @@ class ChatAttentionDock extends StatelessWidget {
             ),
             icon: Icons.error_outline,
             tone: AppTone.danger,
+          ),
+        ),
+      if (state.modelUnavailable || state.failureIsModelMissing)
+        _DockItem(
+          'model-unavailable',
+          AppBanner(
+            message: l10n.chatModelUnavailableBanner(
+              state.catalog.nameOf(state.effectiveModelId ?? ''),
+            ),
+            icon: Icons.warning_amber_outlined,
+            tone: AppTone.warning,
           ),
         ),
       if (state.trustNeeded)

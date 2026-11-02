@@ -111,6 +111,21 @@ class SessionRevisions extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+/// Модели, которые пользователь выбрал (закрепил, поставил по умолчанию, для заголовков или в чат),
+/// с деталями. Нужны, чтобы показать название до загрузки каталога и маркер `!`, если модели больше нет.
+/// Полный список моделей OpenRouter в БД не хранится.
+@DataClassName('SavedModelRow')
+class SavedModels extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  IntColumn get contextLength => integer().nullable()();
+  BoolColumn get supportsTools =>
+      boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DataClassName('KvRow')
 class KvSettings extends Table {
   TextColumn get key => text()();

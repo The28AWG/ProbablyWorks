@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
@@ -8,14 +9,12 @@ import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 class SettingsState extends Equatable {
   const SettingsState({
     this.apiKeySet = false,
-    this.models = const [],
-    this.modelsLoading = false,
-    this.modelsError,
+    this.catalog = const ModelCatalogState(),
     this.defaultModel = '',
     this.titleModel = '',
     this.language = 'system',
@@ -29,9 +28,9 @@ class SettingsState extends Equatable {
   });
 
   final bool apiKeySet;
-  final List<LlmModelInfo> models;
-  final bool modelsLoading;
-  final String? modelsError;
+
+  /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
+  final ModelCatalogState catalog;
   final String defaultModel;
   final String titleModel;
   final String language;
@@ -51,10 +50,7 @@ class SettingsState extends Equatable {
 
   SettingsState copyWith({
     bool? apiKeySet,
-    List<LlmModelInfo>? models,
-    bool? modelsLoading,
-    String? modelsError,
-    bool clearModelsError = false,
+    ModelCatalogState? catalog,
     String? defaultModel,
     String? titleModel,
     String? language,
@@ -67,9 +63,7 @@ class SettingsState extends Equatable {
     int? saved,
   }) => SettingsState(
     apiKeySet: apiKeySet ?? this.apiKeySet,
-    models: models ?? this.models,
-    modelsLoading: modelsLoading ?? this.modelsLoading,
-    modelsError: clearModelsError ? null : (modelsError ?? this.modelsError),
+    catalog: catalog ?? this.catalog,
     defaultModel: defaultModel ?? this.defaultModel,
     titleModel: titleModel ?? this.titleModel,
     language: language ?? this.language,
@@ -85,9 +79,7 @@ class SettingsState extends Equatable {
   @override
   List<Object?> get props => [
     apiKeySet,
-    models,
-    modelsLoading,
-    modelsError,
+    catalog,
     defaultModel,
     titleModel,
     language,
@@ -102,13 +94,20 @@ class SettingsState extends Equatable {
 }
 
 class SettingsCubit extends Cubit<SettingsState> {
-  SettingsCubit(this._settings, this._secrets, this._llm, this._locale)
+  SettingsCubit(this._settings, this._secrets, this._catalog, this._locale)
     : super(const SettingsState());
 
   final SettingsRepository _settings;
   final SecretStore _secrets;
-  final LlmProvider _llm;
+  final ModelCatalogService _catalog;
   final LocaleController _locale;
+  StreamSubscription<ModelCatalogState>? _catalogSub;
+
+  @override
+  Future<void> close() async {
+    await _catalogSub?.cancel();
+    return super.close();
+  }
 
   Future<void> load() async {
     final limits = await _settings.limits();
@@ -131,7 +130,18 @@ class SettingsCubit extends Cubit<SettingsState> {
         stepsDisplay: await _settings.readStepsDisplay(),
       ),
     );
-    await refreshModels();
+    // Выбранные модели показываем сразу; список грузится в фоне, а если его ещё не было — загружаем здесь.
+    await _catalog.remember([
+      state.defaultModel,
+      state.titleModel,
+      ...state.pinnedModels,
+    ]);
+    emit(state.copyWith(catalog: _catalog.state));
+    await _catalogSub?.cancel();
+    _catalogSub = _catalog.watch().listen(
+      (catalog) => emit(state.copyWith(catalog: catalog)),
+    );
+    if (!_catalog.state.loaded && state.apiKeySet) await refreshModels();
   }
 
   Future<void> saveApiKey(String key) async {
@@ -142,13 +152,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     await refreshModels();
   }
 
+  /// Обновляет список из OpenRouter. Загрузка и ошибка приходят в состоянии каталога.
   Future<void> refreshModels() async {
-    emit(state.copyWith(modelsLoading: true, clearModelsError: true));
     try {
-      final models = await _llm.listModels();
-      emit(state.copyWith(models: models, modelsLoading: false));
-    } on Object catch (error) {
-      emit(state.copyWith(modelsLoading: false, modelsError: '$error'));
+      await _catalog.refresh();
+    } on Object {
+      // Ошибка уже в state.catalog.error; повтор запланирован каталогом.
     }
   }
 
@@ -158,6 +167,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   }) async {
     await _settings.write(SettingsRepository.keyDefaultModel, defaultModel);
     await _settings.write(SettingsRepository.keyTitleModel, titleModel);
+    await _catalog.remember([defaultModel, titleModel]);
     emit(
       state.copyWith(
         defaultModel: defaultModel,
@@ -186,6 +196,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> togglePin(String modelId) async {
     final pins = [...state.pinnedModels];
     if (!pins.remove(modelId)) pins.add(modelId);
+    if (pins.contains(modelId)) await _catalog.remember([modelId]);
     await _settings.savePinnedModels(pins);
     emit(state.copyWith(pinnedModels: pins, saved: state.saved + 1));
   }

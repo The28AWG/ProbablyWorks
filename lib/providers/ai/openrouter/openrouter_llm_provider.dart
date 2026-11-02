@@ -72,7 +72,7 @@ class OpenRouterLlmProvider implements LlmProvider {
         }
       }
     } on OpenRouterException catch (error, stack) {
-      Error.throwWithStackTrace(_mapError(error), stack);
+      Error.throwWithStackTrace(llmFailureOf(error), stack);
     } on SocketException catch (error, stack) {
       Error.throwWithStackTrace(
         LlmFailure('Network error: ${error.message}', retryable: true),
@@ -119,10 +119,11 @@ class OpenRouterLlmProvider implements LlmProvider {
             supportsTools: model.supportedParameters.contains(Parameter.tools),
             promptPrice: model.pricing.prompt,
             completionPrice: model.pricing.completion,
+            created: model.created,
           ),
       ];
     } on OpenRouterException catch (error, stack) {
-      Error.throwWithStackTrace(_mapError(error), stack);
+      Error.throwWithStackTrace(llmFailureOf(error), stack);
     } finally {
       client.close();
     }
@@ -196,22 +197,24 @@ class OpenRouterLlmProvider implements LlmProvider {
       ),
     ),
   );
+}
 
-  LlmFailure _mapError(OpenRouterException error) {
-    final status = error.statusCode;
-    final message = error.message;
-    final lower = message.toLowerCase();
-    final contextExceeded =
-        lower.contains('context') &&
-        (lower.contains('length') || lower.contains('maximum'));
-    final retryable = status == 429 || (status != null && status >= 500);
-    return LlmFailure(
-      message,
-      statusCode: status,
-      retryable: retryable,
-      contextLengthExceeded: contextExceeded,
-    );
-  }
+/// Ошибка OpenRouter → типизированная [LlmFailure]. Модель, которой нет на сервере, отдаётся с 404.
+LlmFailure llmFailureOf(OpenRouterException error) {
+  final status = error.statusCode;
+  final message = error.message;
+  final lower = message.toLowerCase();
+  final contextExceeded =
+      lower.contains('context') &&
+      (lower.contains('length') || lower.contains('maximum'));
+  final retryable = status == 429 || (status != null && status >= 500);
+  return LlmFailure(
+    message,
+    statusCode: status,
+    retryable: retryable,
+    contextLengthExceeded: contextExceeded,
+    modelNotFound: status == 404,
+  );
 }
 
 class _PartialToolCall {

@@ -15,11 +15,15 @@ final class LlmFailure extends AppFailure {
     this.statusCode,
     this.retryable = false,
     this.contextLengthExceeded = false,
+    this.modelNotFound = false,
   });
 
   final int? statusCode;
   final bool retryable;
   final bool contextLengthExceeded;
+
+  /// Провайдер не знает модель: её убрали из OpenRouter, хотя в кеше она ещё есть.
+  final bool modelNotFound;
 }
 
 /// Ошибка исполнения на Host.

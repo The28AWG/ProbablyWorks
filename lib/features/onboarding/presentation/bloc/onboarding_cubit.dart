@@ -5,6 +5,7 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Шаги мастера первого запуска. Порядок важен: индекс шага — текущая позиция в Stepper.
 enum OnboardingStep { welcome, key, model, workspace, ssh, finish }
@@ -73,14 +74,14 @@ class OnboardingState extends Equatable {
 class OnboardingCubit extends Cubit<OnboardingState> {
   OnboardingCubit(
     this._secrets,
-    this._llm,
+    this._catalog,
     this._settings,
     this._hosts,
     this._hub,
   ) : super(const OnboardingState());
 
   final SecretStore _secrets;
-  final LlmProvider _llm;
+  final ModelCatalogService _catalog;
   final SettingsRepository _settings;
   final HostRepository _hosts;
   final AgentHub _hub;
@@ -106,7 +107,9 @@ class OnboardingCubit extends Cubit<OnboardingState> {
     final previous = await _secrets.read(openRouterKeyName);
     await _secrets.write(openRouterKeyName, value);
     try {
-      final models = await _llm.listModels();
+      // Успешный ответ сразу попадает в каталог в памяти: чат и Settings увидят модели без повторной загрузки.
+      await _catalog.refresh();
+      final models = _catalog.state.models;
       emit(state.copyWith(checking: false, keyVerified: true, models: models));
     } on Object catch (error) {
       if (previous == null) {
@@ -122,6 +125,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
 
   Future<void> selectModel(String id) async {
     await _settings.write(SettingsRepository.keyDefaultModel, id);
+    await _catalog.remember([id]);
     emit(state.copyWith(defaultModel: id));
   }
 

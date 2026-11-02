@@ -39,6 +39,8 @@ class ChatMetaBar extends StatelessWidget {
     required this.contextFraction,
     required this.onOpenContext,
     required this.running,
+    this.modelUnavailable = false,
+    this.modelLoading = false,
     super.key,
   });
 
@@ -50,6 +52,12 @@ class ChatMetaBar extends StatelessWidget {
 
   /// Null — модель не выбрана: чип предлагает выбрать её и подсвечивается предупреждением.
   final String? modelLabel;
+
+  /// Модели больше нет в каталоге OpenRouter: чип помечается `!` и предупреждением.
+  final bool modelUnavailable;
+
+  /// Список моделей грузится впервые: рядом с названием показываем спиннер.
+  final bool modelLoading;
   final VoidCallback onPickModel;
 
   /// Доля заполненного окна контекста (0..1) или `null`, пока модель не отчиталась.
@@ -112,10 +120,17 @@ class ChatMetaBar extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.xs),
           _ActionChip(
-            tooltip: l10n.chatModelLabel,
+            tooltip: modelUnavailable
+                ? l10n.chatModelUnavailableTooltip
+                : l10n.chatModelLabel,
             icon: Icons.memory,
-            label: modelLabel ?? l10n.chatModelPick,
-            tone: modelLabel == null ? AppTone.warning : null,
+            label: modelLabel == null
+                ? l10n.chatModelPick
+                : (modelUnavailable ? '! $modelLabel' : modelLabel),
+            tone: modelLabel == null || modelUnavailable
+                ? AppTone.warning
+                : null,
+            loading: modelLoading,
             maxWidth: 180,
             onTap: onPickModel,
           ),
@@ -178,6 +193,7 @@ class _ActionChip extends StatelessWidget {
     this.label,
     this.maxWidth,
     this.tone,
+    this.loading = false,
   });
 
   final String tooltip;
@@ -188,6 +204,7 @@ class _ActionChip extends StatelessWidget {
   final VoidCallback? onTap;
   final double? maxWidth;
   final AppTone? tone;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -197,6 +214,7 @@ class _ActionChip extends StatelessWidget {
       label: label,
       enabled: enabled,
       tone: tone,
+      loading: loading,
     );
     return Tooltip(
       message: tooltip,
@@ -229,6 +247,7 @@ class _MetaChip extends StatelessWidget {
     this.label,
     this.enabled = true,
     this.tone,
+    this.loading = false,
   });
 
   final IconData icon;
@@ -237,6 +256,9 @@ class _MetaChip extends StatelessWidget {
   final String? label;
   final bool enabled;
   final AppTone? tone;
+
+  /// Спиннер рядом со значением: название ещё не известно, список моделей грузится.
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +296,16 @@ class _MetaChip extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, size: _chipIconSize, color: foreground),
+            if (loading) ...[
+              const SizedBox(width: AppSpacing.xs),
+              SizedBox.square(
+                dimension: _chipIconSize,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: foreground,
+                ),
+              ),
+            ],
             if (label case final text?) ...[
               const SizedBox(width: AppSpacing.xs),
               Flexible(

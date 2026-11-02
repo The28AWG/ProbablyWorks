@@ -20,15 +20,17 @@ import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
+import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/desktop_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
-
+import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
 
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной сценарий ответа.
@@ -40,6 +42,13 @@ class _FakeLlm implements LlmProvider {
   /// Ответ модели на запрос заголовка (отдельно от сценария хода).
   String titleReply = '';
 
+  /// Список моделей, который вернёт OpenRouter при обновлении каталога.
+  List<LlmModelInfo> models = const [];
+  int listCalls = 0;
+
+  /// Если задано — следующий ход завершится этой ошибкой вместо ответа.
+  LlmFailure? nextFailure;
+
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
     if (request.messages.first.content == ChatTitle.systemPrompt) {
@@ -50,11 +59,19 @@ class _FakeLlm implements LlmProvider {
       ]);
     }
     requests.add(request);
+    final failure = nextFailure;
+    if (failure != null) {
+      nextFailure = null;
+      return Stream.error(failure);
+    }
     return Stream.fromIterable(script.removeAt(0));
   }
 
   @override
-  Future<List<LlmModelInfo>> listModels() async => const [];
+  Future<List<LlmModelInfo>> listModels() async {
+    listCalls++;
+    return models;
+  }
 }
 
 class _SilentNotifier extends DesktopNotifier {
@@ -103,6 +120,7 @@ void main() {
       hosts,
       HostRuntimeFactory(pool, const PipePtyLauncher()),
       llm,
+      ModelCatalogService(SavedModelRepository(db), llm),
       builder,
       compactor,
       tools,
@@ -148,6 +166,34 @@ void main() {
     await session.submit(text);
     await finished;
   }
+
+  test('a model removed from OpenRouter is not blocked: the send fails with a model-missing failure and the catalog is rechecked', () async {
+    final chatId = await createChat();
+    llm.models = const [LlmModelInfo(id: 'fake/model', name: 'Fake')];
+    await hub.models.refresh();
+    // Модель исчезла с сервера, но в кеше ещё есть: следующий запрос вернёт 404.
+    llm
+      ..models = const [LlmModelInfo(id: 'other/model', name: 'Other')]
+      ..nextFailure = const LlmFailure(
+        'No endpoints found for fake/model.',
+        statusCode: 404,
+        modelNotFound: true,
+      );
+    final session = hub.session(chatId);
+    final failures = <AppFailure>[];
+    final sub = session.events.listen((e) {
+      if (e is AgentFailureRaised) failures.add(e.failure);
+    });
+
+    await runTurn(session, 'hello');
+    await sub.cancel();
+
+    expect(llm.requests, hasLength(1));
+    expect(failures.single, isA<LlmFailure>());
+    expect((failures.single as LlmFailure).modelNotFound, isTrue);
+    expect(llm.listCalls, 2);
+    expect(hub.models.state.statusOf('fake/model'), ModelStatus.unavailable);
+  });
 
   test('model calls run_command, result is stored, turn completes', () async {
     final chatId = await createChat();

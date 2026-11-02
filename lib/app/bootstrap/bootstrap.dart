@@ -7,9 +7,11 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/logging/app_log.dart';
+import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
-/// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host.
-/// Возвращает false, если другой экземпляр уже работает с этой базой.
+/// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host →
+/// фоновое обновление каталога моделей. Возвращает false, если другой экземпляр уже работает с этой базой.
 Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await AppPaths.resolve();
@@ -22,5 +24,12 @@ Future<bool> bootstrap() async {
   getIt<LocaleController>().apply(
     await getIt<SettingsRepository>().read(SettingsRepository.keyLanguage),
   );
+  // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.
+  await getIt<ModelCatalogService>().start(hasKey: _hasOpenRouterKey);
   return true;
+}
+
+Future<bool> _hasOpenRouterKey() async {
+  final key = await getIt<SecretStore>().read(openRouterKeyName);
+  return key != null && key.isNotEmpty;
 }

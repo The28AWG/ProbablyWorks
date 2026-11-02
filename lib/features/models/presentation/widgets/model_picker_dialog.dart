@@ -5,23 +5,26 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/util/char_substring.dart';
+import 'package:probably_works/features/models/domain/model_list_query.dart';
+import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
-/// Выбор модели: поиск по id/имени, фильтр tool calling, закреплённые сверху, группы по провайдеру.
-/// Стрелки ↑/↓ двигают подсветку, Enter выбирает. Возвращает выбранную модель или null.
-/// [onTogglePin] сохраняет закрепление вне диалога.
+/// Выбор модели: поиск по id/имени, фильтры (tool calling, бесплатные, провайдер), сортировка,
+/// закреплённые сверху и обновление списка из OpenRouter. Стрелки ↑/↓ двигают подсветку, Enter выбирает.
+/// Возвращает выбранную модель или null. [onTogglePin] сохраняет закрепление вне диалога.
+/// Недоступная текущая модель показывается отдельно и не выбирается.
 Future<LlmModelInfo?> showModelPickerDialog(
   BuildContext context, {
-  required List<LlmModelInfo> models,
+  required ModelCatalogService catalog,
   required List<String> pinned,
   required String? currentId,
   required void Function(String modelId) onTogglePin,
 }) => showDialog<LlmModelInfo>(
   context: context,
   builder: (_) => _ModelPickerDialog(
-    models: models,
+    catalog: catalog,
     pinned: pinned,
     currentId: currentId,
     onTogglePin: onTogglePin,
@@ -30,13 +33,13 @@ Future<LlmModelInfo?> showModelPickerDialog(
 
 class _ModelPickerDialog extends StatefulWidget {
   const _ModelPickerDialog({
-    required this.models,
+    required this.catalog,
     required this.pinned,
     required this.currentId,
     required this.onTogglePin,
   });
 
-  final List<LlmModelInfo> models;
+  final ModelCatalogService catalog;
   final List<String> pinned;
   final String? currentId;
   final void Function(String modelId) onTogglePin;
@@ -46,10 +49,14 @@ class _ModelPickerDialog extends StatefulWidget {
 }
 
 class _Section {
-  const _Section(this.title, this.models);
+  const _Section(this.title, this.models, {this.unavailable = false});
 
-  final String title;
+  /// Null — секция без заголовка (плоский список).
+  final String? title;
   final List<LlmModelInfo> models;
+
+  /// Модели этой секции больше нет в списке: видны с маркером, но не выбираются.
+  final bool unavailable;
 }
 
 class _ModelPickerDialogState extends State<_ModelPickerDialog> {
@@ -61,31 +68,29 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
   final _rowKeys = <String, GlobalKey>{};
   late final _searchFocus = FocusNode(onKeyEvent: _onKey);
   late final List<String> _pinned = [...widget.pinned];
-  var _toolsOnly = true;
-  var _query = '';
+  late final StreamSubscription<ModelCatalogState> _catalogSub;
+  late ModelCatalogState _catalog = widget.catalog.state;
+  var _query = const ModelListQuery();
   String? _highlightId;
 
   @override
   void initState() {
     super.initState();
     _search.addListener(
-      () => setState(() => _query = _search.text.trim().toLowerCase()),
+      () => setState(() => _query = _query.copyWith(search: _search.text)),
+    );
+    _catalogSub = widget.catalog.watch().listen(
+      (catalog) => setState(() => _catalog = catalog),
     );
   }
 
   @override
   void dispose() {
+    unawaited(_catalogSub.cancel());
     _search.dispose();
     _scroll.dispose();
     _searchFocus.dispose();
     super.dispose();
-  }
-
-  bool _matches(LlmModelInfo model) {
-    if (_toolsOnly && !model.supportsTools) return false;
-    if (_query.isEmpty) return true;
-    return model.id.toLowerCase().contains(_query) ||
-        model.name.toLowerCase().contains(_query);
   }
 
   void _togglePin(String id) {
@@ -95,40 +100,79 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     widget.onTogglePin(id);
   }
 
-  List<_Section> _sections() {
-    final visible = [
-      for (final model in widget.models)
-        if (_matches(model)) model,
-    ];
+  /// Ошибка и статус загрузки приходят из состояния каталога; здесь только запускаем обновление.
+  Future<void> _refresh() async {
+    try {
+      await widget.catalog.refresh();
+    } on Object {
+      // Ошибка уже в состоянии каталога и показана в диалоге.
+    }
+  }
+
+  /// Текущая модель, если её больше нет в списке: показываем с маркером, выбрать нельзя.
+  /// Детали берём из сохранённых, поэтому название видно даже без списка.
+  LlmModelInfo? _unavailableCurrent() {
+    final id = widget.currentId;
+    if (id == null || _catalog.statusOf(id) != ModelStatus.unavailable) {
+      return null;
+    }
+    final saved = _catalog.saved[id];
+    return LlmModelInfo(
+      id: id,
+      name: saved?.name ?? id,
+      contextLength: saved?.contextLength,
+      supportsTools: saved?.supportsTools ?? false,
+    );
+  }
+
+  List<_Section> _sections(AppLocalizations l10n) {
+    final visible = applyModelQuery(_catalog.models, _query);
     final pinnedModels = [
       for (final id in _pinned)
         for (final model in visible)
           if (model.id == id) model,
     ];
-    final groups = <String, List<LlmModelInfo>>{};
-    for (final model in visible) {
-      if (pinnedModels.contains(model)) continue;
-      groups.putIfAbsent(_provider(model.id), () => []).add(model);
-    }
-    final l10n = AppLocalizations.of(context);
+    final rest = [
+      for (final model in visible)
+        if (!pinnedModels.contains(model)) model,
+    ];
+    final unavailable = _unavailableCurrent();
     return [
+      if (unavailable != null)
+        _Section(l10n.modelCurrentUnavailable, [
+          unavailable,
+        ], unavailable: true),
       if (pinnedModels.isNotEmpty)
         _Section(l10n.modelPinnedSection, pinnedModels),
+      if (_query.sort == ModelSort.provider)
+        ..._groupByProvider(rest)
+      else if (rest.isNotEmpty)
+        _Section(null, rest),
+    ];
+  }
+
+  static List<_Section> _groupByProvider(List<LlmModelInfo> models) {
+    final groups = <String, List<LlmModelInfo>>{};
+    for (final model in models) {
+      groups.putIfAbsent(providerOf(model.id), () => []).add(model);
+    }
+    return [
       for (final entry in groups.entries) _Section(entry.key, entry.value),
     ];
   }
 
-  /// Подсвечиваемые строки в порядке показа; модели без tool calling не выбираются.
+  /// Подсвечиваемые строки в порядке показа; недоступные и без tool calling не выбираются.
   List<LlmModelInfo> _selectable(List<_Section> sections) => [
     for (final section in sections)
-      for (final model in section.models)
-        if (model.supportsTools) model,
+      if (!section.unavailable)
+        for (final model in section.models)
+          if (model.supportsTools) model,
   ];
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    final selectable = _selectable(_sections());
+    final selectable = _selectable(_sections(AppLocalizations.of(context)));
     if (selectable.isEmpty) return KeyEventResult.ignored;
     if (key == LogicalKeyboardKey.arrowDown ||
         key == LogicalKeyboardKey.arrowUp) {
@@ -182,7 +226,61 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.sizeOf(context);
-    final sections = _sections();
+    final sections = _sections(l10n);
+    final providers = providersOf(_catalog.models);
+    // Каталог ещё не загружали: показываем загрузку или причину, а не пустой список.
+    final Widget body;
+    if (!_catalog.loaded && _catalog.loading) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (!_catalog.loaded) {
+      body = Center(
+        child: Text(
+          _catalog.error != null
+              ? l10n.commonError(_catalog.error!)
+              : l10n.modelsNeverSynced,
+        ),
+      );
+    } else if (sections.isEmpty) {
+      body = Center(child: Text(l10n.modelPickerEmpty));
+    } else {
+      body = CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          for (final section in sections)
+            SliverMainAxisGroup(
+              slivers: [
+                if (section.title != null)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _HeaderDelegate(
+                      title: section.title!,
+                      height: _headerHeight,
+                      background: scheme.surfaceContainerLow,
+                    ),
+                  ),
+                SliverList.builder(
+                  itemCount: section.models.length,
+                  itemBuilder: (context, i) {
+                    final model = section.models[i];
+                    final key = _rowKeys.putIfAbsent(model.id, GlobalKey.new);
+                    return _ModelTile(
+                      key: key,
+                      model: model,
+                      l10n: l10n,
+                      unavailable: section.unavailable,
+                      current: model.id == widget.currentId,
+                      highlighted: model.id == _highlightId,
+                      pinned: _pinned.contains(model.id),
+                      onTogglePin: () => _togglePin(model.id),
+                      onSelect: () => Navigator.pop(context, model),
+                    );
+                  },
+                ),
+              ],
+            ),
+        ],
+      );
+    }
     return Dialog(
       insetPadding: const EdgeInsets.all(AppSpacing.lg),
       child: SizedBox(
@@ -211,59 +309,102 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                 horizontal: AppSpacing.lg,
                 vertical: AppSpacing.xs,
               ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FilterChip(
-                  label: Text(l10n.modelFilterToolsOnly),
-                  selected: _toolsOnly,
-                  onSelected: (value) => setState(() => _toolsOnly = value),
-                ),
+              child: Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilterChip(
+                    label: Text(l10n.modelFilterToolsOnly),
+                    selected: _query.toolsOnly,
+                    onSelected: (value) => setState(
+                      () => _query = _query.copyWith(toolsOnly: value),
+                    ),
+                  ),
+                  FilterChip(
+                    label: Text(l10n.modelFilterFree),
+                    selected: _query.freeOnly,
+                    onSelected: (value) => setState(
+                      () => _query = _query.copyWith(freeOnly: value),
+                    ),
+                  ),
+                  DropdownMenu<String>(
+                    width: 200,
+                    enableFilter: true,
+                    initialSelection: _query.provider,
+                    label: Text(l10n.modelFilterProvider),
+                    dropdownMenuEntries: [
+                      DropdownMenuEntry(
+                        value: '',
+                        label: l10n.modelFilterAllProviders,
+                      ),
+                      for (final provider in providers)
+                        DropdownMenuEntry(value: provider, label: provider),
+                    ],
+                    onSelected: (value) => setState(
+                      () => _query = _query.copyWith(provider: value ?? ''),
+                    ),
+                  ),
+                  DropdownMenu<ModelSort>(
+                    width: 200,
+                    initialSelection: _query.sort,
+                    label: Text(l10n.modelSortLabel),
+                    dropdownMenuEntries: [
+                      for (final sort in ModelSort.values)
+                        DropdownMenuEntry(
+                          value: sort,
+                          label: _sortLabel(sort, l10n),
+                        ),
+                    ],
+                    onSelected: (value) => setState(
+                      () => _query = _query.copyWith(
+                        sort: value ?? ModelSort.provider,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: sections.isEmpty
-                  ? Center(child: Text(l10n.modelPickerEmpty))
-                  : CustomScrollView(
-                      controller: _scroll,
-                      slivers: [
-                        for (final section in sections)
-                          SliverMainAxisGroup(
-                            slivers: [
-                              SliverPersistentHeader(
-                                pinned: true,
-                                delegate: _HeaderDelegate(
-                                  title: section.title,
-                                  height: _headerHeight,
-                                  background: scheme.surfaceContainerLow,
-                                ),
-                              ),
-                              SliverList.builder(
-                                itemCount: section.models.length,
-                                itemBuilder: (context, i) {
-                                  final model = section.models[i];
-                                  final key = _rowKeys.putIfAbsent(
-                                    model.id,
-                                    GlobalKey.new,
-                                  );
-                                  return _ModelTile(
-                                    key: key,
-                                    model: model,
-                                    l10n: l10n,
-                                    current: model.id == widget.currentId,
-                                    highlighted: model.id == _highlightId,
-                                    pinned: _pinned.contains(model.id),
-                                    onTogglePin: () => _togglePin(model.id),
-                                    onSelect: () =>
-                                        Navigator.pop(context, model),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                      ],
+            Padding(
+              padding: const EdgeInsets.only(
+                left: AppSpacing.lg,
+                right: AppSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _catalog.syncedAt == null
+                          ? l10n.modelsNeverSynced
+                          : l10n.modelsSyncedAt(
+                              formatModelSyncTime(_catalog.syncedAt!),
+                            ),
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
+                  ),
+                  IconButton(
+                    tooltip: l10n.settingsModelsRefresh,
+                    onPressed: _catalog.loading ? null : _refresh,
+                    icon: _catalog.loading
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
             ),
+            if (_catalog.error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: Text(
+                  l10n.commonError(_catalog.error!),
+                  style: TextStyle(color: scheme.error),
+                ),
+              ),
+            const Divider(height: 1),
+            Expanded(child: body),
             const Divider(height: 1),
             Align(
               alignment: Alignment.centerRight,
@@ -281,10 +422,14 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     );
   }
 
-  static String _provider(String id) {
-    final slash = id.indexOf('/');
-    return slash <= 0 ? id : charPrefix(id, slash);
-  }
+  static String _sortLabel(ModelSort sort, AppLocalizations l10n) =>
+      switch (sort) {
+        ModelSort.provider => l10n.modelSortProvider,
+        ModelSort.name => l10n.modelSortName,
+        ModelSort.context => l10n.modelSortContext,
+        ModelSort.price => l10n.modelSortPrice,
+        ModelSort.newest => l10n.modelSortNewest,
+      };
 }
 
 class _HeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -336,6 +481,7 @@ class _ModelTile extends StatelessWidget {
   const _ModelTile({
     required this.model,
     required this.l10n,
+    required this.unavailable,
     required this.current,
     required this.highlighted,
     required this.pinned,
@@ -346,6 +492,7 @@ class _ModelTile extends StatelessWidget {
 
   final LlmModelInfo model;
   final AppLocalizations l10n;
+  final bool unavailable;
   final bool current;
   final bool highlighted;
   final bool pinned;
@@ -356,7 +503,7 @@ class _ModelTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final usable = model.supportsTools;
+    final usable = !unavailable && model.supportsTools;
     return ListTile(
       selected: current,
       selectedTileColor: scheme.secondaryContainer,
@@ -366,7 +513,11 @@ class _ModelTile extends StatelessWidget {
         left: AppSpacing.lg,
         right: AppSpacing.xs,
       ),
-      title: Text(model.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(
+        unavailable ? '! ${model.name}' : model.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: Wrap(
         spacing: AppSpacing.xs,
         runSpacing: AppSpacing.xs,
@@ -385,14 +536,22 @@ class _ModelTile extends StatelessWidget {
                 _modelPickerPerMillion(model.completionPrice!),
               ),
             ),
-          if (!usable) _Badge(text: l10n.modelNoTools, tone: AppTone.warning),
+          if (!model.supportsTools)
+            _Badge(text: l10n.modelNoTools, tone: AppTone.warning),
+          if (unavailable)
+            _Badge(
+              text: '! ${l10n.modelUnavailableBadge}',
+              tone: AppTone.warning,
+            ),
         ],
       ),
-      trailing: IconButton(
-        tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,
-        icon: Icon(pinned ? Icons.star : Icons.star_border),
-        onPressed: onTogglePin,
-      ),
+      trailing: unavailable
+          ? null
+          : IconButton(
+              tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,
+              icon: Icon(pinned ? Icons.star : Icons.star_border),
+              onPressed: onTogglePin,
+            ),
       onTap: usable ? onSelect : null,
     );
   }

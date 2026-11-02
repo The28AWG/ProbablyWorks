@@ -13,8 +13,10 @@ import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 
 // ---- events -----------------------------------------------------------------
 
@@ -225,6 +227,13 @@ final class _Refresh extends ChatEvent {
   const _Refresh();
 }
 
+/// Каталог моделей изменился (загружен, обновлён в фоне или запомнены детали моделей).
+final class _CatalogChanged extends ChatEvent {
+  const _CatalogChanged(this.catalog);
+
+  final ModelCatalogState catalog;
+}
+
 /// Настройки журнала шагов изменились в Settings: перечитать их, даже если чат уже открыт.
 final class _StepsChanged extends ChatEvent {
   const _StepsChanged();
@@ -242,7 +251,7 @@ class ChatState extends Equatable {
     this.approvals = const [],
     this.questions = const [],
     this.hosts = const [],
-    this.models = const [],
+    this.catalog = const ModelCatalogState(),
     this.pinnedModels = const [],
     this.stepsDisplay = StepsDisplay.defaults,
     this.defaultModelId,
@@ -253,6 +262,7 @@ class ChatState extends Equatable {
     this.isRunning = false,
     this.stepLimitReached = false,
     this.failure,
+    this.failureModelMissing = false,
     this.promptTokens,
     this.contextLimit,
     this.trustNeeded = false,
@@ -269,7 +279,9 @@ class ChatState extends Equatable {
   final List<ApprovalRequest> approvals;
   final List<UserQuestion> questions;
   final List<Host> hosts;
-  final List<LlmModelInfo> models;
+
+  /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
+  final ModelCatalogState catalog;
 
   /// Закреплённые id моделей из Settings (показываются первыми в picker).
   final List<String> pinnedModels;
@@ -291,6 +303,11 @@ class ChatState extends Equatable {
     return null;
   }
 
+  /// Статус модели чата по кешу каталога. Недоступная модель не блокирует отправку: `!` предупреждает.
+  ModelStatus get modelStatus => catalog.statusOf(effectiveModelId);
+
+  bool get modelUnavailable => modelStatus == ModelStatus.unavailable;
+
   /// Текст шага, который ещё не записан в БД (живой стрим).
   final String streamText;
 
@@ -302,6 +319,12 @@ class ChatState extends Equatable {
   final bool isRunning;
   final bool stepLimitReached;
   final String? failure;
+
+  /// Последняя ошибка — модель не найдена на сервере (см. [failureIsModelMissing]).
+  final bool failureModelMissing;
+
+  /// Ошибка есть и она из-за модели: док показывает предупреждение о модели вместо сырого текста.
+  bool get failureIsModelMissing => failure != null && failureModelMissing;
   final int? promptTokens;
   final int? contextLimit;
   final bool trustNeeded;
@@ -320,7 +343,7 @@ class ChatState extends Equatable {
     List<ApprovalRequest>? approvals,
     List<UserQuestion>? questions,
     List<Host>? hosts,
-    List<LlmModelInfo>? models,
+    ModelCatalogState? catalog,
     List<String>? pinnedModels,
     StepsDisplay? stepsDisplay,
     String? defaultModelId,
@@ -331,6 +354,7 @@ class ChatState extends Equatable {
     bool? isRunning,
     bool? stepLimitReached,
     String? failure,
+    bool? failureModelMissing,
     bool clearFailure = false,
     int? promptTokens,
     int? contextLimit,
@@ -347,7 +371,7 @@ class ChatState extends Equatable {
     approvals: approvals ?? this.approvals,
     questions: questions ?? this.questions,
     hosts: hosts ?? this.hosts,
-    models: models ?? this.models,
+    catalog: catalog ?? this.catalog,
     pinnedModels: pinnedModels ?? this.pinnedModels,
     stepsDisplay: stepsDisplay ?? this.stepsDisplay,
     defaultModelId: defaultModelId ?? this.defaultModelId,
@@ -358,6 +382,7 @@ class ChatState extends Equatable {
     isRunning: isRunning ?? this.isRunning,
     stepLimitReached: stepLimitReached ?? this.stepLimitReached,
     failure: clearFailure ? null : (failure ?? this.failure),
+    failureModelMissing: failureModelMissing ?? this.failureModelMissing,
     promptTokens: promptTokens ?? this.promptTokens,
     contextLimit: contextLimit ?? this.contextLimit,
     trustNeeded: trustNeeded ?? this.trustNeeded,
@@ -376,7 +401,7 @@ class ChatState extends Equatable {
     approvals,
     questions,
     hosts,
-    models,
+    catalog,
     pinnedModels,
     stepsDisplay,
     defaultModelId,
@@ -387,6 +412,7 @@ class ChatState extends Equatable {
     isRunning,
     stepLimitReached,
     failure,
+    failureModelMissing,
     promptTokens,
     contextLimit,
     trustNeeded,
@@ -428,6 +454,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_LiveFlush>(_onLiveFlush);
     on<_Refresh>(_onRefresh);
     on<_StepsChanged>(_onStepsChanged);
+    on<_CatalogChanged>(
+      (event, emit) => emit(state.copyWith(catalog: event.catalog)),
+    );
   }
 
   final AgentHub _hub;
@@ -438,6 +467,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<LiveChunk>? _liveSub;
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
+  StreamSubscription<ModelCatalogState>? _catalogSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
@@ -458,6 +488,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
+    await _catalogSub?.cancel();
     return super.close();
   }
 
@@ -466,6 +497,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
+    await _catalogSub?.cancel();
     for (final sub in _stepsSubs) {
       await sub.cancel();
     }
@@ -493,14 +525,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       );
     }
 
+    // Только локальные чтения: каталог уже в памяти, сеть здесь не ждём.
     final hosts = await _hub.hosts.all();
     final limits = await _hub.limits();
-    var models = const <LlmModelInfo>[];
-    try {
-      models = await _hub.llm.listModels();
-    } on Object {
-      models = const [];
-    }
     final pinned = await _hub.settings.readPinnedModels();
     final stepsDisplay = await _hub.settings.readStepsDisplay();
     final defaultModel = await _hub.settings.read(
@@ -510,11 +537,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       state.copyWith(
         hosts: hosts,
         limits: limits,
-        models: models,
+        catalog: _hub.models.state,
         pinnedModels: pinned,
         stepsDisplay: stepsDisplay,
         defaultModelId: defaultModel,
       ),
+    );
+    // Каталог может обновиться в фоне (старт, таймер, Settings): чат перерисует подпись модели и маркер.
+    _catalogSub = _hub.models.watch().listen(
+      (catalog) => add(_CatalogChanged(catalog)),
     );
     await _reload(emit);
     emit(
@@ -524,6 +555,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         queue: _queueTexts(),
       ),
     );
+    // Детали моделей чата и закреплённых сохраняются, чтобы их название показывалось без загрузки списка.
+    await _hub.models.remember([
+      ?state.effectiveModelId,
+      ...state.pinnedModels,
+    ]);
   }
 
   Future<void> _onSubmitted(
@@ -578,6 +614,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       model: event.model.id,
       contextLength: event.model.contextLength,
     );
+    await _hub.models.remember([event.model.id]);
     await _hub.chats.saveChat(updated);
     emit(
       state.copyWith(chat: updated, contextLimit: event.model.contextLength),
@@ -593,6 +630,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final pins = [...state.pinnedModels];
     if (!pins.remove(event.modelId)) pins.add(event.modelId);
+    if (pins.contains(event.modelId)) {
+      await _hub.models.remember([event.modelId]);
+    }
     await _hub.settings.savePinnedModels(pins);
     emit(state.copyWith(pinnedModels: pins));
   }
@@ -721,7 +761,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       case AgentQueueChanged():
         emit(state.copyWith(queue: _queueTexts()));
       case AgentFailureRaised(:final failure):
-        emit(state.copyWith(failure: failure.message));
+        emit(
+          state.copyWith(
+            failure: failure.message,
+            failureModelMissing: failure is LlmFailure && failure.modelNotFound,
+          ),
+        );
       case AgentTrustNeeded():
         emit(state.copyWith(trustNeeded: true));
       case AgentUsageUpdated(:final promptTokens, :final limit):

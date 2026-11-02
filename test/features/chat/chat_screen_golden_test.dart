@@ -10,6 +10,7 @@ import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
 import 'package:probably_works/test_support/seeded_chat_bloc.dart';
 
@@ -26,6 +27,9 @@ final _model = LlmModelInfo(
   name: 'Claude Sonnet',
   contextLength: 200000,
 );
+
+/// Список уже загружен и содержит модель: подпись без спиннера и маркера.
+final _catalog = ModelCatalogState(models: [_model], syncedAt: DateTime(2026));
 
 Chat _chat({int compactedUntilSeq = 0, String? summary}) => Chat(
   id: 'c',
@@ -74,7 +78,7 @@ ToolRun _run(
 }
 
 ChatState _empty() =>
-    ChatState(chatId: 'c', chat: _chat(), hosts: [_host], models: [_model]);
+    ChatState(chatId: 'c', chat: _chat(), hosts: [_host], catalog: _catalog);
 
 ChatState _conversation() => ChatState(
   chatId: 'c',
@@ -83,7 +87,7 @@ ChatState _conversation() => ChatState(
     summary: 'Пользователь просил проверить проект. Найдено два неиспользуемых импорта в `chat_view.dart`.',
   ),
   hosts: [_host],
-  models: [_model],
+  catalog: _catalog,
   messages: [
     _message(
       'u0',

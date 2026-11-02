@@ -28,6 +28,7 @@ import '../../agent/tools/tool_executor.dart' as _i125;
 import '../../agent/workspace/workspace_context_loader.dart' as _i359;
 import '../../core/data/chat_repository.dart' as _i193;
 import '../../core/data/host_repository.dart' as _i250;
+import '../../core/data/saved_model_repository.dart' as _i503;
 import '../../core/data/settings_repository.dart' as _i913;
 import '../../core/db/app_database.dart' as _i386;
 import '../../core/notify/desktop_notifier.dart' as _i458;
@@ -37,6 +38,7 @@ import '../../host/host_runtime_factory.dart' as _i559;
 import '../../host/pty_launcher.dart' as _i532;
 import '../../host/ssh_connection_pool.dart' as _i719;
 import '../../providers/ai/llm_port.dart' as _i432;
+import '../../providers/ai/model_catalog.dart' as _i758;
 import '../bootstrap/app_paths.dart' as _i859;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/locale_controller.dart' as _i675;
@@ -78,6 +80,9 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i250.HostRepository>(
       () => _i250.HostRepository(gh<_i386.AppDatabase>()),
     );
+    gh.lazySingleton<_i503.SavedModelRepository>(
+      () => _i503.SavedModelRepository(gh<_i386.AppDatabase>()),
+    );
     gh.lazySingleton<_i913.SettingsRepository>(
       () => _i913.SettingsRepository(gh<_i386.AppDatabase>()),
     );
@@ -107,6 +112,12 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i519.ApiKeyGuard>(
       () => _i519.ApiKeyGuard(gh<_i617.SecretStore>()),
+    );
+    gh.lazySingleton<_i758.ModelCatalogService>(
+      () => _i758.ModelCatalogService(
+        gh<_i503.SavedModelRepository>(),
+        gh<_i432.LlmProvider>(),
+      ),
     );
     gh.lazySingleton<_i719.SshConnectionPool>(
       () => _i719.SshConnectionPool(
@@ -151,6 +162,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i250.HostRepository>(),
         gh<_i559.HostRuntimeFactory>(),
         gh<_i432.LlmProvider>(),
+        gh<_i758.ModelCatalogService>(),
         gh<_i531.ContextBuilder>(),
         gh<_i422.ContextCompactor>(),
         gh<_i125.ToolExecutor>(),
