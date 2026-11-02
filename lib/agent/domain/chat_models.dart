@@ -158,6 +158,7 @@ class ChatMessage {
     required this.role,
     required this.createdAt,
     this.text = '',
+    this.reasoning = '',
     this.toolCalls = const [],
     this.toolCallId,
     this.attachments = const [],
@@ -183,6 +184,7 @@ class ChatMessage {
       role: MessageRole.values.byName(role),
       createdAt: createdAt,
       text: map['text'] as String? ?? '',
+      reasoning: map['reasoning'] as String? ?? '',
       toolCalls: [
         for (final c in (map['toolCalls'] as List? ?? const []))
           ToolCallRef.fromJson(c as Map<String, dynamic>),
@@ -202,6 +204,9 @@ class ChatMessage {
   final int seq;
   final MessageRole role;
   final String text;
+
+  /// Рассуждения модели перед этим шагом. Показываются в журнале шагов, модели не отправляются.
+  final String reasoning;
   final List<ToolCallRef> toolCalls;
   final String? toolCallId;
   final List<AttachmentRef> attachments;
@@ -215,6 +220,7 @@ class ChatMessage {
     int? seq,
     MessageRole? role,
     String? text,
+    String? reasoning,
     List<ToolCallRef>? toolCalls,
     String? toolCallId,
     List<AttachmentRef>? attachments,
@@ -228,6 +234,7 @@ class ChatMessage {
     role: role ?? this.role,
     createdAt: createdAt ?? this.createdAt,
     text: text ?? this.text,
+    reasoning: reasoning ?? this.reasoning,
     toolCalls: toolCalls ?? this.toolCalls,
     toolCallId: toolCallId ?? this.toolCallId,
     attachments: attachments ?? this.attachments,
@@ -239,6 +246,7 @@ class ChatMessage {
   /// Полезная нагрузка для колонки `payload` (JSON).
   String encodePayload() => jsonEncode({
     'text': text,
+    'reasoning': reasoning,
     'toolCalls': [for (final c in toolCalls) c.toJson()],
     'toolCallId': toolCallId,
     'attachments': [for (final a in attachments) a.toJson()],

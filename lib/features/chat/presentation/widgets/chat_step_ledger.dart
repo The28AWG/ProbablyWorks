@@ -8,21 +8,47 @@ import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
-/// Журнал шагов одного ответа ассистента: все команды, которые он выполнил.
+/// Шаг журнала ответа: рассуждения модели или запуск команды. В группе идут в порядке появления.
+sealed class LedgerStep {
+  const LedgerStep();
+
+  String get id;
+}
+
+/// Рассуждения модели. [live] — шаг ещё идёт, текст дописывается в стриме.
+final class ThoughtStep extends LedgerStep {
+  const ThoughtStep({required this.id, required this.text, this.live = false});
+
+  @override
+  final String id;
+  final String text;
+  final bool live;
+}
+
+/// Запуск команды.
+final class RunStep extends LedgerStep {
+  const RunStep(this.run);
+
+  final ToolRun run;
+
+  @override
+  String get id => run.id;
+}
+
+/// Журнал шагов одного участка ответа ассистента: рассуждения модели и команды, которые она выполнила.
 ///
-/// Одна команда выводится просто строкой: заголовок группы без неё лишний шаг до текста команды.
-/// Несколько команд сворачиваются в группу с итогом в одну строку. Группа раскрывается сама, пока
-/// есть активные шаги или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся
-/// в свёрнутом виде: без них история не читается.
+/// Один шаг выводится просто строкой: заголовок группы без него лишний шаг до текста. Несколько шагов
+/// сворачиваются в группу с итогом в одну строку. Группа раскрывается сама, пока есть активные шаги
+/// или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся в свёрнутом виде.
 class ChatStepLedger extends StatefulWidget {
   const ChatStepLedger({
-    required this.runs,
+    required this.steps,
     required this.live,
     this.terminalFor,
     super.key,
   });
 
-  final List<ToolRun> runs;
+  final List<LedgerStep> steps;
   final Map<String, String> live;
 
   /// Терминал активного запуска по его id; `null`, если запуск не выполняется в PTY.
@@ -51,17 +77,15 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     super.build(context);
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final runs = widget.runs;
+    final steps = widget.steps;
 
-    if (runs.length == 1) {
-      final run = runs.single;
+    if (steps.length == 1) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-        child: _StepRow(
-          key: ValueKey(run.id),
-          run: run,
-          live: widget.live[run.id],
-          terminal: widget.terminalFor?.call(run.id),
+        child: _LedgerStepRow(
+          step: steps.single,
+          live: widget.live,
+          terminalFor: widget.terminalFor,
         ),
       );
     }
@@ -70,13 +94,22 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     var failed = 0;
     var attention = false;
     var done = 0;
-    for (final run in runs) {
-      if (run.isActive || run.status == ToolRunStatus.backgroundRunning) {
-        active++;
+    for (final step in steps) {
+      switch (step) {
+        case ThoughtStep(:final live):
+          if (live) {
+            active++;
+          } else {
+            done++;
+          }
+        case RunStep(:final run):
+          if (run.isActive || run.status == ToolRunStatus.backgroundRunning) {
+            active++;
+          }
+          if (_isFailure(run)) failed++;
+          if (_needsAttention(run)) attention = true;
+          if (run.status == ToolRunStatus.done) done++;
       }
-      if (_isFailure(run)) failed++;
-      if (_needsAttention(run)) attention = true;
-      if (run.status == ToolRunStatus.done) done++;
     }
 
     final expanded = _userExpanded ?? (active > 0 || attention || failed > 0);
@@ -88,9 +121,9 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
         ? AppTone.waiting
         : AppTone.success;
     final title = active > 0
-        ? l10n.stepsGroupActive(done, runs.length)
-        : l10n.stepsGroupDone(runs.length);
-    final duration = _groupDuration(runs);
+        ? l10n.stepsGroupActive(done, steps.length)
+        : l10n.stepsGroupDone(steps.length);
+    final duration = _groupDuration(steps);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
@@ -160,12 +193,11 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (final run in runs)
-                        _StepRow(
-                          key: ValueKey(run.id),
-                          run: run,
-                          live: widget.live[run.id],
-                          terminal: widget.terminalFor?.call(run.id),
+                      for (final step in steps)
+                        _LedgerStepRow(
+                          step: step,
+                          live: widget.live,
+                          terminalFor: widget.terminalFor,
                         ),
                     ],
                   ),
@@ -200,8 +232,12 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     _ => _isFailure(run),
   };
 
-  /// Общее время группы: от первого запуска до последнего завершения (или до текущего момента).
-  static Duration? _groupDuration(List<ToolRun> runs) {
+  /// Общее время группы команд: от первого запуска до последнего завершения (или до текущего момента).
+  static Duration? _groupDuration(List<LedgerStep> steps) {
+    final runs = [
+      for (final step in steps)
+        if (step case RunStep(:final run)) run,
+    ];
     if (runs.isEmpty) return null;
     final start = runs
         .map((r) => r.startedAt)
@@ -216,6 +252,176 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
       if (end == null || finished.isAfter(end)) end = finished;
     }
     return end?.difference(start);
+  }
+}
+
+class _LedgerStepRow extends StatelessWidget {
+  const _LedgerStepRow({
+    required this.step,
+    required this.live,
+    this.terminalFor,
+  });
+
+  final LedgerStep step;
+  final Map<String, String> live;
+  final HostTerminal? Function(String runId)? terminalFor;
+
+  @override
+  Widget build(BuildContext context) => switch (step) {
+    ThoughtStep(:final id, :final text, live: final streaming) => _ThoughtRow(
+      key: ValueKey(id),
+      text: text,
+      live: streaming,
+    ),
+    RunStep(:final run) => _StepRow(
+      key: ValueKey(run.id),
+      run: run,
+      live: live[run.id],
+      terminal: terminalFor?.call(run.id),
+    ),
+  };
+}
+
+/// Строка рассуждений: первая строка текста, раскрывается до полного текста.
+/// Пока шаг идёт, раскрыта и прокручивается вслед за новым текстом.
+class _ThoughtRow extends StatefulWidget {
+  const _ThoughtRow({required this.text, required this.live, super.key});
+
+  final String text;
+  final bool live;
+
+  @override
+  State<_ThoughtRow> createState() => _ThoughtRowState();
+}
+
+class _ThoughtRowState extends State<_ThoughtRow>
+    with AutomaticKeepAliveClientMixin<_ThoughtRow> {
+  late var _expanded = widget.live;
+
+  /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
+  var _toggled = false;
+
+  final _scroll = ScrollController();
+
+  @override
+  bool get wantKeepAlive => _toggled || _expanded;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThoughtRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.live && widget.live) {
+      _expanded = true;
+      updateKeepAlive();
+    }
+    if (widget.live && widget.text != oldWidget.text) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scroll.hasClients) {
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final text = widget.text.trim();
+    final canExpand = text.isNotEmpty;
+    final summary = _firstLine(text);
+    final tone = widget.live
+        ? toneColors(context, AppTone.progress).foreground
+        : scheme.onSurfaceVariant;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          borderRadius: AppRadius.smAll,
+          onTap: canExpand
+              ? () {
+                  setState(() {
+                    _toggled = true;
+                    _expanded = !_expanded;
+                  });
+                  updateKeepAlive();
+                }
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+            child: Row(
+              children: [
+                Icon(Icons.psychology_outlined, size: 16, color: tone),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    summary.isEmpty ? l10n.statusThinking : summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (canExpand)
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: AppDurations.fast,
+          alignment: Alignment.topCenter,
+          child: _expanded && canExpand
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: AppRadius.mdAll,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: SingleChildScrollView(
+                          controller: _scroll,
+                          child: SelectableText(
+                            text,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  static String _firstLine(String text) {
+    for (final line in text.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return '';
   }
 }
 

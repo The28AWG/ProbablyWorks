@@ -128,7 +128,8 @@ class _AssistantMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (message.text.isEmpty) return const SizedBox.shrink();
+    // Текст из одних пробелов и переводов строк тоже пустой: иначе останется пустой блок с кнопкой.
+    if (message.text.trim().isEmpty) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),

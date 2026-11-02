@@ -88,7 +88,6 @@ class _ChatBodyState extends State<ChatBody> {
                 children: [
                   _Header(
                     title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
-                    activity: _activityOf(state, l10n),
                   ),
                   Expanded(
                     child: ChatTimeline(
@@ -263,53 +262,12 @@ class _ChatBodyState extends State<ChatBody> {
   }
 }
 
-/// Главный статус агента: что он делает прямо сейчас.
-class _Activity {
-  const _Activity(this.text, this.tone);
-
-  final String text;
-  final AppTone tone;
-}
-
-_Activity? _activityOf(ChatState state, AppLocalizations l10n) {
-  if (!state.isRunning) return null;
-  var foreground = 0;
-  var background = 0;
-  var waitingApproval = state.approvals.isNotEmpty;
-  var waitingUser = state.questions.isNotEmpty;
-  for (final run in state.runs) {
-    if (run.status == ToolRunStatus.waitingApproval) waitingApproval = true;
-    if (run.status == ToolRunStatus.waitingUser) waitingUser = true;
-    if (run.status == ToolRunStatus.backgroundRunning) {
-      background++;
-    } else if (run.status == ToolRunStatus.running) {
-      foreground++;
-    }
-  }
-  final primary = switch ((waitingApproval, waitingUser, foreground)) {
-    (true, _, _) => l10n.statusWaitingApproval,
-    (_, true, _) => l10n.statusWaitingUser,
-    (_, _, > 0) => l10n.statusRunningCommands(foreground),
-    _ => l10n.statusThinking,
-  };
-  final tone = waitingApproval || waitingUser
-      ? AppTone.waiting
-      : AppTone.progress;
-  return _Activity(
-    background > 0
-        ? '$primary · ${l10n.statusBackgroundCommands(background)}'
-        : primary,
-    tone,
-  );
-}
-
-/// Шапка чата: название и статус работы. Ни одного управляющего элемента:
+/// Шапка чата: только название. Ни одного управляющего элемента:
 /// всё, что меняет поведение агента, находится в композере.
 class _Header extends StatelessWidget {
-  const _Header({required this.title, required this.activity});
+  const _Header({required this.title});
 
   final String title;
-  final _Activity? activity;
 
   @override
   Widget build(BuildContext context) {
@@ -330,31 +288,6 @@ class _Header extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (activity != null) ...[
-              const SizedBox(width: AppSpacing.md),
-              Flexible(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    StatusDot(
-                      tone: activity!.tone,
-                      pulse: activity!.tone == AppTone.progress,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Flexible(
-                      child: Text(
-                        activity!.text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: toneColors(context, activity!.tone).foreground,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),

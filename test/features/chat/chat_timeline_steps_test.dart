@@ -109,4 +109,96 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('flutter analyze'), findsOneWidget);
   });
+
+  testWidgets('steps of one response form one group, reasoning is shown', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = ChatState(
+      chatId: 'c',
+      chat: Chat(
+        id: 'c',
+        hostId: 'local',
+        title: 'Chat',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      ),
+      messages: [
+        ChatMessage(
+          id: 'm1',
+          chatId: 'c',
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: DateTime(2026),
+          text: 'Вопрос',
+        ),
+        ChatMessage(
+          id: 'm2',
+          chatId: 'c',
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: DateTime(2026),
+          reasoning: 'Сначала посмотрю каталог',
+          toolCalls: const [
+            ToolCallRef(id: 'k1', name: 'run_command', arguments: '{}'),
+          ],
+        ),
+        ChatMessage(
+          id: 'm3',
+          chatId: 'c',
+          seq: 4,
+          role: MessageRole.assistant,
+          createdAt: DateTime(2026),
+          reasoning: 'Проверю результат',
+          text: 'Готово',
+        ),
+      ],
+      runs: [_run()],
+    );
+    await tester.pumpWidget(_TestApp(state));
+    await tester.pumpAndSettle();
+
+    // Мысль, команда и мысль перед текстом ответа — одна группа; текст стоит после неё.
+    expect(find.text('3 steps'), findsOneWidget);
+    expect(find.textContaining('Готово'), findsOneWidget);
+  });
+
+  testWidgets(
+    'an assistant step with only whitespace text leaves no empty block',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final state = ChatState(
+        chatId: 'c',
+        chat: Chat(
+          id: 'c',
+          hostId: 'local',
+          title: 'Chat',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+        messages: [
+          ChatMessage(
+            id: 'm2',
+            chatId: 'c',
+            seq: 2,
+            role: MessageRole.assistant,
+            createdAt: DateTime(2026),
+            text: '\n\n\n',
+            toolCalls: const [
+              ToolCallRef(id: 'k1', name: 'run_command', arguments: '{}'),
+            ],
+          ),
+        ],
+        runs: [_run()],
+      );
+      await tester.pumpWidget(_TestApp(state));
+      await tester.pumpAndSettle();
+
+      // Пустой ответ не рисует блок с кнопкой «копировать»: остаётся только строка команды.
+      expect(find.byIcon(Icons.copy_outlined), findsNothing);
+      expect(find.text('flutter analyze'), findsOneWidget);
+    },
+  );
 }

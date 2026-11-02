@@ -248,7 +248,86 @@ class _ChatTimelineState extends State<ChatTimeline> {
     }
     final boundary = _compactionBoundary(chat, visible);
 
-    // Порядок от нового к старому: лента перевёрнута, нулевой индекс стоит у низа.
+    // Строки собираем от старого к новому и только потом переворачиваем: лента перевёрнута.
+    // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
+    final rows = <Widget>[];
+    var anchor = 'start';
+    var steps = <LedgerStep>[];
+    var stepsAnchor = anchor;
+
+    void flush() {
+      if (steps.isEmpty) return;
+      rows.add(
+        _KeyedTimelineItem(
+          id: 'steps:$stepsAnchor',
+          liveIds: _liveIds,
+          itemKeys: _itemKeys,
+          child: ChatColumn.item(
+            ChatStepLedger(
+              steps: steps,
+              live: state.live,
+              terminalFor: widget.terminalFor,
+            ),
+          ),
+        ),
+      );
+      steps = [];
+    }
+
+    void step(LedgerStep value) {
+      if (steps.isEmpty) stepsAnchor = anchor;
+      steps.add(value);
+    }
+
+    void item(String id, Widget child) {
+      flush();
+      rows.add(
+        _KeyedTimelineItem(
+          id: id,
+          liveIds: _liveIds,
+          itemKeys: _itemKeys,
+          child: ChatColumn.item(child),
+        ),
+      );
+      anchor = id;
+    }
+
+    for (var i = 0; i < visible.length; i++) {
+      final message = visible[i];
+      if (i == boundary) {
+        item(
+          'compaction',
+          ChatCompactionMarker(summary: chat?.compactionSummary),
+        );
+      }
+      final isAssistant = message.role == MessageRole.assistant;
+      if (isAssistant && message.reasoning.isNotEmpty) {
+        step(ThoughtStep(id: 'thought:${message.id}', text: message.reasoning));
+      }
+      // Пустой текст ассистента не рисуем, но его шаги остаются в журнале.
+      if (!isAssistant || message.text.trim().isNotEmpty) {
+        item(
+          message.id,
+          ChatMessageTile(message: message, editable: !state.isRunning),
+        );
+      }
+      for (final run in runsByMessage[message.id] ?? const <ToolRun>[]) {
+        step(RunStep(run));
+      }
+    }
+    // Рассуждения, которые ещё стримятся: они новее всех записанных шагов.
+    if (state.streamReasoning.isNotEmpty) {
+      step(
+        ThoughtStep(
+          id: 'thought:live',
+          text: state.streamReasoning,
+          live: state.streamText.isEmpty,
+        ),
+      );
+    }
+    flush();
+
+    // Ключи строятся вместе с элементами, поэтому убираем только те, кого в ленте больше нет.
     _liveIds.clear();
     final children = <Widget>[
       if (state.streamText.isNotEmpty)
@@ -258,40 +337,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
           itemKeys: _itemKeys,
           child: ChatColumn.item(AppMarkdown(data: state.streamText)),
         ),
-      for (var i = visible.length - 1; i >= 0; i--) ...[
-        if (runsByMessage[visible[i].id] case final runs?)
-          _KeyedTimelineItem(
-            id: 'ledger:${visible[i].id}',
-            liveIds: _liveIds,
-            itemKeys: _itemKeys,
-            child: ChatColumn.item(
-              ChatStepLedger(
-                runs: runs,
-                live: state.live,
-                terminalFor: widget.terminalFor,
-              ),
-            ),
-          ),
-        _KeyedTimelineItem(
-          id: visible[i].id,
-          liveIds: _liveIds,
-          itemKeys: _itemKeys,
-          child: ChatColumn.item(
-            ChatMessageTile(message: visible[i], editable: !state.isRunning),
-          ),
-        ),
-        if (i == boundary)
-          _KeyedTimelineItem(
-            id: 'compaction',
-            liveIds: _liveIds,
-            itemKeys: _itemKeys,
-            child: ChatColumn.item(
-              ChatCompactionMarker(summary: chat?.compactionSummary),
-            ),
-          ),
-      ],
+      ...rows.reversed,
     ];
-    // Ключи строятся вместе с элементами, поэтому убираем только те, кого в ленте больше нет.
     _itemKeys.removeWhere((id, _) => !_liveIds.contains(id));
     if (!_follow) _scheduleAnchor();
 

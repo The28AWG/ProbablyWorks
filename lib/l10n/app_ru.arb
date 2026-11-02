@@ -599,32 +599,6 @@
   "@statusThinking": {
     "description": "Status strip under the composer: the model is generating a reply."
   },
-  "statusRunningCommands": "Выполняет команд: {count}",
-  "@statusRunningCommands": {
-    "description": "Status strip: number of foreground commands running now.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "statusBackgroundCommands": "В фоне: {count}",
-  "@statusBackgroundCommands": {
-    "description": "Status strip: number of background commands still running.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "statusWaitingApproval": "Ждёт подтверждения",
-  "@statusWaitingApproval": {
-    "description": "Status strip: the agent is blocked until the user approves a tool call."
-  },
-  "statusWaitingUser": "Ждёт ответа",
-  "@statusWaitingUser": {
-    "description": "Status strip: the agent asked the user a question and waits."
-  },
   "runBackgroundBadge": "bg",
   "@runBackgroundBadge": {
     "description": "Badge on a tool card of a background command (kept short on purpose)."
@@ -935,7 +909,7 @@
   "@compactionHideSummary": {
     "description": "Скрывает текст сводки под меткой сжатия."
   },
-  "stepsGroupDone": "{count, plural, one{1 действие} few{{count} действия} many{{count} действий} other{{count} действия}}",
+  "stepsGroupDone": "{count, plural, one{1 шаг} few{{count} шага} many{{count} шагов} other{{count} шага}}",
   "@stepsGroupDone": {
     "description": "Заголовок завершённой группы шагов инструментов.",
     "placeholders": {

@@ -287,7 +287,10 @@ void main() {
     await tester.pumpWidget(
       _TestApp(
         SingleChildScrollView(
-          child: ChatStepLedger(runs: runs, live: const {}),
+          child: ChatStepLedger(
+            steps: [for (final run in runs) RunStep(run)],
+            live: const {},
+          ),
         ),
       ),
     );
@@ -325,7 +328,10 @@ void main() {
     await tester.pumpWidget(
       _TestApp(
         SingleChildScrollView(
-          child: ChatStepLedger(runs: runs, live: const {}),
+          child: ChatStepLedger(
+            steps: [for (final run in runs) RunStep(run)],
+            live: const {},
+          ),
         ),
       ),
     );
@@ -362,7 +368,10 @@ void main() {
     await tester.pumpWidget(
       _TestApp(
         SingleChildScrollView(
-          child: ChatStepLedger(runs: runs, live: const {}),
+          child: ChatStepLedger(
+            steps: [for (final run in runs) RunStep(run)],
+            live: const {},
+          ),
         ),
       ),
     );

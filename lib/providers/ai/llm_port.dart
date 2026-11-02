@@ -87,6 +87,13 @@ final class LlmTextDelta extends LlmEvent {
   final String text;
 }
 
+/// Рассуждения модели (thinking): отдельно от текста ответа. Нет у моделей без рассуждений.
+final class LlmReasoningDelta extends LlmEvent {
+  const LlmReasoningDelta(this.text);
+
+  final String text;
+}
+
 /// Финал ответа: инструменты целиком (чанки аргументов уже склеены), usage, причина.
 final class LlmCompleted extends LlmEvent {
   const LlmCompleted({

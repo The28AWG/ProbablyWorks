@@ -87,6 +87,8 @@ class ContextBuilder {
       case MessageRole.user:
         return [LlmMessage.user(_userText(message))];
       case MessageRole.assistant:
+        // Шаг только с рассуждениями не попадает в историю: рассуждения модели не возвращаем.
+        if (message.text.isEmpty && message.toolCalls.isEmpty) return const [];
         return [
           LlmMessage(
             role: LlmRole.assistant,

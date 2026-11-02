@@ -192,6 +192,82 @@ void main() {
     );
   });
 
+  test('reasoning is stored on its step, streamed, and kept out of the model context', () async {
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    final streamed = <AgentReasoningDelta>[];
+    final sub = session.events
+        .where((e) => e is AgentReasoningDelta)
+        .cast<AgentReasoningDelta>()
+        .listen(streamed.add);
+    llm.script
+      ..add([
+        const LlmReasoningDelta('Рассуждение первого шага'),
+        LlmCompleted(
+          toolCalls: [_call('c1', 'run_command', '{"command":"echo hello"}')],
+        ),
+      ])
+      ..add([
+        const LlmReasoningDelta('Рассуждение финального шага'),
+        const LlmTextDelta('done'),
+        const LlmCompleted(),
+      ]);
+
+    await runTurn(session, 'say hello');
+    await sub.cancel();
+
+    final assistants = [
+      for (final m in await hub.chats.messages(chatId))
+        if (m.role == MessageRole.assistant) m,
+    ];
+    expect(assistants.map((m) => m.reasoning), [
+      'Рассуждение первого шага',
+      'Рассуждение финального шага',
+    ]);
+    expect(assistants.last.text, 'done');
+    expect(streamed.map((e) => e.text), [
+      'Рассуждение первого шага',
+      'Рассуждение финального шага',
+    ]);
+    for (final request in llm.requests) {
+      for (final message in request.messages) {
+        expect(message.content, isNot(contains('Рассуждение')));
+      }
+    }
+  });
+
+  test(
+    'a step with only reasoning is kept, and not replayed to the model',
+    () async {
+      final chatId = await createChat();
+      llm.script
+        ..add([
+          const LlmReasoningDelta('Только мысли без ответа'),
+          const LlmCompleted(),
+        ])
+        ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'первый вопрос');
+      await runTurn(hub.session(chatId), 'второй вопрос');
+
+      final assistants = [
+        for (final m in await hub.chats.messages(chatId))
+          if (m.role == MessageRole.assistant) m,
+      ];
+      expect(assistants.first.reasoning, 'Только мысли без ответа');
+      expect(assistants.first.text, isEmpty);
+      final secondRequest = llm.requests.last.messages;
+      expect(
+        [
+          for (final m in secondRequest)
+            if (m.role == LlmRole.assistant) m,
+        ],
+        isEmpty,
+        reason: 'empty assistant step must not be sent back',
+      );
+    },
+  );
+
   test('sudo is denied by policy and the model receives the denial', () async {
     final chatId = await createChat();
     llm.script

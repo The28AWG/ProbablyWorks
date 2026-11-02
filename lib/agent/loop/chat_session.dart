@@ -226,11 +226,13 @@ class ChatSession {
 
       final prepared = await _prepare(limits);
       final step = await _streamWithRetry(prepared.request, turn, limits);
-      final assistant = step.text.isEmpty && step.toolCalls.isEmpty
+      final assistant =
+          step.text.isEmpty && step.toolCalls.isEmpty && step.reasoning.isEmpty
           ? null
           : await _append(
               MessageRole.assistant,
               text: step.text,
+              reasoning: Redactor.redact(step.reasoning),
               toolCalls: [
                 for (final c in step.toolCalls)
                   ToolCallRef(id: c.id, name: c.name, arguments: c.arguments),
@@ -380,6 +382,7 @@ class ChatSession {
           'retrying model request (attempt $attempt): ${failure.message}',
         );
         _emit(AgentTextDelta(chatId, '', reset: true));
+        _emit(AgentReasoningDelta(chatId, '', reset: true));
         await Future.any<void>([
           Future<void>.delayed(Duration(seconds: 1 << (attempt - 1))),
           turn.whenCancelled,
@@ -397,6 +400,7 @@ class ChatSession {
     final step = CancelToken();
     _stepCancel = step;
     final text = StringBuffer();
+    final reasoning = StringBuffer();
     var toolCalls = <LlmToolCall>[];
     LlmUsage? usage;
     final done = Completer<void>();
@@ -421,6 +425,9 @@ class ChatSession {
           (event) {
             resetWatchdog();
             switch (event) {
+              case LlmReasoningDelta e:
+                reasoning.write(e.text);
+                _emit(AgentReasoningDelta(chatId, e.text));
               case LlmTextDelta e:
                 text.write(e.text);
                 _emit(AgentTextDelta(chatId, e.text));
@@ -450,6 +457,7 @@ class ChatSession {
     }
     return StepResult(
       text: text.toString(),
+      reasoning: reasoning.toString(),
       toolCalls: toolCalls,
       usage: usage,
       interruptedBySendNow: step.isCancelled && !turn.isCancelled,
@@ -555,6 +563,7 @@ class ChatSession {
     MessageRole role, {
     String? id,
     String text = '',
+    String reasoning = '',
     List<ToolCallRef> toolCalls = const [],
     String? toolCallId,
     List<AttachmentRef> attachments = const [],
@@ -569,6 +578,7 @@ class ChatSession {
       role: role,
       createdAt: DateTime.now(),
       text: text,
+      reasoning: reasoning,
       toolCalls: toolCalls,
       toolCallId: toolCallId,
       attachments: attachments,

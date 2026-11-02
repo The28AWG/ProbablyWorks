@@ -51,7 +51,7 @@ void main() {
         SizedBox(
           width: 600,
           child: ChatStepLedger(
-            runs: [_run('r1', ToolRunStatus.running)],
+            steps: [RunStep(_run('r1', ToolRunStatus.running))],
             live: const {'r1': 'ok'},
           ),
         ),
@@ -71,7 +71,7 @@ void main() {
       SizedBox(
         width: 600,
         child: ChatStepLedger(
-          runs: [_run('r1', ToolRunStatus.running)],
+          steps: [RunStep(_run('r1', ToolRunStatus.running))],
           live: {'r1': live},
         ),
       ),
@@ -92,5 +92,78 @@ void main() {
           .map((l) => l.trimRight()),
       ['\$ flutter test', 'step 1', 'step 2'],
     );
+  });
+
+  testWidgets('a thought shows its first line and expands to the full text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        const SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              ThoughtStep(id: 't1', text: 'Первая строка\nВторая строка'),
+            ],
+            live: {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Первая строка'), findsOneWidget);
+    expect(find.textContaining('Вторая строка'), findsNothing);
+
+    await tester.tap(find.text('Первая строка'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Вторая строка'), findsOneWidget);
+  });
+
+  testWidgets('thoughts and commands of one response share one group', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              const ThoughtStep(id: 't1', text: 'Сначала посмотрю файлы'),
+              RunStep(_run('r1', ToolRunStatus.done)),
+              const ThoughtStep(id: 't2', text: 'Теперь проверю результат'),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 steps'), findsOneWidget);
+    expect(find.text('Сначала посмотрю файлы'), findsNothing);
+  });
+
+  testWidgets('a streaming thought is expanded and counts as running', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(_run('r1', ToolRunStatus.done)),
+              const ThoughtStep(id: 'live', text: 'Ищу конфиг', live: true),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Running: 1 of 2'), findsOneWidget);
+    expect(find.byType(SelectableText), findsOneWidget);
   });
 }

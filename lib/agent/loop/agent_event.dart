@@ -36,6 +36,16 @@ final class AgentTextDelta extends AgentEvent {
   final bool reset;
 }
 
+/// Фрагмент рассуждений модели (живой стрим, пока шаг не записан в БД).
+final class AgentReasoningDelta extends AgentEvent {
+  const AgentReasoningDelta(super.chatId, this.text, {this.reset = false});
+
+  final String text;
+
+  /// Повтор запроса: UI должен очистить черновик рассуждений.
+  final bool reset;
+}
+
 /// Запись инструмента изменилась (статус, pid, результат).
 final class AgentRunChanged extends AgentEvent {
   const AgentRunChanged(super.chatId, this.run);
@@ -91,6 +101,7 @@ enum TurnEnd {
 class StepResult {
   const StepResult({
     required this.text,
+    this.reasoning = '',
     this.toolCalls = const [],
     this.usage,
     this.interruptedBySendNow = false,
@@ -98,6 +109,7 @@ class StepResult {
   });
 
   final String text;
+  final String reasoning;
   final List<LlmToolCall> toolCalls;
   final LlmUsage? usage;
   final bool interruptedBySendNow;

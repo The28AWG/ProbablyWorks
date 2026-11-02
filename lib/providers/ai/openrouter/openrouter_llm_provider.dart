@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:openrouter/openrouter.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/think_tag_parser.dart';
 
 /// Адаптер OpenRouter к порту [LlmProvider]. Ключ читается при каждом вызове,
 /// поэтому смена ключа в Settings действует сразу.
@@ -32,6 +33,7 @@ class OpenRouterLlmProvider implements LlmProvider {
   Stream<LlmEvent> stream(LlmRequest request) async* {
     final client = await _client();
     final accumulated = <int, _PartialToolCall>{};
+    final thinkTags = ThinkTagParser();
     String? finishReason;
     LlmUsage? usage;
     try {
@@ -48,8 +50,16 @@ class OpenRouterLlmProvider implements LlmProvider {
         }
         for (final choice in chunk.choices) {
           final delta = choice.delta;
+          final reasoning = delta.reasoning;
+          if (reasoning != null && reasoning.isNotEmpty) {
+            yield LlmReasoningDelta(reasoning);
+          }
           final text = delta.content;
-          if (text != null && text.isNotEmpty) yield LlmTextDelta(text);
+          if (text != null && text.isNotEmpty) {
+            for (final event in thinkTags.add(text)) {
+              yield event;
+            }
+          }
           for (final call in delta.toolCalls ?? const <ChatStreamToolCall>[]) {
             accumulated.putIfAbsent(call.indexValue, _PartialToolCall.new)
               ..id ??= call.id
@@ -77,6 +87,9 @@ class OpenRouterLlmProvider implements LlmProvider {
       client.close();
     }
 
+    for (final event in thinkTags.flush()) {
+      yield event;
+    }
     final calls = [
       for (final index in accumulated.keys.toList()..sort())
         LlmToolCall(

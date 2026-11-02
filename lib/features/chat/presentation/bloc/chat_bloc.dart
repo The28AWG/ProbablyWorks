@@ -241,6 +241,7 @@ class ChatState extends Equatable {
     this.defaultModelId,
     this.limits = AppLimits.defaults,
     this.streamText = '',
+    this.streamReasoning = '',
     this.live = const {},
     this.isRunning = false,
     this.stepLimitReached = false,
@@ -283,6 +284,9 @@ class ChatState extends Equatable {
   /// Текст шага, который ещё не записан в БД (живой стрим).
   final String streamText;
 
+  /// Рассуждения модели, которые ещё не записаны в БД (живой стрим).
+  final String streamReasoning;
+
   /// Живой вывод команд по runId (только пока команда выполняется).
   final Map<String, String> live;
   final bool isRunning;
@@ -311,6 +315,7 @@ class ChatState extends Equatable {
     String? defaultModelId,
     AppLimits? limits,
     String? streamText,
+    String? streamReasoning,
     Map<String, String>? live,
     bool? isRunning,
     bool? stepLimitReached,
@@ -336,6 +341,7 @@ class ChatState extends Equatable {
     defaultModelId: defaultModelId ?? this.defaultModelId,
     limits: limits ?? this.limits,
     streamText: streamText ?? this.streamText,
+    streamReasoning: streamReasoning ?? this.streamReasoning,
     live: live ?? this.live,
     isRunning: isRunning ?? this.isRunning,
     stepLimitReached: stepLimitReached ?? this.stepLimitReached,
@@ -363,6 +369,7 @@ class ChatState extends Equatable {
     defaultModelId,
     limits,
     streamText,
+    streamReasoning,
     live,
     isRunning,
     stepLimitReached,
@@ -645,6 +652,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             stepLimitReached: false,
             clearFailure: true,
             streamText: '',
+            streamReasoning: '',
           ),
         );
       case AgentTurnFinished(:final end):
@@ -652,6 +660,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           state.copyWith(
             isRunning: false,
             streamText: '',
+            streamReasoning: '',
             stepLimitReached: end == TurnEnd.stepLimit,
             queue: _queueTexts(),
           ),
@@ -659,12 +668,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         await _reload(emit);
       case AgentTextDelta(:final text, :final reset):
         emit(state.copyWith(streamText: reset ? '' : state.streamText + text));
-      case AgentMessageAdded(:final message):
+      case AgentReasoningDelta(:final text, :final reset):
         emit(
           state.copyWith(
-            streamText: message.role == MessageRole.assistant
-                ? ''
-                : state.streamText,
+            streamReasoning: reset ? '' : state.streamReasoning + text,
+          ),
+        );
+      case AgentMessageAdded(:final message):
+        final isAssistant = message.role == MessageRole.assistant;
+        emit(
+          state.copyWith(
+            streamText: isAssistant ? '' : state.streamText,
+            streamReasoning: isAssistant ? '' : state.streamReasoning,
           ),
         );
         await _reload(emit);

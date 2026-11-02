@@ -599,32 +599,6 @@
   "@statusThinking": {
     "description": "Status strip under the composer: the model is generating a reply."
   },
-  "statusRunningCommands": "Running {count, plural, one {1 command} other {{count} commands}}",
-  "@statusRunningCommands": {
-    "description": "Status strip: number of foreground commands running now.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "statusBackgroundCommands": "Background: {count}",
-  "@statusBackgroundCommands": {
-    "description": "Status strip: number of background commands still running.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "statusWaitingApproval": "Waiting for your approval",
-  "@statusWaitingApproval": {
-    "description": "Status strip: the agent is blocked until the user approves a tool call."
-  },
-  "statusWaitingUser": "Waiting for your answer",
-  "@statusWaitingUser": {
-    "description": "Status strip: the agent asked the user a question and waits."
-  },
   "runBackgroundBadge": "bg",
   "@runBackgroundBadge": {
     "description": "Badge on a tool card of a background command (kept short on purpose)."
@@ -935,7 +909,7 @@
   "@compactionHideSummary": {
     "description": "Collapses the compaction summary under the marker."
   },
-  "stepsGroupDone": "{count, plural, one{1 action} other{{count} actions}}",
+  "stepsGroupDone": "{count, plural, one{1 step} other{{count} steps}}",
   "@stepsGroupDone": {
     "description": "Header of a finished group of tool steps.",
     "placeholders": {
