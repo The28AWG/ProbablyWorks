@@ -467,7 +467,7 @@
   "@settingsStepsThoughts": {
     "description": "Section: which model reasoning is shown in the chat journal."
   },
-  "settingsStepsThoughtsHint": "Только текущие — рассуждение, которое модель пишет сейчас. Все — все рассуждения ответа.",
+  "settingsStepsThoughtsHint": "Только текущие — рассуждение, которое модель пишет сейчас. Скрывать — все рассуждения ответа свёрнуты в журнале. Все — все рассуждения ответа раскрыты.",
   "@settingsStepsThoughtsHint": {
     "description": "Hint under the thoughts setting explaining both options."
   },
@@ -475,7 +475,7 @@
   "@settingsStepsTools": {
     "description": "Section: which tool calls are shown in the chat journal."
   },
-  "settingsStepsToolsHint": "Только активные — выполняются или ждут ответа. Все — все вызовы ответа.",
+  "settingsStepsToolsHint": "Только активные — выполняются или ждут ответа. Скрывать — все вызовы ответа свёрнуты в журнале. Все — все вызовы ответа раскрыты, включая вывод.",
   "@settingsStepsToolsHint": {
     "description": "Hint under the tool calls setting explaining both options."
   },
@@ -483,9 +483,13 @@
   "@settingsStepsThoughtsCurrent": {
     "description": "Вариант: показывать только рассуждение, которое пишется сейчас."
   },
+  "settingsStepsHide": "Скрывать",
+  "@settingsStepsHide": {
+    "description": "Вариант: все шаги ответа показаны свёрнутыми, раскрываются вручную."
+  },
   "settingsStepsThoughtsAll": "Все",
   "@settingsStepsThoughtsAll": {
-    "description": "Вариант: показывать все рассуждения ответа."
+    "description": "Вариант: показывать все рассуждения ответа, раскрытыми."
   },
   "settingsStepsToolsActive": "Только активные",
   "@settingsStepsToolsActive": {

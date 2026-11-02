@@ -86,6 +86,17 @@ void main() {
     expect(await settings.readStepsDisplay(), StepsDisplay.defaults);
   });
 
+  test('steps display keeps the expanded mode across restarts', () async {
+    final settings = SettingsRepository(db);
+    const display = StepsDisplay(
+      thoughts: ThoughtsVisibility.expanded,
+      tools: ToolsVisibility.expanded,
+    );
+
+    await settings.saveStepsDisplay(display);
+    expect(await settings.readStepsDisplay(), display);
+  });
+
   test('steps display round-trips and ignores unknown stored values', () async {
     final settings = SettingsRepository(db);
     const display = StepsDisplay(

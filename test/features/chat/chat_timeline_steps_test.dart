@@ -208,6 +208,7 @@ void main() {
     required StepsDisplay display,
     String? streamReasoning,
     List<ToolRun>? runs,
+    String reasoning = 'Старая мысль',
   }) => ChatState(
     chatId: 'c',
     chat: Chat(
@@ -232,7 +233,7 @@ void main() {
         seq: 2,
         role: MessageRole.assistant,
         createdAt: DateTime(2026),
-        reasoning: 'Старая мысль',
+        reasoning: reasoning,
         toolCalls: const [
           ToolCallRef(id: 'k1', name: 'run_command', arguments: '{}'),
         ],
@@ -299,6 +300,68 @@ void main() {
 
     expect(find.text('flutter analyze'), findsNothing);
     expect(find.text('npm test'), findsOneWidget);
+  });
+
+  testWidgets('"hide" keeps reasoning and command output collapsed', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(
+        response(
+          display: const StepsDisplay(
+            thoughts: ThoughtsVisibility.all,
+            tools: ToolsVisibility.all,
+          ),
+          reasoning: 'Старая мысль\nДетали рассуждения',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 steps'), findsOneWidget);
+    expect(find.textContaining('Детали рассуждения'), findsNothing);
+    expect(find.byType(CommandOutput), findsNothing);
+  });
+
+  testWidgets('thoughts "expanded" open the journal and the full reasoning', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(
+        response(
+          display: const StepsDisplay(thoughts: ThoughtsVisibility.expanded),
+          reasoning: 'Старая мысль\nДетали рассуждения',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Детали рассуждения'), findsOneWidget);
+    // Вызовы инструментов остаются в своём режиме: вывод команды свёрнут.
+    expect(find.byType(CommandOutput), findsNothing);
+  });
+
+  testWidgets('tools "expanded" open the journal and the command output', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(
+        response(
+          display: const StepsDisplay(tools: ToolsVisibility.expanded),
+          reasoning: 'Старая мысль\nДетали рассуждения',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CommandOutput), findsOneWidget);
+    expect(find.textContaining('Детали рассуждения'), findsNothing);
   });
 
   testWidgets('ungrouped steps are separate rows without a group title', (

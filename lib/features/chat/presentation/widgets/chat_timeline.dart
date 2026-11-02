@@ -278,6 +278,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
               steps: value,
               live: state.live,
               terminalFor: widget.terminalFor,
+              expandThoughts: display.thoughts == ThoughtsVisibility.expanded,
+              expandTools: display.tools == ToolsVisibility.expanded,
             ),
           ),
         ),
@@ -336,7 +338,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
       if (isAssistant && message.reasoning.isNotEmpty) {
         // Номер считаем и для скрытых мыслей: ключ строки не должен зависеть от настройки.
         final slot = 'thought#${thoughts++}';
-        if (display.thoughts == ThoughtsVisibility.all) {
+        if (display.thoughts != ThoughtsVisibility.current) {
           step(
             ThoughtStep(id: 'thought:${message.id}', text: message.reasoning),
             slot,
@@ -356,7 +358,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
         );
       }
       for (final run in runsByMessage[message.id] ?? const <ToolRun>[]) {
-        if (display.tools == ToolsVisibility.all || run.isActive) {
+        if (display.tools != ToolsVisibility.active || run.isActive) {
           step(RunStep(run), run.id);
         }
       }

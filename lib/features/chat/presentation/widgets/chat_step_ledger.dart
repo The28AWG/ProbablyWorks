@@ -47,6 +47,8 @@ class ChatStepLedger extends StatefulWidget {
     required this.steps,
     required this.live,
     this.terminalFor,
+    this.expandThoughts = false,
+    this.expandTools = false,
     super.key,
   });
 
@@ -55,6 +57,10 @@ class ChatStepLedger extends StatefulWidget {
 
   /// Терминал активного запуска по его id; `null`, если запуск не выполняется в PTY.
   final HostTerminal? Function(String runId)? terminalFor;
+
+  /// Рассуждения и вывод команд раскрыты сразу. Журнал при этом тоже открыт.
+  final bool expandThoughts;
+  final bool expandTools;
 
   @override
   State<ChatStepLedger> createState() => _ChatStepLedgerState();
@@ -106,8 +112,10 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
       }
     }
 
+    final revealAll = widget.expandThoughts || widget.expandTools;
     final expanded =
-        !grouped || (_userExpanded ?? (active > 0 || attention || failed > 0));
+        !grouped ||
+        (_userExpanded ?? (revealAll || active > 0 || attention || failed > 0));
     final tone = failed > 0
         ? AppTone.danger
         : active > 0
@@ -134,6 +142,8 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
           step: step,
           live: widget.live,
           terminalFor: widget.terminalFor,
+          expandThoughts: widget.expandThoughts,
+          expandTools: widget.expandTools,
         ),
       );
     }
@@ -280,6 +290,8 @@ class _LedgerStepRow extends StatelessWidget {
   const _LedgerStepRow({
     required this.step,
     required this.live,
+    required this.expandThoughts,
+    required this.expandTools,
     this.terminalFor,
     super.key,
   });
@@ -287,18 +299,22 @@ class _LedgerStepRow extends StatelessWidget {
   final LedgerStep step;
   final Map<String, String> live;
   final HostTerminal? Function(String runId)? terminalFor;
+  final bool expandThoughts;
+  final bool expandTools;
 
   @override
   Widget build(BuildContext context) => switch (step) {
     ThoughtStep(:final text, live: final streaming) => _ThoughtRow(
       text: text,
       live: streaming,
+      expandedByDefault: expandThoughts,
     ),
     RunStep(:final run) => _StepRow(
       key: ValueKey(run.id),
       run: run,
       live: live[run.id],
       terminal: terminalFor?.call(run.id),
+      expandedByDefault: expandTools,
     ),
   };
 }
@@ -306,10 +322,17 @@ class _LedgerStepRow extends StatelessWidget {
 /// Строка рассуждений: первая строка текста, раскрывается до полного текста по нажатию.
 /// Пока шаг идёт, первая строка обновляется, а раскрытый текст следует за новым куском, если читатель внизу.
 class _ThoughtRow extends StatefulWidget {
-  const _ThoughtRow({required this.text, required this.live});
+  const _ThoughtRow({
+    required this.text,
+    required this.live,
+    this.expandedByDefault = false,
+  });
 
   final String text;
   final bool live;
+
+  /// Раскрыто, пока пользователь сам не переключил строку.
+  final bool expandedByDefault;
 
   @override
   State<_ThoughtRow> createState() => _ThoughtRowState();
@@ -317,11 +340,10 @@ class _ThoughtRow extends StatefulWidget {
 
 class _ThoughtRowState extends State<_ThoughtRow>
     with AutomaticKeepAliveClientMixin<_ThoughtRow> {
-  /// Рассуждение всегда стартует свёрнутым, в том числе пока стримится: раскрывает его пользователь.
-  var _expanded = false;
+  /// Выбор пользователя; `null` — раскрытие задаёт настройка. По умолчанию рассуждение свёрнуто, в том числе пока стримится.
+  bool? _userExpanded;
 
-  /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
-  var _toggled = false;
+  bool get _expanded => _userExpanded ?? widget.expandedByDefault;
 
   final _scroll = ScrollController();
 
@@ -329,7 +351,7 @@ class _ThoughtRowState extends State<_ThoughtRow>
   static const _followSlack = 24.0;
 
   @override
-  bool get wantKeepAlive => _toggled || _expanded;
+  bool get wantKeepAlive => _userExpanded != null;
 
   @override
   void dispose() {
@@ -373,10 +395,7 @@ class _ThoughtRowState extends State<_ThoughtRow>
           borderRadius: AppRadius.smAll,
           onTap: canExpand
               ? () {
-                  setState(() {
-                    _toggled = true;
-                    _expanded = !_expanded;
-                  });
+                  setState(() => _userExpanded = !_expanded);
                   updateKeepAlive();
                 }
               : null,
@@ -457,6 +476,7 @@ class _StepRow extends StatefulWidget {
     required this.run,
     required this.live,
     this.terminal,
+    this.expandedByDefault = false,
     super.key,
   });
 
@@ -464,21 +484,23 @@ class _StepRow extends StatefulWidget {
   final String? live;
   final HostTerminal? terminal;
 
+  /// Вывод раскрыт, пока пользователь сам не переключил строку.
+  final bool expandedByDefault;
+
   @override
   State<_StepRow> createState() => _StepRowState();
 }
 
 class _StepRowState extends State<_StepRow>
     with AutomaticKeepAliveClientMixin<_StepRow> {
-  /// Команда всегда стартует свёрнутой, в том числе во время выполнения: вывод открывает пользователь.
-  var _expanded = false;
+  /// Выбор пользователя; `null` — раскрытие задаёт настройка. По умолчанию команда свёрнута, в том числе во время выполнения.
+  bool? _userExpanded;
 
-  /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
-  var _toggled = false;
+  bool get _expanded => _userExpanded ?? widget.expandedByDefault;
 
-  /// Строка, которую держим живой: её раскрытие не совпадает со значением по умолчанию.
+  /// Строку держим живой, пока пользователь её переключал: её выбор нельзя потерять при прокрутке.
   @override
-  bool get wantKeepAlive => _toggled || _expanded;
+  bool get wantKeepAlive => _userExpanded != null;
 
   @override
   Widget build(BuildContext context) {
@@ -510,10 +532,7 @@ class _StepRowState extends State<_StepRow>
           borderRadius: AppRadius.smAll,
           onTap: canExpand
               ? () {
-                  setState(() {
-                    _toggled = true;
-                    _expanded = !_expanded;
-                  });
+                  setState(() => _userExpanded = !_expanded);
                   updateKeepAlive();
                 }
               : null,

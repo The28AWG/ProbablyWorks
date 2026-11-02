@@ -467,7 +467,7 @@
   "@settingsStepsThoughts": {
     "description": "Section: which model reasoning is shown in the chat journal."
   },
-  "settingsStepsThoughtsHint": "Current only: the reasoning the model is writing right now. All: every reasoning of the response.",
+  "settingsStepsThoughtsHint": "Current only: the reasoning the model is writing right now. Hide: every reasoning of the response is collapsed in the journal. All: every reasoning of the response is expanded.",
   "@settingsStepsThoughtsHint": {
     "description": "Hint under the thoughts setting explaining both options."
   },
@@ -475,7 +475,7 @@
   "@settingsStepsTools": {
     "description": "Section: which tool calls are shown in the chat journal."
   },
-  "settingsStepsToolsHint": "Active only: running or waiting for an answer. All: every tool call of the response.",
+  "settingsStepsToolsHint": "Active only: running or waiting for an answer. Hide: every tool call of the response is collapsed in the journal. All: every tool call of the response is expanded, including its output.",
   "@settingsStepsToolsHint": {
     "description": "Hint under the tool calls setting explaining both options."
   },
@@ -483,9 +483,13 @@
   "@settingsStepsThoughtsCurrent": {
     "description": "Option: show only the reasoning being written right now."
   },
+  "settingsStepsHide": "Hide",
+  "@settingsStepsHide": {
+    "description": "Option: all steps of the response are shown collapsed; the user expands them."
+  },
   "settingsStepsThoughtsAll": "All",
   "@settingsStepsThoughtsAll": {
-    "description": "Option: show all reasoning of the response."
+    "description": "Option: show all reasoning of the response, expanded."
   },
   "settingsStepsToolsActive": "Active only",
   "@settingsStepsToolsActive": {
@@ -493,7 +497,7 @@
   },
   "settingsStepsToolsAll": "All",
   "@settingsStepsToolsAll": {
-    "description": "Option: show all tool calls of the response."
+    "description": "Option: show all tool calls of the response, expanded including output."
   },
   "settingsDefaultPolicy": "Default policy for new chats",
   "@settingsDefaultPolicy": {

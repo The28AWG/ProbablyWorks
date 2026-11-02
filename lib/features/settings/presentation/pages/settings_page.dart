@@ -467,6 +467,10 @@ class _SettingsViewState extends State<_SettingsView> {
             ),
             ButtonSegment(
               value: ThoughtsVisibility.all,
+              label: Text(l10n.settingsStepsHide),
+            ),
+            ButtonSegment(
+              value: ThoughtsVisibility.expanded,
               label: Text(l10n.settingsStepsThoughtsAll),
             ),
           ],
@@ -489,6 +493,10 @@ class _SettingsViewState extends State<_SettingsView> {
             ),
             ButtonSegment(
               value: ToolsVisibility.all,
+              label: Text(l10n.settingsStepsHide),
+            ),
+            ButtonSegment(
+              value: ToolsVisibility.expanded,
               label: Text(l10n.settingsStepsToolsAll),
             ),
           ],
