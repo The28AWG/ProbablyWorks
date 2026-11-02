@@ -166,4 +166,121 @@ void main() {
     expect(find.text('Running: 1 of 2'), findsOneWidget);
     expect(find.byType(SelectableText), findsOneWidget);
   });
+
+  group('thought row identity', () {
+    Widget journal(List<LedgerStep> steps) => _TestApp(
+      SizedBox(
+        width: 600,
+        child: ChatStepLedger(steps: steps, live: const {}),
+      ),
+    );
+
+    testWidgets('a live thought keeps its row when a command starts after it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        journal([const ThoughtStep(id: 't1', text: 'Ищу конфиг', live: true)]),
+      );
+      await tester.pumpAndSettle();
+      final before = tester.element(find.byType(SelectableText));
+
+      await tester.pumpWidget(
+        journal([
+          const ThoughtStep(id: 't1', text: 'Ищу конфиг', live: true),
+          RunStep(_run('r1', ToolRunStatus.running)),
+        ]),
+      );
+      await tester.pump();
+
+      expect(find.byType(SelectableText), findsOneWidget);
+      expect(tester.element(find.byType(SelectableText)), same(before));
+    });
+
+    testWidgets(
+      'a saved thought keeps its row when the message replaces the stream',
+      (tester) async {
+        await tester.pumpWidget(
+          journal([
+            const ThoughtStep(
+              id: 'thought:live',
+              text: 'Ищу конфиг',
+              live: true,
+            ),
+          ]),
+        );
+        await tester.pumpAndSettle();
+        final before = tester.element(find.byType(SelectableText));
+
+        await tester.pumpWidget(
+          journal([
+            const ThoughtStep(id: 'thought:m1', text: 'Ищу конфиг'),
+            RunStep(_run('r1', ToolRunStatus.running)),
+          ]),
+        );
+        await tester.pump();
+
+        expect(find.byType(SelectableText), findsOneWidget);
+        expect(tester.element(find.byType(SelectableText)), same(before));
+      },
+    );
+  });
+
+  group('streaming thought scroll', () {
+    String lines(int count) =>
+        [for (var i = 0; i < count; i++) 'строка $i'].join('\n');
+
+    Widget ledger(String text) => _TestApp(
+      SizedBox(
+        width: 600,
+        child: ChatStepLedger(
+          steps: [ThoughtStep(id: 'live', text: text, live: true)],
+          live: const {},
+        ),
+      ),
+    );
+
+    // Прокрутка самого блока рассуждения: ближайший Scrollable над текстом, а не список журнала.
+    final thoughtScroll = find
+        .ancestor(
+          of: find.byType(SelectableText),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    ScrollPosition position(WidgetTester tester) =>
+        tester.state<ScrollableState>(thoughtScroll).position;
+
+    testWidgets('new text does not pull a reader who scrolled up', (
+      tester,
+    ) async {
+      final scroll = thoughtScroll;
+      await tester.pumpWidget(ledger(lines(40)));
+      await tester.pumpAndSettle();
+      await tester.drag(scroll, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+      await tester.drag(scroll, const Offset(0, 200));
+      await tester.pumpAndSettle();
+      final readingAt = position(tester).pixels;
+      expect(position(tester).extentAfter, greaterThan(24));
+
+      await tester.pumpWidget(ledger(lines(41)));
+      await tester.pumpAndSettle();
+
+      expect(position(tester).pixels, closeTo(readingAt, 1));
+    });
+
+    testWidgets('a reader at the end keeps following new text', (tester) async {
+      final scroll = thoughtScroll;
+      await tester.pumpWidget(ledger(lines(40)));
+      await tester.pumpAndSettle();
+      await tester.drag(scroll, const Offset(0, -2000));
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(ledger(lines(41)));
+      await tester.pumpAndSettle();
+
+      expect(position(tester).pixels, greaterThan(0));
+      expect(position(tester).extentAfter, lessThan(1));
+    });
+  });
 }

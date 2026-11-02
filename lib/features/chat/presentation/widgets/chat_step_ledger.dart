@@ -78,17 +78,9 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final steps = widget.steps;
-
-    if (steps.length == 1) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-        child: _LedgerStepRow(
-          step: steps.single,
-          live: widget.live,
-          terminalFor: widget.terminalFor,
-        ),
-      );
-    }
+    // Один шаг и группа строятся одинаково: иначе при появлении второго шага строки пересоздаются
+    // и теряют состояние (раскрытие, прокрутку). Меняется только заголовок и отступ.
+    final grouped = steps.length > 1;
 
     var active = 0;
     var failed = 0;
@@ -112,7 +104,8 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
       }
     }
 
-    final expanded = _userExpanded ?? (active > 0 || attention || failed > 0);
+    final expanded =
+        !grouped || (_userExpanded ?? (active > 0 || attention || failed > 0));
     final tone = failed > 0
         ? AppTone.danger
         : active > 0
@@ -125,85 +118,106 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
         : l10n.stepsGroupDone(steps.length);
     final duration = _groupDuration(steps);
 
+    // Рассуждения различаем номером среди рассуждений, а не id: пока оно стримится, id другой.
+    final rows = <Widget>[];
+    var thoughts = 0;
+    for (final step in steps) {
+      final slot = switch (step) {
+        ThoughtStep() => 'thought#${thoughts++}',
+        RunStep(:final run) => run.id,
+      };
+      rows.add(
+        _LedgerStepRow(
+          key: ValueKey(slot),
+          step: step,
+          live: widget.live,
+          terminalFor: widget.terminalFor,
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          InkWell(
-            borderRadius: AppRadius.smAll,
-            onTap: () => _toggleGroupExpanded(expanded),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xs),
-              child: Row(
-                children: [
-                  Icon(
-                    _groupIcon(tone),
-                    size: 16,
-                    color: toneColors(context, tone).foreground,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      failed > 0
-                          ? '$title · ${l10n.stepsGroupFailed(failed)}'
-                          : title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurface,
+          if (grouped)
+            InkWell(
+              borderRadius: AppRadius.smAll,
+              onTap: () => _toggleGroupExpanded(expanded),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.xs),
+                child: Row(
+                  children: [
+                    Icon(
+                      _groupIcon(tone),
+                      size: 16,
+                      color: toneColors(context, tone).foreground,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        failed > 0
+                            ? '$title · ${l10n.stepsGroupFailed(failed)}'
+                            : title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
                     ),
-                  ),
-                  if (duration != null) ...[
-                    const SizedBox(width: AppSpacing.sm),
-                    Text(
-                      l10n.runDuration(duration.inSeconds),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    if (duration != null) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        l10n.runDuration(duration.inSeconds),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
+                    ],
+                    const SizedBox(width: AppSpacing.xs),
+                    Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ],
-                  const SizedBox(width: AppSpacing.xs),
-                  Icon(
-                    expanded ? Icons.expand_less : Icons.expand_more,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (expanded)
-            Padding(
-              padding: const EdgeInsets.only(
-                left: AppSpacing.sm,
-                top: AppSpacing.xs,
-              ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(color: theme.colorScheme.outlineVariant),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: AppSpacing.md),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (final step in steps)
-                        _LedgerStepRow(
-                          step: step,
-                          live: widget.live,
-                          terminalFor: widget.terminalFor,
-                        ),
-                    ],
-                  ),
                 ),
               ),
-            ),
+            )
+          else
+            const SizedBox.shrink(),
+          expanded
+              ? Padding(
+                  padding: EdgeInsets.only(
+                    left: grouped ? AppSpacing.sm : 0.0,
+                    top: grouped ? AppSpacing.xs : 0.0,
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        left: grouped
+                            ? BorderSide(
+                                color: theme.colorScheme.outlineVariant,
+                              )
+                            : BorderSide.none,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: grouped ? AppSpacing.md : 0.0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: rows,
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ],
       ),
     );
@@ -260,6 +274,7 @@ class _LedgerStepRow extends StatelessWidget {
     required this.step,
     required this.live,
     this.terminalFor,
+    super.key,
   });
 
   final LedgerStep step;
@@ -268,8 +283,7 @@ class _LedgerStepRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => switch (step) {
-    ThoughtStep(:final id, :final text, live: final streaming) => _ThoughtRow(
-      key: ValueKey(id),
+    ThoughtStep(:final text, live: final streaming) => _ThoughtRow(
       text: text,
       live: streaming,
     ),
@@ -285,7 +299,7 @@ class _LedgerStepRow extends StatelessWidget {
 /// Строка рассуждений: первая строка текста, раскрывается до полного текста.
 /// Пока шаг идёт, раскрыта и прокручивается вслед за новым текстом.
 class _ThoughtRow extends StatefulWidget {
-  const _ThoughtRow({required this.text, required this.live, super.key});
+  const _ThoughtRow({required this.text, required this.live});
 
   final String text;
   final bool live;
@@ -303,6 +317,9 @@ class _ThoughtRowState extends State<_ThoughtRow>
 
   final _scroll = ScrollController();
 
+  /// Насколько близко к концу текста считаем, что читатель «внизу».
+  static const _followSlack = 24.0;
+
   @override
   bool get wantKeepAlive => _toggled || _expanded;
 
@@ -319,7 +336,10 @@ class _ThoughtRowState extends State<_ThoughtRow>
       _expanded = true;
       updateKeepAlive();
     }
-    if (widget.live && widget.text != oldWidget.text) {
+    // Следуем за текстом, только если читатель и так внизу: иначе он не сможет прочитать предыдущее.
+    final following =
+        !_scroll.hasClients || _scroll.position.extentAfter < _followSlack;
+    if (widget.live && widget.text != oldWidget.text && following) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scroll.hasClients) {
           _scroll.jumpTo(_scroll.position.maxScrollExtent);
