@@ -17,9 +17,6 @@ class LiveOutputBus {
       LiveChunk(toolCallId: toolCallId, chatId: chatId, text: text),
     );
   }
-
-  Stream<LiveChunk> forTool(String toolCallId) =>
-      stream.where((c) => c.toolCallId == toolCallId);
 }
 
 class LiveChunk {

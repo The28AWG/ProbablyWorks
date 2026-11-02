@@ -42,6 +42,12 @@ class Chats extends Table {
   TextColumn get compactionSummary => text().nullable()();
   IntColumn get compactedUntilSeq => integer().withDefault(const Constant(0))();
   TextColumn get currentRevisionId => text().nullable()();
+
+  /// Черновик поля ввода: текст, который пользователь ещё не отправил.
+  TextColumn get draft => text().withDefault(const Constant(''))();
+
+  /// Вложения черновика: JSON-список AttachmentRef (содержимое уже замаскировано).
+  TextColumn get draftAttachments => text().withDefault(const Constant('[]'))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

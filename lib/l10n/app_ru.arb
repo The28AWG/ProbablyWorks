@@ -169,6 +169,14 @@
   "@messageEdit": {
     "description": "Действие меню: изменить сообщение пользователя и запустить ход заново."
   },
+  "messageShowFull": "Показать целиком",
+  "@messageShowFull": {
+    "description": "Expands a long user message that is shown truncated in the transcript."
+  },
+  "messageCollapse": "Свернуть",
+  "@messageCollapse": {
+    "description": "Collapses a long user message back to its preview."
+  },
   "messageDeleteAfter": "Удалить отсюда",
   "@messageDeleteAfter": {
     "description": "Действие меню: удалить это сообщение и всё после него."

@@ -18,6 +18,7 @@ import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
+import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
@@ -27,6 +28,8 @@ import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/desktop_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -90,6 +93,7 @@ void main() {
   late _FakeLlm llm;
   late AgentHub hub;
   late InteractionBroker broker;
+  late ChatDraftStore drafts;
 
   setUp(() async {
     db = openInMemoryDatabase();
@@ -114,6 +118,7 @@ void main() {
     final builder = ContextBuilder();
     llm = _FakeLlm();
     final compactor = ContextCompactor(chats, llm, builder);
+    drafts = ChatDraftStore(chats);
     hub = AgentHub(
       chats,
       settings,
@@ -136,9 +141,19 @@ void main() {
   });
 
   tearDown(() async {
+    // Отложенная запись черновика не должна сработать после закрытия БД.
+    await drafts.flush();
     await db.close();
     tmp.deleteSync(recursive: true);
   });
+
+  Future<String> createChatWithId(String id) async {
+    final now = DateTime.now();
+    await hub.chats.saveChat(
+      Chat(id: id, hostId: 'local', title: id, createdAt: now, updatedAt: now),
+    );
+    return id;
+  }
 
   Future<String> createChat({
     PolicyMode mode = PolicyMode.yolo,
@@ -495,5 +510,197 @@ void main() {
       expect(chat!.titleSource, ChatTitleSource.none);
       expect(chat.title, 'запусти счётчик');
     });
+  });
+
+  test(
+    'opening a chat shows its history after one state change, not a sequence',
+    () async {
+      final chatId = await createChat();
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm1',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: DateTime.now(),
+          text: 'привет',
+        ),
+      );
+      final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+      addTearDown(bloc.close);
+      final states = <ChatState>[];
+      final sub = bloc.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      bloc.add(ChatOpened(chatId));
+      final opened = await bloc.stream.firstWhere(
+        (s) => !s.loading && s.chat != null,
+      );
+
+      expect(opened.messages.single.text, 'привет');
+      // Спиннер и один итог: промежуточные перерисовки открытия не нужны.
+      expect(states.where((s) => !s.loading).length, 1);
+      expect(states.length, lessThanOrEqualTo(2));
+    },
+  );
+
+  test('a chat from the list is in the first state, so its header and composer never blank out', () async {
+    final chatId = await createChat();
+    final chat = (await hub.chats.chat(chatId))!;
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts, seedChat: chat);
+    addTearDown(bloc.close);
+
+    // До любого события: шапка и композер уже есть, лента ждёт загрузки.
+    expect(bloc.state.chat?.id, chatId);
+    expect(bloc.state.loading, isTrue);
+
+    final states = <ChatState>[];
+    final sub = bloc.stream.listen(states.add);
+    addTearDown(sub.cancel);
+    bloc.add(ChatOpened(chatId));
+    await bloc.stream.firstWhere((s) => !s.loading);
+
+    // Ни одно промежуточное состояние не теряет чат: шапка не мигает.
+    expect(states, isNotEmpty);
+    expect(states.every((s) => s.chat?.id == chatId), isTrue);
+  });
+
+  test('switching to a chat not in the list keeps the previous chat settings until the new chat loads', () async {
+    final first = await createChat();
+    final second = await createChatWithId('chat-2');
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(first));
+    await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
+
+    bloc.add(ChatOpened(second));
+    final switching = await bloc.stream.firstWhere((s) => s.chatId == second);
+    // Пока грузится второй чат: композер и шапка ещё от первого, лента пустая и в загрузке.
+    expect(switching.loading, isTrue);
+    expect(switching.chat?.id, first);
+    expect(switching.messages, isEmpty);
+
+    final loaded = await bloc.stream.firstWhere((s) => !s.loading);
+    expect(loaded.chat?.id, second);
+  });
+
+  test(
+    'switching to a seeded chat shows its header and composer at once',
+    () async {
+      final first = await createChat();
+      final second = await createChatWithId('chat-2');
+      final secondChat = (await hub.chats.chat(second))!;
+      final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+      addTearDown(bloc.close);
+      bloc.add(ChatOpened(first));
+      await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
+
+      bloc.add(ChatOpened(second, seedChat: secondChat));
+      final switching = await bloc.stream.firstWhere((s) => s.chatId == second);
+      expect(switching.chat?.id, second);
+      expect(switching.loading, isTrue);
+      await bloc.stream.firstWhere((s) => !s.loading);
+    },
+  );
+
+  test('each chat keeps its own draft: switching away and back restores it and saves it to the database', () async {
+    final first = await createChat();
+    final second = await createChatWithId('chat-2');
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(first));
+    await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
+
+    bloc
+      ..add(const ChatDraftEdited('черновик первого'))
+      ..add(ChatOpened(second));
+    final other = await bloc.stream.firstWhere(
+      (s) => !s.loading && s.chatId == second,
+    );
+    // Во втором чате черновика ещё нет: поле пустое.
+    expect(other.draft, isEmpty);
+
+    bloc
+      ..add(const ChatDraftEdited('черновик второго'))
+      ..add(ChatOpened(first));
+    final back = await bloc.stream.firstWhere(
+      (s) => !s.loading && s.chatId == first,
+    );
+    expect(back.draft, 'черновик первого');
+
+    await drafts.flush();
+    expect((await hub.chats.chat(first))!.draft.text, 'черновик первого');
+    expect((await hub.chats.chat(second))!.draft.text, 'черновик второго');
+  });
+
+  test('attachments of a draft belong to their chat too', () async {
+    final first = await createChat();
+    final second = await createChatWithId('chat-2');
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(first));
+    await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
+
+    bloc
+      ..add(
+        const ChatAttachmentsAdded([
+          AttachmentRef(
+            name: 'notes.txt',
+            mode: AttachmentMode.attach,
+            content: 'заметка',
+            sizeBytes: 7,
+          ),
+        ]),
+      )
+      ..add(ChatOpened(second));
+    final other = await bloc.stream.firstWhere(
+      (s) => !s.loading && s.chatId == second,
+    );
+    expect(other.attachments, isEmpty);
+
+    bloc.add(ChatOpened(first));
+    final back = await bloc.stream.firstWhere(
+      (s) => !s.loading && s.chatId == first,
+    );
+    expect(back.attachments.single.name, 'notes.txt');
+
+    await drafts.flush();
+    final saved = (await hub.chats.chat(first))!.draft;
+    expect(saved.attachments.single.content, 'заметка');
+  });
+
+  test('sending clears the draft of the chat right away', () async {
+    final chatId = await createChat();
+    llm.script.add([const LlmTextDelta('ок'), const LlmCompleted()]);
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(chatId));
+    await bloc.stream.firstWhere((s) => !s.loading);
+
+    bloc.add(const ChatDraftEdited('вопрос'));
+    final finished = hub.allEvents.firstWhere((e) => e is AgentTurnFinished);
+    bloc.add(const ChatSubmitted('вопрос'));
+    await finished;
+
+    expect(drafts.of(chatId).isEmpty, isTrue);
+    await drafts.flush();
+    expect((await hub.chats.chat(chatId))!.draft.isEmpty, isTrue);
+  });
+
+  test('creating a chat moves the draft of the current chat into it and clears the old one', () async {
+    final first = await createChat();
+    final cubit = ChatListCubit(hub, drafts);
+    addTearDown(cubit.close);
+    cubit.select(first);
+    drafts.update(first, const ChatDraft(text: 'черновик'));
+
+    final created = await cubit.create();
+
+    expect(cubit.state.selectedId, created);
+    expect(drafts.of(created).text, 'черновик');
+    expect(drafts.of(first).isEmpty, isTrue);
+    // Перенос сохраняется в БД сразу, без задержки записи.
+    expect((await hub.chats.chat(created))!.draft.text, 'черновик');
+    expect((await hub.chats.chat(first))!.draft.isEmpty, isTrue);
   });
 }

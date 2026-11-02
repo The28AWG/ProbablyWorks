@@ -27,6 +27,13 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final l10n = AppLocalizations.of(context);
     final cubit = context.read<ChatListCubit>();
     return BlocBuilder<ChatListCubit, ChatListState>(
+      // Смена выбранного чата не перестраивает весь список: подсветку обновляет только строка.
+      buildWhen: (previous, current) =>
+          previous.chats != current.chats ||
+          previous.hosts != current.hosts ||
+          previous.hostFilter != current.hostFilter ||
+          previous.runningIds != current.runningIds ||
+          previous.waitingIds != current.waitingIds,
       builder: (context, state) {
         final now = DateTime.now();
         final hosts = {for (final host in state.hosts) host.id: host};
@@ -119,16 +126,19 @@ class _ChatListPanelState extends State<ChatListPanel> {
                               },
                             ),
                             for (final chat in groups[bucket]!)
-                              _ChatTile(
-                                chat: chat,
-                                now: now,
-                                host: hosts[chat.hostId],
-                                selected: chat.id == state.selectedId,
-                                running: state.runningIds.contains(chat.id),
-                                waiting: state.waitingIds.contains(chat.id),
-                                onTap: () => widget.onOpen(chat.id),
-                                onMenu: (position) =>
-                                    _showMenu(context, chat, position),
+                              BlocSelector<ChatListCubit, ChatListState, bool>(
+                                selector: (s) => s.selectedId == chat.id,
+                                builder: (context, selected) => _ChatTile(
+                                  chat: chat,
+                                  now: now,
+                                  host: hosts[chat.hostId],
+                                  selected: selected,
+                                  running: state.runningIds.contains(chat.id),
+                                  waiting: state.waitingIds.contains(chat.id),
+                                  onTap: () => widget.onOpen(chat.id),
+                                  onMenu: (position) =>
+                                      _showMenu(context, chat, position),
+                                ),
                               ),
                           ],
                       ],

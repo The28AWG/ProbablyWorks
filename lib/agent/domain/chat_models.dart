@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:equatable/equatable.dart';
 import 'package:probably_works/core/util/redactor.dart';
 
 enum PolicyMode { ask, yolo }
@@ -77,6 +78,21 @@ class AttachmentRef {
   );
 }
 
+/// Черновик поля ввода чата: текст и вложения, которые пользователь ещё не отправил.
+class ChatDraft extends Equatable {
+  const ChatDraft({this.text = '', this.attachments = const []});
+
+  static const empty = ChatDraft();
+
+  final String text;
+  final List<AttachmentRef> attachments;
+
+  bool get isEmpty => text.isEmpty && attachments.isEmpty;
+
+  @override
+  List<Object?> get props => [text, attachments];
+}
+
 class Chat {
   const Chat({
     required this.id,
@@ -94,6 +110,7 @@ class Chat {
     this.compactionSummary,
     this.compactedUntilSeq = 0,
     this.currentRevisionId,
+    this.draft = ChatDraft.empty,
   });
 
   final String id;
@@ -112,6 +129,9 @@ class Chat {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// Черновик, сохранённый вместе с чатом. Записывается отдельно от остальных полей (см. ChatRepository.saveDraft).
+  final ChatDraft draft;
+
   Chat copyWith({
     String? id,
     String? hostId,
@@ -129,6 +149,7 @@ class Chat {
     String? currentRevisionId,
     DateTime? createdAt,
     DateTime? updatedAt,
+    ChatDraft? draft,
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
@@ -147,6 +168,7 @@ class Chat {
     currentRevisionId: currentRevisionId ?? this.currentRevisionId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? DateTime.now(),
+    draft: draft ?? this.draft,
   );
 }
 

@@ -26,6 +26,7 @@ import '../../agent/recovery/startup_recovery.dart' as _i962;
 import '../../agent/state/session_state_service.dart' as _i622;
 import '../../agent/tools/tool_executor.dart' as _i125;
 import '../../agent/workspace/workspace_context_loader.dart' as _i359;
+import '../../core/data/chat_draft_store.dart' as _i314;
 import '../../core/data/chat_repository.dart' as _i193;
 import '../../core/data/host_repository.dart' as _i250;
 import '../../core/data/saved_model_repository.dart' as _i503;
@@ -129,6 +130,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i622.SessionStateService>(
       () => _i622.SessionStateService(gh<_i193.ChatRepository>()),
+    );
+    gh.lazySingleton<_i314.ChatDraftStore>(
+      () => _i314.ChatDraftStore(gh<_i193.ChatRepository>()),
     );
     gh.lazySingleton<_i422.ContextCompactor>(
       () => _i422.ContextCompactor(

@@ -1,9 +1,13 @@
+import 'dart:async';
+import 'dart:ui' show AppExitResponse;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
 
 class ProbablyWorksApp extends StatefulWidget {
@@ -16,6 +20,31 @@ class ProbablyWorksApp extends StatefulWidget {
 class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
   final _router = getIt<AppRouter>();
   final _locale = getIt<LocaleController>();
+  final _drafts = getIt<ChatDraftStore>();
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    // Черновики пишутся в БД с задержкой: при сворачивании и выходе из приложения сохраняем их сразу.
+    _lifecycle = AppLifecycleListener(
+      onInactive: _saveDrafts,
+      onHide: _saveDrafts,
+      onDetach: _saveDrafts,
+      onExitRequested: () async {
+        await _drafts.flush();
+        return AppExitResponse.exit;
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  void _saveDrafts() => unawaited(_drafts.flush());
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<Locale?>(

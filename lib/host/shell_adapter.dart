@@ -28,10 +28,6 @@ class ShellAdapter {
       ? 'type ${_winPath(path)}'
       : 'cat -- ${shQuote(path)} 2>/dev/null';
 
-  String fileExists(String path) => _windows
-      ? 'if exist ${_winPath(path)} echo yes'
-      : '[ -f ${shQuote(path)} ] && echo yes';
-
   String grep(String pattern, String path) => _windows
       ? 'findstr /s /n /i ${_winPath(pattern)} ${_winPath(path)}\\*'
       : 'grep -rIn -m 200 -e ${shQuote(pattern)} -- ${shQuote(path)} 2>/dev/null | head -n 300';

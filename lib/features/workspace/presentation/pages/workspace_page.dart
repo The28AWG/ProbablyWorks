@@ -6,6 +6,7 @@ import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
@@ -21,7 +22,7 @@ class WorkspacePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-    create: (_) => ChatListCubit(getIt<AgentHub>()),
+    create: (_) => ChatListCubit(getIt<AgentHub>(), getIt<ChatDraftStore>()),
     child: LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -199,11 +200,20 @@ class _ChatArea extends StatelessWidget {
   Widget build(BuildContext context) =>
       BlocBuilder<ChatListCubit, ChatListState>(
         buildWhen: (a, b) => a.selectedId != b.selectedId,
-        builder: (context, state) => state.selectedId == null
-            ? AppEmptyState(
-                icon: Icons.chat_bubble_outline,
-                title: AppLocalizations.of(context).chatsSelectHint,
-              )
-            : ChatView(chatId: state.selectedId!),
+        builder: (context, state) {
+          final id = state.selectedId;
+          if (id == null) {
+            return AppEmptyState(
+              icon: Icons.chat_bubble_outline,
+              title: AppLocalizations.of(context).chatsSelectHint,
+            );
+          }
+          // Чат уже есть в списке: передаём его в блок, чтобы шапка и композер открылись сразу.
+          return ChatView(
+            chatId: id,
+            seedChat: state.chats.where((c) => c.id == id).firstOrNull,
+            seedHosts: state.hosts,
+          );
+        },
       );
 }

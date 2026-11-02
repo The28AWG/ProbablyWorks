@@ -18,7 +18,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 4;
+  static const currentSchemaVersion = 5;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -44,6 +44,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 4) {
         await customStatement('DROP TABLE IF EXISTS llm_models');
         await m.createTable(savedModels);
+      }
+      // v5: черновик поля ввода хранится в записи чата.
+      if (from < 5) {
+        await m.addColumn(chats, chats.draft);
+        await m.addColumn(chats, chats.draftAttachments);
       }
     },
   );

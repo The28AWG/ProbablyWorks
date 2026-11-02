@@ -42,6 +42,3 @@ enum HostFailureKind {
 }
 
 /// Действие запрещено политикой. Не обходится настройками и AGENTS.md.
-final class PolicyDenied extends AppFailure {
-  const PolicyDenied(super.message);
-}

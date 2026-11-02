@@ -8,22 +8,19 @@ abstract final class ChatColumn {
 
   /// Элемент прокручиваемой ленты. Ширина задаётся точно: иначе колонка Markdown
   /// центрируется по самой длинной строке, а полоса прокрутки уезжает от края окна.
-  static Widget item(Widget child) => LayoutBuilder(
-    builder: (context, constraints) {
-      final available = constraints.maxWidth;
-      final width = available < AppLayout.chatMaxWidth
-          ? available
-          : AppLayout.chatMaxWidth;
-      return Align(
-        child: SizedBox(
-          width: width,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: child,
-          ),
+  /// Без LayoutBuilder: он вызывает builder во время разметки и строит детей внутри фазы
+  /// layout. Здесь ширина берётся из ограничений: SizedBox тянется до maxWidth колонки.
+  static Widget item(Widget child) => Align(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: AppLayout.chatMaxWidth),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: child,
         ),
-      );
-    },
+      ),
+    ),
   );
 
   /// Блок вне прокрутки (шапка, док, композер): центрируется и ограничивается по ширине.

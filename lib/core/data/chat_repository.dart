@@ -24,11 +24,38 @@ class ChatRepository {
 
   // ---- chats -------------------------------------------------------------
 
+  /// Черновик пишется при паузах в наборе текста: такие записи не должны перестраивать список чатов.
   Stream<List<Chat>> watchChats() =>
       (_db.select(_chatsTable)
             ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
           .watch()
+          .distinct(_sameChatsIgnoringDrafts)
           .map((rows) => rows.map(_chat).toList());
+
+  static bool _sameChatsIgnoringDrafts(List<ChatRow> a, List<ChatRow> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (_withoutDraft(a[i]) != _withoutDraft(b[i])) return false;
+    }
+    return true;
+  }
+
+  static ChatRow _withoutDraft(ChatRow row) =>
+      row.copyWith(draft: '', draftAttachments: '[]');
+
+  /// Черновик пишется отдельно от записи чата: не трогает updatedAt, поэтому порядок списка не меняется.
+  Future<void> saveDraft(String chatId, ChatDraft draft) =>
+      (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
+        ChatsCompanion(
+          draft: Value(draft.text),
+          draftAttachments: Value(
+            jsonEncode([
+              for (final attachment in draft.attachments)
+                attachment.redacted().toJson(),
+            ]),
+          ),
+        ),
+      );
 
   Future<Chat?> chat(String id) async {
     final row = await (_db.select(
@@ -103,23 +130,6 @@ class ChatRepository {
             createdAt: message.createdAt,
           ),
         );
-    await _indexMessage(message);
-  });
-
-  Future<void> updateMessage(ChatMessage message) => _db.transaction(() async {
-    await (_db.update(
-      _messagesTable,
-    )..where((t) => t.id.equals(message.id))).write(
-      MessagesCompanion(
-        payload: Value(message.encodePayload()),
-        openedRevisionId: Value(message.openedRevisionId),
-        sealedBeforeRevisionId: Value(message.sealedBeforeRevisionId),
-      ),
-    );
-    await _db.customStatement(
-      'DELETE FROM message_search WHERE message_id = ?',
-      [message.id],
-    );
     await _indexMessage(message);
   });
 
@@ -207,13 +217,6 @@ class ChatRepository {
         ),
       );
 
-  Future<ToolRun?> toolRun(String id) async {
-    final row = await (_db.select(
-      _toolRunsTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    return row == null ? null : _toolRun(row);
-  }
-
   Future<List<ToolRun>> toolRunsForChat(String chatId) async =>
       (await (_db.select(_toolRunsTable)
                 ..where((t) => t.chatId.equals(chatId))
@@ -235,21 +238,6 @@ class ChatRepository {
     if (ids.isEmpty) return;
     await (_db.delete(_toolRunsTable)..where((t) => t.id.isIn(ids))).go();
   }
-
-  Future<List<ToolRun>> activeRunsForChat(String chatId) async =>
-      (await (_db.select(_toolRunsTable)..where(
-                (t) =>
-                    t.chatId.equals(chatId) &
-                    t.status.isIn([
-                      ToolRunStatus.running.name,
-                      ToolRunStatus.backgroundRunning.name,
-                      ToolRunStatus.waitingApproval.name,
-                      ToolRunStatus.waitingUser.name,
-                    ]),
-              ))
-              .get())
-          .map(_toolRun)
-          .toList();
 
   /// Все запуски, которые не завершились (после падения приложения их процессы уже неизвестны).
   Future<List<ToolRun>> allActiveRuns() async =>
@@ -319,6 +307,13 @@ class ChatRepository {
     compactionSummary: row.compactionSummary,
     compactedUntilSeq: row.compactedUntilSeq,
     currentRevisionId: row.currentRevisionId,
+    draft: ChatDraft(
+      text: row.draft,
+      attachments: [
+        for (final json in jsonDecode(row.draftAttachments) as List<dynamic>)
+          AttachmentRef.fromJson(json as Map<String, dynamic>),
+      ],
+    ),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -38,16 +39,32 @@ class ChatMessageTile extends StatelessWidget {
   };
 }
 
-class _UserMessage extends StatelessWidget {
+/// Длинное сообщение пользователя сокращается до превью: выделяемый текст раскладывается целиком,
+/// и один огромный абзац (лог, вставленный из буфера) стоит десятков миллисекунд на кадр.
+const _previewChars = 2000;
+
+class _UserMessage extends StatefulWidget {
   const _UserMessage({required this.message, required this.editable});
 
   final ChatMessage message;
   final bool editable;
 
   @override
+  State<_UserMessage> createState() => _UserMessageState();
+}
+
+class _UserMessageState extends State<_UserMessage> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final message = widget.message;
+    final editable = widget.editable;
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final preview = charPrefix(message.text, _previewChars);
+    final long = preview.length < message.text.length;
+    final shown = long && !_expanded ? '$preview…' : message.text;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Align(
@@ -85,10 +102,29 @@ class _UserMessage extends StatelessWidget {
                   horizontal: AppSpacing.lg,
                   vertical: AppSpacing.md,
                 ),
-                child: SelectableText(
-                  message.text,
-                  style: Theme.of(context).textTheme.bodyLarge
-                      ?.copyWith(color: scheme.onSurface),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SelectableText(
+                      shown,
+                      style: Theme.of(context).textTheme.bodyLarge
+                          ?.copyWith(color: scheme.onSurface),
+                    ),
+                    if (long)
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton(
+                          onPressed: () =>
+                              setState(() => _expanded = !_expanded),
+                          child: Text(
+                            _expanded
+                                ? l10n.messageCollapse
+                                : l10n.messageShowFull,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -105,12 +141,12 @@ class _UserMessage extends StatelessWidget {
       title: l10n.messageEdit,
       cancelLabel: l10n.commonCancel,
       confirmLabel: l10n.messageEdit,
-      initialText: message.text,
+      initialText: widget.message.text,
       minLines: 2,
       maxLines: 10,
     );
     if (text != null && text.trim().isNotEmpty) {
-      bloc.add(ChatMessageEdited(message.id, text));
+      bloc.add(ChatMessageEdited(widget.message.id, text));
     }
   }
 
@@ -124,7 +160,7 @@ class _UserMessage extends StatelessWidget {
       confirmLabel: l10n.commonDelete,
       destructive: true,
     );
-    if (ok) bloc.add(ChatDeletedAfter(message.id));
+    if (ok) bloc.add(ChatDeletedAfter(widget.message.id));
   }
 }
 

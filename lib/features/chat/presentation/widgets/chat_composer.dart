@@ -163,6 +163,116 @@ class ChatComposer extends StatelessWidget {
   }
 }
 
+/// Каркас композера на время загрузки чата: та же карточка и те же высоты, что у [ChatComposer],
+/// без управляющих элементов. Благодаря этому при появлении чата композер не сдвигается и не меняет
+/// размер. Тест на совпадение размеров защищает эти константы.
+class ComposerSkeleton extends StatelessWidget {
+  const ComposerSkeleton({super.key});
+
+  /// Высота поля ввода и строки кнопок готового композера (измерено).
+  static const _inputHeight = 44.0;
+  static const _buttonSize = 40.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final fill = scheme.surfaceContainerHighest;
+    return ChatColumn.fixed(
+      Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHigh,
+            borderRadius: AppRadius.lgAll,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.xs,
+              AppSpacing.xs,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: _inputHeight,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: _Bar(width: 220, height: 14, color: fill),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                SizedBox(
+                  height: _buttonSize,
+                  child: Row(
+                    children: [
+                      SizedBox.square(
+                        dimension: _buttonSize,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: fill,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: _Bar(
+                            width: 160,
+                            height: 28,
+                            color: fill,
+                            radius: AppRadius.lgAll,
+                          ),
+                        ),
+                      ),
+                      SizedBox.square(
+                        dimension: _buttonSize,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: fill,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Плашка-заглушка текста в скелетах: без анимации, чтобы не отвлекать на коротком ожидании.
+class _Bar extends StatelessWidget {
+  const _Bar({
+    required this.width,
+    required this.height,
+    required this.color,
+    this.radius = AppRadius.smAll,
+  });
+
+  final double width;
+  final double height;
+  final Color color;
+  final BorderRadius radius;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: width,
+    height: height,
+    child: DecoratedBox(
+      decoration: BoxDecoration(color: color, borderRadius: radius),
+    ),
+  );
+}
+
 /// Меню «+»: прикрепление файла, рабочая папка и режим выполнения.
 ///
 /// Кнопка окрашивается предупреждением, пока включено «Авто-подтверждение»: режим без запросов

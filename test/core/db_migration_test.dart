@@ -3,6 +3,18 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/db/app_database.dart';
 
+/// Таблица chats в форме схемы v4: её есть в каждой базе старше v5.
+const _chatsV4 =
+    'CREATE TABLE chats ('
+    'id TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, '
+    "title TEXT NOT NULL, title_source TEXT NOT NULL DEFAULT 'none', "
+    'model TEXT, policy_mode TEXT NOT NULL DEFAULT \'ask\', workspace TEXT, '
+    'last_prompt_tokens INTEGER, last_completion_tokens INTEGER, '
+    'context_length INTEGER, compaction_summary TEXT, '
+    'compacted_until_seq INTEGER NOT NULL DEFAULT 0, '
+    'current_revision_id TEXT, created_at INTEGER NOT NULL, '
+    'updated_at INTEGER NOT NULL)';
+
 /// Открывает базу, созданную предыдущей версией схемы, и даёт миграции поработать.
 AppDatabase _openAtVersion(
   int version, {
@@ -19,7 +31,9 @@ AppDatabase _openAtVersion(
           'available INTEGER NOT NULL DEFAULT 1, synced_at INTEGER NOT NULL)',
         );
       }
-      raw.execute('PRAGMA user_version = $version');
+      raw
+        ..execute(_chatsV4)
+        ..execute('PRAGMA user_version = $version');
     },
   ),
 );
@@ -57,6 +71,23 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 4);
+    expect(AppDatabase.currentSchemaVersion, 5);
   });
+
+  test(
+    'v4 → v5 adds the chat draft columns to an existing chats table',
+    () async {
+      final db = _openAtVersion(4);
+      addTearDown(db.close);
+
+      final columns = await db
+          .customSelect(
+            "SELECT name, dflt_value FROM pragma_table_info('chats') "
+            "WHERE name IN ('draft', 'draft_attachments')",
+          )
+          .map((row) => row.read<String>('name'))
+          .get();
+      expect(columns, containsAll(['draft', 'draft_attachments']));
+    },
+  );
 }

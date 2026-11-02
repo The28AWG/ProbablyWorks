@@ -7,6 +7,7 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 
@@ -68,7 +69,7 @@ class ChatListState extends Equatable {
 }
 
 class ChatListCubit extends Cubit<ChatListState> {
-  ChatListCubit(this._hub) : super(const ChatListState()) {
+  ChatListCubit(this._hub, this._drafts) : super(const ChatListState()) {
     _chatsSub = _hub.chats.watchChats().listen((chats) {
       emit(state.copyWith(chats: chats));
       _refreshActivity();
@@ -93,6 +94,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   final AgentHub _hub;
+  final ChatDraftStore _drafts;
   late final StreamSubscription<List<Chat>> _chatsSub;
   late final StreamSubscription<List<Host>> _hostsSub;
   late final StreamSubscription<AgentEvent> _activitySub;
@@ -123,11 +125,19 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   /// Новый чат: локальный Host по умолчанию. Workspace задаётся в чате.
+  /// Черновик текущего чата переносится в новый, а текущий очищается.
   Future<String> create() async {
+    final fromId = state.selectedId;
     final chat = await _hub.newChat(hostId: HostRepository.localHostId);
+    if (fromId != null) {
+      await _drafts.move(fromId, chat.id, fallback: _chatById(fromId));
+    }
     emit(state.copyWith(selectedId: chat.id));
     return chat.id;
   }
+
+  Chat? _chatById(String chatId) =>
+      state.chats.where((chat) => chat.id == chatId).firstOrNull;
 
   Future<void> rename(String chatId, String title) async {
     final chat = await _hub.chats.chat(chatId);
@@ -143,6 +153,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     final session = _hub.session(chatId);
     if (session.isRunning) await session.stop();
     await _hub.chats.deleteChat(chatId);
+    _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);
     if (state.selectedId == chatId) emit(state.copyWith(clearSelection: true));
   }

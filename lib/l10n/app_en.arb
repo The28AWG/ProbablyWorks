@@ -169,6 +169,14 @@
   "@messageEdit": {
     "description": "Menu action that edits a user message and re-runs from it."
   },
+  "messageShowFull": "Show full message",
+  "@messageShowFull": {
+    "description": "Expands a long user message that is shown truncated in the transcript."
+  },
+  "messageCollapse": "Collapse",
+  "@messageCollapse": {
+    "description": "Collapses a long user message back to its preview."
+  },
   "messageDeleteAfter": "Delete from here",
   "@messageDeleteAfter": {
     "description": "Menu action that removes this message and everything after it."

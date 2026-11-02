@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/host/flutter_pty_launcher.dart';
-import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/pty_launcher.dart';
 import 'package:probably_works/host/wrapped_exec_runtime.dart';
@@ -77,11 +76,3 @@ class _ProcessChannel implements ExecChannel {
 }
 
 /// Удобная фабрика для текущей ОС (тесты передают явный [HostOs]).
-HostRuntime localRuntimeForCurrentPlatform() {
-  final os = Platform.isMacOS
-      ? HostOs.macos
-      : Platform.isWindows
-      ? HostOs.windows
-      : HostOs.posix;
-  return LocalHostRuntime(os: os);
-}
