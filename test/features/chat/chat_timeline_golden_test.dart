@@ -57,7 +57,7 @@ ChatState _longChat() {
           chatId: 'c',
           seq: i * 2 + 1,
           role: MessageRole.assistant,
-          createdAt: asked.add(Duration(minutes: 3, seconds: 40 + i)),
+          createdAt: asked.add(Duration(minutes: 3, seconds: i + 40)),
           text: _assistantText,
         ),
       );

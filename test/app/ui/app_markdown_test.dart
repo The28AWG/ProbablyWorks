@@ -78,7 +78,9 @@ void main() {
       );
       final rich = tester.widget<RichText>(
         find.byWidgetPredicate(
-          (w) => w is RichText && w.text.toPlainText().contains('Plain paragraph text'),
+          (w) =>
+              w is RichText &&
+              w.text.toPlainText().contains('Plain paragraph text'),
         ),
       );
       expect(rich.text.style?.color, theme.colorScheme.onSurface);
@@ -128,7 +130,9 @@ void main() {
     });
 
     testWidgets('AppMarkdown renders every block kind ($name)', (tester) async {
-      await tester.pumpWidget(_TestHost(const AppMarkdown(data: _sample), theme));
+      await tester.pumpWidget(
+        _TestHost(const AppMarkdown(data: _sample), theme),
+      );
       expect(tester.takeException(), isNull);
       expect(find.textContaining('Plain paragraph'), findsWidgets);
     });

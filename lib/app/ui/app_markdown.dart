@@ -66,15 +66,13 @@ class _AppPreBlockNode extends CodeBlockNode {
   @override
   InlineSpan build() {
     final language = _fenceHighlightLanguage(element);
-    final splitContents = content
-        .trim()
-        .split(visitor.splitRegExp ?? WidgetVisitor.defaultSplitRegExp);
+    final splitContents = content.trim().split(
+      visitor.splitRegExp ?? WidgetVisitor.defaultSplitRegExp,
+    );
     if (splitContents.last.isEmpty) splitContents.removeLast();
     final codeBuilder = preConfig.builder;
     if (codeBuilder != null) {
-      return WidgetSpan(
-        child: codeBuilder.call(content, language ?? ''),
-      );
+      return WidgetSpan(child: codeBuilder.call(content, language ?? ''));
     }
     final widget = Container(
       decoration: preConfig.decoration,

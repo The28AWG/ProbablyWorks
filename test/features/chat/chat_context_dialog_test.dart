@@ -83,9 +83,13 @@ void main() {
   });
 
   testWidgets('close button dismisses the dialog', (tester) async {
-    await _open(tester, used: 1000, onCompact: () {
-      return;
-    });
+    await _open(
+      tester,
+      used: 1000,
+      onCompact: () {
+        return;
+      },
+    );
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);

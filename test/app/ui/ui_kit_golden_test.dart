@@ -15,52 +15,52 @@ class _KitGallery extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AppCard(
-  padding: const EdgeInsets.all(AppSpacing.lg),
-  child: Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const AppBanner(
-        title: 'Heads up',
-        message: 'Context is almost full',
-        tone: AppTone.warning,
-      ),
-      const SizedBox(height: AppSpacing.md),
-      const Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        children: [
-          StatusChip(label: 'Online', tone: AppTone.success),
-          StatusChip(label: 'Running', tone: AppTone.progress, pulse: false),
-          StatusChip(label: 'Failed', tone: AppTone.danger),
-          StatusChip(label: 'Waiting', tone: AppTone.waiting),
-        ],
-      ),
-      const SizedBox(height: AppSpacing.md),
-      const ActionCard(
-        title: 'Approve command?',
-        icon: Icons.lock_clock_outlined,
-        tone: AppTone.waiting,
-        actions: [TextButton(onPressed: null, child: Text('Deny'))],
-        children: [
-          CodeBlock(text: 'flutter test', maxHeight: 120),
-          CommandOutput(
-            text:
-                '\x1b[1;32m✓\x1b[0m flutter analyze\n'
-                '\x1b[33mwarning\x1b[0m: unused import\n'
-                '\x1b[31merror\x1b[0m: 1 issue found',
-            exitCode: 1,
-            maxHeight: 120,
-          ),
-          DiffView(diff: '- old line\n+ new line'),
-        ],
-      ),
-      const SizedBox(height: AppSpacing.md),
-      const ContextUsageBar(label: 'Context 72%', fraction: 0.72),
-      const SizedBox(height: AppSpacing.md),
-      const AppMarkdown(data: _markdownSample),
-    ],
-  ),
+    padding: const EdgeInsets.all(AppSpacing.lg),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppBanner(
+          title: 'Heads up',
+          message: 'Context is almost full',
+          tone: AppTone.warning,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: [
+            StatusChip(label: 'Online', tone: AppTone.success),
+            StatusChip(label: 'Running', tone: AppTone.progress, pulse: false),
+            StatusChip(label: 'Failed', tone: AppTone.danger),
+            StatusChip(label: 'Waiting', tone: AppTone.waiting),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const ActionCard(
+          title: 'Approve command?',
+          icon: Icons.lock_clock_outlined,
+          tone: AppTone.waiting,
+          actions: [TextButton(onPressed: null, child: Text('Deny'))],
+          children: [
+            CodeBlock(text: 'flutter test', maxHeight: 120),
+            CommandOutput(
+              text:
+                  '\x1b[1;32m✓\x1b[0m flutter analyze\n'
+                  '\x1b[33mwarning\x1b[0m: unused import\n'
+                  '\x1b[31merror\x1b[0m: 1 issue found',
+              exitCode: 1,
+              maxHeight: 120,
+            ),
+            DiffView(diff: '- old line\n+ new line'),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const ContextUsageBar(label: 'Context 72%', fraction: 0.72),
+        const SizedBox(height: AppSpacing.md),
+        const AppMarkdown(data: _markdownSample),
+      ],
+    ),
   );
 }
 

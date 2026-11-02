@@ -137,7 +137,9 @@ void main() {
 
   testWidgets('DiffView renders added and removed lines', (tester) async {
     await tester.pumpWidget(
-      _TestHost(const DiffView(diff: '- old line\n+ new line\n… diff truncated')),
+      _TestHost(
+        const DiffView(diff: '- old line\n+ new line\n… diff truncated'),
+      ),
     );
     expect(find.textContaining('old line'), findsOneWidget);
     expect(find.textContaining('new line'), findsOneWidget);
