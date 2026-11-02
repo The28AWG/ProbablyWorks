@@ -274,6 +274,16 @@ final class _StepsChanged extends ChatEvent {
   const _StepsChanged();
 }
 
+/// Список хостов изменился (добавлен, отредактирован, удалён): меню хостов в композере обновляется сразу.
+final class _HostsChanged extends ChatEvent {
+  const _HostsChanged(this.hosts);
+
+  final List<Host> hosts;
+
+  @override
+  List<Object?> get props => [hosts];
+}
+
 // ---- state ------------------------------------------------------------------
 
 class ChatState extends Equatable {
@@ -516,6 +526,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_CatalogChanged>(
       (event, emit) => emit(state.copyWith(catalog: event.catalog)),
     );
+    on<_HostsChanged>(
+      (event, emit) => emit(state.copyWith(hosts: event.hosts)),
+    );
   }
 
   final AgentHub _hub;
@@ -531,6 +544,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
   StreamSubscription<ModelCatalogState>? _catalogSub;
+  StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
@@ -627,6 +641,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
     await _catalogSub?.cancel();
+    await _hostsSub?.cancel();
     // Закрытие чата сохраняет его черновик сразу, не дожидаясь задержки записи.
     await _drafts.flush();
     return super.close();
@@ -638,6 +653,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
     await _catalogSub?.cancel();
+    await _hostsSub?.cancel();
     for (final sub in _stepsSubs) {
       await sub.cancel();
     }
@@ -656,6 +672,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == event.chatId)
         .listen((_) => add(const _Refresh()));
+    // Хосты общие для всех чатов: список в композере обновляется при любом изменении, в том числе
+    // пока чат открыт. Подписка до чтения ниже, поэтому изменение между ними не теряется; первое значение
+    // потока пропускаем, оно уже прочитано.
+    _hostsSub = _hub.hosts
+        .watchAll()
+        .skip(1)
+        .listen((hosts) => add(_HostsChanged(hosts)));
     for (final key in [
       SettingsRepository.keyStepsGroup,
       SettingsRepository.keyStepsThoughts,

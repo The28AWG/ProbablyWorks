@@ -25,6 +25,7 @@ import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
+import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/desktop_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
@@ -602,6 +603,33 @@ void main() {
       await bloc.stream.firstWhere((s) => !s.loading);
     },
   );
+
+  test('a host added while the chat is open reaches the composer without switching chats', () async {
+    final chatId = await createChat();
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(chatId));
+    await bloc.stream.firstWhere((s) => !s.loading);
+    expect(bloc.state.hosts.map((h) => h.id), ['local']);
+
+    // Подписка до записи: изменение приходит в блок, а не теряется между записью и подпиской.
+    final withNewHost = bloc.stream.firstWhere((s) => s.hosts.length == 2);
+    final now = DateTime.now();
+    await hub.hosts.save(
+      Host(
+        id: 'ssh-1',
+        name: 'Prod',
+        kind: HostKind.ssh,
+        address: 'example.com',
+        username: 'deploy',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final state = await withNewHost;
+    expect(state.hosts.map((h) => h.id), ['local', 'ssh-1']);
+    expect(state.chatId, chatId);
+  });
 
   test('each chat keeps its own draft: switching away and back restores it and saves it to the database', () async {
     final first = await createChat();
