@@ -339,6 +339,10 @@ class ChatState extends Equatable {
     return null;
   }
 
+  /// Модели пока нет, но чат ещё грузится: модель по умолчанию из Settings не прочитана, и отсутствие
+  /// выбора пока не доказано. Предупреждать об этом рано; после загрузки null означает реальную ошибку.
+  bool get modelPending => loading && effectiveModelId == null;
+
   /// Статус модели чата по кешу каталога. Недоступная модель не блокирует отправку: `!` предупреждает.
   ModelStatus get modelStatus => catalog.statusOf(effectiveModelId);
 

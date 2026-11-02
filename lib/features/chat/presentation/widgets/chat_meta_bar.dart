@@ -41,6 +41,7 @@ class ChatMetaBar extends StatelessWidget {
     required this.running,
     this.modelUnavailable = false,
     this.modelLoading = false,
+    this.modelPending = false,
     super.key,
   });
 
@@ -58,6 +59,10 @@ class ChatMetaBar extends StatelessWidget {
 
   /// Список моделей грузится впервые: рядом с названием показываем спиннер.
   final bool modelLoading;
+
+  /// Модель ещё не известна: чат грузится, а модель по умолчанию не прочитана. Чип без текста и предупреждения,
+  /// со спиннером. Когда загрузка закончится, null в [modelLabel] станет реальным предупреждением.
+  final bool modelPending;
   final VoidCallback onPickModel;
 
   /// Доля заполненного окна контекста (0..1) или `null`, пока модель не отчиталась.
@@ -124,13 +129,15 @@ class ChatMetaBar extends StatelessWidget {
                 ? l10n.chatModelUnavailableTooltip
                 : l10n.chatModelLabel,
             icon: Icons.memory,
-            label: modelLabel == null
+            label: modelPending
+                ? null
+                : modelLabel == null
                 ? l10n.chatModelPick
                 : (modelUnavailable ? '! $modelLabel' : modelLabel),
-            tone: modelLabel == null || modelUnavailable
+            tone: !modelPending && (modelLabel == null || modelUnavailable)
                 ? AppTone.warning
                 : null,
-            loading: modelLoading,
+            loading: modelLoading || modelPending,
             maxWidth: 180,
             onTap: onPickModel,
           ),

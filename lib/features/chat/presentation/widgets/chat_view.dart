@@ -184,6 +184,7 @@ class _ChatBodyState extends State<ChatBody> {
                           ),
                           modelUnavailable: state.modelUnavailable,
                           modelLoading: state.catalog.initialLoading,
+                          modelPending: state.modelPending,
                           onPickModel: () => _pickModel(bloc, state, chat),
                           contextFraction: fraction,
                           onOpenContext: () => _openContext(bloc),

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/ui/app_tone.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -54,6 +55,7 @@ class _TestChatMetaBar extends StatelessWidget {
     this.noModel = false,
     this.modelUnavailable = false,
     this.modelLoading = false,
+    this.modelPending = false,
   });
 
   final bool running;
@@ -65,6 +67,7 @@ class _TestChatMetaBar extends StatelessWidget {
   final bool noModel;
   final bool modelUnavailable;
   final bool modelLoading;
+  final bool modelPending;
 
   static void _noopHost(String _) {
     return;
@@ -84,6 +87,7 @@ class _TestChatMetaBar extends StatelessWidget {
     modelLabel: noModel ? null : 'Claude Sonnet',
     modelUnavailable: modelUnavailable,
     modelLoading: modelLoading,
+    modelPending: modelPending,
     onPickModel: _noop,
     contextFraction: contextFraction,
     onOpenContext: onOpenContext ?? _noop,
@@ -278,6 +282,31 @@ void main() {
     );
     expect(find.text('Claude Sonnet'), findsNothing);
     expect(find.text('Choose model'), findsOneWidget);
+  });
+
+  testWidgets('pending model is neutral with a spinner, not a warning', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestHost(
+        _TestChatMetaBar(noModel: true, modelPending: true),
+        AppTheme.light,
+      ),
+    );
+    await tester.pump();
+    final element = tester.element(find.byType(ChatMetaBar));
+    expect(find.text('Choose model'), findsNothing);
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.memory)).color,
+      isNot(toneColors(element, AppTone.warning).foreground),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ChatMetaBar),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('unavailable model keeps its name with a ! marker', (

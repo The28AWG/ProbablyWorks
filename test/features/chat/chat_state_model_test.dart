@@ -98,6 +98,21 @@ void main() {
     );
   });
 
+  test('while the chat loads, a missing model is pending, not a problem', () {
+    final state = ChatState(chat: _chat(), defaultModelId: null, loading: true);
+    expect(state.modelPending, isTrue);
+  });
+
+  test('after loading, a missing model is a real problem', () {
+    final state = ChatState(chat: _chat(), defaultModelId: null);
+    expect(state.modelPending, isFalse);
+  });
+
+  test('a chat with its own model is never pending', () {
+    final state = ChatState(chat: _chat(model: 'openai/gpt-4o'), loading: true);
+    expect(state.modelPending, isFalse);
+  });
+
   test('a missing-model failure is shown as a model problem, not raw text', () {
     final state = ChatState(
       chat: _chat(model: 'anthropic/claude'),

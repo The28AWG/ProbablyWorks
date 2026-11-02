@@ -9,6 +9,7 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
@@ -180,7 +181,15 @@ void main() {
     bloc.push(_loading('c2'));
     await tester.pump();
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // Спиннер ленты и спиннер ожидания модели в чипе: модель по умолчанию ещё не прочитана.
+    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
+    expect(
+      find.descendant(
+        of: find.byType(ChatMetaBar),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
     expect(_composerIgnoring(tester), isTrue);
 
     bloc.push(_loaded('c2'));
