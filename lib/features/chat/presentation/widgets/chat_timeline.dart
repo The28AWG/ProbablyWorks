@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
@@ -249,6 +250,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
     final boundary = _compactionBoundary(chat, visible);
     final lastUser = visible.lastIndexWhere((m) => m.role == MessageRole.user);
     final lastAnswerId = _lastAnswerId(visible);
+    final taskTimes = _taskDurations(state.messages, running: state.isRunning);
 
     // Строки собираем от старого к новому и только потом переворачиваем: лента перевёрнута.
     // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
@@ -349,6 +351,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
             message: message,
             editable: !state.isRunning,
             isLastAnswer: message.id == lastAnswerId,
+            turnElapsed: taskTimes[message.id],
           ),
         );
       }
@@ -481,6 +484,50 @@ class _ChatTimelineState extends State<ChatTimeline> {
       }
     }
     return null;
+  }
+
+  /// Время каждого задания: от сообщения пользователя до последнего шага его хода (ответа ассистента или
+  /// результата инструмента). Задание — сообщение пользователя и всё до следующего такого сообщения.
+  /// Ключ — id финального ответа задания. Время показываем только у законченного задания: последнее задание
+  /// без времени, пока идёт ход.
+  static Map<String, Duration> _taskDurations(
+    List<ChatMessage> messages, {
+    required bool running,
+  }) {
+    final result = <String, Duration>{};
+    final starts = [
+      for (var i = 0; i < messages.length; i++)
+        if (messages[i].role == MessageRole.user) i,
+    ];
+    for (var k = 0; k < starts.length; k++) {
+      final closed = k + 1 < starts.length;
+      if (!closed && running) break;
+      final end = closed ? starts[k + 1] : messages.length;
+      ChatMessage? last;
+      ChatMessage? answer;
+      for (var i = starts[k] + 1; i < end; i++) {
+        final message = messages[i];
+        if (message.role == MessageRole.assistant) answer = message;
+        if (message.role == MessageRole.assistant ||
+            message.role == MessageRole.tool) {
+          last = message;
+        }
+      }
+      if (last == null || answer == null || !_isFinalAnswer(answer)) continue;
+      final elapsed = last.createdAt.difference(messages[starts[k]].createdAt);
+      if (!elapsed.isNegative) result[answer.id] = elapsed;
+    }
+    return result;
+  }
+
+  /// Финальный ответ задания: текст и без вызовов инструментов, кроме `finish`.
+  /// Ответ с другими инструментами — промежуточный шаг (в том числе до сообщения, отправленного во время хода).
+  static bool _isFinalAnswer(ChatMessage message) {
+    if (message.text.trim().isEmpty) return false;
+    for (final call in message.toolCalls) {
+      if (call.name != ToolNames.finish) return false;
+    }
+    return true;
   }
 
   /// Индекс видимого сообщения, с которого начинаются несводные сообщения, или -1, если метки нет.

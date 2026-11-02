@@ -5,6 +5,7 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/char_substring.dart';
+import 'package:probably_works/core/util/elapsed_format.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -16,6 +17,7 @@ class ChatMessageTile extends StatelessWidget {
     required this.message,
     required this.editable,
     this.isLastAnswer = false,
+    this.turnElapsed,
     super.key,
   });
 
@@ -27,12 +29,17 @@ class ChatMessageTile extends StatelessWidget {
   /// Ответ агента — последний в ленте: только у него есть кнопка «Копировать».
   final bool isLastAnswer;
 
+  /// Время всего задания (от сообщения пользователя до конца его хода). Задаётся у финального ответа
+  /// законченного задания; у ответа без времени — `null`.
+  final Duration? turnElapsed;
+
   @override
   Widget build(BuildContext context) => switch (message.role) {
     MessageRole.user => _UserMessage(message: message, editable: editable),
     MessageRole.assistant => _AssistantMessage(
       message: message,
       isLastAnswer: isLastAnswer,
+      elapsed: turnElapsed,
     ),
     MessageRole.event => _EventLine(text: message.text),
     MessageRole.tool => const SizedBox.shrink(),
@@ -165,16 +172,24 @@ class _UserMessageState extends State<_UserMessage> {
 }
 
 class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage({required this.message, required this.isLastAnswer});
+  const _AssistantMessage({
+    required this.message,
+    required this.isLastAnswer,
+    this.elapsed,
+  });
 
   final ChatMessage message;
   final bool isLastAnswer;
+
+  /// Время всего задания; `null`, если у этого ответа его не показываем.
+  final Duration? elapsed;
 
   @override
   Widget build(BuildContext context) {
     // Текст из одних пробелов и переводов строк тоже пустой: иначе останется пустой блок с кнопкой.
     if (message.text.trim().isEmpty) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Column(
@@ -182,7 +197,8 @@ class _AssistantMessage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AppMarkdown(data: message.text),
-          // Строка с кнопкой занимает место только у последнего ответа. Появление и уход плавные.
+          // Строка действий занимает место только у последнего ответа (кнопка «Копировать») и у ответа
+          // законченного задания (время). Появление и уход плавные.
           AnimatedSize(
             duration: AppDurations.fast,
             alignment: Alignment.topLeft,
@@ -190,16 +206,33 @@ class _AssistantMessage extends StatelessWidget {
               duration: AppDurations.fast,
               transitionBuilder: (child, animation) =>
                   FadeTransition(opacity: animation, child: child),
-              child: isLastAnswer
+              child: isLastAnswer || elapsed != null
                   ? Padding(
-                      key: const ValueKey('copy'),
+                      key: const ValueKey('actions'),
                       padding: const EdgeInsets.only(top: AppSpacing.xs),
                       child: Align(
                         alignment: AlignmentDirectional.centerStart,
-                        child: _ActionIcon(
-                          tooltip: l10n.commonCopy,
-                          icon: Icons.copy_outlined,
-                          onPressed: () => _copy(context, message.text, l10n),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isLastAnswer)
+                              _ActionIcon(
+                                tooltip: l10n.commonCopy,
+                                icon: Icons.copy_outlined,
+                                onPressed: () =>
+                                    _copy(context, message.text, l10n),
+                              ),
+                            if (elapsed case final time?) ...[
+                              if (isLastAnswer)
+                                const SizedBox(width: AppSpacing.xs),
+                              Text(
+                                formatElapsed(time),
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     )

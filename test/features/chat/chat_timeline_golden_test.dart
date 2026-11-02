@@ -34,8 +34,11 @@ const _assistantText = '''
 ''';
 
 ChatState _longChat() {
+  final start = DateTime(2026);
   final messages = <ChatMessage>[];
   for (var i = 0; i < 6; i++) {
+    // Каждое задание занимает 3m 4x s: на эталоне видна метка времени в реальном формате.
+    final asked = start.add(Duration(hours: i));
     messages
       ..add(
         ChatMessage(
@@ -43,7 +46,7 @@ ChatState _longChat() {
           chatId: 'c',
           seq: i * 2,
           role: MessageRole.user,
-          createdAt: DateTime(2026),
+          createdAt: asked,
           text:
               'Запрос номер ${i + 1}: проверь проект и скажи, что нужно поправить',
         ),
@@ -54,7 +57,7 @@ ChatState _longChat() {
           chatId: 'c',
           seq: i * 2 + 1,
           role: MessageRole.assistant,
-          createdAt: DateTime(2026),
+          createdAt: asked.add(Duration(minutes: 3, seconds: 40 + i)),
           text: _assistantText,
         ),
       );

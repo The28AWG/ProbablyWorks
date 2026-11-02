@@ -506,6 +506,82 @@ void main() {
     expect(copyIn('m3'), findsOneWidget);
   });
 
+  testWidgets('each finished task shows its own time under its final answer', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final start = DateTime(2026);
+    ChatMessage at(
+      String id,
+      int seq,
+      MessageRole role,
+      int seconds, {
+      String text = '',
+      List<ToolCallRef> calls = const [],
+    }) => ChatMessage(
+      id: id,
+      chatId: 'c',
+      seq: seq,
+      role: role,
+      createdAt: start.add(Duration(seconds: seconds)),
+      text: text,
+      toolCalls: calls,
+    );
+    // Первое задание: шаг с командой, результат, финальный ответ (на 5-й секунде).
+    // Второе: финальный ответ через finish (на 63-й секунде, результат finish — на 64-й).
+    final messages = [
+      at('u1', 1, MessageRole.user, 0, text: 'First'),
+      at(
+        'a1',
+        2,
+        MessageRole.assistant,
+        1,
+        text: 'Reading',
+        calls: const [
+          ToolCallRef(id: 'c1', name: 'run_command', arguments: '{}'),
+        ],
+      ),
+      at('t1', 3, MessageRole.tool, 2, text: 'ok'),
+      at('a2', 4, MessageRole.assistant, 5, text: 'First answer'),
+      at('u2', 5, MessageRole.user, 60, text: 'Second'),
+      at(
+        'a3',
+        6,
+        MessageRole.assistant,
+        63,
+        text: 'Second answer',
+        calls: const [ToolCallRef(id: 'c2', name: 'finish', arguments: '{}')],
+      ),
+      at('t2', 7, MessageRole.tool, 64, text: 'summary'),
+    ];
+
+    Future<void> pump({required bool running}) => tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          height: 500,
+          child: ChatTimeline(
+            state: ChatState(
+              chatId: 'c',
+              messages: messages,
+              isRunning: running,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await pump(running: false);
+    await tester.pumpAndSettle();
+    expect(find.text('5s'), findsOneWidget);
+    expect(find.text('4s'), findsOneWidget);
+
+    // Пока ход идёт, последнее задание без времени; законченное первое задание своё время сохраняет.
+    await pump(running: true);
+    await tester.pumpAndSettle();
+    expect(find.text('4s'), findsNothing);
+  });
+
   testWidgets('user message actions appear on hover', (tester) async {
     await tester.binding.setSurfaceSize(const Size(800, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
