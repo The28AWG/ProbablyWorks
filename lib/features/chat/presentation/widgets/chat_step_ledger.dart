@@ -296,8 +296,8 @@ class _LedgerStepRow extends StatelessWidget {
   };
 }
 
-/// Строка рассуждений: первая строка текста, раскрывается до полного текста.
-/// Пока шаг идёт, раскрыта и прокручивается вслед за новым текстом.
+/// Строка рассуждений: первая строка текста, раскрывается до полного текста по нажатию.
+/// Пока шаг идёт, первая строка обновляется, а раскрытый текст следует за новым куском, если читатель внизу.
 class _ThoughtRow extends StatefulWidget {
   const _ThoughtRow({required this.text, required this.live});
 
@@ -310,7 +310,8 @@ class _ThoughtRow extends StatefulWidget {
 
 class _ThoughtRowState extends State<_ThoughtRow>
     with AutomaticKeepAliveClientMixin<_ThoughtRow> {
-  late var _expanded = widget.live;
+  /// Рассуждение всегда стартует свёрнутым, в том числе пока стримится: раскрывает его пользователь.
+  var _expanded = false;
 
   /// Пользователь сам переключал строку: её выбор нельзя потерять при прокрутке.
   var _toggled = false;
@@ -332,10 +333,6 @@ class _ThoughtRowState extends State<_ThoughtRow>
   @override
   void didUpdateWidget(covariant _ThoughtRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.live && widget.live) {
-      _expanded = true;
-      updateKeepAlive();
-    }
     // Следуем за текстом, только если читатель и так внизу: иначе он не сможет прочитать предыдущее.
     final following =
         !_scroll.hasClients || _scroll.position.extentAfter < _followSlack;

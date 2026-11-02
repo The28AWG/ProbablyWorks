@@ -144,7 +144,7 @@ void main() {
     expect(find.text('Сначала посмотрю файлы'), findsNothing);
   });
 
-  testWidgets('a streaming thought is expanded and counts as running', (
+  testWidgets('a streaming thought starts collapsed and counts as running', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -164,7 +164,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Running: 1 of 2'), findsOneWidget);
-    expect(find.byType(SelectableText), findsOneWidget);
+    expect(find.text('Ищу конфиг'), findsOneWidget);
+    expect(find.byType(SelectableText), findsNothing);
   });
 
   group('thought row identity', () {
@@ -181,6 +182,8 @@ void main() {
       await tester.pumpWidget(
         journal([const ThoughtStep(id: 't1', text: 'Ищу конфиг', live: true)]),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ищу конфиг'));
       await tester.pumpAndSettle();
       final before = tester.element(find.byType(SelectableText));
 
@@ -208,6 +211,8 @@ void main() {
             ),
           ]),
         );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ищу конфиг'));
         await tester.pumpAndSettle();
         final before = tester.element(find.byType(SelectableText));
 
@@ -256,6 +261,8 @@ void main() {
       final scroll = thoughtScroll;
       await tester.pumpWidget(ledger(lines(40)));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('строка 0'));
+      await tester.pumpAndSettle();
       await tester.drag(scroll, const Offset(0, -2000));
       await tester.pumpAndSettle();
       await tester.drag(scroll, const Offset(0, 200));
@@ -272,6 +279,8 @@ void main() {
     testWidgets('a reader at the end keeps following new text', (tester) async {
       final scroll = thoughtScroll;
       await tester.pumpWidget(ledger(lines(40)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('строка 0'));
       await tester.pumpAndSettle();
       await tester.drag(scroll, const Offset(0, -2000));
       await tester.pumpAndSettle();
