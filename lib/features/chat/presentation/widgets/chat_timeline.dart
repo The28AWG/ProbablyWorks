@@ -250,6 +250,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     // Строки собираем от старого к новому и только потом переворачиваем: лента перевёрнута.
     // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
+    _liveIds.clear();
     final rows = <Widget>[];
     var anchor = 'start';
     var steps = <LedgerStep>[];
@@ -257,10 +258,10 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     void flush() {
       if (steps.isEmpty) return;
+      _liveIds.add('steps:$stepsAnchor');
       rows.add(
         _KeyedTimelineItem(
           id: 'steps:$stepsAnchor',
-          liveIds: _liveIds,
           itemKeys: _itemKeys,
           child: ChatColumn.item(
             ChatStepLedger(
@@ -281,10 +282,10 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     void item(String id, Widget child) {
       flush();
+      _liveIds.add(id);
       rows.add(
         _KeyedTimelineItem(
           id: id,
-          liveIds: _liveIds,
           itemKeys: _itemKeys,
           child: ChatColumn.item(child),
         ),
@@ -327,18 +328,17 @@ class _ChatTimelineState extends State<ChatTimeline> {
     }
     flush();
 
-    // Ключи строятся вместе с элементами, поэтому убираем только те, кого в ленте больше нет.
-    _liveIds.clear();
+    if (state.streamText.isNotEmpty) _liveIds.add('stream');
     final children = <Widget>[
       if (state.streamText.isNotEmpty)
         _KeyedTimelineItem(
           id: 'stream',
-          liveIds: _liveIds,
           itemKeys: _itemKeys,
           child: ChatColumn.item(AppMarkdown(data: state.streamText)),
         ),
       ...rows.reversed,
     ];
+    // Id уже зарегистрированы при сборке строк: убираем только ключи тех, кого в ленте больше нет.
     _itemKeys.removeWhere((id, _) => !_liveIds.contains(id));
     if (!_follow) _scheduleAnchor();
 
@@ -390,29 +390,24 @@ class _ChatTimelineState extends State<ChatTimeline> {
 class _KeyedTimelineItem extends StatelessWidget {
   const _KeyedTimelineItem({
     required this.id,
-    required this.liveIds,
     required this.itemKeys,
     required this.child,
   });
 
   final String id;
-  final Set<String> liveIds;
   final Map<String, GlobalKey> itemKeys;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    liveIds.add(id);
-    return KeyedSubtree(
-      key: ValueKey(id),
-      child: SizeChangedLayoutNotifier(
-        child: KeyedSubtree(
-          key: itemKeys.putIfAbsent(id, GlobalKey.new),
-          child: child,
-        ),
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: ValueKey(id),
+    child: SizeChangedLayoutNotifier(
+      child: KeyedSubtree(
+        key: itemKeys.putIfAbsent(id, GlobalKey.new),
+        child: child,
       ),
-    );
-  }
+    ),
+  );
 }
 
 /// Элемент ленты, который держим на месте: его ключ, верхний край на экране и смещение, при котором
