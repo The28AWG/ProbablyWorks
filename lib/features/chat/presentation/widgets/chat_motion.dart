@@ -61,8 +61,14 @@ class _ChatRevealState extends State<ChatReveal>
         curve: Curves.easeOutCubic,
         reverseCurve: Curves.easeInCubic,
       ),
-      alignment: Alignment.topCenter,
-      child: widget.open ? widget.child : (_leaving ?? const SizedBox.shrink()),
+      alignment: Alignment.topLeft,
+      // Содержимое занимает всю ширину: иначе SizeTransition центрирует блок по ширине текста.
+      child: SizedBox(
+        width: double.infinity,
+        child: widget.open
+            ? widget.child
+            : (_leaving ?? const SizedBox.shrink()),
+      ),
     ),
   );
 }
