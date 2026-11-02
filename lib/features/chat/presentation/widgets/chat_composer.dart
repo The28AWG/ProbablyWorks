@@ -221,19 +221,21 @@ class _PlusMenu extends StatelessWidget {
         SubmenuButton(
           leadingIcon: Icon(_policyIcon(policy)),
           menuChildren: [
-            _policyItem(
-              context,
+            _PolicyMenuItem(
               mode: PolicyMode.ask,
+              current: policy,
               title: l10n.policyAsk,
               hint: l10n.policyAskHint,
               icon: Icons.shield_outlined,
+              onSelected: onPolicySelected,
             ),
-            _policyItem(
-              context,
+            _PolicyMenuItem(
               mode: PolicyMode.yolo,
+              current: policy,
               title: l10n.policyYolo,
               hint: l10n.policyYoloHint,
               icon: Icons.bolt_outlined,
+              onSelected: onPolicySelected,
             ),
           ],
           child: Text(l10n.composerModeLabel),
@@ -250,18 +252,37 @@ class _PlusMenu extends StatelessWidget {
     );
   }
 
-  MenuItemButton _policyItem(
-    BuildContext context, {
-    required PolicyMode mode,
-    required String title,
-    required String hint,
-    required IconData icon,
-  }) {
+  static IconData _policyIcon(PolicyMode mode) => switch (mode) {
+    PolicyMode.ask => Icons.shield_outlined,
+    PolicyMode.yolo => Icons.bolt_outlined,
+  };
+}
+
+/// Пункт подменю «Режим выполнения»: название, пояснение и отметка текущего режима.
+class _PolicyMenuItem extends StatelessWidget {
+  const _PolicyMenuItem({
+    required this.mode,
+    required this.current,
+    required this.title,
+    required this.hint,
+    required this.icon,
+    required this.onSelected,
+  });
+
+  final PolicyMode mode;
+  final PolicyMode current;
+  final String title;
+  final String hint;
+  final IconData icon;
+  final ValueChanged<PolicyMode> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return MenuItemButton(
       leadingIcon: Icon(icon),
-      trailingIcon: mode == policy ? const Icon(Icons.check, size: 18) : null,
-      onPressed: () => onPolicySelected(mode),
+      trailingIcon: mode == current ? const Icon(Icons.check, size: 18) : null,
+      onPressed: () => onSelected(mode),
       child: SizedBox(
         width: 300,
         child: Column(
@@ -281,11 +302,6 @@ class _PlusMenu extends StatelessWidget {
       ),
     );
   }
-
-  static IconData _policyIcon(PolicyMode mode) => switch (mode) {
-    PolicyMode.ask => Icons.shield_outlined,
-    PolicyMode.yolo => Icons.bolt_outlined,
-  };
 }
 
 /// Кнопка отправки неактивна, пока отправлять нечего: пустое поле и без вложений.

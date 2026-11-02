@@ -64,16 +64,32 @@ class _HarnessState extends State<_Harness> {
           settings: const SizedBox.shrink(),
           workspace: '/home/me/projects/app',
           policy: PolicyMode.ask,
-          onAttach: widget.onAttach ?? () {},
-          onPickWorkspace: widget.onPickWorkspace ?? () {},
-          onPolicySelected: widget.onPolicySelected ?? (_) {},
-          onRemoveAttachment: (_) {},
-          onSubmit: (_) {},
-          onStop: () {},
+          onAttach: widget.onAttach ?? _noop,
+          onPickWorkspace: widget.onPickWorkspace ?? _noop,
+          onPolicySelected: widget.onPolicySelected ?? _noopPolicy,
+          onRemoveAttachment: _noopIndex,
+          onSubmit: _noopSend,
+          onStop: _noop,
         ),
       ),
     ),
   );
+
+  static void _noop() {
+    return;
+  }
+
+  static void _noopPolicy(PolicyMode _) {
+    return;
+  }
+
+  static void _noopIndex(int _) {
+    return;
+  }
+
+  static void _noopSend(bool _) {
+    return;
+  }
 }
 
 void main() {

@@ -22,14 +22,17 @@ class _ChatRevealState extends State<ChatReveal>
     value: widget.open ? 1 : 0,
   );
 
-  /// Содержимое, которое уходит: держим его, пока высота не дошла до нуля.
-  late Widget _leaving = widget.child;
+  /// Содержимое, которое уходит: держим его, пока высота не дошла до нуля. Null — закрыто и смонтировано не будет.
+  Widget? _leaving;
 
   @override
   void initState() {
     super.initState();
+    if (widget.open) _leaving = widget.child;
     _controller.addStatusListener((status) {
-      if (status == AnimationStatus.dismissed && mounted) setState(() {});
+      if (status == AnimationStatus.dismissed && mounted) {
+        setState(() => _leaving = null);
+      }
     });
   }
 
@@ -51,22 +54,17 @@ class _ChatRevealState extends State<ChatReveal>
   }
 
   @override
-  Widget build(BuildContext context) {
-    final visible = widget.open || !_controller.isDismissed;
-    return ClipRect(
-      child: SizeTransition(
-        sizeFactor: CurvedAnimation(
-          parent: _controller,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        ),
-        alignment: Alignment.topCenter,
-        child: visible
-            ? (widget.open ? widget.child : _leaving)
-            : const SizedBox.shrink(),
+  Widget build(BuildContext context) => ClipRect(
+    child: SizeTransition(
+      sizeFactor: CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
       ),
-    );
-  }
+      alignment: Alignment.topCenter,
+      child: widget.open ? widget.child : (_leaving ?? const SizedBox.shrink()),
+    ),
+  );
 }
 
 /// Смена содержимого без рывка: ширина и высота подстраиваются, новое содержимое проявляется.

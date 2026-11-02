@@ -230,13 +230,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
           : LayoutBuilder(
               key: const ValueKey('timeline'),
               builder: (context, constraints) =>
-                  _buildTimeline(context, visible, l10n, constraints.maxHeight),
+                  _buildTimeline(visible, l10n, constraints.maxHeight),
             ),
     );
   }
 
   Widget _buildTimeline(
-    BuildContext context,
     List<ChatMessage> visible,
     AppLocalizations l10n,
     double viewportHeight,
@@ -424,10 +423,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
         // Любое изменение высоты элемента (анимация, копирование ушло с предыдущего ответа, раскрытие шага)
         // во время чтения истории гасится якорем на этом же кадре, поэтому текст под взглядом не уезжает.
         NotificationListener<SizeChangedLayoutNotification>(
-          onNotification: (_) {
-            if (!_follow) _scheduleAnchor();
-            return false;
-          },
+          onNotification: _onLayoutChanged,
           child: ListView(
             controller: _scroll,
             reverse: true,
@@ -467,6 +463,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
         ),
       ],
     );
+  }
+
+  /// Размер элемента изменился: при чтении истории гасим сдвиг якорем на этом же кадре.
+  bool _onLayoutChanged(SizeChangedLayoutNotification _) {
+    if (!_follow) _scheduleAnchor();
+    return false;
   }
 
   /// Id последнего ответа агента, который виден в ленте. Кнопка «Копировать» показывается только у него.
