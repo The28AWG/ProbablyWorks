@@ -24,6 +24,7 @@ class SettingsRepository {
   static const keyStepsGroup = 'stepsGroup';
   static const keyStepsThoughts = 'stepsThoughts';
   static const keyStepsTools = 'stepsTools';
+  static const keySidebarWidth = 'sidebarWidth';
   static const keyLastUsageContextPrefix = 'contextLength:';
 
   Future<String?> read(String key) async {

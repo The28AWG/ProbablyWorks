@@ -1,0 +1,301 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/interaction/interaction_broker.dart';
+import 'package:probably_works/agent/loop/agent_event.dart';
+import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/app/locale/app_localization_delegates.dart';
+import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/core/data/chat_draft_store.dart';
+import 'package:probably_works/core/data/chat_repository.dart';
+import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
+import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:probably_works/test_support/golden_fonts.dart';
+
+final _now = DateTime.now();
+
+/// Сколько раз панель попросили свернуться, когда тест не передал свой обработчик.
+var _collapseCount = 0;
+
+Chat _chat(
+  String id,
+  String title, {
+  DateTime? updatedAt,
+  String hostId = 'local',
+}) => Chat(
+  id: id,
+  hostId: hostId,
+  title: title,
+  createdAt: updatedAt ?? _now,
+  updatedAt: updatedAt ?? _now,
+);
+
+class _FakeChats implements ChatRepository {
+  _FakeChats(this._chats);
+
+  final List<Chat> _chats;
+
+  @override
+  Stream<List<Chat>> watchChats() => Stream.value(_chats);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ChatRepository is not used in this test');
+}
+
+class _FakeHosts implements HostRepository {
+  _FakeHosts(this._hosts);
+
+  final List<Host> _hosts;
+
+  @override
+  Stream<List<Host>> watchAll() => Stream.value(_hosts);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('HostRepository is not used in this test');
+}
+
+class _FakeBroker implements InteractionBroker {
+  @override
+  Stream<ApprovalRequest> get approvalRequests => Stream.empty();
+
+  @override
+  Stream<UserQuestion> get questions => Stream.empty();
+
+  @override
+  List<ApprovalRequest> pendingApprovals(String chatId) => const [];
+
+  @override
+  List<UserQuestion> pendingQuestions(String chatId) => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('InteractionBroker is not used in this test');
+}
+
+class _FakeHub implements AgentHub {
+  _FakeHub(List<Chat> chats, List<Host> hosts)
+    : chats = _FakeChats(chats),
+      hosts = _FakeHosts(hosts);
+
+  @override
+  final ChatRepository chats;
+
+  @override
+  final HostRepository hosts;
+
+  @override
+  final InteractionBroker broker = _FakeBroker();
+
+  @override
+  Stream<AgentEvent> get allEvents => Stream.empty();
+
+  @override
+  Set<String> get runningChatIds => const {};
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('AgentHub is not used in this test');
+}
+
+/// Поднимает развёрнутую панель. [onCollapse] и выбор чата передаются наружу для проверки.
+Future<ChatListCubit> _pumpSidebar(
+  WidgetTester tester, {
+  required List<Chat> chats,
+  List<Host> hosts = const [],
+  ThemeData? theme,
+  VoidCallback? onCollapse,
+}) async {
+  final cubit = ChatListCubit(
+    _FakeHub(chats, hosts),
+    ChatDraftStore(_FakeChats(chats)),
+  );
+  addTearDown(cubit.close);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: theme ?? AppTheme.light,
+      locale: const Locale('en'),
+      localizationsDelegates: appLocalizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(
+        body: SizedBox(
+          width: 280,
+          height: 560,
+          child: BlocProvider.value(
+            value: cubit,
+            child: WorkspaceSidebar(
+              onCollapse: onCollapse ?? () => _collapseCount++,
+              onOpenChat: cubit.select,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return cubit;
+}
+
+void main() {
+  testWidgets('chats are grouped by day with sticky headers', (tester) async {
+    await _pumpSidebar(
+      tester,
+      chats: [
+        _chat('a', 'Today chat'),
+        _chat(
+          'b',
+          'Yesterday chat',
+          updatedAt: _now.subtract(const Duration(days: 1)),
+        ),
+        _chat(
+          'c',
+          'Old chat',
+          updatedAt: _now.subtract(const Duration(days: 5)),
+        ),
+      ],
+    );
+
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Yesterday'), findsOneWidget);
+    expect(find.text('Earlier'), findsOneWidget);
+    expect(find.text('Today chat'), findsOneWidget);
+    expect(find.text('Old chat'), findsOneWidget);
+  });
+
+  testWidgets('rows show the host under the title', (tester) async {
+    final now = DateTime.now();
+    await _pumpSidebar(
+      tester,
+      hosts: [
+        Host(
+          id: HostRepository.localHostId,
+          name: 'Local',
+          kind: HostKind.local,
+          createdAt: now,
+          updatedAt: now,
+        ),
+        Host(
+          id: 'ssh1',
+          name: 'build-box',
+          kind: HostKind.ssh,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      chats: [
+        _chat('a', 'Remote chat', hostId: 'ssh1'),
+        _chat('b', 'Local chat'),
+      ],
+    );
+
+    expect(find.text('Remote chat'), findsOneWidget);
+    expect(find.text('build-box'), findsOneWidget);
+    expect(find.text('Local chat'), findsOneWidget);
+    expect(find.text('This computer'), findsOneWidget);
+    expect(find.byIcon(Icons.computer_outlined), findsOneWidget);
+  });
+
+  testWidgets('sidebar header shows the app name', (tester) async {
+    await _pumpSidebar(
+      tester,
+      chats: const [],
+      onCollapse: () => _collapseCount++,
+    );
+
+    expect(find.text('ProbablyWorks'), findsOneWidget);
+  });
+
+  testWidgets('empty list shows the empty state', (tester) async {
+    await _pumpSidebar(tester, chats: const []);
+
+    expect(find.text('No chats yet. Create one to start.'), findsOneWidget);
+  });
+
+  testWidgets('collapse button reports the tap', (tester) async {
+    var collapsed = 0;
+    await _pumpSidebar(
+      tester,
+      chats: [_chat('a', 'Alpha')],
+      onCollapse: () => collapsed++,
+    );
+
+    await tester.tap(find.byTooltip('Collapse sidebar'));
+    await tester.pump();
+
+    expect(collapsed, 1);
+  });
+
+  testWidgets('collapsed rail reports the expand tap', (tester) async {
+    var expanded = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(body: WorkspaceRail(onExpand: () => expanded++)),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Open sidebar'));
+    await tester.pump();
+
+    expect(expanded, 1);
+  });
+
+  group('golden', () {
+    setUpAll(GoldenFonts.load);
+
+    final now = DateTime.now();
+    final goldenChats = [
+      _chat('a', 'Refactor the auth flow'),
+      _chat('b', 'Fix flaky timeline test', hostId: 'ssh1'),
+      _chat(
+        'c',
+        'Plan the Q4 roadmap',
+        updatedAt: now.subtract(const Duration(days: 1)),
+      ),
+      _chat(
+        'd',
+        'Release notes draft',
+        updatedAt: now.subtract(const Duration(days: 5)),
+        hostId: 'ssh1',
+      ),
+    ];
+    final goldenHosts = [
+      Host(
+        id: 'ssh1',
+        name: 'build-box',
+        kind: HostKind.ssh,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ];
+
+    for (final brightness in Brightness.values) {
+      testWidgets('workspace sidebar ${brightness.name}', (tester) async {
+        await tester.binding.setSurfaceSize(const Size(300, 580));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final cubit = await _pumpSidebar(
+          tester,
+          chats: goldenChats,
+          hosts: goldenHosts,
+          theme: brightness == Brightness.light
+              ? AppTheme.light
+              : AppTheme.dark,
+        );
+        cubit.select('b');
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(MaterialApp),
+          matchesGoldenFile('goldens/workspace_sidebar_${brightness.name}.png'),
+        );
+      });
+    }
+  });
+}

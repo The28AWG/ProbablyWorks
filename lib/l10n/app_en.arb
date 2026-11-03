@@ -90,6 +90,18 @@
   "@chatsSelectHint": {
     "description": "Placeholder shown in the main area when no chat is selected."
   },
+  "sidebarCollapse": "Collapse sidebar",
+  "@sidebarCollapse": {
+    "description": "Tooltip of the button that collapses the sidebar to icons."
+  },
+  "sidebarExpand": "Open sidebar",
+  "@sidebarExpand": {
+    "description": "Tooltip of the button that expands the collapsed sidebar or opens it as a drawer."
+  },
+  "sidebarResize": "Resize sidebar",
+  "@sidebarResize": {
+    "description": "Accessible label of the handle on the right edge of the sidebar that changes its width."
+  },
   "chatHostLabel": "Host",
   "@chatHostLabel": {
     "description": "Label of the host selector for a chat."

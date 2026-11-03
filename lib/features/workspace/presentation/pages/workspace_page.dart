@@ -7,22 +7,37 @@ import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
+import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
+import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Рабочая область в трёх режимах одной оболочки:
-/// широкий (от 1100) — навигация, список и чат рядом;
-/// средний (800–1099) — навигация и чат, список в drawer;
+/// широкий (от 1100) — боковая панель с чатами и навигацией, её можно свернуть до иконок и растянуть;
+/// средний (800–1099) — свёрнутая полоса с иконками, панель открывается как drawer;
 /// компактный (до 800) — список на весь экран с нижней навигацией, чат открывается отдельным маршрутом.
 @RoutePage()
 class WorkspacePage extends StatelessWidget {
   const WorkspacePage({super.key});
 
   @override
-  Widget build(BuildContext context) => BlocProvider(
-    create: (_) => ChatListCubit(getIt<AgentHub>(), getIt<ChatDraftStore>()),
+  Widget build(BuildContext context) => MultiBlocProvider(
+    providers: [
+      BlocProvider(
+        create: (_) =>
+            ChatListCubit(getIt<AgentHub>(), getIt<ChatDraftStore>()),
+      ),
+      BlocProvider(
+        create: (_) => SidebarCubit(
+          getIt<SettingsRepository>(),
+          getIt<SidebarStartupWidth>().value,
+        ),
+      ),
+    ],
     child: LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
@@ -33,9 +48,6 @@ class WorkspacePage extends StatelessWidget {
     ),
   );
 }
-
-/// Пункты навигации. Чаты открываются внутри оболочки, хосты и настройки — отдельными маршрутами.
-enum _Destination { chats, hosts, settings }
 
 typedef _DestinationSpec = ({
   IconData icon,
@@ -53,115 +65,114 @@ List<_DestinationSpec> _destinationSpecs(AppLocalizations l10n) => [
   ),
 ];
 
-void _openDestination(BuildContext context, _Destination destination) {
-  switch (destination) {
-    case _Destination.chats:
-      return;
-    case _Destination.hosts:
-      context.router.push(const HostsRoute());
-    case _Destination.settings:
-      context.router.push(const SettingsRoute());
-  }
+/// Широкий режим: панель слева, её можно свернуть до полосы с иконками и растянуть ручкой справа.
+/// Ширина анимируется при сворачивании; во время перетаскивания ручкой она следует за курсором.
+class _WideWorkspace extends StatefulWidget {
+  const _WideWorkspace();
+
+  @override
+  State<_WideWorkspace> createState() => _WideWorkspaceState();
 }
 
-class _NavRail extends StatelessWidget {
-  const _NavRail({required this.onChats});
+class _WideWorkspaceState extends State<_WideWorkspace> {
+  var _collapsed = false;
+  var _resizing = false;
 
-  /// Вызывается при выборе «Чаты»: в среднем режиме открывает drawer.
-  final void Function(BuildContext context) onChats;
+  void _toggle() => setState(() => _collapsed = !_collapsed);
 
-  void _onDestinationSelected(BuildContext railContext, int index) {
-    final destination = _Destination.values[index];
-    if (destination == _Destination.chats) {
-      onChats(railContext);
-    } else {
-      _openDestination(railContext, destination);
-    }
-  }
+  void _beginResize() => setState(() => _resizing = true);
+
+  void _endResize() => setState(() => _resizing = false);
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final specs = _destinationSpecs(l10n);
-    return Builder(
-      builder: (railContext) => NavigationRail(
-        selectedIndex: 0,
-        labelType: NavigationRailLabelType.all,
-        onDestinationSelected: (index) =>
-            _onDestinationSelected(railContext, index),
-        destinations: [
-          for (final spec in specs)
-            NavigationRailDestination(
-              icon: Icon(spec.icon),
-              selectedIcon: Icon(spec.selectedIcon),
-              label: Text(spec.label),
+    final sidebarWidth = context.select<SidebarCubit, double>(
+      (cubit) => cubit.state.width,
+    );
+    return Scaffold(
+      body: Row(
+        children: [
+          AnimatedContainer(
+            // Перетаскивание не анимируем: иначе панель отстаёт от курсора.
+            duration: _resizing ? Duration.zero : AppDurations.normal,
+            curve: Curves.easeOutCubic,
+            width: _collapsed ? AppLayout.railWidth : sidebarWidth,
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: AlignmentDirectional.centerStart,
+                maxWidth: double.infinity,
+                child: AnimatedSwitcher(
+                  duration: AppDurations.fast,
+                  child: _collapsed
+                      ? WorkspaceRail(
+                          key: const ValueKey('rail'),
+                          onExpand: _toggle,
+                        )
+                      : SizedBox(
+                          key: const ValueKey('sidebar'),
+                          width: sidebarWidth,
+                          child: WorkspaceSidebar(
+                            onCollapse: _toggle,
+                            onOpenChat: (id) =>
+                                context.read<ChatListCubit>().select(id),
+                          ),
+                        ),
+                ),
+              ),
             ),
+          ),
+          SidebarResizeHandle(
+            enabled: !_collapsed,
+            onDragStart: _beginResize,
+            onDragEnd: _endResize,
+          ),
+          const Expanded(child: _ChatArea()),
         ],
       ),
     );
   }
 }
 
-class _WideWorkspace extends StatelessWidget {
-  const _WideWorkspace();
-
-  static void _ignoreChatsRailTap(BuildContext _) {
-    return;
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: Row(
-      children: [
-        const _NavRail(onChats: _WideWorkspace._ignoreChatsRailTap),
-        SizedBox(
-          width: AppLayout.chatListWidth,
-          child: ColoredBox(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: ChatListPanel(
-              onOpen: (id) => context.read<ChatListCubit>().select(id),
-            ),
-          ),
-        ),
-        const VerticalDivider(width: 1),
-        const Expanded(child: _ChatArea()),
-      ],
-    ),
-  );
-}
-
+/// Средний режим: свёрнутая полоса слева, панель с чатами и навигацией открывается как drawer.
 class _MediumWorkspace extends StatelessWidget {
   const _MediumWorkspace();
 
+  /// Выбор чата закрывает drawer: дальше пользователь видит чат, а не список.
   void _openChatFromDrawer(BuildContext drawerContext, String id) {
     drawerContext.read<ChatListCubit>().select(id);
     Scaffold.of(drawerContext).closeDrawer();
   }
 
-  void _openChatsDrawer(BuildContext railContext) {
-    Scaffold.of(railContext).openDrawer();
-  }
-
   @override
-  Widget build(BuildContext context) => Scaffold(
-    drawer: Builder(
-      builder: (drawerContext) => Drawer(
-        width: 320,
-        child: SafeArea(
-          child: ChatListPanel(
-            onOpen: (id) => _openChatFromDrawer(drawerContext, id),
+  Widget build(BuildContext context) {
+    final sidebarWidth = context.select<SidebarCubit, double>(
+      (cubit) => cubit.state.width,
+    );
+    return Scaffold(
+      drawer: Builder(
+        builder: (drawerContext) => Drawer(
+          width: sidebarWidth,
+          child: SafeArea(
+            child: WorkspaceSidebar(
+              onCollapse: () => Scaffold.of(drawerContext).closeDrawer(),
+              onOpenChat: (id) => _openChatFromDrawer(drawerContext, id),
+            ),
           ),
         ),
       ),
-    ),
-    body: Row(
-      children: [
-        _NavRail(onChats: _openChatsDrawer),
-        const VerticalDivider(width: 1),
-        const Expanded(child: _ChatArea()),
-      ],
-    ),
-  );
+      body: Row(
+        children: [
+          Builder(
+            builder: (railContext) => WorkspaceRail(
+              onExpand: () => Scaffold.of(railContext).openDrawer(),
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          const Expanded(child: _ChatArea()),
+        ],
+      ),
+    );
+  }
 }
 
 class _CompactWorkspace extends StatelessWidget {
@@ -172,14 +183,26 @@ class _CompactWorkspace extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final specs = _destinationSpecs(l10n);
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.navChats)),
+      appBar: AppBar(
+        title: Text(l10n.navChats),
+        actions: [
+          IconButton(
+            tooltip: l10n.chatsNew,
+            icon: const Icon(Icons.add),
+            onPressed: () => createChat(
+              context,
+              onOpen: (id) => context.router.push(ChatRoute(chatId: id)),
+            ),
+          ),
+        ],
+      ),
       body: ChatListPanel(
         onOpen: (id) => context.router.push(ChatRoute(chatId: id)),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
         onDestinationSelected: (index) =>
-            _openDestination(context, _Destination.values[index]),
+            _onDestination(context, WorkspaceDestination.values[index]),
         destinations: [
           for (final spec in specs)
             NavigationDestination(
@@ -190,6 +213,11 @@ class _CompactWorkspace extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _onDestination(BuildContext context, WorkspaceDestination destination) {
+    if (destination == WorkspaceDestination.chats) return;
+    openWorkspaceDestination(context, destination);
   }
 }
 

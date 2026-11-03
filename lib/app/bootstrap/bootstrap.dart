@@ -8,10 +8,11 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/logging/app_log.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host →
-/// фоновое обновление каталога моделей. Возвращает false, если другой экземпляр уже работает с этой базой.
+/// настройки интерфейса (язык, ширина панели) → фоновое обновление каталога моделей. Возвращает false, если другой экземпляр уже работает с этой базой.
 Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await AppPaths.resolve();
@@ -21,6 +22,12 @@ Future<bool> bootstrap() async {
   await configureDependencies();
   await getIt<StartupRecovery>().run();
   await getIt<HostRepository>().ensureLocalHost(DateTime.now());
+  // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.
+  getIt.registerSingleton(
+    SidebarStartupWidth(
+      await SidebarCubit.loadWidth(getIt<SettingsRepository>()),
+    ),
+  );
   getIt<LocaleController>().apply(
     await getIt<SettingsRepository>().read(SettingsRepository.keyLanguage),
   );

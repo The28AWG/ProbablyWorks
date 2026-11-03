@@ -57,8 +57,15 @@ abstract final class AppLayout {
   /// Страницы настроек и хостов.
   static const double pageMaxWidth = 720;
 
-  /// Ширина боковой панели чата и списка чатов.
-  static const double chatListWidth = 300;
+  /// Ширина боковой панели по умолчанию: навигация и список чатов.
+  static const double sidebarWidth = 280;
+
+  /// Границы, в которых пользователь может растянуть или сузить боковую панель.
+  static const double sidebarMinWidth = 220;
+  static const double sidebarMaxWidth = 420;
+
+  /// Ширина свёрнутой боковой панели: только иконки.
+  static const double railWidth = 56;
 
   /// Ширина диалогов с формами.
   static const double dialogWidth = 480;
