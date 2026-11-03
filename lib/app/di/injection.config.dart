@@ -24,6 +24,7 @@ import '../../agent/interaction/interaction_broker.dart' as _i765;
 import '../../agent/loop/agent_hub.dart' as _i168;
 import '../../agent/recovery/startup_recovery.dart' as _i962;
 import '../../agent/state/session_state_service.dart' as _i622;
+import '../../agent/tools/self_tool_handler.dart' as _i235;
 import '../../agent/tools/tool_executor.dart' as _i125;
 import '../../agent/workspace/workspace_context_loader.dart' as _i359;
 import '../../core/data/chat_draft_store.dart' as _i314;
@@ -34,6 +35,7 @@ import '../../core/data/settings_repository.dart' as _i913;
 import '../../core/db/app_database.dart' as _i386;
 import '../../core/notify/app_notifier.dart' as _i404;
 import '../../core/security/secret_store.dart' as _i617;
+import '../../host/host_diagnostics.dart' as _i441;
 import '../../host/host_runtime_factory.dart' as _i559;
 import '../../host/portable_pty_launcher.dart' as _i224;
 import '../../host/pty_launcher.dart' as _i532;
@@ -152,6 +154,23 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i532.PtyLauncher>(),
       ),
     );
+    gh.lazySingleton<_i441.HostDiagnostics>(
+      () => _i441.HostDiagnostics(
+        gh<_i250.HostRepository>(),
+        gh<_i617.SecretStore>(),
+        gh<_i913.SettingsRepository>(),
+        gh<_i559.HostRuntimeFactory>(),
+      ),
+    );
+    gh.lazySingleton<_i235.SelfToolHandler>(
+      () => _i235.SelfToolHandler(
+        gh<_i250.HostRepository>(),
+        gh<_i913.SettingsRepository>(),
+        gh<_i675.LocaleController>(),
+        gh<_i758.ModelCatalogService>(),
+        gh<_i441.HostDiagnostics>(),
+      ),
+    );
     gh.lazySingleton<_i125.ToolExecutor>(
       () => _i125.ToolExecutor(
         gh<_i193.ChatRepository>(),
@@ -159,6 +178,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i765.InteractionBroker>(),
         gh<_i622.SessionStateService>(),
         gh<_i359.WorkspaceContextLoader>(),
+        gh<_i235.SelfToolHandler>(),
       ),
     );
     gh.singleton<_i168.AgentHub>(

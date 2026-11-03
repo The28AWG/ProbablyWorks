@@ -5,9 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/host/host_capture.dart';
-import 'package:probably_works/host/host_runtime_factory.dart';
-import 'package:probably_works/host/shell_adapter.dart';
+import 'package:probably_works/host/host_diagnostics.dart';
 
 class HostsState extends Equatable {
   const HostsState({this.hosts = const [], this.testing = const {}});
@@ -25,7 +23,7 @@ class HostsState extends Equatable {
 }
 
 class HostsCubit extends Cubit<HostsState> {
-  HostsCubit(this._hosts, this._secrets, this._runtimes)
+  HostsCubit(this._hosts, this._secrets, this._diagnostics)
     : super(const HostsState()) {
     _sub = _hosts.watchAll().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
@@ -34,7 +32,7 @@ class HostsCubit extends Cubit<HostsState> {
 
   final HostRepository _hosts;
   final SecretStore _secrets;
-  final HostRuntimeFactory _runtimes;
+  final HostDiagnostics _diagnostics;
   late final StreamSubscription<List<Host>> _sub;
 
   /// Сохраняет хост. Секреты (пароль, passphrase, PEM приватного ключа) уходят в secure storage, а не в БД.
@@ -59,33 +57,10 @@ class HostsCubit extends Cubit<HostsState> {
     await _secrets.delete(hostPrivateKeyKey(id));
   }
 
-  /// Проверка подключения: безопасная команда host_info, без изменения состояния Host.
-  /// Результат (время, задержка или ошибка) сохраняется в Host и показывается в списке.
+  /// Проверка подключения (см. HostDiagnostics): результат сохраняется в Host и показывается в списке.
   Future<void> test(Host host) async {
     emit(state.copyWith(testing: {...state.testing, host.id}));
-    final clock = Stopwatch()..start();
-    String? error;
-    try {
-      final run = await captureRun(
-        _runtimes.forHost(host),
-        ShellAdapter(host.os).hostInfo(),
-        timeout: const Duration(seconds: 30),
-      );
-      if (!run.ok) {
-        error = run.stderr.trim().isEmpty
-            ? 'exit ${run.exitCode}'
-            : run.stderr.trim();
-      }
-    } on Object catch (caught) {
-      error = '$caught';
-    }
-    clock.stop();
-    await _hosts.recordCheck(
-      host.id,
-      at: DateTime.now(),
-      latencyMs: error == null ? clock.elapsedMilliseconds : null,
-      error: error,
-    );
+    await _diagnostics.test(host);
     emit(state.copyWith(testing: {...state.testing}..remove(host.id)));
   }
 

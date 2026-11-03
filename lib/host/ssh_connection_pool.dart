@@ -10,6 +10,7 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/core/util/home_path.dart';
 
 /// Запрос подтверждения отпечатка ключа хоста: UI показывает диалог и отвечает через [HostKeyConfirmations].
 class HostKeyRequest {
@@ -217,18 +218,10 @@ class SshConnectionPool {
     final pem =
         stored ??
         (fromPath
-            ? await File(_expandHome(host.keyPath!)).readAsString()
+            ? await File(expandHomePath(host.keyPath!)).readAsString()
             : null);
     if (pem == null) return null;
     final passphrase = await _secrets.read(hostPassphraseKey(host.id));
     return SSHKeyPair.fromPem(pem, passphrase);
-  }
-
-  static String _expandHome(String path) {
-    if (path != '~' && !path.startsWith('~/')) return path;
-    final home =
-        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
-    if (home == null) return path;
-    return '$home${path.replaceFirst('~', '')}';
   }
 }

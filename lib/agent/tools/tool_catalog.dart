@@ -22,6 +22,15 @@ abstract final class ToolNames {
   static const loadSkill = 'load_skill';
   static const askUser = 'ask_user';
   static const finish = 'finish';
+
+  // Self-инструменты: доступны только после загрузки встроенного скилла (см. SelfToolCatalog).
+  static const hostList = 'host_list';
+  static const hostAdd = 'host_add';
+  static const hostUpdate = 'host_update';
+  static const hostTest = 'host_test';
+  static const hostDiagnose = 'host_diagnose';
+  static const settingsRead = 'settings_read';
+  static const settingsUpdate = 'settings_update';
 }
 
 /// Описания инструментов для модели. Пути — относительно workspace, если не абсолютные.

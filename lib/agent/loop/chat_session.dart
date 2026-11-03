@@ -12,6 +12,8 @@ import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
+import 'package:probably_works/agent/skills/builtin_skills.dart';
+import 'package:probably_works/agent/tools/self_tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -387,7 +389,11 @@ class ChatSession {
       request: LlmRequest(
         model: model,
         messages: llmMessages,
-        tools: ToolCatalog.specs,
+        tools: [
+          ...ToolCatalog.specs,
+          if (state.unlockedSkills.contains(BuiltinSkills.probablyWorks.name))
+            ...SelfToolCatalog.specs,
+        ],
       ),
     );
   }

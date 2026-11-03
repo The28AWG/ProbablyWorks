@@ -14,7 +14,7 @@ import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
-import 'package:probably_works/host/host_runtime_factory.dart';
+import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/host/process_control.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:uuid/uuid.dart';
@@ -30,7 +30,7 @@ class HostsPage extends StatelessWidget {
       create: (_) => HostsCubit(
         getIt<HostRepository>(),
         getIt<SecretStore>(),
-        getIt<HostRuntimeFactory>(),
+        getIt<HostDiagnostics>(),
       ),
       child: AppScaffold(
         appBar: AppBar(

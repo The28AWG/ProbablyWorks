@@ -18,8 +18,10 @@ import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
+import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
+import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -32,6 +34,7 @@ import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -120,18 +123,34 @@ void main() {
     final commands = CommandExecutor(logs, registry, bus);
     final state = SessionStateService(chats);
     final workspace = WorkspaceContextLoader(settings);
-    final tools = ToolExecutor(chats, commands, broker, state, workspace);
     final builder = ContextBuilder();
     llm = _FakeLlm();
+    final modelCatalog = ModelCatalogService(SavedModelRepository(db), llm);
+    final runtimes = HostRuntimeFactory(pool, const PipePtyLauncher());
+    final self = SelfToolHandler(
+      hosts,
+      settings,
+      LocaleController(),
+      modelCatalog,
+      HostDiagnostics(hosts, MemorySecretStore(), settings, runtimes),
+    );
+    final tools = ToolExecutor(
+      chats,
+      commands,
+      broker,
+      state,
+      workspace,
+      self,
+    );
     final compactor = ContextCompactor(chats, llm, builder);
     drafts = ChatDraftStore(chats);
     hub = AgentHub(
       chats,
       settings,
       hosts,
-      HostRuntimeFactory(pool, const PipePtyLauncher()),
+      runtimes,
       llm,
-      ModelCatalogService(SavedModelRepository(db), llm),
+      modelCatalog,
       builder,
       compactor,
       tools,

@@ -9,7 +9,9 @@ import 'package:probably_works/agent/domain/session_state.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
+import 'package:probably_works/agent/skills/builtin_skills.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
+import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -68,6 +70,7 @@ class ToolExecutor {
     this._broker,
     this._state,
     this._workspace,
+    this._self,
   );
 
   final ChatRepository _chats;
@@ -75,6 +78,15 @@ class ToolExecutor {
   final InteractionBroker _broker;
   final SessionStateService _state;
   final WorkspaceContextLoader _workspace;
+  final SelfToolHandler _self;
+
+  /// Self-инструменты, которые только читают (выполняются сразу, без подтверждения).
+  static const _selfReadTools = {
+    ToolNames.hostList,
+    ToolNames.settingsRead,
+    ToolNames.hostTest,
+    ToolNames.hostDiagnose,
+  };
 
   static const _uuid = Uuid();
 
@@ -155,6 +167,13 @@ class ToolExecutor {
         ToolNames.chatHistorySearch ||
         ToolNames.listSkills ||
         ToolNames.loadSkill => _stateTool(ctx, call, args),
+        ToolNames.hostList ||
+        ToolNames.hostAdd ||
+        ToolNames.hostUpdate ||
+        ToolNames.hostTest ||
+        ToolNames.hostDiagnose ||
+        ToolNames.settingsRead ||
+        ToolNames.settingsUpdate => _selfTool(ctx, call, args),
         _ => Future.value(
           ToolResult('unknown tool: ${call.name}', isError: true),
         ),
@@ -501,19 +520,24 @@ class ToolExecutor {
         );
       case ToolNames.listSkills:
         final snapshot = await _workspace.load(chat, ctx.runtime, ctx.host.os);
-        if (snapshot.needsTrust) {
-          return const ToolResult(
-            'workspace is not trusted yet; skills are unavailable',
-            isError: true,
-          );
-        }
-        if (snapshot.skills.isEmpty) return const ToolResult('no skills found');
+        final skills = BuiltinSkills.catalog(
+          snapshot.needsTrust ? const [] : snapshot.skills,
+        );
+        final note = snapshot.needsTrust
+            ? '\nworkspace skills are unavailable until the workspace is trusted'
+            : '';
         return ToolResult(
-          [for (final s in snapshot.skills) '${s.name}: ${s.description}']
-              .join('\n'),
+          [for (final s in skills) '${s.name}: ${s.description}'].join('\n') +
+              note,
         );
       case ToolNames.loadSkill:
         final name = _str(args, 'name');
+        final builtin = BuiltinSkills.byName(name);
+        if (builtin != null) {
+          // Загрузка открывает self-инструменты до конца чата (см. SessionStateRevision.unlockedSkills).
+          await _state.mutate(chat, (rev) => rev.unlockedSkills.add(name));
+          return ToolResult(builtin.body);
+        }
         final snapshot = await _workspace.load(chat, ctx.runtime, ctx.host.os);
         final skill = snapshot.skills.where((s) => s.name == name).firstOrNull;
         if (skill == null) {
@@ -529,6 +553,96 @@ class ToolExecutor {
             : ToolResult(body);
     }
     return ToolResult('unknown state tool: ${call.name}', isError: true);
+  }
+
+  // ---- self tools --------------------------------------------------------
+
+  /// Self-инструменты доступны только после загрузки встроенного скилла в этом чате.
+  /// Проверка здесь, а не только в списке инструментов: модель может вызвать инструмент из истории.
+  Future<ToolResult> _selfTool(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final chat = await _chats.chat(ctx.chat.id) ?? ctx.chat;
+    final state = await _state.current(chat);
+    if (!state.unlockedSkills.contains(BuiltinSkills.probablyWorks.name)) {
+      return ToolResult(
+        '${call.name} is not available: load the skill '
+        '"${BuiltinSkills.probablyWorks.name}" first',
+        isError: true,
+      );
+    }
+    if (_selfReadTools.contains(call.name)) {
+      return ToolResult(await _self.read(call.name, args));
+    }
+    return _selfWrite(ctx, call, args);
+  }
+
+  Future<ToolResult> _selfWrite(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final change = await _self.prepare(call.name, args);
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, 'denied by policy');
+    }
+    final bool needsApproval;
+    final String reason;
+    final keyPath = change.keyPath;
+    if (keyPath != null) {
+      // Путь к ключу, который назвал пользователь, — его команда: подтверждение не нужно ни в Ask, ни в YOLO.
+      // Путь, найденный агентом, может оказаться не тем ключом: спрашиваем всегда.
+      final named = await _keyPathNamedByUser(ctx.chat.id, keyPath);
+      needsApproval = !named;
+      reason = 'key path was found by the agent, not named by you';
+    } else {
+      needsApproval = decision == PolicyDecision.ask;
+      reason = ctx.policy.reasonFor(call.name, args);
+    }
+    // Один id на всю жизнь записи: карточка подтверждения и итоговая строка журнала.
+    final runId = _uuid.v4();
+    if (needsApproval) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        summary: change.summary,
+        command: change.summary,
+        reason: reason,
+      );
+      if (!approved) return _rejected(change.summary);
+    }
+    final String text;
+    try {
+      text = await change.apply();
+    } on Object catch (error) {
+      return ToolResult('${call.name} failed: $error', isError: true);
+    }
+    await _saveRun(
+      _newRun(
+        ctx,
+        runId,
+        call,
+        args,
+        ToolRunStatus.done,
+        command: change.summary,
+        finishedAt: DateTime.now(),
+      ).copyWith(resultPreview: _preview(text)),
+    );
+    return ToolResult(text);
+  }
+
+  /// Дословное вхождение пути в сообщения пользователя этого чата. Текст модели и файлов сюда не входит.
+  Future<bool> _keyPathNamedByUser(String chatId, String keyPath) async {
+    final messages = await _chats.messages(chatId);
+    return messages.any(
+      (message) =>
+          message.role == MessageRole.user && message.text.contains(keyPath),
+    );
   }
 
   // ---- execution core ----------------------------------------------------

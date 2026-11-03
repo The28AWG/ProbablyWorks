@@ -1,5 +1,6 @@
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
 
 enum PolicyDecision { allow, ask, deny }
 
@@ -29,6 +30,18 @@ class PolicyEngine {
     'get_state_revision',
     'chat_history_search',
     'ask_user',
+    // Self-инструменты только читают приложение или проверяют подключение.
+    ToolNames.hostList,
+    ToolNames.settingsRead,
+    ToolNames.hostTest,
+    ToolNames.hostDiagnose,
+  };
+
+  /// Self-записи: как write_file, спрашивают в Ask и выполняются в YOLO.
+  static const _selfWriteTools = {
+    ToolNames.hostAdd,
+    ToolNames.hostUpdate,
+    ToolNames.settingsUpdate,
   };
 
   PolicyDecision decide(String toolName, Map<String, dynamic> args) {
@@ -37,7 +50,9 @@ class PolicyEngine {
       final command = args['command'] as String? ?? '';
       return _fromRisk(classifier.classify(command).risk);
     }
-    if (toolName == 'write_file' || toolName == 'edit_file') {
+    if (toolName == 'write_file' ||
+        toolName == 'edit_file' ||
+        _selfWriteTools.contains(toolName)) {
       return mode == PolicyMode.yolo
           ? PolicyDecision.allow
           : PolicyDecision.ask;
@@ -50,6 +65,7 @@ class PolicyEngine {
     if (toolName == 'run_command') {
       return classifier.classify(args['command'] as String? ?? '').reason;
     }
+    if (_selfWriteTools.contains(toolName)) return 'app settings change';
     return 'write operation';
   }
 

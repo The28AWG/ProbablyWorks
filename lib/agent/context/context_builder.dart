@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/context/untrusted.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/session_state.dart';
+import 'package:probably_works/agent/skills/builtin_skills.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/domain/host.dart';
@@ -54,6 +57,10 @@ class ContextBuilder {
     ToolNames.which,
     ToolNames.runCommand,
     ToolNames.loadSkill,
+    ToolNames.hostList,
+    ToolNames.settingsRead,
+    ToolNames.hostTest,
+    ToolNames.hostDiagnose,
   };
 
   List<LlmMessage> build(ContextInput input) {
@@ -64,15 +71,15 @@ class ContextBuilder {
     final window = history.length > input.recentWindow
         ? history.sublist(history.length - input.recentWindow)
         : history;
-    final toolNames = {
+    final calls = {
       for (final message in input.messages)
         if (message.role == MessageRole.assistant)
-          for (final call in message.toolCalls) call.id: call.name,
+          for (final call in message.toolCalls) call.id: call,
     };
     return [
       LlmMessage.system(system),
       for (final message in window)
-        ..._toLlm(message, toolNames, input.inlineFiles),
+        ..._toLlm(message, calls, input.inlineFiles),
     ];
   }
 
@@ -94,7 +101,7 @@ class ContextBuilder {
 
   List<LlmMessage> _toLlm(
     ChatMessage message,
-    Map<String, String> toolNames,
+    Map<String, ToolCallRef> calls,
     Map<String, List<LlmFilePart>> inlineFiles,
   ) {
     switch (message.role) {
@@ -124,10 +131,13 @@ class ContextBuilder {
           ),
         ];
       case MessageRole.tool:
-        final name = toolNames[message.toolCallId];
+        final call = calls[message.toolCallId];
         final redacted = Redactor.redact(message.text);
-        final content = name != null && untrustedTools.contains(name)
-            ? Untrusted.wrap('tool:$name', redacted)
+        final content =
+            call != null &&
+                untrustedTools.contains(call.name) &&
+                !_isBuiltinSkillLoad(call)
+            ? Untrusted.wrap('tool:${call.name}', redacted)
             : redacted;
         return [
           LlmMessage(
@@ -138,6 +148,18 @@ class ContextBuilder {
         ];
       case MessageRole.event:
         return [LlmMessage.user('[event] ${message.text}')];
+    }
+  }
+
+  /// Тело встроенного скилла написано нами, а не взято из workspace, поэтому не помечается как недоверенное.
+  static bool _isBuiltinSkillLoad(ToolCallRef call) {
+    if (call.name != ToolNames.loadSkill) return false;
+    try {
+      final args = jsonDecode(call.arguments);
+      return args is Map &&
+          BuiltinSkills.byName('${args['name']}') != null;
+    } on FormatException {
+      return false;
     }
   }
 
@@ -229,14 +251,12 @@ class ContextBuilder {
         )
         ..writeln(Untrusted.wrap('AGENTS.md', input.workspace.agentsMd!));
     }
-    if (input.workspace.skills.isNotEmpty) {
-      buffer.writeln('\n## Available skills (use load_skill)');
-      final catalog = [
-        for (final skill in input.workspace.skills)
-          '- ${skill.name}: ${skill.description}',
-      ].join('\n');
-      buffer.writeln(Untrusted.wrap('skills catalog', catalog));
-    }
+    final skills = BuiltinSkills.catalog(input.workspace.skills);
+    buffer.writeln('\n## Available skills (use load_skill)');
+    final catalog = [
+      for (final skill in skills) '- ${skill.name}: ${skill.description}',
+    ].join('\n');
+    buffer.writeln(Untrusted.wrap('skills catalog', catalog));
     return buffer.toString();
   }
 }

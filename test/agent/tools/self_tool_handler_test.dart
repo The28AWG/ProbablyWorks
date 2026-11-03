@@ -1,0 +1,225 @@
+import 'dart:convert';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:probably_works/agent/tools/self_tool_handler.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
+import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/saved_model_repository.dart';
+import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/db/app_database.dart';
+import 'package:probably_works/core/db/db_connection.dart';
+import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/host/host_diagnostics.dart';
+import 'package:probably_works/host/host_runtime_factory.dart';
+import 'package:probably_works/host/ssh_connection_pool.dart';
+import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+
+/// Каталог моделей здесь не используется: заглушка без сети.
+class _NoNetworkLlm implements LlmProvider {
+  @override
+  Stream<LlmEvent> stream(LlmRequest request) =>
+      throw UnsupportedError('no network in tests');
+
+  @override
+  Future<List<LlmModelInfo>> listModels() async => const [];
+
+  @override
+  Future<void> checkKey() async {}
+}
+
+void main() {
+  late AppDatabase db;
+  late HostRepository hosts;
+  late SettingsRepository settings;
+  late SelfToolHandler self;
+
+  setUp(() async {
+    db = openInMemoryDatabase();
+    hosts = HostRepository(db);
+    settings = SettingsRepository(db);
+    await settings.preload();
+    await hosts.ensureLocalHost(DateTime.now());
+    final secrets = MemorySecretStore();
+    final pool = SshConnectionPool(
+      hosts,
+      secrets,
+      settings,
+      HostKeyConfirmations(),
+    );
+    self = SelfToolHandler(
+      hosts,
+      settings,
+      LocaleController(),
+      ModelCatalogService(SavedModelRepository(db), _NoNetworkLlm()),
+      HostDiagnostics(
+        hosts,
+        secrets,
+        settings,
+        HostRuntimeFactory(pool, const PipePtyLauncher()),
+      ),
+    );
+  });
+
+  tearDown(() => db.close());
+
+  Future<void> expectArgumentError(String name, Map<String, dynamic> args) =>
+      expectLater(
+        self.prepare(name, args),
+        throwsA(isA<ArgumentError>()),
+        reason: '$name $args',
+      );
+
+  group('host_add', () {
+    test('rejects key paths the app cannot expand', () async {
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5',
+        'keyPath': '~bob/.ssh/id',
+      });
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5',
+        'keyPath': r'$HOME/.ssh/id',
+      });
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5',
+        'keyPath': 'keys/id',
+      });
+    });
+
+    test('keyPath is only for key auth', () async {
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5',
+        'authType': 'password',
+        'keyPath': '~/.ssh/id_ed25519',
+      });
+    });
+
+    test('rejects bad port and address', () async {
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5',
+        'port': 0,
+      });
+      await expectArgumentError(ToolNames.hostAdd, {
+        'name': 'prod',
+        'address': '10.0.0.5 extra',
+      });
+    });
+
+    test(
+      'summary shows the target and key path; apply stores the host',
+      () async {
+        final change = await self.prepare(ToolNames.hostAdd, {
+          'name': 'prod',
+          'address': '10.0.0.5',
+          'username': 'deploy',
+          'keyPath': '~/.ssh/id_ed25519',
+        });
+        expect(change.summary, contains('prod'));
+        expect(change.summary, contains('deploy@10.0.0.5:22'));
+        expect(change.summary, contains('~/.ssh/id_ed25519'));
+        expect(change.keyPath, '~/.ssh/id_ed25519');
+
+        final result = await change.apply();
+        final id = RegExp(r'id ([0-9a-f-]+)').firstMatch(result)!.group(1)!;
+        final saved = (await hosts.byId(id))!;
+        expect(saved.name, 'prod');
+        expect(saved.keyPath, '~/.ssh/id_ed25519');
+        expect(saved.authType, SshAuthType.key);
+      },
+    );
+  });
+
+  group('host_update', () {
+    test('rejects fields that redirect or weaken the connection', () async {
+      await expectArgumentError(ToolNames.hostUpdate, {
+        'id': HostRepository.localHostId,
+        'address': '6.6.6.6',
+      });
+      await expectArgumentError(ToolNames.hostUpdate, {
+        'id': HostRepository.localHostId,
+        'hostKeyFingerprint': 'SHA256:x',
+      });
+    });
+
+    test('needs at least one field', () async {
+      await expectArgumentError(ToolNames.hostUpdate, {
+        'id': HostRepository.localHostId,
+      });
+    });
+
+    test('empty notes clear them; rename keeps the other fields', () async {
+      final first = await self.prepare(ToolNames.hostUpdate, {
+        'id': HostRepository.localHostId,
+        'name': 'Workstation',
+        'notes': 'old notes',
+      });
+      await first.apply();
+
+      final cleared = await self.prepare(ToolNames.hostUpdate, {
+        'id': HostRepository.localHostId,
+        'notes': '',
+      });
+      await cleared.apply();
+
+      final host = (await hosts.byId(HostRepository.localHostId))!;
+      expect(host.name, 'Workstation');
+      expect(host.notes, isNull);
+    });
+  });
+
+  group('settings', () {
+    test('settings_read never exposes denylist or default policy', () async {
+      final json = jsonDecode(
+        await self.read(ToolNames.settingsRead, {}),
+      ) as Map<String, dynamic>;
+      expect(json.keys, isNot(contains('denylist')));
+      expect(json.keys, isNot(contains('defaultPolicy')));
+      expect(json.keys, contains('language'));
+      expect(json.keys, contains('limits'));
+    });
+
+    test('settings_update rejects unknown keys and bad values', () async {
+      await expectArgumentError(ToolNames.settingsUpdate, {
+        'key': 'denylist',
+        'value': '.*',
+      });
+      await expectArgumentError(ToolNames.settingsUpdate, {
+        'key': 'language',
+        'value': 'de',
+      });
+      await expectArgumentError(ToolNames.settingsUpdate, {
+        'key': 'limits',
+        'value': '{not json',
+      });
+      await expectArgumentError(ToolNames.settingsUpdate, {
+        'key': 'stepsTools',
+        'value': 'everything',
+      });
+    });
+
+    test('settings_update applies a valid steps change', () async {
+      final change = await self.prepare(ToolNames.settingsUpdate, {
+        'key': 'stepsGroup',
+        'value': 'no',
+      });
+      expect(change.summary, contains('stepsGroup'));
+      await change.apply();
+      expect((await settings.readStepsDisplay()).group, isFalse);
+    });
+  });
+
+  test('read tools reject unknown host ids', () async {
+    await expectLater(
+      self.read(ToolNames.hostTest, {'id': 'nope'}),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+}
