@@ -1,27 +1,27 @@
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:portable_pty/portable_pty.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/local_host_runtime.dart';
 
-/// Настоящий PTY через нативную библиотеку flutter_pty.
+/// Настоящий PTY через нативную библиотеку portable_pty (Rust, собирается hook-ом пакета).
 ///
-/// Библиотека собирается вместе с приложением (`flutter run -d linux`). Для `flutter test`
-/// её нужно указать явно, например:
-///   LD_LIBRARY_PATH=<каталог с libflutter_pty.so> flutter test test/host/local_pty_runtime_test.dart
-/// Без библиотеки тесты пропускаются.
-final _skip = _ptyLibraryLoads()
+/// Тесты пропускаются, если нативная библиотека не открывается, и на Windows: там PTY без
+/// неблокирующего режима пока не реализован (см. portable_pty_launcher.dart).
+final _skip = Platform.isWindows
+    ? 'portable_pty launcher is POSIX-only for now'
+    : _ptyAvailable()
     ? null
-    : 'libflutter_pty.so not found; see the file header for how to point to it';
+    : 'portable_pty native library is not available';
 
-bool _ptyLibraryLoads() {
+bool _ptyAvailable() {
   try {
-    DynamicLibrary.open('libflutter_pty.so');
+    PortablePty.open().close();
     return true;
   } on Object {
     return false;

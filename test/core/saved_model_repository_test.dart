@@ -39,6 +39,35 @@ void main() {
     expect(byId['anthropic/claude']!.supportsTools, isFalse);
   });
 
+  test('input modalities round-trip, null means unknown', () async {
+    await repository.save(const [
+      SavedModel(
+        id: 'a/vision',
+        name: 'Vision',
+        inputModalities: ['text', 'image'],
+      ),
+      SavedModel(id: 'a/text', name: 'Text', inputModalities: []),
+      SavedModel(id: 'a/old', name: 'Old'),
+    ]);
+
+    final byId = {for (final m in await repository.all()) m.id: m};
+    expect(byId['a/vision']!.inputModalities, ['text', 'image']);
+    expect(
+      acceptsFileType(byId['a/vision']!.inputModalities, 'image/png'),
+      isTrue,
+    );
+    expect(
+      acceptsFileType(byId['a/vision']!.inputModalities, 'application/pdf'),
+      isFalse,
+    );
+    expect(byId['a/text']!.inputModalities, isEmpty);
+    expect(byId['a/old']!.inputModalities, isNull);
+    expect(
+      acceptsFileType(byId['a/old']!.inputModalities, 'image/png'),
+      isFalse,
+    );
+  });
+
   test('saving the same id updates its details', () async {
     await repository.save(const [SavedModel(id: 'a/x', name: 'Old')]);
     await repository.save(const [SavedModel(id: 'a/x', name: 'New')]);

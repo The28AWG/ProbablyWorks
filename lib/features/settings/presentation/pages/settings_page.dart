@@ -10,6 +10,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
@@ -306,6 +307,15 @@ class _SettingsViewState extends State<_SettingsView> {
             hint: state.apiKeySet ? '••••••••' : l10n.apiKeyHint,
             prefixIcon: Icons.key_outlined,
           ),
+          if (state.keyError != null)
+            AppBanner(
+              margin: EdgeInsets.zero,
+              tone: AppTone.danger,
+              icon: Icons.error_outline,
+              message: l10n.commonError(
+                TextClip.headTail(state.keyError!, maxChars: 300),
+              ),
+            ),
         ],
       ),
       AppSection(

@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/pid_marker_parser.dart';
-import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/process_control.dart';
+import 'package:probably_works/host/shell_adapter.dart';
 
 /// Канал одного запуска: локальный Process или SSH-сессия.
 abstract interface class ExecChannel {
@@ -57,7 +57,9 @@ abstract base class WrappedExecRuntime implements HostRuntime {
     int columns = defaultTerminalColumns,
     int rows = defaultTerminalRows,
   }) async {
-    final script = cwd == null ? command : 'cd ${shQuote(cwd)} && $command';
+    final script = cwd == null
+        ? command
+        : '${ShellAdapter(os).cd(cwd)} && $command';
     final channel = await spawnPty(
       control.wrapTerminal(script),
       columns: columns,
@@ -71,7 +73,9 @@ abstract base class WrappedExecRuntime implements HostRuntime {
     String command,
     String? cwd,
   ) async {
-    final script = cwd == null ? command : 'cd ${shQuote(cwd)} && $command';
+    final script = cwd == null
+        ? command
+        : '${ShellAdapter(os).cd(cwd)} && $command';
     final ExecChannel channel;
     try {
       channel = await spawn(control.wrap(script));

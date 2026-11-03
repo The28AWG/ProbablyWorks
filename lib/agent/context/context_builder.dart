@@ -19,6 +19,7 @@ class ContextInput {
     required this.recentWindow,
     this.hostStub,
     this.backgroundNotes = const [],
+    this.inlineFiles = const {},
   });
 
   final Chat chat;
@@ -35,6 +36,10 @@ class ContextInput {
 
   /// Команды, которые сейчас работают в фоне (описание для модели).
   final List<String> backgroundNotes;
+
+  /// Бинарные файлы, которые пока не ушли модели: id сообщения → файлы.
+  /// Заполняется на первый запрос хода; после успешного ответа модели очищается.
+  final Map<String, List<LlmFilePart>> inlineFiles;
 }
 
 /// Собирает system-промпт и историю для модели. Не делает I/O.
@@ -66,7 +71,8 @@ class ContextBuilder {
     };
     return [
       LlmMessage.system(system),
-      for (final message in window) ..._toLlm(message, toolNames),
+      for (final message in window)
+        ..._toLlm(message, toolNames, input.inlineFiles),
     ];
   }
 
@@ -78,14 +84,32 @@ class ContextBuilder {
       for (final call in m.toolCalls) {
         chars += call.name.length + call.arguments.length;
       }
+      // Файлы оцениваем по размеру байтов: консервативно, чтобы не пропустить порог сжатия.
+      for (final file in m.files) {
+        chars += file.bytes.length;
+      }
     }
     return (chars / 4).ceil() + messages.length * 4;
   }
 
-  List<LlmMessage> _toLlm(ChatMessage message, Map<String, String> toolNames) {
+  List<LlmMessage> _toLlm(
+    ChatMessage message,
+    Map<String, String> toolNames,
+    Map<String, List<LlmFilePart>> inlineFiles,
+  ) {
     switch (message.role) {
       case MessageRole.user:
-        return [LlmMessage.user(_userText(message))];
+        final files = inlineFiles[message.id] ?? const <LlmFilePart>[];
+        return [
+          LlmMessage(
+            role: LlmRole.user,
+            content: _userText(
+              message,
+              inlineNames: {for (final f in files) f.name},
+            ),
+            files: files,
+          ),
+        ];
       case MessageRole.assistant:
         // Шаг только с рассуждениями не попадает в историю: рассуждения модели не возвращаем.
         if (message.text.isEmpty && message.toolCalls.isEmpty) return const [];
@@ -117,7 +141,9 @@ class ContextBuilder {
     }
   }
 
-  String _userText(ChatMessage message) {
+  /// Текст сообщения и его текстовые вложения. Бинарные файлы передаются отдельными частями
+  /// ([LlmMessage.files]) только в запросе, где их имена в [inlineNames]; в остальной истории остаётся пометка.
+  String _userText(ChatMessage message, {required Set<String> inlineNames}) {
     if (message.attachments.isEmpty) return message.text;
     final buffer = StringBuffer(message.text);
     for (final attachment in message.attachments) {
@@ -129,8 +155,12 @@ class ContextBuilder {
         );
         buffer.write('\n\n--- attachment: ${attachment.name} ---\n$body');
       } else {
+        final state = inlineNames.contains(attachment.name)
+            ? 'content is attached to this message'
+            : 'content was sent when it was attached and is no longer in context';
         buffer.write(
-          '\n\n[attached path: ${attachment.path ?? attachment.name}]',
+          '\n\n[attachment: ${attachment.name}, '
+          '${attachment.mimeType ?? 'file'}, ${attachment.sizeBytes} bytes; $state]',
         );
       }
     }

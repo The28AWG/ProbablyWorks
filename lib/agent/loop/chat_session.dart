@@ -63,6 +63,10 @@ class ChatSession {
   final _log = Logger('ChatSession');
   final _events = StreamController<AgentEvent>.broadcast();
   final PromptQueue _queue = PromptQueue();
+
+  /// Бинарные файлы сообщений, которые ещё не ушли модели (id сообщения → файлы).
+  /// Байты не хранятся в БД: живут здесь до успешного ответа модели на первый запрос хода.
+  final Map<String, List<LlmFilePart>> _inlineFiles = {};
   late final StreamSubscription<ToolRun> _runSub;
   late final StreamSubscription<ApprovalRequest> _waitSub;
   late final StreamSubscription<UserQuestion> _questionSub;
@@ -147,11 +151,13 @@ class ChatSession {
 
   /// Stop: отменяет ход, останавливает процессы чата, снимает ожидания approve/вопросов.
   /// Очередь не дренируется: остаётся до следующего явного действия пользователя.
-  Future<void> stop() async {
+  /// [reason] — событие в чате с причиной (например, остановка при сворачивании на iOS).
+  Future<void> stop({String? reason}) async {
     _turnCancel?.cancel();
     _stepCancel?.cancel();
     _hub.broker.cancelChat(chatId);
     await _hub.registry.stopChat(chatId);
+    if (reason != null) await _append(MessageRole.event, text: reason);
     final limits = await _hub.limits();
     Timer(limits.killGrace, () {
       if (_hub.registry.forChat(chatId).isNotEmpty) {
@@ -238,6 +244,9 @@ class ChatSession {
 
       final prepared = await _prepare(limits);
       final step = await _streamWithRetry(prepared.request, turn, limits);
+      for (final id in prepared.inlineIds) {
+        _inlineFiles.remove(id);
+      }
       final assistant =
           step.text.isEmpty && step.toolCalls.isEmpty && step.reasoning.isEmpty
           ? null
@@ -336,7 +345,10 @@ class ChatSession {
     final messages = await _hub.chats.messages(chatId);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
-    ContextInput inputFor(Chat current) => ContextInput(
+    ContextInput inputFor(
+      Chat current, {
+      Map<String, List<LlmFilePart>> files = const {},
+    }) => ContextInput(
       chat: current,
       host: host,
       messages: messages,
@@ -345,13 +357,16 @@ class ChatSession {
       recentWindow: limits.recentWindowMessages,
       hostStub: hostStub,
       backgroundNotes: notes,
+      inlineFiles: files,
     );
     chat = await _hub.compactor.compactIfNeeded(
       inputFor(chat),
       summaryModel: model,
       force: forceCompact,
     );
-    final llmMessages = _hub.builder.build(inputFor(chat));
+    final inline = Map.of(_inlineFiles);
+    _checkFilesAccepted(model, inline);
+    final llmMessages = _hub.builder.build(inputFor(chat, files: inline));
     final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
     _emit(
       AgentUsageUpdated(chatId, ContextCompactor.estimate(llmMessages), limit),
@@ -368,12 +383,29 @@ class ChatSession {
       runtime: runtime,
       policy: policy,
       limit: limit,
+      inlineIds: inline.keys.toList(),
       request: LlmRequest(
         model: model,
         messages: llmMessages,
         tools: ToolCatalog.specs,
       ),
     );
+  }
+
+  /// Файлы в запросе допустимы только для модели, которая принимает их тип (см. [ModelCatalogState.acceptsFile]).
+  void _checkFilesAccepted(
+    String model,
+    Map<String, List<LlmFilePart>> inline,
+  ) {
+    for (final files in inline.values) {
+      for (final file in files) {
+        if (!_hub.models.state.acceptsFile(model, file.mimeType)) {
+          throw LlmFailure(
+            'model $model does not accept ${file.mimeType} input; choose another model',
+          );
+        }
+      }
+    }
   }
 
   Future<StepResult> _streamWithRetry(
@@ -541,6 +573,16 @@ class ChatSession {
       openedRevisionId: revisions.opened,
       sealedBeforeRevisionId: revisions.sealedBefore,
     );
+    final files = [
+      for (final a in prompt.attachments)
+        if (a.mode == AttachmentMode.file && a.bytes != null)
+          LlmFilePart(
+            name: a.name,
+            mimeType: a.mimeType ?? 'application/octet-stream',
+            bytes: a.bytes!,
+          ),
+    ];
+    if (files.isNotEmpty) _inlineFiles[messageId] = files;
     final refreshed = await _hub.chats.chat(chatId);
     if (refreshed != null &&
         refreshed.titleSource == ChatTitleSource.none &&
@@ -726,6 +768,7 @@ class _Prepared {
     required this.runtime,
     required this.policy,
     required this.limit,
+    required this.inlineIds,
     required this.request,
   });
 
@@ -734,5 +777,8 @@ class _Prepared {
   final HostRuntime runtime;
   final PolicyEngine policy;
   final int limit;
+
+  /// Сообщения, чьи файлы входят в этот запрос; после ответа модели их байты освобождаются.
+  final List<String> inlineIds;
   final LlmRequest request;
 }

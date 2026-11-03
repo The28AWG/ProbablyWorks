@@ -18,7 +18,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 5;
+  static const currentSchemaVersion = 6;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -49,6 +49,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 5) {
         await m.addColumn(chats, chats.draft);
         await m.addColumn(chats, chats.draftAttachments);
+      }
+      // v6: входные модальности выбранных моделей (вложения-файлы). Таблица из v2–v3 создаётся сразу с колонкой.
+      if (from >= 4 && from < 6) {
+        await m.addColumn(savedModels, savedModels.inputModalities);
       }
     },
   );

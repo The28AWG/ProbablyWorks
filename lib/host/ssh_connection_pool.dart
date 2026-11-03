@@ -8,6 +8,7 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 
 /// Запрос подтверждения отпечатка ключа хоста: UI показывает диалог и отвечает через [HostKeyConfirmations].
@@ -207,10 +208,27 @@ class SshConnectionPool {
     return true;
   }
 
+  /// PEM берётся из secure storage. Файл по [Host.keyPath] (с раскрытием `~`) читается только там, где это возможно.
   Future<List<SSHKeyPair>?> _loadIdentities(Host host) async {
-    if (host.authType != SshAuthType.key || host.keyPath == null) return null;
-    final pem = await File(host.keyPath!).readAsString();
+    if (host.authType != SshAuthType.key) return null;
+    final stored = await _secrets.read(hostPrivateKeyKey(host.id));
+    final fromPath =
+        host.keyPath != null && AppPlatform.current.canOpenExternalKeys;
+    final pem =
+        stored ??
+        (fromPath
+            ? await File(_expandHome(host.keyPath!)).readAsString()
+            : null);
+    if (pem == null) return null;
     final passphrase = await _secrets.read(hostPassphraseKey(host.id));
     return SSHKeyPair.fromPem(pem, passphrase);
+  }
+
+  static String _expandHome(String path) {
+    if (path != '~' && !path.startsWith('~/')) return path;
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    if (home == null) return path;
+    return '$home${path.replaceFirst('~', '')}';
   }
 }

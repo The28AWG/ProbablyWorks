@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
@@ -159,8 +158,7 @@ class _CommandOutputState extends State<CommandOutput> {
     unawaited(_feed?.cancel());
     _host = host;
     _decoder = Utf8ChunkDecoder();
-    _terminal.onOutput = (data) =>
-        host.write(Uint8List.fromList(utf8.encode(data)));
+    // Ввода с клавиатуры нет: терминал только отображает вывод, поэтому onOutput не назначается.
     _feed = host.attach().listen(
       (bytes) => setState(() => _write(_decoder.add(bytes))),
       onDone: () => setState(() => _write(_decoder.close())),
@@ -241,7 +239,6 @@ class _CommandOutputState extends State<CommandOutput> {
     final cell = _measureCell();
     final exitCode = widget.exitCode;
     final live = _host != null;
-    final interactive = live && widget.active;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.codeSurface,
@@ -303,7 +300,8 @@ class _CommandOutputState extends State<CommandOutput> {
                                   ),
                                   textStyle: _style,
                                   padding: _padding,
-                                  readOnly: !interactive,
+                                  // Ввод с клавиатуры запрещён на всех платформах: вывод только для чтения.
+                                  readOnly: true,
                                 ),
                               ),
                             ),

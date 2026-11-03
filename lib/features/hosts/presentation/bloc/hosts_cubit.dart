@@ -37,9 +37,9 @@ class HostsCubit extends Cubit<HostsState> {
   final HostRuntimeFactory _runtimes;
   late final StreamSubscription<List<Host>> _sub;
 
-  /// Сохраняет хост. Секрет (пароль или passphrase) уходит в secure storage, а не в БД.
+  /// Сохраняет хост. Секреты (пароль, passphrase, PEM приватного ключа) уходят в secure storage, а не в БД.
   /// Пустой секрет при редактировании оставляет прежний.
-  Future<void> save(Host host, {String? secret}) async {
+  Future<void> save(Host host, {String? secret, String? privateKeyPem}) async {
     await _hosts.save(host);
     if (secret != null && secret.isNotEmpty) {
       final key = host.authType == SshAuthType.password
@@ -47,12 +47,16 @@ class HostsCubit extends Cubit<HostsState> {
           : hostPassphraseKey(host.id);
       await _secrets.write(key, secret);
     }
+    if (privateKeyPem != null && privateKeyPem.isNotEmpty) {
+      await _secrets.write(hostPrivateKeyKey(host.id), privateKeyPem);
+    }
   }
 
   Future<void> delete(String id) async {
     await _hosts.delete(id);
     await _secrets.delete(hostPasswordKey(id));
     await _secrets.delete(hostPassphraseKey(id));
+    await _secrets.delete(hostPrivateKeyKey(id));
   }
 
   /// Проверка подключения: безопасная команда host_info, без изменения состояния Host.

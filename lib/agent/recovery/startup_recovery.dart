@@ -5,6 +5,7 @@ import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:uuid/uuid.dart';
 
 /// Восстановление после аварийного завершения: запуски, которые не дошли до финала,
 /// помечаются interrupted, их логи переносятся в БД, осиротевшие файлы удаляются.
@@ -18,11 +19,29 @@ class StartupRecovery {
 
   final _log = Logger('StartupRecovery');
 
-  Future<int> run() async {
+  static const _uuid = Uuid();
+
+  /// [closedText] — событие в чате (на языке интерфейса): запуск прервали при закрытии приложения.
+  Future<int> run({required String closedText}) async {
     final limits = await _settings.limits();
     final runs = await _chats.allActiveRuns();
     for (final run in runs) {
       await _finalize(run, limits);
+    }
+    // Одно событие на чат, даже если в нём несколько прерванных запусков.
+    final chats = {for (final run in runs) run.chatId};
+    for (final chatId in chats) {
+      final seq = await _chats.nextSeq(chatId);
+      await _chats.insertMessage(
+        ChatMessage(
+          id: _uuid.v4(),
+          chatId: chatId,
+          seq: seq,
+          role: MessageRole.event,
+          createdAt: DateTime.now(),
+          text: closedText,
+        ),
+      );
     }
     final removed = await _logs.gcUnreferenced({});
     if (runs.isNotEmpty || removed > 0) {

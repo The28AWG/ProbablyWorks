@@ -19,6 +19,7 @@ class SavedModelRepository {
           name: row.name,
           contextLength: row.contextLength,
           supportsTools: row.supportsTools,
+          inputModalities: _parseModalities(row.inputModalities),
         ),
     ];
   }
@@ -31,7 +32,18 @@ class SavedModelRepository {
           name: model.name,
           contextLength: Value(model.contextLength),
           supportsTools: Value(model.supportsTools),
+          inputModalities: Value(_joinModalities(model.inputModalities)),
         ),
     ]),
   );
+
+  static List<String>? _parseModalities(String? raw) => raw == null
+      ? null
+      : [
+          for (final part in raw.split(','))
+            if (part.isNotEmpty) part,
+        ];
+
+  static String? _joinModalities(List<String>? modalities) =>
+      modalities?.join(',');
 }

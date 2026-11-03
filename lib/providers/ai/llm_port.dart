@@ -1,6 +1,8 @@
 /// Порт провайдера ИИ. AgentLoop зависит только от этих типов, не от OpenRouter.
 library;
 
+import 'dart:typed_data';
+
 import 'package:equatable/equatable.dart';
 
 enum LlmRole { system, user, assistant, tool }
@@ -19,12 +21,28 @@ class LlmToolCall {
   final String arguments;
 }
 
+/// Файл, переданный модели содержимым (base64 в адаптере). Путь на диске не передаётся.
+class LlmFilePart {
+  const LlmFilePart({
+    required this.name,
+    required this.mimeType,
+    required this.bytes,
+  });
+
+  final String name;
+  final String mimeType;
+  final Uint8List bytes;
+
+  bool get isImage => mimeType.startsWith('image/');
+}
+
 class LlmMessage {
   const LlmMessage({
     required this.role,
     this.content = '',
     this.toolCalls = const [],
     this.toolCallId,
+    this.files = const [],
   });
 
   const LlmMessage.system(String content)
@@ -36,6 +54,9 @@ class LlmMessage {
   final String content;
   final List<LlmToolCall> toolCalls;
   final String? toolCallId;
+
+  /// Файлы пользователя для multimodal-модели (только user-сообщения).
+  final List<LlmFilePart> files;
 }
 
 class LlmToolSpec {
@@ -118,6 +139,7 @@ class LlmModelInfo {
     this.promptPrice,
     this.completionPrice,
     this.created,
+    this.inputModalities,
   });
 
   final String id;
@@ -129,6 +151,17 @@ class LlmModelInfo {
 
   /// Время создания модели в OpenRouter (unix, секунды). Null — неизвестно.
   final int? created;
+
+  /// Входные модальности (`text`, `image`, `file`, ...). Null — неизвестно.
+  final List<String>? inputModalities;
+}
+
+/// Принимает ли модель файл данного типа: `image/*` требует модальность image, остальное — file.
+/// Неизвестные модальности (null) означают «не принимает»: лучше отказать, чем отправить зря.
+bool acceptsFileType(List<String>? modalities, String mimeType) {
+  if (modalities == null) return false;
+  final needed = mimeType.startsWith('image/') ? 'image' : 'file';
+  return modalities.contains(needed);
 }
 
 /// Выбранная модель с деталями, сохранённая в БД. Показывается до загрузки каталога.
@@ -138,6 +171,7 @@ class SavedModel extends Equatable {
     required this.name,
     this.contextLength,
     this.supportsTools = false,
+    this.inputModalities,
   });
 
   final String id;
@@ -145,8 +179,17 @@ class SavedModel extends Equatable {
   final int? contextLength;
   final bool supportsTools;
 
+  /// Входные модальности; null — модель ещё не описана каталогом.
+  final List<String>? inputModalities;
+
   @override
-  List<Object?> get props => [id, name, contextLength, supportsTools];
+  List<Object?> get props => [
+    id,
+    name,
+    contextLength,
+    supportsTools,
+    inputModalities,
+  ];
 }
 
 abstract interface class LlmProvider {
@@ -154,4 +197,8 @@ abstract interface class LlmProvider {
   Stream<LlmEvent> stream(LlmRequest request);
 
   Future<List<LlmModelInfo>> listModels();
+
+  /// Проверяет, что сервис принимает ключ (запрос с авторизацией). Ошибка — [LlmFailure] с причиной.
+  /// В отличие от [listModels], публичный список моделей не подтверждает ключ.
+  Future<void> checkKey();
 }

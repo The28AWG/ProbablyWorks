@@ -1,18 +1,21 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:probably_works/agent/attachments/attachment_loader.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_attention_dock.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
@@ -221,71 +224,76 @@ class _ChatBodyState extends State<ChatBody> {
             ),
           ),
         );
+        // Перетаскивание есть только на десктопе (desktop_drop на мобильных не работает): там остаётся кнопка.
+        final content = Stack(
+          children: [
+            Column(
+              children: [
+                _Header(
+                  title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
+                  leading: widget.leading,
+                ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: state.loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : ChatTimeline(
+                                state: state,
+                                terminalFor: bloc.terminalFor,
+                              ),
+                      ),
+                      if (empty)
+                        Positioned.fill(
+                          child: Center(
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(AppSpacing.lg),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ChatWelcome(
+                                    hostLabel: hostLabelOf(
+                                      state.hosts,
+                                      chat.hostId,
+                                      l10n,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.xl),
+                                  composer,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                ChatAttentionDock(state: state),
+                if (!empty) composer,
+              ],
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !_dragging,
+                child: AnimatedOpacity(
+                  opacity: _dragging ? 1 : 0,
+                  duration: AppDurations.fast,
+                  child: ChatDropOverlay(label: l10n.composerDropHint),
+                ),
+              ),
+            ),
+          ],
+        );
+        if (!AppPlatform.current.supportsFileDrop) {
+          return KeyedSubtree(key: const ValueKey('body'), child: content);
+        }
         return DropTarget(
           key: const ValueKey('body'),
           onDragEntered: (_) => setState(() => _dragging = true),
           onDragExited: (_) => setState(() => _dragging = false),
           onDragDone: _onDragDone,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  _Header(
-                    title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
-                    leading: widget.leading,
-                  ),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: state.loading
-                              ? const Center(child: CircularProgressIndicator())
-                              : ChatTimeline(
-                                  state: state,
-                                  terminalFor: bloc.terminalFor,
-                                ),
-                        ),
-                        if (empty)
-                          Positioned.fill(
-                            child: Center(
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(AppSpacing.lg),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ChatWelcome(
-                                      hostLabel: hostLabelOf(
-                                        state.hosts,
-                                        chat.hostId,
-                                        l10n,
-                                      ),
-                                    ),
-                                    const SizedBox(height: AppSpacing.xl),
-                                    composer,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  ChatAttentionDock(state: state),
-                  if (!empty) composer,
-                ],
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  ignoring: !_dragging,
-                  child: AnimatedOpacity(
-                    opacity: _dragging ? 1 : 0,
-                    duration: AppDurations.fast,
-                    child: ChatDropOverlay(label: l10n.composerDropHint),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: content,
         );
       },
     );
@@ -308,46 +316,88 @@ class _ChatBodyState extends State<ChatBody> {
     await _addFiles([for (final f in files) f.path]);
   }
 
-  /// Небольшие текстовые файлы идут в контекст (attach), остальные — путь (mention).
-  /// Лимит вложений проверяет блок; здесь чтение останавливается, как только места уже не осталось.
+  /// Читает файлы и добавляет их в черновик. Текст уходит в сообщение, бинарные файлы — модели
+  /// отдельной частью. Путь на диске в вложение не попадает. Отказы показываются сообщением.
   Future<void> _addFiles(List<String> paths) async {
     final bloc = context.read<ChatBloc>();
+    final l10n = AppLocalizations.of(context);
     final limits = bloc.state.limits;
-    final room = limits.attachmentsPerMessage - bloc.state.attachments.length;
+    final cacheDir = AppPlatform.current.isMobile
+        ? (await getTemporaryDirectory()).path
+        : null;
+    var room = limits.attachmentsPerMessage - bloc.state.attachments.length;
     final items = <AttachmentRef>[];
+    final refused = <String>[];
     for (final path in paths) {
-      if (items.length >= room) break;
-      final file = File(path);
-      final name = path.split(Platform.pathSeparator).last;
-      final size = await file.length();
-      if (size <= limits.attachmentMaxBytes) {
-        try {
-          final content = await file.readAsString();
-          items.add(
-            AttachmentRef(
-              name: name,
-              mode: AttachmentMode.attach,
-              content: content,
-              sizeBytes: size,
-            ),
-          );
-          continue;
-        } on FormatException {
-          // Бинарный файл: передаём путь, агент прочитает его через инструменты.
-        }
+      if (room <= 0) {
+        refused.add(l10n.attachLimitReached(limits.attachmentsPerMessage));
+        break;
       }
-      items.add(
-        AttachmentRef(
-          name: name,
-          mode: AttachmentMode.mention,
-          path: path,
-          sizeBytes: size,
-        ),
+      final name = path.split(RegExp(r'[\\/]')).last;
+      final result = await loadAttachment(
+        path,
+        maxBytes: limits.attachmentMaxBytes,
+        removeAfterReadUnder: cacheDir,
       );
+      final ref = result.ref;
+      if (ref == null) {
+        refused.add(_problemText(l10n, name, result.problem!, limits));
+        continue;
+      }
+      final mime = ref.mimeType;
+      if (!_modelAccepts(bloc, mime)) {
+        refused.add(l10n.attachModelNoFile(name, mime!));
+        continue;
+      }
+      items.add(ref);
+      room--;
     }
     // Чат могли закрыть, пока читались файлы: тогда блок уже не принимает события.
     if (!mounted) return;
-    bloc.add(ChatAttachmentsAdded(items));
+    if (items.isNotEmpty) bloc.add(ChatAttachmentsAdded(items));
+    if (refused.isNotEmpty) AppSnackBar.show(context, refused.join('\n'));
+  }
+
+  String _problemText(
+    AppLocalizations l10n,
+    String name,
+    AttachmentProblem problem,
+    AppLimits limits,
+  ) => switch (problem) {
+    AttachmentProblem.tooLarge => l10n.attachTooLarge(
+      name,
+      limits.attachmentMaxBytes,
+    ),
+    AttachmentProblem.unreadable => l10n.attachUnreadable(name),
+    AttachmentProblem.unsupportedType => l10n.attachUnsupportedType(name),
+  };
+
+  /// Бинарный файл (mime задан) принимает только модель с нужной модальностью; текст принимает любая.
+  bool _modelAccepts(ChatBloc bloc, String? mime) {
+    if (mime == null) return true;
+    final model = bloc.state.effectiveModelId;
+    return model != null && bloc.state.catalog.acceptsFile(model, mime);
+  }
+
+  /// Перед отправкой: файлы без содержимого (после перезапуска) надо прикрепить заново,
+  /// бинарные файлы — только моделью, которая их принимает.
+  bool _attachmentsReady(ChatBloc bloc, List<AttachmentRef> attachments) {
+    final l10n = AppLocalizations.of(context);
+    for (final attachment in attachments) {
+      if (!attachment.hasContent) {
+        AppSnackBar.show(context, l10n.attachNeedReattach(attachment.name));
+        return false;
+      }
+      final mime = attachment.mimeType;
+      if (!_modelAccepts(bloc, mime)) {
+        AppSnackBar.show(
+          context,
+          l10n.attachModelNoFile(attachment.name, mime!),
+        );
+        return false;
+      }
+    }
+    return true;
   }
 
   void _submit(ChatBloc bloc, {required bool sendNow}) {
@@ -356,6 +406,7 @@ class _ChatBodyState extends State<ChatBody> {
     final text = _composer.text;
     final attachments = bloc.state.attachments;
     if (text.trim().isEmpty && attachments.isEmpty) return;
+    if (!_attachmentsReady(bloc, attachments)) return;
     bloc.add(ChatSubmitted(text, attachments: attachments, sendNow: sendNow));
     // Очистка поля попадает в блок через слушатель и обнуляет черновик этого чата.
     _composer.clear();

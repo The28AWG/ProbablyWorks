@@ -3,8 +3,8 @@ import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/host/flutter_pty_launcher.dart';
 import 'package:probably_works/host/host_terminal.dart';
+import 'package:probably_works/host/portable_pty_launcher.dart';
 import 'package:probably_works/host/pty_launcher.dart';
 import 'package:probably_works/host/wrapped_exec_runtime.dart';
 
@@ -13,7 +13,7 @@ final class LocalHostRuntime extends WrappedExecRuntime {
   LocalHostRuntime({
     required HostOs os,
     String? shell,
-    this.pty = const FlutterPtyLauncher(),
+    this.pty = const PortablePtyLauncher(),
   }) : super(os, shell: shell);
 
   /// Создание PTY для команд терминала (см. [openTerminal]).

@@ -11,6 +11,7 @@ import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/onboarding/presentation/bloc/onboarding_cubit.dart';
@@ -64,8 +65,8 @@ class _OnboardingViewState extends State<_OnboardingView> {
       listener: _onChatCreated,
       builder: (context, state) {
         final cubit = context.read<OnboardingCubit>();
-        final steps = OnboardingStep.values;
-        final index = state.step.index;
+        final steps = cubit.steps;
+        final index = steps.indexOf(state.step);
         return AppScaffold(
           body: Center(
             child: ConstrainedBox(
@@ -189,7 +190,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
     AppLocalizations l10n,
   ) => switch (state.step) {
     OnboardingStep.welcome => Text(
-      l10n.onboardingWelcome,
+      _welcomeText(cubit.platform, l10n),
       style: Theme.of(context).textTheme.bodyLarge,
     ),
     OnboardingStep.key => Column(
@@ -250,23 +251,50 @@ class _OnboardingViewState extends State<_OnboardingView> {
     OnboardingStep.workspace => Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(l10n.onboardingWorkspaceBody),
+        Text(
+          cubit.platform.isMobile
+              ? l10n.onboardingWorkspaceBodyMobile
+              : l10n.onboardingWorkspaceBody,
+        ),
         const SizedBox(height: AppSpacing.lg),
         AppTextField(
           controller: _workspace,
           label: l10n.hostDefaultWorkspaceLabel,
           mono: true,
-          suffix: IconButton(
-            tooltip: l10n.hostPickFolder,
-            icon: const Icon(Icons.folder_open),
-            onPressed: _pickWorkspaceFolder,
-          ),
+          suffix: cubit.platform.supportsDirectoryPicker
+              ? IconButton(
+                  tooltip: l10n.hostPickFolder,
+                  icon: const Icon(Icons.folder_open),
+                  onPressed: _pickWorkspaceFolder,
+                )
+              : null,
         ),
       ],
     ),
     OnboardingStep.ssh => Text(l10n.onboardingSshBody),
-    OnboardingStep.finish => Text(l10n.chatEmptyState),
+    OnboardingStep.finish => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(l10n.chatEmptyState),
+        if (!state.canCreate) ...[
+          const SizedBox(height: AppSpacing.md),
+          AppBanner(
+            margin: EdgeInsets.zero,
+            tone: AppTone.warning,
+            icon: Icons.info_outline,
+            message: l10n.onboardingIosSshRequired,
+          ),
+        ],
+      ],
+    ),
   };
+
+  static String _welcomeText(AppPlatform platform, AppLocalizations l10n) =>
+      switch (platform.target) {
+        TargetPlatform.android => l10n.onboardingWelcomeAndroid,
+        TargetPlatform.iOS => l10n.onboardingWelcomeIos,
+        _ => l10n.onboardingWelcome,
+      };
 
   Future<void> _pickWorkspaceFolder() async {
     final path = await getDirectoryPath();
@@ -311,7 +339,9 @@ class _OnboardingViewState extends State<_OnboardingView> {
         child: Text(l10n.onboardingContinue),
       ),
       OnboardingStep.finish => FilledButton(
-        onPressed: state.created == null ? cubit.createFirstChat : null,
+        onPressed: state.created == null && state.canCreate
+            ? cubit.createFirstChat
+            : null,
         child: Text(l10n.onboardingFinish),
       ),
     };
@@ -324,7 +354,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
       children: [
-        if (step.index > 0)
+        if (cubit.steps.indexOf(step) > 0)
           TextButton(onPressed: cubit.back, child: Text(l10n.onboardingBack)),
         if (step == OnboardingStep.ssh)
           OutlinedButton.icon(

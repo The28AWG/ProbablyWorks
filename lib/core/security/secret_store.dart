@@ -13,6 +13,9 @@ const openRouterKeyName = 'openrouter.apiKey';
 String hostPasswordKey(String hostId) => 'host.$hostId.password';
 String hostPassphraseKey(String hostId) => 'host.$hostId.passphrase';
 
+/// PEM приватного ключа SSH хранится в secure storage: файл с устройства (в т.ч. Android/iOS) не имеет стабильного пути.
+String hostPrivateKeyKey(String hostId) => 'host.$hostId.privateKey';
+
 @LazySingleton(as: SecretStore)
 class FlutterSecretStore implements SecretStore {
   FlutterSecretStore(this._storage);

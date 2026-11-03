@@ -319,6 +319,10 @@
   "@hostLocalName": {
     "description": "Name of the built-in local host."
   },
+  "hostLocalNameMobile": "This phone",
+  "@hostLocalNameMobile": {
+    "description": "Name of the built-in local host on Android. Local commands run in the app sandbox."
+  },
   "hostNameLabel": "Name",
   "@hostNameLabel": {
     "description": "Label of the host display name field."
@@ -350,6 +354,34 @@
   "hostSecretLabel": "Password or passphrase",
   "@hostSecretLabel": {
     "description": "Label of the secret field: password or key passphrase. Stored in secure storage."
+  },
+  "hostOsLabel": "Remote system",
+  "@hostOsLabel": {
+    "description": "Label of the remote host OS selector. Determines shell commands."
+  },
+  "hostOsPosix": "Linux / Unix",
+  "@hostOsPosix": {
+    "description": "Remote OS option: POSIX-compatible system (Linux, BSD)."
+  },
+  "hostOsMacos": "macOS",
+  "@hostOsMacos": {
+    "description": "Remote OS option: macOS."
+  },
+  "hostOsWindows": "Windows",
+  "@hostOsWindows": {
+    "description": "Remote OS option: Windows (cmd and PowerShell)."
+  },
+  "hostPickKeyFile": "Choose key file",
+  "@hostPickKeyFile": {
+    "description": "Button to load a private key PEM from a file into the form."
+  },
+  "hostPrivateKeyLabel": "Private key (PEM)",
+  "@hostPrivateKeyLabel": {
+    "description": "Field with the private key in PEM format. Stored in secure storage."
+  },
+  "hostPrivateKeyHint": "Paste the PEM text or choose a file. The key is stored in secure storage, not in the database.",
+  "@hostPrivateKeyHint": {
+    "description": "Helper under the private key field explaining storage."
   },
   "hostTest": "Test connection",
   "@hostTest": {
@@ -791,7 +823,7 @@
   },
   "settingsAttachMaxBytes": "Max file size in context, bytes",
   "@settingsAttachMaxBytes": {
-    "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+    "description": "Settings field: files larger than this are refused as attachments."
   },
   "settingsModelUnavailable": "This model is no longer available in OpenRouter: choose another one.",
   "@settingsModelUnavailable": {
@@ -825,6 +857,22 @@
   "onboardingModelHint": "The agent needs tool calling. Models without it are not listed here; you can change the model later in the chat header or Settings.",
   "@onboardingModelHint": {
     "description": "Onboarding hint on the model step."
+  },
+  "onboardingWelcomeAndroid": "ProbablyWorks is an AI agent that completes tasks on this phone or on an SSH server. Describe the task, and the agent reads files, runs commands and makes changes on its own. You approve risky actions, and progress is visible in the chat.",
+  "@onboardingWelcomeAndroid": {
+    "description": "Onboarding welcome on Android: the local host here is the phone."
+  },
+  "onboardingWelcomeIos": "ProbablyWorks is an AI agent that completes tasks on an SSH server. On iPhone and iPad commands can't run locally, so at least one SSH host is needed. Describe the task, and the agent reads files, runs commands and makes changes on its own. You approve risky actions, and progress is visible in the chat.",
+  "@onboardingWelcomeIos": {
+    "description": "Onboarding welcome on iOS: there is no local host, work goes through SSH only."
+  },
+  "onboardingWorkspaceBodyMobile": "A folder inside the app on this phone where the agent starts new chats. Leave it empty to use the app folder. You can change it later in Hosts.",
+  "@onboardingWorkspaceBodyMobile": {
+    "description": "Workspace step text on Android. The system folder picker is not available here."
+  },
+  "onboardingIosSshRequired": "On iPhone and iPad a chat can only be created on an SSH host. Add a server in the step below.",
+  "@onboardingIosSshRequired": {
+    "description": "Hint on iOS when there are no SSH hosts yet and the first chat cannot be created."
   },
   "onboardingWorkspaceBody": "Folder on this computer where the agent starts new chats. You can change it later in Hosts.",
   "@onboardingWorkspaceBody": {
@@ -1056,6 +1104,86 @@
         "type": "int"
       }
     }
+  },
+  "attachTooLarge": "{name}: the file is larger than {limit} bytes and was not attached",
+  "@attachTooLarge": {
+    "description": "Attachment refused: file is too large. Placeholders: name, limit.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "attachUnreadable": "{name}: the file cannot be read",
+  "@attachUnreadable": {
+    "description": "Attachment refused: file cannot be read.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachUnsupportedType": "{name}: this file type is not supported as an attachment",
+  "@attachUnsupportedType": {
+    "description": "Attachment refused: unsupported type.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachModelNoFile": "The selected model does not accept {name} ({mime}). Choose another model.",
+  "@attachModelNoFile": {
+    "description": "Attachment refused: model cannot read this file type.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "mime": {
+        "type": "String"
+      }
+    }
+  },
+  "attachNeedReattach": "{name}: attach the file again, its content is not kept between sessions",
+  "@attachNeedReattach": {
+    "description": "Attachment without content after restart, must be re-attached.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachLimitReached": "Up to {count} files per message",
+  "@attachLimitReached": {
+    "description": "Attachment limit reached.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "runServiceChannel": "Task execution",
+  "@runServiceChannel": {
+    "description": "Android notification channel name for the background work service."
+  },
+  "runServiceTitle": "Agent is working",
+  "@runServiceTitle": {
+    "description": "Title of the persistent Android notification while an agent run is active."
+  },
+  "runServiceText": "The agent is running a task. Keep the app open for the run to finish.",
+  "@runServiceText": {
+    "description": "Text of the persistent Android notification while an agent run is active."
+  },
+  "runStoppedInBackground": "Run stopped: the app was moved to the background. On iOS, commands do not continue in the background.",
+  "@runStoppedInBackground": {
+    "description": "Event in the chat when a run is stopped because the iOS app went to the background."
+  },
+  "runInterruptedByClose": "Run interrupted: the system closed the app while a command was running. The result on the host may be incomplete.",
+  "@runInterruptedByClose": {
+    "description": "Event in the chat after the app was restarted and an unfinished run was found."
   },
   "composerAddTooltip": "Add",
   "@composerAddTooltip": {

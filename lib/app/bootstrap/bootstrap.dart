@@ -7,9 +7,11 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/logging/app_log.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
+import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host →
@@ -18,12 +20,19 @@ Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await AppPaths.resolve();
   final lock = SingleInstanceLock(paths.lockFile);
-  if (!lock.acquire()) return false;
+  // На телефоне второй экземпляр приложения система не запускает, а файловая блокировка может
+  // не поддерживаться (sandbox, сетевые тома). Поэтому отказ блокировки там не считаем «уже запущено».
+  if (!lock.acquire() && !AppPlatform.current.isMobile) return false;
   await AppLog.init(paths.logs);
   await configureDependencies();
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();
-  await getIt<StartupRecovery>().run();
+  final language = await getIt<SettingsRepository>().read(
+    SettingsRepository.keyLanguage,
+  );
+  final closedText = lookupAppLocalizations(resolveAppLocale(language))
+      .runInterruptedByClose;
+  await getIt<StartupRecovery>().run(closedText: closedText);
   await getIt<HostRepository>().ensureLocalHost(DateTime.now());
   // Хосты тоже читаются здесь, чтобы список хостов был в первом кадре, а не появлялся после чтения БД.
   getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
@@ -33,9 +42,7 @@ Future<bool> bootstrap() async {
       await SidebarCubit.loadWidth(getIt<SettingsRepository>()),
     ),
   );
-  getIt<LocaleController>().apply(
-    await getIt<SettingsRepository>().read(SettingsRepository.keyLanguage),
-  );
+  getIt<LocaleController>().apply(language);
   // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.
   await getIt<ModelCatalogService>().start(hasKey: _hasOpenRouterKey);
   return true;

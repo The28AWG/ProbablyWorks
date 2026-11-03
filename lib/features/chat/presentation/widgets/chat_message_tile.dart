@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
@@ -359,8 +362,8 @@ class _ChatCompactionMarkerState extends State<ChatCompactionMarker> {
 }
 
 /// Строка действий под сообщением. Видна при наведении мыши или фокусе внутри строки.
-/// Действия над сообщением появляются при наведении мыши или фокусе с клавиатуры.
-/// Зона реакции — всё сообщение, поэтому кнопки не «прыгают» при движении к ним.
+/// На телефоне (нет наведения) то же меню открывается долгим нажатием на сообщение листом действий.
+/// Долгое нажатие ловится через [Listener], а не жестом: выделение текста остаётся рабочим.
 class _HoverActions extends StatefulWidget {
   const _HoverActions({
     required this.child,
@@ -369,7 +372,7 @@ class _HoverActions extends StatefulWidget {
   });
 
   final Widget child;
-  final List<Widget> actions;
+  final List<_ActionIcon> actions;
   final CrossAxisAlignment crossAxisAlignment;
 
   @override
@@ -379,34 +382,93 @@ class _HoverActions extends StatefulWidget {
 class _HoverActionsState extends State<_HoverActions> {
   var _hovered = false;
   var _focused = false;
+  Timer? _pressTimer;
+  Offset? _pressStart;
+
+  @override
+  void dispose() {
+    _pressTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    _pressStart = event.position;
+    _pressTimer?.cancel();
+    _pressTimer = Timer(kLongPressTimeout, _openSheet);
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    final start = _pressStart;
+    if (start != null && (event.position - start).distance > kTouchSlop) {
+      _cancelPress();
+    }
+  }
+
+  void _cancelPress() {
+    _pressTimer?.cancel();
+    _pressTimer = null;
+    _pressStart = null;
+  }
+
+  Future<void> _openSheet() async {
+    _cancelPress();
+    if (!mounted) return;
+    final actions = widget.actions;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final action in actions)
+              ListTile(
+                leading: Icon(action.icon),
+                title: Text(action.tooltip),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  action.onPressed();
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final visible = _hovered || _focused;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Focus(
-        canRequestFocus: false,
-        skipTraversal: true,
-        onFocusChange: (focused) => setState(() => _focused = focused),
-        child: Column(
-          crossAxisAlignment: widget.crossAxisAlignment,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            widget.child,
-            IgnorePointer(
-              ignoring: !visible,
-              child: AnimatedOpacity(
-                opacity: visible ? 1 : 0,
-                duration: AppDurations.fast,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: widget.actions,
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: (_) => _cancelPress(),
+      onPointerCancel: (_) => _cancelPress(),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onFocusChange: (focused) => setState(() => _focused = focused),
+          child: Column(
+            crossAxisAlignment: widget.crossAxisAlignment,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              widget.child,
+              IgnorePointer(
+                ignoring: !visible,
+                child: AnimatedOpacity(
+                  opacity: visible ? 1 : 0,
+                  duration: AppDurations.fast,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: widget.actions,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

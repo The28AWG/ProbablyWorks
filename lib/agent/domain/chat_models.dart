@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 import 'package:probably_works/core/util/redactor.dart';
@@ -9,7 +10,9 @@ enum ChatTitleSource { none, generated, user }
 
 enum MessageRole { user, assistant, tool, event }
 
-enum AttachmentMode { attach, mention }
+/// attach — текстовый файл, его текст входит в сообщение; file — бинарный файл (PDF, изображение),
+/// его байты уходят модели отдельной частью, только в первом запросе хода.
+enum AttachmentMode { attach, file }
 
 /// Вызов инструмента, который модель запросила в assistant-сообщении.
 class ToolCallRef {
@@ -36,45 +39,65 @@ class ToolCallRef {
   };
 }
 
-/// Вложение пользователя: либо содержимое в контекст, либо путь для агента.
+/// Вложение пользователя. Путь на диске не хранится и не передаётся: модели уходит только содержимое.
+/// Байты ([bytes]) живут в памяти до первого запроса хода и в БД не пишутся.
 class AttachmentRef {
   const AttachmentRef({
     required this.name,
     required this.mode,
     this.content,
-    this.path,
+    this.mimeType,
     this.sizeBytes = 0,
+    this.bytes,
   });
 
+  /// Старые записи с режимом `mention` (путь без содержимого) читаются как file без байтов.
   factory AttachmentRef.fromJson(Map<String, dynamic> json) => AttachmentRef(
     name: json['name'] as String,
-    mode: AttachmentMode.values.byName(json['mode'] as String),
+    mode: json['mode'] == AttachmentMode.attach.name
+        ? AttachmentMode.attach
+        : AttachmentMode.file,
     content: json['content'] as String?,
-    path: json['path'] as String?,
+    mimeType: json['mimeType'] as String?,
     sizeBytes: json['sizeBytes'] as int? ?? 0,
   );
 
   final String name;
   final AttachmentMode mode;
+
+  /// Текст файла (только для [AttachmentMode.attach]).
   final String? content;
-  final String? path;
+
+  /// MIME-тип бинарного файла (только для [AttachmentMode.file]).
+  final String? mimeType;
   final int sizeBytes;
+
+  /// Содержимое бинарного файла в памяти. Не сохраняется в БД и черновиках.
+  final Uint8List? bytes;
+
+  /// Есть ли содержимое, которое можно отправить модели прямо сейчас.
+  bool get hasContent => switch (mode) {
+    AttachmentMode.attach => content != null,
+    AttachmentMode.file => bytes != null,
+  };
 
   Map<String, dynamic> toJson() => {
     'name': name,
     'mode': mode.name,
     'content': content,
-    'path': path,
+    'mimeType': mimeType,
     'sizeBytes': sizeBytes,
   };
 
   /// Копия с замаскированными секретами в тексте вложения (перед записью в БД и отправкой модели).
+  /// Байты не маскируются и остаются в памяти.
   AttachmentRef redacted() => AttachmentRef(
     name: name,
     mode: mode,
     content: content == null ? null : Redactor.redact(content!),
-    path: path,
+    mimeType: mimeType,
     sizeBytes: sizeBytes,
+    bytes: bytes,
   );
 }
 

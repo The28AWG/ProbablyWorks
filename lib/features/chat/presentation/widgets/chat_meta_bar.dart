@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
@@ -9,7 +10,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 String hostLabelOf(List<Host> hosts, String hostId, AppLocalizations l10n) {
   final host = hosts.where((h) => h.id == hostId).firstOrNull;
   if (host == null) return hostId;
-  return host.isLocal ? l10n.hostLocalName : host.name;
+  return host.isLocal ? localHostTitle(l10n) : host.name;
 }
 
 /// Имя последней папки пути рабочей папки; null, если папка не назначена.
@@ -92,13 +93,15 @@ class ChatMetaBar extends StatelessWidget {
                   value: host.id,
                   child: _CheckedRow(
                     checked: host.id == hostId,
-                    child: Text(host.isLocal ? l10n.hostLocalName : host.name),
+                    child: Text(
+                      host.isLocal ? localHostTitle(l10n) : host.name,
+                    ),
                   ),
                 ),
             ],
             child: _MetaChip(
               icon: current?.isLocal ?? true
-                  ? Icons.computer_outlined
+                  ? localHostIcon()
                   : Icons.dns_outlined,
               label: hostLabelOf(hosts, hostId, l10n),
               enabled: !running,

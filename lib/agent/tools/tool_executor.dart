@@ -443,7 +443,11 @@ class ToolExecutor {
         if (skill == null) {
           return ToolResult('skill not found: $name', isError: true);
         }
-        final body = await _workspace.loadSkillBody(ctx.runtime, skill);
+        final body = await _workspace.loadSkillBody(
+          ctx.runtime,
+          skill,
+          ctx.host.os,
+        );
         return body == null
             ? ToolResult('cannot read skill $name', isError: true)
             : ToolResult(body);

@@ -319,6 +319,10 @@
   "@hostLocalName": {
     "description": "Название встроенного локального хоста."
   },
+  "hostLocalNameMobile": "Этот телефон",
+  "@hostLocalNameMobile": {
+    "description": "Название встроенного локального хоста на Android. Локальные команды выполняются в песочнице приложения."
+  },
   "hostNameLabel": "Название",
   "@hostNameLabel": {
     "description": "Подпись поля отображаемого имени хоста."
@@ -350,6 +354,34 @@
   "hostSecretLabel": "Пароль или парольная фраза",
   "@hostSecretLabel": {
     "description": "Подпись поля секрета: пароль или парольная фраза ключа. Хранится в защищённом хранилище."
+  },
+  "hostOsLabel": "Система на сервере",
+  "@hostOsLabel": {
+    "description": "Подпись выбора ОС удалённого хоста. От неё зависят shell-команды."
+  },
+  "hostOsPosix": "Linux / Unix",
+  "@hostOsPosix": {
+    "description": "Вариант ОС удалённого хоста: POSIX-совместимая система (Linux, BSD)."
+  },
+  "hostOsMacos": "macOS",
+  "@hostOsMacos": {
+    "description": "Вариант ОС удалённого хоста: macOS."
+  },
+  "hostOsWindows": "Windows",
+  "@hostOsWindows": {
+    "description": "Вариант ОС удалённого хоста: Windows (cmd и PowerShell)."
+  },
+  "hostPickKeyFile": "Выбрать файл ключа",
+  "@hostPickKeyFile": {
+    "description": "Кнопка загрузки PEM приватного ключа из файла в форму."
+  },
+  "hostPrivateKeyLabel": "Приватный ключ (PEM)",
+  "@hostPrivateKeyLabel": {
+    "description": "Поле приватного ключа в формате PEM. Хранится в защищённом хранилище."
+  },
+  "hostPrivateKeyHint": "Вставьте текст PEM или выберите файл. Ключ хранится в защищённом хранилище, а не в базе данных.",
+  "@hostPrivateKeyHint": {
+    "description": "Подсказка под полем приватного ключа о месте хранения."
   },
   "hostTest": "Проверить подключение",
   "@hostTest": {
@@ -789,9 +821,9 @@
   "@settingsAttachPerMessage": {
     "description": "Settings field: maximum number of attachments per message."
   },
-  "settingsAttachMaxBytes": "Макс. размер файла в контексте, байт",
+  "settingsAttachMaxBytes": "Макс. размер файла, байт",
   "@settingsAttachMaxBytes": {
-    "description": "Settings field: files larger than this are passed to the agent as a path instead of content."
+    "description": "Settings field: files larger than this are refused as attachments."
   },
   "settingsModelUnavailable": "Модель больше недоступна в OpenRouter: выберите другую.",
   "@settingsModelUnavailable": {
@@ -825,6 +857,22 @@
   "onboardingModelHint": "Агенту нужен tool calling. Модели без него здесь не показываются; модель можно сменить позже в шапке чата или в Settings.",
   "@onboardingModelHint": {
     "description": "Onboarding hint on the model step."
+  },
+  "onboardingWelcomeAndroid": "ProbablyWorks — ИИ-агент, который выполняет задачи на этом телефоне или на SSH-сервере. Опишите задачу, а агент сам прочитает файлы, запустит команды и внесёт изменения. Рискованные действия подтверждаете вы, а ход работы видно в чате.",
+  "@onboardingWelcomeAndroid": {
+    "description": "Приветствие мастера на Android: локальный Host здесь — телефон."
+  },
+  "onboardingWelcomeIos": "ProbablyWorks — ИИ-агент, который выполняет задачи на SSH-сервере. На iPhone и iPad команды не запускаются локально, поэтому нужен хотя бы один SSH-хост. Опишите задачу, а агент сам прочитает файлы, запустит команды и внесёт изменения. Рискованные действия подтверждаете вы, а ход работы видно в чате.",
+  "@onboardingWelcomeIos": {
+    "description": "Приветствие мастера на iOS: локального Host нет, работа только через SSH."
+  },
+  "onboardingWorkspaceBodyMobile": "Папка внутри приложения на телефоне, в которой агент начинает новые чаты. Оставьте поле пустым, чтобы использовать папку приложения. Позже её можно изменить в Hosts.",
+  "@onboardingWorkspaceBodyMobile": {
+    "description": "Текст шага рабочей папки на Android. Системный выбор папки здесь недоступен."
+  },
+  "onboardingIosSshRequired": "На iPhone и iPad чат создаётся только на SSH-хосте. Добавьте сервер на шаге ниже.",
+  "@onboardingIosSshRequired": {
+    "description": "Подсказка на iOS, когда SSH-хостов ещё нет и первый чат создать нельзя."
   },
   "onboardingWorkspaceBody": "Папка на этом компьютере, в которой агент начинает новые чаты. Позже её можно изменить в Hosts.",
   "@onboardingWorkspaceBody": {
@@ -1056,6 +1104,86 @@
         "type": "int"
       }
     }
+  },
+  "attachTooLarge": "{name}: файл больше {limit} байт, он не добавлен",
+  "@attachTooLarge": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "attachUnreadable": "{name}: не удалось прочитать файл",
+  "@attachUnreadable": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachUnsupportedType": "{name}: этот тип файла нельзя прикрепить",
+  "@attachUnsupportedType": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachModelNoFile": "Выбранная модель не принимает {name} ({mime}). Выберите другую модель.",
+  "@attachModelNoFile": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "mime": {
+        "type": "String"
+      }
+    }
+  },
+  "attachNeedReattach": "{name}: прикрепите файл заново, его содержимое не сохраняется между запусками",
+  "@attachNeedReattach": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "attachLimitReached": "Не больше {count} файлов в сообщении",
+  "@attachLimitReached": {
+    "description": "Сообщение при отказе прикрепить файл.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "runServiceChannel": "Выполнение задач",
+  "@runServiceChannel": {
+    "description": "Android notification channel name for the background work service."
+  },
+  "runServiceTitle": "Агент работает",
+  "@runServiceTitle": {
+    "description": "Title of the persistent Android notification while an agent run is active."
+  },
+  "runServiceText": "Агент выполняет задачу. Держите приложение открытым, пока запуск не завершится.",
+  "@runServiceText": {
+    "description": "Text of the persistent Android notification while an agent run is active."
+  },
+  "runStoppedInBackground": "Запуск остановлен: приложение свернули. На iOS команды не продолжаются в фоне.",
+  "@runStoppedInBackground": {
+    "description": "Event in the chat when a run is stopped because the iOS app went to the background."
+  },
+  "runInterruptedByClose": "Запуск прерван: система закрыла приложение, пока выполнялась команда. Результат на хосте может быть неполным.",
+  "@runInterruptedByClose": {
+    "description": "Event in the chat after the app was restarted and an unfinished run was found."
   },
   "composerAddTooltip": "Добавить",
   "@composerAddTooltip": {

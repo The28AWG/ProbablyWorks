@@ -14,6 +14,9 @@ class _ScriptedLlm implements LlmProvider {
   int calls = 0;
 
   @override
+  Future<void> checkKey() => Future<void>.value();
+
+  @override
   Future<List<LlmModelInfo>> listModels() {
     calls++;
     return script.removeAt(0)();

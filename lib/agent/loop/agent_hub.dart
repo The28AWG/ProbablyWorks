@@ -16,7 +16,7 @@ import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/notify/desktop_notifier.dart';
+import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
@@ -58,7 +58,7 @@ class AgentHub {
   final InteractionBroker broker;
   final ActiveExecRegistry registry;
   final ExecLogStore logs;
-  final DesktopNotifier notifier;
+  final AppNotifier notifier;
 
   final Map<String, ChatSession> _sessions = {};
 

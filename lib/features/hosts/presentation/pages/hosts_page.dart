@@ -5,9 +5,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
@@ -137,7 +139,7 @@ class _HostCard extends StatelessWidget {
     final address = host.isLocal
         ? host.os.name
         : '${host.username ?? ''}@${host.address ?? ''}:${host.port}';
-    final name = host.isLocal ? l10n.hostLocalName : host.name;
+    final name = host.isLocal ? localHostTitle(l10n) : host.name;
     final notes = host.notes;
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -151,7 +153,7 @@ class _HostCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Icon(
-                host.isLocal ? Icons.computer : Icons.dns_outlined,
+                host.isLocal ? localHostIcon() : Icons.dns_outlined,
                 color: scheme.onPrimaryContainer,
               ),
             ),
@@ -285,6 +287,12 @@ class _HostFormState extends State<_HostForm> {
   late final _keyPath = TextEditingController(
     text: widget.existing?.keyPath ?? '',
   );
+  final _privateKey = TextEditingController();
+  late HostOs _os = switch (widget.existing?.os) {
+    HostOs.macos => HostOs.macos,
+    HostOs.windows => HostOs.windows,
+    _ => HostOs.posix,
+  };
   late final _workspace = TextEditingController(
     text: widget.existing?.defaultWorkspace ?? '',
   );
@@ -311,6 +319,7 @@ class _HostFormState extends State<_HostForm> {
       _port,
       _user,
       _keyPath,
+      _privateKey,
       _workspace,
       _shell,
       _timeout,
@@ -326,6 +335,18 @@ class _HostFormState extends State<_HostForm> {
     final path = await getDirectoryPath();
     if (!mounted) return;
     if (path != null) setState(() => _workspace.text = path);
+  }
+
+  /// Читает PEM из выбранного файла в поле. Путь сохраняется только как подпись: PEM уходит в secure storage.
+  Future<void> _pickKeyFile() async {
+    final file = await openFile();
+    if (!mounted || file == null) return;
+    final pem = await file.readAsString();
+    if (!mounted) return;
+    setState(() {
+      _privateKey.text = pem;
+      if (AppPlatform.current.canOpenExternalKeys) _keyPath.text = file.path;
+    });
   }
 
   /// Проверяет поля; возвращает true, если можно сохранять.
@@ -361,6 +382,9 @@ class _HostFormState extends State<_HostForm> {
     await context.read<HostsCubit>().save(
       host,
       secret: _local ? null : _secret.text,
+      privateKeyPem: _local || _auth != SshAuthType.key
+          ? null
+          : _privateKey.text,
     );
     if (!mounted) return;
     Navigator.pop(context);
@@ -381,11 +405,14 @@ class _HostFormState extends State<_HostForm> {
       port: _local ? (existing?.port ?? 22) : int.parse(_port.text.trim()),
       username: _local ? null : orNull(_user.text),
       authType: _auth,
-      keyPath: _local || _auth != SshAuthType.key
+      keyPath:
+          _local ||
+              _auth != SshAuthType.key ||
+              !AppPlatform.current.canOpenExternalKeys
           ? null
           : orNull(_keyPath.text),
       hostKeyFingerprint: existing?.hostKeyFingerprint,
-      os: existing?.os ?? HostOs.posix,
+      os: _local ? (existing?.os ?? HostOs.posix) : _os,
       defaultWorkspace: orNull(_workspace.text),
       shellOverride: orNull(_shell.text),
       notes: orNull(_notes.text),
@@ -444,6 +471,29 @@ class _HostFormState extends State<_HostForm> {
                         ),
                       ],
                     ),
+                    Text(
+                      l10n.hostOsLabel,
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    SegmentedButton<HostOs>(
+                      segments: [
+                        ButtonSegment(
+                          value: HostOs.posix,
+                          label: Text(l10n.hostOsPosix),
+                        ),
+                        ButtonSegment(
+                          value: HostOs.macos,
+                          label: Text(l10n.hostOsMacos),
+                        ),
+                        ButtonSegment(
+                          value: HostOs.windows,
+                          label: Text(l10n.hostOsWindows),
+                        ),
+                      ],
+                      selected: {_os},
+                      onSelectionChanged: (value) =>
+                          setState(() => _os = value.first),
+                    ),
                   ],
                 ),
                 AppSection(
@@ -464,12 +514,28 @@ class _HostFormState extends State<_HostForm> {
                       onSelectionChanged: (value) =>
                           setState(() => _auth = value.first),
                     ),
-                    if (_auth == SshAuthType.key)
-                      AppTextField(
-                        controller: _keyPath,
-                        label: l10n.hostKeyPathLabel,
-                        mono: true,
+                    if (_auth == SshAuthType.key) ...[
+                      OutlinedButton.icon(
+                        onPressed: _pickKeyFile,
+                        icon: const Icon(Icons.key_outlined),
+                        label: Text(l10n.hostPickKeyFile),
                       ),
+                      if (_keyPath.text.isNotEmpty)
+                        Text(
+                          _keyPath.text,
+                          style: Theme.of(context).textTheme.labelSmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      AppTextField(
+                        controller: _privateKey,
+                        label: l10n.hostPrivateKeyLabel,
+                        helper: l10n.hostPrivateKeyHint,
+                        mono: true,
+                        minLines: 3,
+                        maxLines: 8,
+                      ),
+                    ],
                     AppTextField(
                       controller: _secret,
                       label: l10n.hostSecretLabel,
@@ -485,7 +551,8 @@ class _HostFormState extends State<_HostForm> {
                     controller: _workspace,
                     label: l10n.hostDefaultWorkspaceLabel,
                     mono: true,
-                    suffix: _local
+                    suffix:
+                        _local && AppPlatform.current.supportsDirectoryPicker
                         ? IconButton(
                             tooltip: l10n.hostPickFolder,
                             icon: const Icon(Icons.folder_open),

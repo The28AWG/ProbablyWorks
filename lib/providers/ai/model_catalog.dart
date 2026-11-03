@@ -61,6 +61,12 @@ class ModelCatalogState extends Equatable {
         : ModelStatus.available;
   }
 
+  /// Принимает ли модель файл: по каталогу, иначе по сохранённым деталям (см. [acceptsFileType]).
+  bool acceptsFile(String id, String mimeType) => acceptsFileType(
+    modelOf(id)?.inputModalities ?? saved[id]?.inputModalities,
+    mimeType,
+  );
+
   /// Название: из списка, иначе из сохранённых деталей, иначе id.
   String nameOf(String id) => modelOf(id)?.name ?? saved[id]?.name ?? id;
 
@@ -157,6 +163,9 @@ class ModelCatalogService {
   Future<void> refresh() =>
       _refreshing ??= _load().whenComplete(() => _refreshing = null);
 
+  /// Проверяет ключ запросом с авторизацией. Список моделей ключ не подтверждает: он публичный.
+  Future<void> checkKey() => _llm.checkKey();
+
   /// Запоминает выбранные модели с деталями. Если модели нет в загруженном списке,
   /// сохраняются только id и уже известные данные.
   Future<void> remember(Iterable<String> ids) => _store([
@@ -172,6 +181,7 @@ class ModelCatalogService {
       name: live?.name ?? known?.name ?? id,
       contextLength: live?.contextLength ?? known?.contextLength,
       supportsTools: live?.supportsTools ?? known?.supportsTools ?? false,
+      inputModalities: live?.inputModalities ?? known?.inputModalities,
     );
   }
 

@@ -17,6 +17,9 @@ class _ScriptedLlm implements LlmProvider {
   final List<LlmRequest> requests = [];
 
   @override
+  Future<void> checkKey() => Future<void>.value();
+
+  @override
   Stream<LlmEvent> stream(LlmRequest request) {
     requests.add(request);
     final text = replies.isEmpty ? '' : replies.removeAt(0);

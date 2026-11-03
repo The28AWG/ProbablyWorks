@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/app/background/background_run_guard.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
@@ -22,14 +24,20 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
   final _locale = getIt<LocaleController>();
   final _drafts = getIt<ChatDraftStore>();
   late final AppLifecycleListener _lifecycle;
+  late final BackgroundRunGuard _runGuard;
 
   @override
   void initState() {
     super.initState();
+    // Android: сервис на время ходов. iOS: ходы останавливаются при сворачивании (см. BackgroundRunGuard).
+    _runGuard = BackgroundRunGuard(getIt<AgentHub>(), _locale)..start();
     // Черновики пишутся в БД с задержкой: при сворачивании и выходе из приложения сохраняем их сразу.
     _lifecycle = AppLifecycleListener(
       onInactive: _saveDrafts,
-      onHide: _saveDrafts,
+      onHide: () {
+        _saveDrafts();
+        unawaited(_runGuard.onHidden());
+      },
       onDetach: _saveDrafts,
       onExitRequested: () async {
         await _drafts.flush();
@@ -40,6 +48,7 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
 
   @override
   void dispose() {
+    _runGuard.dispose();
     _lifecycle.dispose();
     super.dispose();
   }

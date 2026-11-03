@@ -128,6 +128,9 @@ class SavedModels extends Table {
   BoolColumn get supportsTools =>
       boolean().withDefault(const Constant(false))();
 
+  /// Входные модальности через запятую (`text,image,file`). Null — каталог их не описал.
+  TextColumn get inputModalities => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

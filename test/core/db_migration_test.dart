@@ -15,6 +15,12 @@ const _chatsV4 =
     'current_revision_id TEXT, created_at INTEGER NOT NULL, '
     'updated_at INTEGER NOT NULL)';
 
+/// Таблица saved_models в форме схемы v4 (без входных модальностей).
+const _savedModelsV4 =
+    'CREATE TABLE saved_models ('
+    'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, '
+    'context_length INTEGER, supports_tools INTEGER NOT NULL DEFAULT 0)';
+
 /// Открывает базу, созданную предыдущей версией схемы, и даёт миграции поработать.
 AppDatabase _openAtVersion(
   int version, {
@@ -34,6 +40,7 @@ AppDatabase _openAtVersion(
       raw
         ..execute(_chatsV4)
         ..execute('PRAGMA user_version = $version');
+      if (version >= 4) raw.execute(_savedModelsV4);
     },
   ),
 );
@@ -71,7 +78,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 5);
+    expect(AppDatabase.currentSchemaVersion, 6);
   });
 
   test(
@@ -90,4 +97,18 @@ void main() {
       expect(columns, containsAll(['draft', 'draft_attachments']));
     },
   );
+
+  test('v5 → v6 adds input modalities to saved models', () async {
+    final db = _openAtVersion(5);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name FROM pragma_table_info('saved_models') "
+          "WHERE name = 'input_modalities'",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(columns, ['input_modalities']);
+  });
 }

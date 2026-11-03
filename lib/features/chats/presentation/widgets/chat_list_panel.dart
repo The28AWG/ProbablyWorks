@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
+import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/short_time.dart';
@@ -299,10 +300,10 @@ class _ChatTileState extends State<_ChatTile> {
     final host = widget.host;
     final hostName = host == null
         ? null
-        : (host.isLocal ? l10n.hostLocalName : host.name);
+        : (host.isLocal ? localHostTitle(l10n) : host.name);
     final hostIcon = host == null || !host.isLocal
         ? Icons.dns_outlined
-        : Icons.computer_outlined;
+        : localHostIcon();
     final showMenu = _hovered || _rowFocused || _menuFocused;
     final active = widget.waiting || widget.running;
     return MouseRegion(
@@ -324,6 +325,8 @@ class _ChatTileState extends State<_ChatTile> {
             onFocusChange: (focused) => setState(() => _rowFocused = focused),
             onSecondaryTapDown: (details) =>
                 widget.onMenu(details.globalPosition),
+            // Кнопка «ещё» видна только при наведении: на телефоне меню открывается долгим нажатием.
+            onLongPress: _openRowMenuFromButton,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.md,

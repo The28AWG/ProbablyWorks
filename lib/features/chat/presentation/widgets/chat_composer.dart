@@ -94,7 +94,7 @@ class ChatComposer extends StatelessWidget {
                               avatar: Icon(
                                 attachments[i].mode == AttachmentMode.attach
                                     ? Icons.description_outlined
-                                    : Icons.folder_open,
+                                    : Icons.attach_file,
                                 size: 16,
                               ),
                               label: Text(attachments[i].name),

@@ -8,6 +8,7 @@ import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 
@@ -25,9 +26,13 @@ class SettingsState extends Equatable {
     this.pinnedModels = const [],
     this.stepsDisplay = StepsDisplay.defaults,
     this.saved = 0,
+    this.keyError,
   });
 
   final bool apiKeySet;
+
+  /// Причина, по которой ключ не принят сервисом. Прежний ключ при этом сохраняется.
+  final String? keyError;
 
   /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
   final ModelCatalogState catalog;
@@ -61,7 +66,10 @@ class SettingsState extends Equatable {
     List<String>? pinnedModels,
     StepsDisplay? stepsDisplay,
     int? saved,
+    String? keyError,
+    bool clearKeyError = false,
   }) => SettingsState(
+    keyError: clearKeyError ? null : (keyError ?? this.keyError),
     apiKeySet: apiKeySet ?? this.apiKeySet,
     catalog: catalog ?? this.catalog,
     defaultModel: defaultModel ?? this.defaultModel,
@@ -90,6 +98,7 @@ class SettingsState extends Equatable {
     pinnedModels,
     stepsDisplay,
     saved,
+    keyError,
   ];
 }
 
@@ -144,11 +153,34 @@ class SettingsCubit extends Cubit<SettingsState> {
     if (!_catalog.state.loaded && state.apiKeySet) await refreshModels();
   }
 
+  /// Ключ сохраняется, только если сервис его принял. Иначе возвращается прежнее значение.
   Future<void> saveApiKey(String key) async {
     final trimmed = key.trim();
     if (trimmed.isEmpty) return;
+    final previous = await _secrets.read(openRouterKeyName);
     await _secrets.write(openRouterKeyName, trimmed);
-    emit(state.copyWith(apiKeySet: true, saved: state.saved + 1));
+    try {
+      await _catalog.checkKey();
+    } on Object catch (error) {
+      if (previous == null) {
+        await _secrets.delete(openRouterKeyName);
+      } else {
+        await _secrets.write(openRouterKeyName, previous);
+      }
+      emit(
+        state.copyWith(
+          keyError: error is AppFailure ? error.message : '$error',
+        ),
+      );
+      return;
+    }
+    emit(
+      state.copyWith(
+        apiKeySet: true,
+        saved: state.saved + 1,
+        clearKeyError: true,
+      ),
+    );
     await refreshModels();
   }
 

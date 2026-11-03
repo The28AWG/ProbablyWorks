@@ -6,7 +6,7 @@ import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/pty_launcher.dart';
 
 /// Замена PTY для тестов агента: команда запускается обычным процессом, stdout и stderr объединяются.
-/// Нужна, потому что нативная библиотека flutter_pty не собирается в `flutter test`.
+/// Нужна, потому что нативная библиотека PTY не загружается в `flutter test` вместе с агентом.
 /// Настоящий TTY проверяют тесты в test/host/local_pty_runtime_test.dart.
 class PipePtyLauncher implements PtyLauncher {
   const PipePtyLauncher();

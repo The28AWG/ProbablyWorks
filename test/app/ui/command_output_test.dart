@@ -351,16 +351,24 @@ void _liveGroup() {
     expect(_lines(tester), ['\$ echo hello', 'hello']);
   });
 
-  testWidgets('typing in the live terminal reaches the process', (
-    tester,
-  ) async {
-    final host = _FakeHostTerminal();
-    await tester.pumpWidget(
-      _TestHost(CommandOutput(text: '', active: true, terminal: host)),
-    );
-    _terminalOf(tester).onOutput?.call('ls\r');
-    expect(host.input, ['ls\r']);
-  });
+  testWidgets(
+    'the live terminal is display-only: keys never reach the process',
+    (tester) async {
+      final host = _FakeHostTerminal();
+      await tester.pumpWidget(
+        _TestHost(CommandOutput(text: '', active: true, terminal: host)),
+      );
+      expect(
+        tester.widget<TerminalView>(find.byType(TerminalView)).readOnly,
+        isTrue,
+      );
+      expect(_terminalOf(tester).onOutput, isNull);
+      _terminalOf(tester).onOutput?.call('ls\r');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+      expect(host.input, isEmpty);
+    },
+  );
 
   testWidgets('the terminal reports its size to the process', (tester) async {
     final host = _FakeHostTerminal();

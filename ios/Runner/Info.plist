@@ -26,6 +26,9 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- iOS 14+ без этого ключа молча не пропускает SSH к адресам локальной сети. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ProbablyWorks подключается по SSH к вашим компьютерам и серверам в локальной сети.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

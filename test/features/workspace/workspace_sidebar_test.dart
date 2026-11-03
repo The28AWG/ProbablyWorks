@@ -7,6 +7,7 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -209,8 +210,9 @@ void main() {
     expect(find.text('Remote chat'), findsOneWidget);
     expect(find.text('build-box'), findsOneWidget);
     expect(find.text('Local chat'), findsOneWidget);
-    expect(find.text('This computer'), findsOneWidget);
-    expect(find.byIcon(Icons.computer_outlined), findsOneWidget);
+    final l10n = lookupAppLocalizations(const Locale('en'));
+    expect(find.text(localHostTitle(l10n)), findsOneWidget);
+    expect(find.byIcon(localHostIcon()), findsOneWidget);
   });
 
   testWidgets('sidebar header shows the app name', (tester) async {

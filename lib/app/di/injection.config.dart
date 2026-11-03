@@ -32,10 +32,10 @@ import '../../core/data/host_repository.dart' as _i250;
 import '../../core/data/saved_model_repository.dart' as _i503;
 import '../../core/data/settings_repository.dart' as _i913;
 import '../../core/db/app_database.dart' as _i386;
-import '../../core/notify/desktop_notifier.dart' as _i458;
+import '../../core/notify/app_notifier.dart' as _i404;
 import '../../core/security/secret_store.dart' as _i617;
-import '../../host/flutter_pty_launcher.dart' as _i348;
 import '../../host/host_runtime_factory.dart' as _i559;
+import '../../host/portable_pty_launcher.dart' as _i224;
 import '../../host/pty_launcher.dart' as _i532;
 import '../../host/ssh_connection_pool.dart' as _i719;
 import '../../providers/ai/llm_port.dart' as _i432;
@@ -64,9 +64,11 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i558.FlutterSecureStorage>(() => coreModule.secureStorage);
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.lazySingleton<_i531.ContextBuilder>(() => _i531.ContextBuilder());
-    gh.lazySingleton<_i458.DesktopNotifier>(() => _i458.DesktopNotifier());
     gh.lazySingleton<_i719.HostKeyConfirmations>(
       () => _i719.HostKeyConfirmations(),
+    );
+    gh.lazySingleton<_i532.PtyLauncher>(
+      () => const _i224.PortablePtyLauncher(),
     );
     gh.singleton<_i67.ExecLogStore>(
       () => coreModule.execLogStore(gh<_i859.AppPaths>()),
@@ -97,7 +99,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i913.SettingsRepository>(),
       ),
     );
-    gh.lazySingleton<_i532.PtyLauncher>(() => const _i348.FlutterPtyLauncher());
+    gh.lazySingleton<_i404.AppNotifier>(() => _i404.PluginAppNotifier());
     gh.singleton<_i432.LlmProvider>(
       () => coreModule.llmProvider(gh<_i617.SecretStore>()),
     );
@@ -175,7 +177,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i765.InteractionBroker>(),
         gh<_i970.ActiveExecRegistry>(),
         gh<_i67.ExecLogStore>(),
-        gh<_i458.DesktopNotifier>(),
+        gh<_i404.AppNotifier>(),
       ),
     );
     return this;

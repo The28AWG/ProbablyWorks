@@ -61,32 +61,16 @@ class WorkspaceContextLoader {
   ) async {
     final workspace = chat.workspace;
     if (workspace == null || workspace.isEmpty) return WorkspaceSnapshot.empty;
-    if (os == HostOs.windows) return WorkspaceSnapshot(workspace: workspace);
 
     final shell = ShellAdapter(os);
     final skillsDirs = [
       '$workspace/.probablyworks/skills',
       '$workspace/.cursor/skills',
     ];
-    final quotedWorkspace = shQuote(workspace);
-    // Первый найденный файл из порядка: AGENTS.md, agents.md (любой регистр), .probablyworks/AGENTS.md.
-    final presence = await captureRun(
-      runtime,
-      'W=$quotedWorkspace; '
-      'for f in "\$W/AGENTS.md" "\$W"/[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd] "\$W/.probablyworks/AGENTS.md"; do '
-      '[ -f "\$f" ] && { echo "agents=\$f"; break; }; done; '
-      '${skillsDirs.map((d) => '[ -d ${shQuote(d)} ] && echo skills=1; ').join()}true',
-    );
-    final agentsLine = presence.stdout
-        .split('\n')
-        .where((line) => line.startsWith('agents='))
-        .firstOrNull;
-    final agentsPath = agentsLine == null
-        ? null
-        : charFrom(agentsLine, 'agents='.length).trim();
-    final hasAgents = agentsPath != null && agentsPath.isNotEmpty;
-    final hasSkills = presence.stdout.contains('skills=1');
-    if (!hasAgents && !hasSkills) {
+    final presence = os == HostOs.windows
+        ? await _presenceWindows(runtime, shell, workspace, skillsDirs)
+        : await _presencePosix(runtime, shell, workspace, skillsDirs);
+    if (!presence.hasAgents && !presence.hasSkills) {
       return WorkspaceSnapshot(workspace: workspace, trusted: true);
     }
 
@@ -95,11 +79,11 @@ class WorkspaceContextLoader {
       return WorkspaceSnapshot(workspace: workspace, needsTrust: true);
     }
 
-    final agentsMd = agentsPath == null
+    final agentsMd = presence.agentsPath == null
         ? null
-        : await _readAgents(runtime, shell, chat.hostId, agentsPath);
-    final skills = hasSkills
-        ? await _scanSkills(runtime, skillsDirs)
+        : await _readAgents(runtime, shell, chat.hostId, presence.agentsPath!);
+    final skills = presence.hasSkills
+        ? await _scanSkills(runtime, shell, skillsDirs)
         : const <SkillInfo>[];
     return WorkspaceSnapshot(
       workspace: workspace,
@@ -109,13 +93,77 @@ class WorkspaceContextLoader {
     );
   }
 
-  /// Тело skill для load_skill. Путь берётся из результата сканирования.
-  Future<String?> loadSkillBody(HostRuntime runtime, SkillInfo skill) async {
+  /// Тело skill для load_skill. Путь берётся из результата сканирования (абсолютный, без `~`).
+  Future<String?> loadSkillBody(
+    HostRuntime runtime,
+    SkillInfo skill,
+    HostOs os,
+  ) async {
     final run = await captureRun(
       runtime,
-      'head -c $_maxSkillBytes -- ${shQuote(skill.path)} 2>/dev/null',
+      ShellAdapter(os).readHead(skill.path, maxBytes: _maxSkillBytes),
     );
     return run.ok ? run.stdout : null;
+  }
+
+  Future<_Presence> _presencePosix(
+    HostRuntime runtime,
+    ShellAdapter shell,
+    String workspace,
+    List<String> skillsDirs,
+  ) async {
+    final quotedWorkspace = shell.quotePath(workspace);
+    // Первый найденный файл из порядка: AGENTS.md, agents.md (любой регистр), .probablyworks/AGENTS.md.
+    final run = await captureRun(
+      runtime,
+      'W=$quotedWorkspace; '
+      'for f in "\$W/AGENTS.md" "\$W"/[Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd] "\$W/.probablyworks/AGENTS.md"; do '
+      '[ -f "\$f" ] && { echo "agents=\$f"; break; }; done; '
+      '${skillsDirs.map((d) => '[ -d ${shell.quotePath(d)} ] && echo skills=1; ').join()}true',
+    );
+    final agentsLine = run.stdout
+        .split('\n')
+        .where((line) => line.startsWith('agents='))
+        .firstOrNull;
+    final agentsPath = agentsLine == null
+        ? null
+        : charFrom(agentsLine, 'agents='.length).trim();
+    return _Presence(
+      agentsPath: agentsPath == null || agentsPath.isEmpty ? null : agentsPath,
+      hasSkills: run.stdout.contains('skills=1'),
+    );
+  }
+
+  /// Windows: одна PowerShell-команда проверяет наличие AGENTS.md и каталогов skills.
+  Future<_Presence> _presenceWindows(
+    HostRuntime runtime,
+    ShellAdapter shell,
+    String workspace,
+    List<String> skillsDirs,
+  ) async {
+    final dirs = [for (final d in skillsDirs) psQuote(d)].join(',');
+    final run = await captureRun(
+      runtime,
+      shell.powershell(
+        '\$w = ${psQuote(workspace)}; '
+        '\$agents = (Join-Path \$w "AGENTS.md"), (Join-Path \$w ".probablyworks/AGENTS.md") | '
+        'Where-Object { Test-Path -LiteralPath \$_ -PathType Leaf } | Select-Object -First 1; '
+        'if (\$agents) { Write-Output ("agents=" + \$agents) }; '
+        'foreach (\$d in @($dirs)) { if (Test-Path -LiteralPath \$d -PathType Container) { Write-Output "skills=1" } }',
+      ),
+    );
+    final agentsLine = run.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.startsWith('agents='))
+        .firstOrNull;
+    final agentsPath = agentsLine == null
+        ? null
+        : charFrom(agentsLine, 'agents='.length).trim();
+    return _Presence(
+      agentsPath: agentsPath == null || agentsPath.isEmpty ? null : agentsPath,
+      hasSkills: run.stdout.contains('skills=1'),
+    );
   }
 
   Future<String?> _readAgents(
@@ -132,7 +180,7 @@ class WorkspaceContextLoader {
     if (cached != null && cached.mtime == mtime) return cached.content;
     final run = await captureRun(
       runtime,
-      'head -c $_maxAgentsBytes -- ${shQuote(path)}',
+      shell.readHead(path, maxBytes: _maxAgentsBytes),
     );
     if (!run.ok) return null;
     _agentsCache[key] = (mtime: mtime, content: run.stdout);
@@ -141,13 +189,12 @@ class WorkspaceContextLoader {
 
   Future<List<SkillInfo>> _scanSkills(
     HostRuntime runtime,
+    ShellAdapter shell,
     List<String> skillsDirs,
   ) async {
-    final globs = [for (final dir in skillsDirs) '${shQuote(dir)}/*/SKILL.md']
-        .join(' ');
     final run = await captureRun(
       runtime,
-      'for f in $globs; do [ -f "\$f" ] && { echo "@@@ \$f"; head -c $_maxSkillBytes "\$f"; echo; }; done',
+      shell.scanSkills(skillsDirs, maxBytes: _maxSkillBytes),
     );
     if (!run.ok) return const [];
     final skills = <SkillInfo>[];
@@ -157,7 +204,9 @@ class WorkspaceContextLoader {
       final path = charRange(block, 0, newline).trim();
       final body = charFrom(block, newline + 1);
       final meta = _frontmatter(body);
-      final name = meta['name'] ?? path.split('/').reversed.elementAt(1);
+      final parts = path.split(RegExp(r'[\\/]'));
+      final name =
+          meta['name'] ?? (parts.length >= 2 ? parts[parts.length - 2] : path);
       skills.add(
         SkillInfo(
           name: name,
@@ -184,4 +233,13 @@ class WorkspaceContextLoader {
     }
     return result;
   }
+}
+
+class _Presence {
+  const _Presence({this.agentsPath, this.hasSkills = false});
+
+  final String? agentsPath;
+  final bool hasSkills;
+
+  bool get hasAgents => agentsPath != null;
 }

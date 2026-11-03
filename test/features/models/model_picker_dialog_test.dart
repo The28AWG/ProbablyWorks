@@ -15,6 +15,9 @@ class _FakeLlm implements LlmProvider {
   final List<LlmModelInfo> models;
 
   @override
+  Future<void> checkKey() => Future<void>.value();
+
+  @override
   Future<List<LlmModelInfo>> listModels() async => models;
 
   @override

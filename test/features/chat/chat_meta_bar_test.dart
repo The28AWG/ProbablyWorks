@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
@@ -95,11 +96,29 @@ class _TestChatMetaBar extends StatelessWidget {
   );
 }
 
+/// `testWidgets`, который эмулирует desktop (Linux): подписи Local Host и поведение зависят от платформы,
+/// а по умолчанию тесты идут как Android. Override сбрасывается внутри тела, потому что flutter_test
+/// проверяет его до `tearDown`.
+void _desktopWidgetTest(String description, WidgetTesterCallback body) {
+  // Проверки лежат в body, которое передаёт вызывающий тест; DCM не видит их через обёртку.
+  // ignore: missing-test-assertion
+  testWidgets(description, (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    try {
+      await body(tester);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+}
+
 void main() {
   setUpAll(GoldenFonts.load);
 
   for (final brightness in Brightness.values) {
-    testWidgets('chat meta bar states (${brightness.name})', (tester) async {
+    _desktopWidgetTest('chat meta bar states (${brightness.name})', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(960, 140));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -127,7 +146,7 @@ void main() {
     });
   }
 
-  testWidgets(
+  _desktopWidgetTest(
     'there is no execution mode chip: it lives in the composer menu',
     (tester) async {
       await tester.pumpWidget(
@@ -141,7 +160,7 @@ void main() {
     },
   );
 
-  testWidgets('host cannot be changed while the agent is running', (
+  _desktopWidgetTest('host cannot be changed while the agent is running', (
     tester,
   ) async {
     String? picked;
@@ -161,7 +180,7 @@ void main() {
     expect(picked, isNull);
   });
 
-  testWidgets('host menu lists hosts and reports the selection', (
+  _desktopWidgetTest('host menu lists hosts and reports the selection', (
     tester,
   ) async {
     String? picked;
@@ -178,7 +197,9 @@ void main() {
     expect(picked, 'prod');
   });
 
-  testWidgets('folder and context chips open their editors', (tester) async {
+  _desktopWidgetTest('folder and context chips open their editors', (
+    tester,
+  ) async {
     var pickedFolder = 0;
     var openedContext = 0;
     await tester.pumpWidget(
@@ -202,7 +223,7 @@ void main() {
     expect(openedContext, 1);
   });
 
-  testWidgets('folder cannot be changed while the agent is running', (
+  _desktopWidgetTest('folder cannot be changed while the agent is running', (
     tester,
   ) async {
     var pickedFolder = 0;
@@ -221,7 +242,7 @@ void main() {
     expect(pickedFolder, 0);
   });
 
-  testWidgets('folder chip is absent until a folder is assigned', (
+  _desktopWidgetTest('folder chip is absent until a folder is assigned', (
     tester,
   ) async {
     await tester.pumpWidget(_TestHost(_TestChatMetaBar(), AppTheme.light));
@@ -238,7 +259,7 @@ void main() {
     expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
   });
 
-  testWidgets('context chip is absent until the model reports usage', (
+  _desktopWidgetTest('context chip is absent until the model reports usage', (
     tester,
   ) async {
     await tester.pumpWidget(_TestHost(_TestChatMetaBar(), AppTheme.light));
@@ -253,7 +274,9 @@ void main() {
     expect(find.byIcon(Icons.data_usage), findsOneWidget);
   });
 
-  testWidgets('folder chip is as tall as the chips with text', (tester) async {
+  _desktopWidgetTest('folder chip is as tall as the chips with text', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _TestHost(
         _TestChatMetaBar(workspace: '/home/me/projects/app'),
@@ -276,7 +299,7 @@ void main() {
     expect(folder.height, model.height);
   });
 
-  testWidgets('missing model asks to choose one', (tester) async {
+  _desktopWidgetTest('missing model asks to choose one', (tester) async {
     await tester.pumpWidget(
       _TestHost(_TestChatMetaBar(noModel: true), AppTheme.light),
     );
@@ -284,7 +307,7 @@ void main() {
     expect(find.text('Choose model'), findsOneWidget);
   });
 
-  testWidgets('pending model is neutral with a spinner, not a warning', (
+  _desktopWidgetTest('pending model is neutral with a spinner, not a warning', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -309,7 +332,7 @@ void main() {
     );
   });
 
-  testWidgets('unavailable model keeps its name with a ! marker', (
+  _desktopWidgetTest('unavailable model keeps its name with a ! marker', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -319,7 +342,7 @@ void main() {
     expect(find.text('Claude Sonnet'), findsNothing);
   });
 
-  testWidgets('model chip shows a spinner while the first list loads', (
+  _desktopWidgetTest('model chip shows a spinner while the first list loads', (
     tester,
   ) async {
     await tester.pumpWidget(

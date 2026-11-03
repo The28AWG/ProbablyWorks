@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
@@ -27,7 +29,7 @@ import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/core/notify/desktop_notifier.dart';
+import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
@@ -51,6 +53,9 @@ class _FakeLlm implements LlmProvider {
 
   /// Если задано — следующий ход завершится этой ошибкой вместо ответа.
   LlmFailure? nextFailure;
+
+  @override
+  Future<void> checkKey() => Future<void>.value();
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
@@ -77,7 +82,7 @@ class _FakeLlm implements LlmProvider {
   }
 }
 
-class _SilentNotifier extends DesktopNotifier {
+class _SilentNotifier implements AppNotifier {
   @override
   Future<void> notify({required String title, required String body}) async {
     return;
@@ -210,6 +215,94 @@ void main() {
     expect(llm.listCalls, 2);
     expect(hub.models.state.statusOf('fake/model'), ModelStatus.unavailable);
   });
+
+  test(
+    'a binary file goes to the model once, in the first request of its turn',
+    () async {
+      final chatId = await createChat();
+      llm
+        ..models = const [
+          LlmModelInfo(
+            id: 'fake/model',
+            name: 'Fake',
+            inputModalities: ['text', 'file'],
+          ),
+        ]
+        ..script.addAll([
+          [const LlmTextDelta('вижу PDF'), const LlmCompleted()],
+          [const LlmTextDelta('и ещё раз'), const LlmCompleted()],
+        ]);
+      await hub.models.refresh();
+      final session = hub.session(chatId);
+      final pdf = AttachmentRef(
+        name: 'scan.pdf',
+        mode: AttachmentMode.file,
+        mimeType: 'application/pdf',
+        sizeBytes: 8,
+        bytes: Uint8List.fromList(utf8.encode('%PDF-1.4')),
+      );
+
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      await session.submit('что в файле?', attachments: [pdf]);
+      await finished;
+      await runTurn(session, 'а теперь?');
+
+      expect(llm.requests, hasLength(2));
+      final first = llm.requests.first.messages.lastWhere(
+        (m) => m.role == LlmRole.user,
+      );
+      expect(first.files.single.name, 'scan.pdf');
+      expect(first.files.single.mimeType, 'application/pdf');
+      expect(first.content, contains('content is attached to this message'));
+
+      final second = llm.requests[1].messages;
+      expect(second.every((m) => m.files.isEmpty), isTrue);
+      final earlier = second.firstWhere(
+        (m) => m.role == LlmRole.user && m.content.contains('scan.pdf'),
+      );
+      expect(earlier.content, contains('no longer in context'));
+
+      final stored = await hub.chats.messages(chatId);
+      final user = stored.firstWhere((m) => m.text == 'что в файле?');
+      expect(user.attachments.single.bytes, isNull);
+      expect(user.attachments.single.name, 'scan.pdf');
+    },
+  );
+
+  test(
+    'a model without file input is refused before any request is sent',
+    () async {
+      final chatId = await createChat();
+      llm.models = const [
+        LlmModelInfo(id: 'fake/model', name: 'Fake', inputModalities: ['text']),
+      ];
+      await hub.models.refresh();
+      final session = hub.session(chatId);
+      final failures = <AppFailure>[];
+      final sub = session.events.listen((e) {
+        if (e is AgentFailureRaised) failures.add(e.failure);
+      });
+
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      await session.submit(
+        'посмотри',
+        attachments: [
+          AttachmentRef(
+            name: 'scan.pdf',
+            mode: AttachmentMode.file,
+            mimeType: 'application/pdf',
+            sizeBytes: 8,
+            bytes: Uint8List.fromList(utf8.encode('%PDF-1.4')),
+          ),
+        ],
+      );
+      await finished;
+      await sub.cancel();
+
+      expect(llm.requests, isEmpty);
+      expect(failures.single.message, contains('does not accept'));
+    },
+  );
 
   test('model calls run_command, result is stored, turn completes', () async {
     final chatId = await createChat();

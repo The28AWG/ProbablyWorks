@@ -16,6 +16,7 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
@@ -799,7 +800,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     required int draftId,
   }) {
     final settings = hub.settings;
-    final chat = hub.draftChat(hostId: HostRepository.localHostId);
+    final chat = hub.draftChat(hostId: _defaultHostId(hosts));
     return ChatState(
       hosts: hosts,
       limits: settings.cachedLimits(),
@@ -812,6 +813,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       chat: chat,
       unsaved: true,
     );
+  }
+
+  /// Хост по умолчанию для нового чата: локальный, а на iOS (без локального Host) первый SSH-хост.
+  static String _defaultHostId(List<Host> hosts) {
+    if (AppPlatform.current.hasLocalHost) return HostRepository.localHostId;
+    return hosts.where((h) => !h.isLocal).firstOrNull?.id ??
+        HostRepository.localHostId;
   }
 
   /// Новый чат. Обычно блок уже создан с готовым черновиком (см. [_seedState]), и открывать второй не нужно.

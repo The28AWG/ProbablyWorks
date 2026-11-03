@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 
 @lazySingleton
 class HostRepository {
@@ -35,7 +36,9 @@ class HostRepository {
   }
 
   /// Создаёт локальный Host, если его ещё нет. Он неудаляемый.
+  /// На платформах без локального Host (iOS) ничего не создаёт.
   Future<void> ensureLocalHost(DateTime now) async {
+    if (!AppPlatform.current.hasLocalHost) return;
     if (await byId(localHostId) != null) return;
     await save(
       Host(
