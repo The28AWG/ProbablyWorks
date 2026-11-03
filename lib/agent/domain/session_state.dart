@@ -69,10 +69,8 @@ class SessionStateRevision {
     this.taskStatus = TaskStatus.idle,
     List<PlanItem>? plan,
     List<PinnedFact>? pinnedFacts,
-    Set<String>? unlockedSkills,
   }) : plan = plan ?? [],
-       pinnedFacts = pinnedFacts ?? [],
-       unlockedSkills = unlockedSkills ?? {};
+       pinnedFacts = pinnedFacts ?? [];
 
   final String id;
   final String chatId;
@@ -84,9 +82,6 @@ class SessionStateRevision {
   TaskStatus taskStatus;
   List<PlanItem> plan;
   List<PinnedFact> pinnedFacts;
-
-  /// Встроенные скиллы, загруженные в этом чате. Открывают self-инструменты (см. BuiltinSkills).
-  final Set<String> unlockedSkills;
 
   /// Новая незапечатанная ревизия-наследник этой (fork).
   SessionStateRevision forkInto({
@@ -103,7 +98,6 @@ class SessionStateRevision {
     taskStatus: taskStatus,
     plan: [...plan],
     pinnedFacts: [...pinnedFacts],
-    unlockedSkills: {...unlockedSkills},
   );
 
   /// Копия для восстановления после edit/truncate: текущая, но от снимка.
@@ -117,7 +111,6 @@ class SessionStateRevision {
     'taskStatus': taskStatus.name,
     'plan': [for (final p in plan) p.toJson()],
     'pinnedFacts': [for (final f in pinnedFacts) f.toJson()],
-    'unlockedSkills': unlockedSkills.toList(),
   };
 
   void applyStateJson(Map<String, dynamic> json) {
@@ -133,12 +126,6 @@ class SessionStateRevision {
       for (final f in (json['pinnedFacts'] as List? ?? const []))
         PinnedFact.fromJson(f as Map<String, dynamic>),
     ];
-    unlockedSkills
-      ..clear()
-      ..addAll([
-        for (final s in (json['unlockedSkills'] as List? ?? const []))
-          s as String,
-      ]);
   }
 
   /// Короткое описание для индекса прошлых ревизий в контексте модели.

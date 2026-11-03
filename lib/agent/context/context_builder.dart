@@ -156,8 +156,7 @@ class ContextBuilder {
     if (call.name != ToolNames.loadSkill) return false;
     try {
       final args = jsonDecode(call.arguments);
-      return args is Map &&
-          BuiltinSkills.byName('${args['name']}') != null;
+      return args is Map && BuiltinSkills.byName('${args['name']}') != null;
     } on FormatException {
       return false;
     }

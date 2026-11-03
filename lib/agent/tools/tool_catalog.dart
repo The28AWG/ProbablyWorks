@@ -23,7 +23,7 @@ abstract final class ToolNames {
   static const askUser = 'ask_user';
   static const finish = 'finish';
 
-  // Self-инструменты: доступны только после загрузки встроенного скилла (см. SelfToolCatalog).
+  // Self-инструменты: всегда доступны, см. SelfToolCatalog.
   static const hostList = 'host_list';
   static const hostAdd = 'host_add';
   static const hostUpdate = 'host_update';

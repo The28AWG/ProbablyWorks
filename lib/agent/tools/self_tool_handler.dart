@@ -309,7 +309,11 @@ class SelfToolHandler {
     switch (key) {
       case SettingsRepository.keyLanguage:
         if (!const {'system', 'en', 'ru'}.contains(value)) {
-          throw ArgumentError.value(value, 'value', 'expected system, en or ru');
+          throw ArgumentError.value(
+            value,
+            'value',
+            'expected system, en or ru',
+          );
         }
         return () async {
           await _settings.write(key, value);
@@ -382,8 +386,11 @@ class SelfToolHandler {
     final Object? decoded;
     try {
       decoded = jsonDecode(value);
-    } on FormatException {
-      throw ArgumentError.value(value, 'value', 'expected a JSON array');
+    } on FormatException catch (error, stack) {
+      Error.throwWithStackTrace(
+        ArgumentError.value(value, 'value', 'expected a JSON array'),
+        stack,
+      );
     }
     if (decoded is! List || decoded.any((item) => item is! String)) {
       throw ArgumentError.value(value, 'value', 'expected a JSON array of ids');
@@ -394,8 +401,11 @@ class SelfToolHandler {
   static AppLimits _parseLimits(String value) {
     try {
       return AppLimits.parse(value);
-    } on FormatException catch (error) {
-      throw ArgumentError.value(value, 'value', 'invalid limits: ${error.message}');
+    } on FormatException catch (error, stack) {
+      Error.throwWithStackTrace(
+        ArgumentError.value(value, 'value', 'invalid limits: ${error.message}'),
+        stack,
+      );
     }
   }
 
@@ -411,7 +421,9 @@ class SelfToolHandler {
   static String? _optional(Map<String, dynamic> args, String key) {
     final value = args[key];
     if (value == null) return null;
-    if (value is! String) throw ArgumentError.value(value, key, 'string expected');
+    if (value is! String) {
+      throw ArgumentError.value(value, key, 'string expected');
+    }
     final trimmed = value.trim();
     return trimmed.isEmpty ? null : trimmed;
   }

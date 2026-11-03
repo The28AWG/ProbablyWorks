@@ -1,7 +1,8 @@
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
-/// Инструменты самонастройки приложения. Передаются модели только когда загружен встроенный скилл probablyworks.
+/// Инструменты самонастройки приложения. Доступны всегда; правила работы описаны в скилле probablyworks.
+/// Гарантии (пароли, ключи хоста, подтверждение keyPath и записи) обеспечивает код, а не текст скилла.
 abstract final class SelfToolCatalog {
   const SelfToolCatalog._();
 
@@ -60,7 +61,10 @@ abstract final class SelfToolCatalog {
         'properties': {
           'id': _hostId,
           'name': {'type': 'string'},
-          'notes': {'type': 'string', 'description': 'Empty string clears the notes'},
+          'notes': {
+            'type': 'string',
+            'description': 'Empty string clears the notes',
+          },
           'defaultWorkspace': {
             'type': 'string',
             'description': 'Empty string clears it',

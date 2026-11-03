@@ -31,7 +31,7 @@ abstract final class BuiltinSkills {
     body: '''
 You manage ProbablyWorks itself: its hosts, host notes and app settings. These are not the machines your shell commands run on.
 
-Tools available now:
+Tools:
 - host_list: list hosts with ids, notes, default workspace and last check result. Call it before changing anything.
 - host_add: add an SSH host (only ssh kind).
 - host_update: rename a host, replace its notes, or change its default workspace. Other host fields are changed on the Hosts page.

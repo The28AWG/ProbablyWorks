@@ -28,7 +28,7 @@ class _NoNetworkLlm implements LlmProvider {
   Future<List<LlmModelInfo>> listModels() async => const [];
 
   @override
-  Future<void> checkKey() async {}
+  Future<void> checkKey() => Future.value();
 }
 
 void main() {
@@ -66,51 +66,49 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<void> expectArgumentError(String name, Map<String, dynamic> args) =>
-      expectLater(
-        self.prepare(name, args),
-        throwsA(isA<ArgumentError>()),
-        reason: '$name $args',
-      );
-
   group('host_add', () {
     test('rejects key paths the app cannot expand', () async {
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5',
-        'keyPath': '~bob/.ssh/id',
-      });
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5',
-        'keyPath': r'$HOME/.ssh/id',
-      });
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5',
-        'keyPath': 'keys/id',
-      });
+      for (final keyPath in ['~bob/.ssh/id', r'$HOME/.ssh/id', 'keys/id']) {
+        await expectLater(
+          self.prepare(ToolNames.hostAdd, {
+            'name': 'prod',
+            'address': '10.0.0.5',
+            'keyPath': keyPath,
+          }),
+          throwsA(isA<ArgumentError>()),
+          reason: keyPath,
+        );
+      }
     });
 
     test('keyPath is only for key auth', () async {
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5',
-        'authType': 'password',
-        'keyPath': '~/.ssh/id_ed25519',
-      });
+      await expectLater(
+        self.prepare(ToolNames.hostAdd, {
+          'name': 'prod',
+          'address': '10.0.0.5',
+          'authType': 'password',
+          'keyPath': '~/.ssh/id_ed25519',
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('rejects bad port and address', () async {
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5',
-        'port': 0,
-      });
-      await expectArgumentError(ToolNames.hostAdd, {
-        'name': 'prod',
-        'address': '10.0.0.5 extra',
-      });
+      await expectLater(
+        self.prepare(ToolNames.hostAdd, {
+          'name': 'prod',
+          'address': '10.0.0.5',
+          'port': 0,
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
+      await expectLater(
+        self.prepare(ToolNames.hostAdd, {
+          'name': 'prod',
+          'address': '10.0.0.5 extra',
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test(
@@ -139,20 +137,27 @@ void main() {
 
   group('host_update', () {
     test('rejects fields that redirect or weaken the connection', () async {
-      await expectArgumentError(ToolNames.hostUpdate, {
-        'id': HostRepository.localHostId,
-        'address': '6.6.6.6',
-      });
-      await expectArgumentError(ToolNames.hostUpdate, {
-        'id': HostRepository.localHostId,
-        'hostKeyFingerprint': 'SHA256:x',
-      });
+      await expectLater(
+        self.prepare(ToolNames.hostUpdate, {
+          'id': HostRepository.localHostId,
+          'address': '6.6.6.6',
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
+      await expectLater(
+        self.prepare(ToolNames.hostUpdate, {
+          'id': HostRepository.localHostId,
+          'hostKeyFingerprint': 'SHA256:x',
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('needs at least one field', () async {
-      await expectArgumentError(ToolNames.hostUpdate, {
-        'id': HostRepository.localHostId,
-      });
+      await expectLater(
+        self.prepare(ToolNames.hostUpdate, {'id': HostRepository.localHostId}),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('empty notes clear them; rename keeps the other fields', () async {
@@ -187,22 +192,19 @@ void main() {
     });
 
     test('settings_update rejects unknown keys and bad values', () async {
-      await expectArgumentError(ToolNames.settingsUpdate, {
-        'key': 'denylist',
-        'value': '.*',
-      });
-      await expectArgumentError(ToolNames.settingsUpdate, {
-        'key': 'language',
-        'value': 'de',
-      });
-      await expectArgumentError(ToolNames.settingsUpdate, {
-        'key': 'limits',
-        'value': '{not json',
-      });
-      await expectArgumentError(ToolNames.settingsUpdate, {
-        'key': 'stepsTools',
-        'value': 'everything',
-      });
+      final cases = [
+        {'key': 'denylist', 'value': '.*'},
+        {'key': 'language', 'value': 'de'},
+        {'key': 'limits', 'value': '{not json'},
+        {'key': 'stepsTools', 'value': 'everything'},
+      ];
+      for (final args in cases) {
+        await expectLater(
+          self.prepare(ToolNames.settingsUpdate, args),
+          throwsA(isA<ArgumentError>()),
+          reason: '$args',
+        );
+      }
     });
 
     test('settings_update applies a valid steps change', () async {

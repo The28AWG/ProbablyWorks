@@ -24,7 +24,6 @@ import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
@@ -42,7 +41,7 @@ class _NoNetworkLlm implements LlmProvider {
   Future<List<LlmModelInfo>> listModels() async => const [];
 
   @override
-  Future<void> checkKey() async {}
+  Future<void> checkKey() => Future.value();
 }
 
 void main() {
@@ -50,11 +49,10 @@ void main() {
   late Directory tmp;
   late ChatRepository chats;
   late HostRepository hosts;
-  late SessionStateService state;
   late InteractionBroker broker;
   late ToolExecutor tools;
-  late Host local;
   late ToolContext ctx;
+  final backgroundDone = <ToolRun>[];
 
   const chatId = 'c1';
   const assistantId = 'a1';
@@ -67,13 +65,12 @@ void main() {
     final settings = SettingsRepository(db);
     await settings.preload();
     await hosts.ensureLocalHost(DateTime.now());
-    local = (await hosts.byId(HostRepository.localHostId))!;
+    final local = (await hosts.byId(HostRepository.localHostId))!;
     final secrets = MemorySecretStore();
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),
       const PipePtyLauncher(),
     );
-    state = SessionStateService(chats);
     broker = InteractionBroker();
     final self = SelfToolHandler(
       hosts,
@@ -86,7 +83,7 @@ void main() {
       chats,
       CommandExecutor(ExecLogStore(tmp), ActiveExecRegistry(), LiveOutputBus()),
       broker,
-      state,
+      SessionStateService(chats),
       WorkspaceContextLoader(settings),
       self,
     );
@@ -123,7 +120,7 @@ void main() {
         ),
         mode: PolicyMode.ask,
       ),
-      onBackgroundDone: (_, _) {},
+      onBackgroundDone: (run, _) => backgroundDone.add(run),
     );
   });
 
@@ -134,11 +131,6 @@ void main() {
 
   LlmToolCall call(String id, String name, Map<String, Object?> args) =>
       LlmToolCall(id: id, name: name, arguments: jsonEncode(args));
-
-  Future<void> unlock() async => state.mutate(
-    (await chats.chat(chatId))!,
-    (rev) => rev.unlockedSkills.add(BuiltinSkills.probablyWorks.name),
-  );
 
   Future<void> namedByUser(String text) => chats.insertMessage(
     ChatMessage(
@@ -151,23 +143,26 @@ void main() {
     ),
   );
 
-  test('self tools are refused until the skill is loaded', () async {
-    final result = await tools.execute(call('x', ToolNames.hostList, {}), ctx);
-    expect(result.isError, isTrue);
-    expect(result.text, contains('load the skill'));
-  });
-
-  test('after unlock the read tool works', () async {
-    await unlock();
+  test('self read tool works without loading any skill', () async {
     final result = await tools.execute(call('x', ToolNames.hostList, {}), ctx);
     expect(result.isError, isFalse);
     expect(result.text, contains(HostRepository.localHostId));
   });
 
+  test('load_skill returns the builtin body as plain text', () async {
+    final result = await tools.execute(
+      call('x', ToolNames.loadSkill, {
+        'name': BuiltinSkills.probablyWorks.name,
+      }),
+      ctx,
+    );
+    expect(result.isError, isFalse);
+    expect(result.text, BuiltinSkills.probablyWorks.body);
+  });
+
   test(
     'host_add with a key path the user named runs without approval',
     () async {
-      await unlock();
       await namedByUser('add host prod at 10.0.0.5 with key ~/.ssh/id_ed25519');
       var asked = false;
       broker.approvalRequests.listen((_) => asked = true);
@@ -178,7 +173,7 @@ void main() {
           'address': '10.0.0.5',
           'keyPath': '~/.ssh/id_ed25519',
         }),
-        await _freshCtx(chats, ctx),
+        ctx,
       );
 
       expect(asked, isFalse);
@@ -188,7 +183,6 @@ void main() {
   );
 
   test('host_add with a key path the agent found asks in every mode', () async {
-    await unlock();
     final request = broker.approvalRequests.first;
     final pending = tools.execute(
       call('x', ToolNames.hostAdd, {
@@ -196,7 +190,7 @@ void main() {
         'address': '10.0.0.5',
         'keyPath': '/home/me/.ssh/id_rsa',
       }),
-      await _freshCtx(chats, ctx),
+      ctx,
     );
 
     final approval = await request;
@@ -210,11 +204,10 @@ void main() {
   });
 
   test('host_add in Ask mode without a key path asks for approval', () async {
-    await unlock();
     final request = broker.approvalRequests.first;
     final pending = tools.execute(
       call('x', ToolNames.hostAdd, {'name': 'prod', 'address': '10.0.0.5'}),
-      await _freshCtx(chats, ctx),
+      ctx,
     );
 
     final approval = await request;
@@ -224,15 +217,3 @@ void main() {
     expect(await hosts.all(), hasLength(2));
   });
 }
-
-/// Контекст с актуальным чатом: revision меняется при разблокировке.
-Future<ToolContext> _freshCtx(ChatRepository chats, ToolContext base) async =>
-    ToolContext(
-      chat: (await chats.chat(base.chat.id))!,
-      messageId: base.messageId,
-      host: base.host,
-      runtime: base.runtime,
-      limits: base.limits,
-      policy: base.policy,
-      onBackgroundDone: base.onBackgroundDone,
-    );

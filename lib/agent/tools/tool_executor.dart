@@ -533,11 +533,7 @@ class ToolExecutor {
       case ToolNames.loadSkill:
         final name = _str(args, 'name');
         final builtin = BuiltinSkills.byName(name);
-        if (builtin != null) {
-          // Загрузка открывает self-инструменты до конца чата (см. SessionStateRevision.unlockedSkills).
-          await _state.mutate(chat, (rev) => rev.unlockedSkills.add(name));
-          return ToolResult(builtin.body);
-        }
+        if (builtin != null) return ToolResult(builtin.body);
         final snapshot = await _workspace.load(chat, ctx.runtime, ctx.host.os);
         final skill = snapshot.skills.where((s) => s.name == name).firstOrNull;
         if (skill == null) {
@@ -557,22 +553,11 @@ class ToolExecutor {
 
   // ---- self tools --------------------------------------------------------
 
-  /// Self-инструменты доступны только после загрузки встроенного скилла в этом чате.
-  /// Проверка здесь, а не только в списке инструментов: модель может вызвать инструмент из истории.
   Future<ToolResult> _selfTool(
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args,
   ) async {
-    final chat = await _chats.chat(ctx.chat.id) ?? ctx.chat;
-    final state = await _state.current(chat);
-    if (!state.unlockedSkills.contains(BuiltinSkills.probablyWorks.name)) {
-      return ToolResult(
-        '${call.name} is not available: load the skill '
-        '"${BuiltinSkills.probablyWorks.name}" first',
-        isError: true,
-      );
-    }
     if (_selfReadTools.contains(call.name)) {
       return ToolResult(await _self.read(call.name, args));
     }
