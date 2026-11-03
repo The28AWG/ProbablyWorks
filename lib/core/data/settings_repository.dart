@@ -26,6 +26,7 @@ class SettingsRepository {
   static const keyLimits = 'limits';
   static const keyPinnedModels = 'pinnedModels';
   static const keyStepsGroup = 'stepsGroup';
+  static const keyStepsExpandWhileActive = 'stepsExpandWhileActive';
   static const keyStepsThoughts = 'stepsThoughts';
   static const keyStepsTools = 'stepsTools';
   static const keySidebarWidth = 'sidebarWidth';
@@ -118,24 +119,28 @@ class SettingsRepository {
   /// Журнал шагов по умолчанию. Неизвестное значение в kv-таблице даёт поведение по умолчанию.
   Future<StepsDisplay> readStepsDisplay() async => _stepsFrom(
     group: await read(keyStepsGroup),
+    expandWhileActive: await read(keyStepsExpandWhileActive),
     thoughts: await read(keyStepsThoughts),
     tools: await read(keyStepsTools),
   );
 
   StepsDisplay cachedStepsDisplay() => _stepsFrom(
     group: cached(keyStepsGroup),
+    expandWhileActive: cached(keyStepsExpandWhileActive),
     thoughts: cached(keyStepsThoughts),
     tools: cached(keyStepsTools),
   );
 
   static StepsDisplay _stepsFrom({
     required String? group,
+    required String? expandWhileActive,
     required String? thoughts,
     required String? tools,
   }) {
     const defaults = StepsDisplay.defaults;
     return StepsDisplay(
       group: group != 'no',
+      expandWhileActive: expandWhileActive != 'no',
       thoughts:
           ThoughtsVisibility.values.asNameMap()[thoughts] ?? defaults.thoughts,
       tools: ToolsVisibility.values.asNameMap()[tools] ?? defaults.tools,
@@ -144,6 +149,10 @@ class SettingsRepository {
 
   Future<void> saveStepsDisplay(StepsDisplay value) async {
     await write(keyStepsGroup, value.group ? 'yes' : 'no');
+    await write(
+      keyStepsExpandWhileActive,
+      value.expandWhileActive ? 'yes' : 'no',
+    );
     await write(keyStepsThoughts, value.thoughts.name);
     await write(keyStepsTools, value.tools.name);
   }

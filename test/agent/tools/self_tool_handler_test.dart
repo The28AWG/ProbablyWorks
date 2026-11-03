@@ -216,6 +216,22 @@ void main() {
       await change.apply();
       expect((await settings.readStepsDisplay()).group, isFalse);
     });
+
+    test('settings_update switches expand-while-running', () async {
+      final change = await self.prepare(ToolNames.settingsUpdate, {
+        'key': 'stepsExpandWhileActive',
+        'value': 'no',
+      });
+      await change.apply();
+      expect((await settings.readStepsDisplay()).expandWhileActive, isFalse);
+      await expectLater(
+        self.prepare(ToolNames.settingsUpdate, {
+          'key': 'stepsExpandWhileActive',
+          'value': 'maybe',
+        }),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 
   test('read tools reject unknown host ids', () async {

@@ -57,6 +57,7 @@ class SelfToolHandler {
     SettingsRepository.keyPinnedModels,
     SettingsRepository.keyLimits,
     SettingsRepository.keyStepsGroup,
+    SettingsRepository.keyStepsExpandWhileActive,
     SettingsRepository.keyStepsThoughts,
     SettingsRepository.keyStepsTools,
   ];
@@ -130,6 +131,9 @@ class SelfToolHandler {
       SettingsRepository.keyPinnedModels: await _settings.readPinnedModels(),
       SettingsRepository.keyLimits: (await _settings.limits()).toMap(),
       SettingsRepository.keyStepsGroup: steps.group ? 'yes' : 'no',
+      SettingsRepository.keyStepsExpandWhileActive: steps.expandWhileActive
+          ? 'yes'
+          : 'no',
       SettingsRepository.keyStepsThoughts: steps.thoughts.name,
       SettingsRepository.keyStepsTools: steps.tools.name,
     };
@@ -352,6 +356,17 @@ class SelfToolHandler {
             current.copyWith(group: value == 'yes'),
           );
           return 'stepsGroup set to $value';
+        };
+      case SettingsRepository.keyStepsExpandWhileActive:
+        if (value != 'yes' && value != 'no') {
+          throw ArgumentError.value(value, 'value', 'expected yes or no');
+        }
+        return () async {
+          final current = await _settings.readStepsDisplay();
+          await _settings.saveStepsDisplay(
+            current.copyWith(expandWhileActive: value == 'yes'),
+          );
+          return 'stepsExpandWhileActive set to $value';
         };
       case SettingsRepository.keyStepsThoughts:
         final thoughts = _enumOf(ThoughtsVisibility.values, value, 'value');

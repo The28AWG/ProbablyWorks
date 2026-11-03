@@ -148,6 +148,7 @@ void main() {
     final settings = SettingsRepository(db);
     const display = StepsDisplay(
       group: false,
+      expandWhileActive: false,
       thoughts: ThoughtsVisibility.current,
       tools: ToolsVisibility.active,
     );
@@ -159,7 +160,11 @@ void main() {
     await settings.write(SettingsRepository.keyStepsTools, null);
     expect(
       await settings.readStepsDisplay(),
-      const StepsDisplay(group: false, thoughts: ThoughtsVisibility.all),
+      const StepsDisplay(
+        group: false,
+        expandWhileActive: false,
+        thoughts: ThoughtsVisibility.all,
+      ),
     );
   });
 }

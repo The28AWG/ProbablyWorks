@@ -51,6 +51,7 @@ class ChatStepLedger extends StatefulWidget {
     this.terminalFor,
     this.expandThoughts = false,
     this.expandTools = false,
+    this.expandWhileActive = true,
     super.key,
   });
 
@@ -63,6 +64,9 @@ class ChatStepLedger extends StatefulWidget {
   /// Рассуждения и вывод команд раскрыты сразу. Журнал при этом тоже открыт.
   final bool expandThoughts;
   final bool expandTools;
+
+  /// Группа раскрывается сама, пока её шаги выполняются или рассуждают. Выключено: остаётся свёрнутой.
+  final bool expandWhileActive;
 
   @override
   State<ChatStepLedger> createState() => _ChatStepLedgerState();
@@ -115,9 +119,12 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     }
 
     final revealAll = widget.expandThoughts || widget.expandTools;
-    final expanded =
-        !grouped ||
-        (_userExpanded ?? (revealAll || active > 0 || attention || failed > 0));
+    final autoExpand =
+        revealAll ||
+        (widget.expandWhileActive && active > 0) ||
+        attention ||
+        failed > 0;
+    final expanded = !grouped || (_userExpanded ?? autoExpand);
     final tone = failed > 0
         ? AppTone.danger
         : active > 0

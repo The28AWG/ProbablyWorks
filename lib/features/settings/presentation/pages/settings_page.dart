@@ -472,6 +472,25 @@ class _SettingsViewState extends State<_SettingsView> {
       ],
     ),
     AppSection(
+      title: l10n.settingsStepsExpandWhileActive,
+      description: l10n.settingsStepsExpandWhileActiveHint,
+      children: [
+        SegmentedButton<bool>(
+          segments: [
+            ButtonSegment(value: true, label: Text(l10n.settingsStepsExpandOn)),
+            ButtonSegment(
+              value: false,
+              label: Text(l10n.settingsStepsExpandOff),
+            ),
+          ],
+          selected: {state.stepsDisplay.expandWhileActive},
+          onSelectionChanged: (value) => cubit.saveStepsDisplay(
+            state.stepsDisplay.copyWith(expandWhileActive: value.first),
+          ),
+        ),
+      ],
+    ),
+    AppSection(
       title: l10n.settingsStepsThoughts,
       description: l10n.settingsStepsThoughtsHint,
       children: [

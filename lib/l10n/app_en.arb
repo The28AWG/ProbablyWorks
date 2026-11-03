@@ -503,6 +503,22 @@
   "@settingsStepsGroupOff": {
     "description": "Option: each step is a separate row."
   },
+  "settingsStepsExpandWhileActive": "Expand group while running",
+  "@settingsStepsExpandWhileActive": {
+    "description": "Section: whether the steps group opens by itself while its steps run or reason."
+  },
+  "settingsStepsExpandWhileActiveHint": "The group opens by itself while its steps are running or the model is reasoning. No: the group stays collapsed until you open it. Errors and waiting for an answer open the group anyway.",
+  "@settingsStepsExpandWhileActiveHint": {
+    "description": "Hint under the expand-while-running setting explaining both options."
+  },
+  "settingsStepsExpandOn": "Yes",
+  "@settingsStepsExpandOn": {
+    "description": "Option: the steps group opens while its steps are running."
+  },
+  "settingsStepsExpandOff": "No",
+  "@settingsStepsExpandOff": {
+    "description": "Option: the steps group stays collapsed while its steps are running."
+  },
   "settingsStepsThoughts": "Show thoughts",
   "@settingsStepsThoughts": {
     "description": "Section: which model reasoning is shown in the chat journal."

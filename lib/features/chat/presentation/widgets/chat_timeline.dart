@@ -176,6 +176,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
               terminalFor: widget.terminalFor,
               expandThoughts: display.thoughts == ThoughtsVisibility.expanded,
               expandTools: display.tools == ToolsVisibility.expanded,
+              expandWhileActive: display.expandWhileActive,
             ),
           ),
         ),

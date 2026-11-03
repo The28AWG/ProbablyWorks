@@ -28,6 +28,7 @@ enum ToolsVisibility {
 final class StepsDisplay extends Equatable {
   const StepsDisplay({
     this.group = true,
+    this.expandWhileActive = true,
     this.thoughts = ThoughtsVisibility.all,
     this.tools = ToolsVisibility.all,
   });
@@ -36,19 +37,26 @@ final class StepsDisplay extends Equatable {
 
   /// Группировать шаги одного ответа в один журнал. Выключено: каждый шаг идёт отдельной строкой.
   final bool group;
+
+  /// Раскрывать группу, пока её шаги выполняются или рассуждают. Выключено: группа остаётся свёрнутой,
+  /// её раскрывает пользователь. Ошибки и ожидание ответа раскрывают группу в любом случае.
+  final bool expandWhileActive;
+
   final ThoughtsVisibility thoughts;
   final ToolsVisibility tools;
 
   StepsDisplay copyWith({
     bool? group,
+    bool? expandWhileActive,
     ThoughtsVisibility? thoughts,
     ToolsVisibility? tools,
   }) => StepsDisplay(
     group: group ?? this.group,
+    expandWhileActive: expandWhileActive ?? this.expandWhileActive,
     thoughts: thoughts ?? this.thoughts,
     tools: tools ?? this.tools,
   );
 
   @override
-  List<Object?> get props => [group, thoughts, tools];
+  List<Object?> get props => [group, expandWhileActive, thoughts, tools];
 }

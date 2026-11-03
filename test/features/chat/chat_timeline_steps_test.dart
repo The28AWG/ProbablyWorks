@@ -389,4 +389,65 @@ void main() {
 
     expect(find.text('2 steps'), findsOneWidget);
   });
+
+  testWidgets('group opens by itself while a step runs by default', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(response(display: StepsDisplay.defaults, runs: [runningRun()])),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('npm test'), findsOneWidget);
+  });
+
+  testWidgets(
+    '"expand while running" off keeps the group collapsed while running',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _TestApp(
+          response(
+            display: const StepsDisplay(expandWhileActive: false),
+            runs: [runningRun()],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('npm test'), findsNothing);
+      expect(find.textContaining('Старая мысль'), findsNothing);
+    },
+  );
+
+  testWidgets('"expand while running" off still opens the group for approval', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final waiting = ToolRun(
+      id: 'r2',
+      chatId: 'c',
+      messageId: 'm2',
+      toolName: 'run_command',
+      argsJson: '{}',
+      command: 'npm test',
+      status: ToolRunStatus.waitingApproval,
+      startedAt: DateTime(2026),
+    );
+    await tester.pumpWidget(
+      _TestApp(
+        response(
+          display: const StepsDisplay(expandWhileActive: false),
+          runs: [waiting],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('npm test'), findsOneWidget);
+  });
 }
