@@ -1,42 +1,28 @@
-import 'package:auto_route/auto_route.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
-import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
+import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
-/// Пункты навигации. Чаты открываются внутри оболочки, хосты и настройки — отдельными маршрутами.
-enum WorkspaceDestination { chats, hosts, settings }
-
-void openWorkspaceDestination(
-  BuildContext context,
-  WorkspaceDestination destination,
-) {
-  switch (destination) {
-    case WorkspaceDestination.chats:
-      return;
-    case WorkspaceDestination.hosts:
-      context.router.push(const HostsRoute());
-    case WorkspaceDestination.settings:
-      context.router.push(const SettingsRoute());
-  }
-}
-
-/// «Новый чат»: снимает выбор и показывает стартовый экран. Чат создастся при первой отправке.
-void openNewChat(BuildContext context) =>
-    context.read<ChatListCubit>().select(null);
-
 /// Развёрнутая боковая панель: кнопка «Новый чат», список чатов по датам и навигация внизу.
-/// Используется постоянно в широком режиме и внутри drawer в среднем.
+/// Используется постоянно в широком режиме и внутри drawer в среднем. Состояние не своё: выбранный чат и
+/// активный раздел приходят из маршрутов, а действия выполняет оболочка.
 class WorkspaceSidebar extends StatelessWidget {
   const WorkspaceSidebar({
+    required this.activeTab,
+    required this.selectedChatId,
     required this.onCollapse,
     required this.onOpenChat,
     required this.onNewChat,
+    required this.onOpenTab,
     super.key,
   });
+
+  /// Раздел, который открыт сейчас: его пункт навигации выделен.
+  final WorkspaceTab activeTab;
+
+  /// Открытый чат: его строка выделена в списке.
+  final String? selectedChatId;
 
   /// Свернуть панель до иконок (широкий режим) или закрыть drawer (средний режим).
   final VoidCallback onCollapse;
@@ -46,6 +32,9 @@ class WorkspaceSidebar extends StatelessWidget {
 
   /// Показать стартовый экран нового чата.
   final VoidCallback onNewChat;
+
+  /// Перейти к разделу «Хосты» или «Настройки».
+  final void Function(WorkspaceTab tab) onOpenTab;
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +58,7 @@ class WorkspaceSidebar extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    l10n.appTitle * 1,
+                    l10n.appTitle,
                     style: theme.textTheme.titleSmall,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -98,6 +87,8 @@ class WorkspaceSidebar extends StatelessWidget {
           Expanded(
             child: ChatListPanel(
               onOpen: onOpenChat,
+              selectedId: selectedChatId,
+              onDeleted: _handleDeleted,
               background: scheme.surfaceContainerLow,
             ),
           ),
@@ -114,18 +105,14 @@ class WorkspaceSidebar extends StatelessWidget {
                 _SidebarRow(
                   icon: Icons.dns_outlined,
                   label: l10n.navHosts,
-                  onTap: () => openWorkspaceDestination(
-                    context,
-                    WorkspaceDestination.hosts,
-                  ),
+                  selected: activeTab == WorkspaceTab.hosts,
+                  onTap: () => onOpenTab(WorkspaceTab.hosts),
                 ),
                 _SidebarRow(
                   icon: Icons.settings_outlined,
                   label: l10n.navSettings,
-                  onTap: () => openWorkspaceDestination(
-                    context,
-                    WorkspaceDestination.settings,
-                  ),
+                  selected: activeTab == WorkspaceTab.settings,
+                  onTap: () => onOpenTab(WorkspaceTab.settings),
                 ),
               ],
             ),
@@ -134,14 +121,35 @@ class WorkspaceSidebar extends StatelessWidget {
       ),
     );
   }
+
+  /// Удалён открытый чат: показываем стартовый экран, а не пустоту.
+  void _handleDeleted(String chatId) {
+    if (chatId == selectedChatId) onNewChat();
+  }
 }
 
-/// Свёрнутая боковая панель: только иконки. Развернуть или открыть список, создать чат, перейти к хостам и настройкам.
+/// Свёрнутая боковая панель: только иконки. Развернуть, создать чат, перейти к хостам и настройкам.
+/// Активный раздел отмечен выделенной иконкой.
 class WorkspaceRail extends StatelessWidget {
-  const WorkspaceRail({required this.onExpand, super.key});
+  const WorkspaceRail({
+    required this.activeTab,
+    required this.onExpand,
+    required this.onNewChat,
+    required this.onOpenTab,
+    super.key,
+  });
+
+  /// Раздел, который открыт сейчас.
+  final WorkspaceTab activeTab;
 
   /// Развернуть панель (широкий режим) или открыть её как drawer (средний режим).
   final VoidCallback onExpand;
+
+  /// Показать стартовый экран нового чата.
+  final VoidCallback onNewChat;
+
+  /// Перейти к разделу «Хосты» или «Настройки».
+  final void Function(WorkspaceTab tab) onOpenTab;
 
   @override
   Widget build(BuildContext context) {
@@ -161,22 +169,20 @@ class WorkspaceRail extends StatelessWidget {
             IconButton(
               tooltip: l10n.chatsNew,
               icon: const Icon(Icons.add),
-              onPressed: () => openNewChat(context),
+              onPressed: onNewChat,
             ),
             const Spacer(),
             IconButton(
               tooltip: l10n.navHosts,
               icon: const Icon(Icons.dns_outlined),
-              onPressed: () =>
-                  openWorkspaceDestination(context, WorkspaceDestination.hosts),
+              isSelected: activeTab == WorkspaceTab.hosts,
+              onPressed: () => onOpenTab(WorkspaceTab.hosts),
             ),
             IconButton(
               tooltip: l10n.navSettings,
               icon: const Icon(Icons.settings_outlined),
-              onPressed: () => openWorkspaceDestination(
-                context,
-                WorkspaceDestination.settings,
-              ),
+              isSelected: activeTab == WorkspaceTab.settings,
+              onPressed: () => onOpenTab(WorkspaceTab.settings),
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
@@ -187,12 +193,14 @@ class WorkspaceRail extends StatelessWidget {
 }
 
 /// Строка навигации и действий боковой панели: иконка и подпись, фон при наведении.
+/// У открытого раздела фон выделен, как и у выбранного чата.
 class _SidebarRow extends StatelessWidget {
   const _SidebarRow({
     required this.icon,
     required this.label,
     required this.onTap,
     this.accent = false,
+    this.selected = false,
   });
 
   final IconData icon;
@@ -202,11 +210,15 @@ class _SidebarRow extends StatelessWidget {
   /// Основное действие панели: иконка и подпись в акцентном цвете.
   final bool accent;
 
+  /// Раздел открыт: фон и подпись выделены.
+  final bool selected;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Material(
-      color: Colors.transparent,
+      color: selected ? scheme.secondaryContainer : Colors.transparent,
       borderRadius: AppRadius.mdAll,
       child: InkWell(
         borderRadius: AppRadius.mdAll,
@@ -222,8 +234,10 @@ class _SidebarRow extends StatelessWidget {
                 icon,
                 size: 20,
                 color: accent
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+                    ? scheme.primary
+                    : selected
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -233,7 +247,11 @@ class _SidebarRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w500,
-                    color: accent ? theme.colorScheme.primary : null,
+                    color: accent
+                        ? scheme.primary
+                        : selected
+                        ? scheme.onSecondaryContainer
+                        : null,
                   ),
                 ),
               ),

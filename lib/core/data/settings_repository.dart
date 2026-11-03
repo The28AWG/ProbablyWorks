@@ -14,6 +14,10 @@ class SettingsRepository {
 
   $KvSettingsTable get _kvSettingsTable => _db.kvSettings;
 
+  /// Вся kv-таблица в памяти после [preload]: чтения синхронны, записи обновляют и память, и БД.
+  final _cache = <String, String>{};
+  var _preloaded = false;
+
   static const keyDefaultModel = 'defaultModel';
   static const keyTitleModel = 'titleModel';
   static const keyLanguage = 'language';
@@ -27,11 +31,27 @@ class SettingsRepository {
   static const keySidebarWidth = 'sidebarWidth';
   static const keyLastUsageContextPrefix = 'contextLength:';
 
+  /// Загружает kv-таблицу в память. Вызывается при старте, до первого чтения настроек.
+  Future<void> preload() async {
+    final rows = await _db.select(_kvSettingsTable).get();
+    _cache
+      ..clear()
+      ..addAll({for (final row in rows) row.key: row.value});
+    _preloaded = true;
+  }
+
   Future<String?> read(String key) async {
+    if (_preloaded) return _cache[key];
     final row = await (_db.select(
       _kvSettingsTable,
     )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
+  }
+
+  /// Значение из памяти без ожидания: нужно первому кадру нового чата. Доступно после [preload].
+  String? cached(String key) {
+    assert(_preloaded, 'SettingsRepository.preload() не вызван');
+    return _cache[key];
   }
 
   Stream<String?> watch(String key) =>
@@ -40,6 +60,13 @@ class SettingsRepository {
           .map((row) => row?.value);
 
   Future<void> write(String key, String? value) async {
+    if (_preloaded) {
+      if (value == null) {
+        _cache.remove(key);
+      } else {
+        _cache[key] = value;
+      }
+    }
     if (value == null) {
       await (_db.delete(
         _kvSettingsTable,
@@ -54,6 +81,9 @@ class SettingsRepository {
   }
 
   Future<AppLimits> limits() async => AppLimits.fromJson(await read(keyLimits));
+
+  /// Лимиты из памяти (см. [cached]).
+  AppLimits cachedLimits() => AppLimits.fromJson(cached(keyLimits));
 
   Future<void> saveLimits(AppLimits limits) =>
       write(keyLimits, limits.toJson());
@@ -72,8 +102,12 @@ class SettingsRepository {
   }) => write(trustKey(hostId, workspace), trusted ? 'yes' : null);
 
   /// Закреплённые модели (id через OpenRouter) для быстрого выбора.
-  Future<List<String>> readPinnedModels() async {
-    final raw = await read(keyPinnedModels);
+  Future<List<String>> readPinnedModels() async =>
+      _pinnedFrom(await read(keyPinnedModels));
+
+  List<String> cachedPinnedModels() => _pinnedFrom(cached(keyPinnedModels));
+
+  static List<String> _pinnedFrom(String? raw) {
     if (raw == null || raw.isEmpty) return const [];
     return (jsonDecode(raw) as List<dynamic>).cast<String>();
   }
@@ -82,16 +116,29 @@ class SettingsRepository {
       write(keyPinnedModels, jsonEncode(ids));
 
   /// Журнал шагов по умолчанию. Неизвестное значение в kv-таблице даёт поведение по умолчанию.
-  Future<StepsDisplay> readStepsDisplay() async {
+  Future<StepsDisplay> readStepsDisplay() async => _stepsFrom(
+    group: await read(keyStepsGroup),
+    thoughts: await read(keyStepsThoughts),
+    tools: await read(keyStepsTools),
+  );
+
+  StepsDisplay cachedStepsDisplay() => _stepsFrom(
+    group: cached(keyStepsGroup),
+    thoughts: cached(keyStepsThoughts),
+    tools: cached(keyStepsTools),
+  );
+
+  static StepsDisplay _stepsFrom({
+    required String? group,
+    required String? thoughts,
+    required String? tools,
+  }) {
     const defaults = StepsDisplay.defaults;
     return StepsDisplay(
-      group: (await read(keyStepsGroup)) != 'no',
+      group: group != 'no',
       thoughts:
-          ThoughtsVisibility.values.asNameMap()[await read(keyStepsThoughts)] ??
-          defaults.thoughts,
-      tools:
-          ToolsVisibility.values.asNameMap()[await read(keyStepsTools)] ??
-          defaults.tools,
+          ThoughtsVisibility.values.asNameMap()[thoughts] ?? defaults.thoughts,
+      tools: ToolsVisibility.values.asNameMap()[tools] ?? defaults.tools,
     );
   }
 

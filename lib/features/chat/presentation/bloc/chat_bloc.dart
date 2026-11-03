@@ -505,7 +505,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Chat? seedChat,
     List<Host> seedHosts = const [],
     this.onChatCreated,
-  }) : super(_seedState(_hub, _drafts, seedChat, seedHosts)) {
+    ChatState? initialState,
+  }) : super(initialState ?? _seedState(_hub, _drafts, seedChat, seedHosts)) {
     _composerText = state.draft;
     on<ChatOpenEvent>(_onOpenEvent, transformer: _sequential());
     on<ChatDraftEdited>(_onDraftEdited);
@@ -632,7 +633,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Chat? chat,
     List<Host> hosts,
   ) {
-    if (chat == null) return const ChatState();
+    // Новый чат: всё уже в памяти (хосты, настройки), поэтому первый кадр строит готовый экран.
+    if (chat == null) return _newChatState(hub, hosts, draftId: 0);
     drafts.prime(chat.id, chat);
     final draft = drafts.of(chat.id);
     final session = hub.session(chat.id);
@@ -789,33 +791,54 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     defaultModel: await _hub.settings.read(SettingsRepository.keyDefaultModel),
   );
 
-  /// Новый чат: пустой экран без записи в БД. Готовое состояние приходит одним кадром, без загрузки:
-  /// модель по умолчанию, хосты и лимиты уже в нём. Черновик текущего чата переносится в новый; исходный очищается.
+  /// Состояние нового чата из настроек и хостов в памяти: без чтений БД и сети. Черновик в блоке пока
+  /// не записан: чат появится в БД с первым сообщением (см. [AgentHub.draftChat]).
+  static ChatState _newChatState(
+    AgentHub hub,
+    List<Host> hosts, {
+    required int draftId,
+  }) {
+    final settings = hub.settings;
+    final chat = hub.draftChat(hostId: HostRepository.localHostId);
+    return ChatState(
+      hosts: hosts,
+      limits: settings.cachedLimits(),
+      catalog: hub.models.state,
+      pinnedModels: settings.cachedPinnedModels(),
+      stepsDisplay: settings.cachedStepsDisplay(),
+      defaultModelId: settings.cached(SettingsRepository.keyDefaultModel),
+      draftId: draftId,
+      chatId: chat.id,
+      chat: chat,
+      unsaved: true,
+    );
+  }
+
+  /// Новый чат. Обычно блок уже создан с готовым черновиком (см. [_seedState]), и открывать второй не нужно.
+  /// Иначе (блок переиспользован после отправки) переносим черновик текущего чата в новый и очищаем исходный.
   Future<void> _onDraftOpened(
     ChatDraftOpened _,
     Emitter<ChatState> emit,
   ) async {
     final from = state.chatId;
+    if (state.unsaved && from != null) {
+      // Сначала хосты, потом подписки: их первые эмиты не должны опережать загрузку списка.
+      if (state.hosts.isEmpty) {
+        emit(state.copyWith(hosts: await _hub.hosts.all()));
+      }
+      _watchShared();
+      return;
+    }
     final carried = from != null && !state.unsaved && !_drafts.of(from).isEmpty;
     await _detach();
-    final chat = await _hub.draftChat(hostId: HostRepository.localHostId);
-    final shared = await _readShared();
-    if (carried) await _drafts.move(from, chat.id);
+    // Хосты из списка уже в памяти; блок, созданный без списка, читает их из БД.
+    final hosts = state.hosts.isEmpty ? await _hub.hosts.all() : state.hosts;
+    final next = _newChatState(_hub, hosts, draftId: state.draftId);
+    final chatId = next.chatId!;
+    // Перенос меняет память синхронно; запись в БД уходит в фон, чтобы не задерживать первый кадр.
+    if (carried) unawaited(_drafts.move(from, chatId));
     _watchShared();
-    // Номер черновика берём после чтений: он нужен, чтобы поле ввода перерисовалось текстом нового чата.
-    final loaded = ChatState(
-      hosts: shared.hosts,
-      limits: shared.limits,
-      catalog: _hub.models.state,
-      pinnedModels: shared.pinned,
-      stepsDisplay: shared.stepsDisplay,
-      defaultModelId: shared.defaultModel,
-      draftId: state.draftId,
-      chatId: chat.id,
-      chat: chat,
-      unsaved: true,
-    );
-    emit(_pushDraft(loaded, _drafts.of(chat.id)));
+    emit(_pushDraft(next, _drafts.of(chatId)));
   }
 
   Future<void> _onSubmitted(

@@ -19,18 +19,22 @@ const _listInset = AppSpacing.sm + AppSpacing.md;
 class ChatListPanel extends StatelessWidget {
   const ChatListPanel({
     required this.onOpen,
+    this.selectedId,
+    this.onDeleted,
     this.background,
-    this.bottomClearance = 0,
     super.key,
   });
 
   final void Function(String chatId) onOpen;
 
+  /// Открытый сейчас чат: его строка выделена. Выбор приходит из маршрута, не из состояния списка.
+  final String? selectedId;
+
+  /// Чат удалён. Владелец экрана уходит с него, если он был открыт.
+  final void Function(String chatId)? onDeleted;
+
   /// Фон липких заголовков: совпадает с фоном панели, на которой стоит список.
   final Color? background;
-
-  /// Отступ снизу, чтобы последняя строка не пряталась под плавающей кнопкой.
-  final double bottomClearance;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +42,6 @@ class ChatListPanel extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final headerBackground = background ?? scheme.surface;
     return BlocBuilder<ChatListCubit, ChatListState>(
-      // Смена выбранного чата не перестраивает весь список: подсветку обновляет только строка.
       buildWhen: (previous, current) =>
           previous.chats != current.chats ||
           previous.hosts != current.hosts ||
@@ -81,26 +84,25 @@ class ChatListPanel extends StatelessWidget {
                       itemCount: groups[bucket]!.length,
                       itemBuilder: (context, index) {
                         final chat = groups[bucket]![index];
-                        return BlocSelector<ChatListCubit, ChatListState, bool>(
-                          selector: (s) => s.selectedId == chat.id,
-                          builder: (context, selected) => _ChatTile(
-                            chat: chat,
-                            host: hosts[chat.hostId],
-                            selected: selected,
-                            running: state.runningIds.contains(chat.id),
-                            waiting: state.waitingIds.contains(chat.id),
-                            onTap: () => onOpen(chat.id),
-                            onMenu: (position) =>
-                                _showChatMenu(context, chat, position),
+                        return _ChatTile(
+                          chat: chat,
+                          host: hosts[chat.hostId],
+                          selected: chat.id == selectedId,
+                          running: state.runningIds.contains(chat.id),
+                          waiting: state.waitingIds.contains(chat.id),
+                          onTap: () => onOpen(chat.id),
+                          onMenu: (position) => _showChatMenu(
+                            context,
+                            chat,
+                            position,
+                            onDeleted: onDeleted,
                           ),
                         );
                       },
                     ),
                   ],
                 ),
-            SliverToBoxAdapter(
-              child: SizedBox(height: AppSpacing.lg + bottomClearance),
-            ),
+            SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
           ],
         );
       },
@@ -111,8 +113,9 @@ class ChatListPanel extends StatelessWidget {
 Future<void> _showChatMenu(
   BuildContext context,
   Chat chat,
-  Offset position,
-) async {
+  Offset position, {
+  void Function(String chatId)? onDeleted,
+}) async {
   final l10n = AppLocalizations.of(context);
   final scheme = Theme.of(context).colorScheme;
   final action = await showMenu<_ChatAction>(
@@ -151,7 +154,7 @@ Future<void> _showChatMenu(
     case _ChatAction.rename:
       await _renameChat(context, chat);
     case _ChatAction.delete:
-      await _deleteChat(context, chat);
+      await _deleteChat(context, chat, onDeleted: onDeleted);
   }
 }
 
@@ -169,7 +172,11 @@ Future<void> _renameChat(BuildContext context, Chat chat) async {
   }
 }
 
-Future<void> _deleteChat(BuildContext context, Chat chat) async {
+Future<void> _deleteChat(
+  BuildContext context,
+  Chat chat, {
+  void Function(String chatId)? onDeleted,
+}) async {
   final l10n = AppLocalizations.of(context);
   final ok = await ConfirmDialog.confirm(
     context,
@@ -181,6 +188,7 @@ Future<void> _deleteChat(BuildContext context, Chat chat) async {
   );
   if (ok && context.mounted) {
     await context.read<ChatListCubit>().delete(chat.id);
+    onDeleted?.call(chat.id);
   }
 }
 

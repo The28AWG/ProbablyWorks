@@ -1,8 +1,12 @@
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 
-/// Чат на узком экране: отдельный маршрут поверх списка.
+/// Открытый чат. Маршрут — вложенный в вкладку чатов, поэтому раскладка окна на него не влияет:
+/// на узком экране в шапке кнопка меню, на широком чат показывается справа от панели.
 @RoutePage()
 class ChatPage extends StatelessWidget {
   const ChatPage({@PathParam('chatId') required this.chatId, super.key});
@@ -10,12 +14,20 @@ class ChatPage extends StatelessWidget {
   final String chatId;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(
-      child: ChatView(
-        chatId: chatId,
-        leading: BackButton(onPressed: () => context.router.maybePop()),
+  Widget build(BuildContext context) {
+    // Чат из уже загруженного списка показываем сразу: шапка и композер без ожидания БД.
+    final list = context.read<ChatListCubit>().state;
+    return Scaffold(
+      body: SafeArea(
+        child: ChatView(
+          chatId: chatId,
+          seedChat: list.chats.where((chat) => chat.id == chatId).firstOrNull,
+          seedHosts: list.hosts,
+          leading: context.workspaceLayout == .compact
+              ? const WorkspaceLeadingButton()
+              : null,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

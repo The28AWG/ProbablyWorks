@@ -4,6 +4,8 @@ import 'package:probably_works/app/router/app_router.gr.dart';
 
 export 'app_router.gr.dart';
 
+/// Маршруты: оболочка рабочей области с вкладками. Вкладка чатов держит один экран: стартовый экран нового чата
+/// или открытый чат. Список чатов живёт в панели оболочки. Хосты и настройки — отдельные вкладки той же оболочки.
 @AutoRouterConfig(replaceInRouteName: 'Page,Route')
 class AppRouter extends RootStackRouter {
   AppRouter({required this.apiKeyGuard});
@@ -18,22 +20,19 @@ class AppRouter extends RootStackRouter {
       path: '/',
       initial: true,
       guards: [apiKeyGuard],
-    ),
-    AutoRoute(
-      page: NewChatRoute.page,
-      path: '/chats/new',
-      guards: [apiKeyGuard],
-    ),
-    AutoRoute(
-      page: ChatRoute.page,
-      path: '/chats/:chatId',
-      guards: [apiKeyGuard],
-    ),
-    AutoRoute(page: HostsRoute.page, path: '/hosts', guards: [apiKeyGuard]),
-    AutoRoute(
-      page: SettingsRoute.page,
-      path: '/settings',
-      guards: [apiKeyGuard],
+      children: [
+        AutoRoute(
+          page: ChatsTabRoute.page,
+          path: 'chats',
+          initial: true,
+          children: [
+            AutoRoute(page: NewChatRoute.page, path: '', initial: true),
+            AutoRoute(page: ChatRoute.page, path: ':chatId'),
+          ],
+        ),
+        AutoRoute(page: HostsRoute.page, path: 'hosts'),
+        AutoRoute(page: SettingsRoute.page, path: 'settings'),
+      ],
     ),
   ];
 }

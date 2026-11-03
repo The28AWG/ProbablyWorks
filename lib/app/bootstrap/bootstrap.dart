@@ -8,6 +8,7 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/logging/app_log.dart';
 import 'package:probably_works/core/security/secret_store.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 
@@ -20,8 +21,12 @@ Future<bool> bootstrap() async {
   if (!lock.acquire()) return false;
   await AppLog.init(paths.logs);
   await configureDependencies();
+  // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
+  await getIt<SettingsRepository>().preload();
   await getIt<StartupRecovery>().run();
   await getIt<HostRepository>().ensureLocalHost(DateTime.now());
+  // Хосты тоже читаются здесь, чтобы список хостов был в первом кадре, а не появлялся после чтения БД.
+  getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
   // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.
   getIt.registerSingleton(
     SidebarStartupWidth(

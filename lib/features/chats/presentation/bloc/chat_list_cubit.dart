@@ -13,14 +13,12 @@ import 'package:probably_works/core/domain/host.dart';
 class ChatListState extends Equatable {
   const ChatListState({
     this.chats = const [],
-    this.selectedId,
     this.hosts = const [],
     this.runningIds = const {},
     this.waitingIds = const {},
   });
 
   final List<Chat> chats;
-  final String? selectedId;
   final List<Host> hosts;
 
   /// Чаты с идущим ходом агента.
@@ -31,25 +29,30 @@ class ChatListState extends Equatable {
 
   ChatListState copyWith({
     List<Chat>? chats,
-    String? selectedId,
-    bool clearSelection = false,
     List<Host>? hosts,
     Set<String>? runningIds,
     Set<String>? waitingIds,
   }) => ChatListState(
     chats: chats ?? this.chats,
-    selectedId: clearSelection ? null : (selectedId ?? this.selectedId),
     hosts: hosts ?? this.hosts,
     runningIds: runningIds ?? this.runningIds,
     waitingIds: waitingIds ?? this.waitingIds,
   );
 
   @override
-  List<Object?> get props => [chats, selectedId, hosts, runningIds, waitingIds];
+  List<Object?> get props => [chats, hosts, runningIds, waitingIds];
+}
+
+/// Хосты, прочитанные при старте: список нового чата и композер получают их в первом кадре.
+class StartupHosts {
+  const StartupHosts(this.value);
+
+  final List<Host> value;
 }
 
 class ChatListCubit extends Cubit<ChatListState> {
-  ChatListCubit(this._hub, this._drafts) : super(const ChatListState()) {
+  ChatListCubit(this._hub, this._drafts, {List<Host> initialHosts = const []})
+    : super(ChatListState(hosts: initialHosts)) {
     _chatsSub = _hub.chats.watchChats().listen((chats) {
       emit(state.copyWith(chats: chats));
       _refreshActivity();
@@ -80,10 +83,6 @@ class ChatListCubit extends Cubit<ChatListState> {
   late final StreamSubscription<AgentEvent> _activitySub;
   late final StreamSubscription<ApprovalRequest> _approvalSub;
   late final StreamSubscription<UserQuestion> _questionSub;
-
-  /// Выбор чата. `null` — стартовый экран нового чата: чат создастся при первой отправке.
-  void select(String? chatId) =>
-      emit(state.copyWith(selectedId: chatId, clearSelection: chatId == null));
 
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
   void _refreshActivity() {
@@ -118,7 +117,6 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _hub.chats.deleteChat(chatId);
     _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);
-    if (state.selectedId == chatId) emit(state.copyWith(clearSelection: true));
   }
 
   @override

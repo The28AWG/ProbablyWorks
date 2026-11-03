@@ -11,6 +11,7 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/process_control.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -30,7 +31,12 @@ class HostsPage extends StatelessWidget {
         getIt<HostRuntimeFactory>(),
       ),
       child: AppScaffold(
-        appBar: AppBar(title: Text(l10n.hostsTitle)),
+        appBar: AppBar(
+          leading: context.workspaceLayout == .compact
+              ? const WorkspaceLeadingButton()
+              : null,
+          title: Text(l10n.hostsTitle),
+        ),
         maxWidth: AppLayout.pageMaxWidth,
         floatingActionButton: Builder(
           builder: (context) => FloatingActionButton.extended(

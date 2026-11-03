@@ -81,6 +81,53 @@ void main() {
     ]);
   });
 
+  test(
+    'preloaded settings answer synchronously and stay in sync on write',
+    () async {
+      final settings = SettingsRepository(db);
+      await settings.write(SettingsRepository.keyDefaultModel, 'openai/gpt-4o');
+      await settings.preload();
+
+      expect(
+        settings.cached(SettingsRepository.keyDefaultModel),
+        'openai/gpt-4o',
+      );
+
+      await settings.write(
+        SettingsRepository.keyDefaultModel,
+        'anthropic/claude',
+      );
+      expect(
+        settings.cached(SettingsRepository.keyDefaultModel),
+        'anthropic/claude',
+      );
+      expect(
+        await settings.read(SettingsRepository.keyDefaultModel),
+        'anthropic/claude',
+      );
+
+      await settings.write(SettingsRepository.keyDefaultModel, null);
+      expect(settings.cached(SettingsRepository.keyDefaultModel), isNull);
+      expect(await settings.read(SettingsRepository.keyDefaultModel), isNull);
+    },
+  );
+
+  test('preloaded steps, pins and limits match the stored values', () async {
+    final settings = SettingsRepository(db);
+    await settings.saveStepsDisplay(
+      const StepsDisplay(group: false, tools: ToolsVisibility.expanded),
+    );
+    await settings.savePinnedModels(['openai/gpt-4o']);
+    await settings.preload();
+
+    expect(settings.cachedStepsDisplay(), await settings.readStepsDisplay());
+    expect(settings.cachedPinnedModels(), ['openai/gpt-4o']);
+    expect(
+      settings.cachedLimits().toJson(),
+      (await settings.limits()).toJson(),
+    );
+  });
+
   test('steps display defaults to grouped, all thoughts, all tools', () async {
     final settings = SettingsRepository(db);
     expect(await settings.readStepsDisplay(), StepsDisplay.defaults);

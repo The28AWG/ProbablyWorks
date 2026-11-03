@@ -16,6 +16,8 @@ class SeededChatBloc extends ChatBloc {
         _UnusedHub(),
         _UnusedBus(),
         drafts ?? ChatDraftStore(_DiscardingChats()),
+        // Начальное состояние задано сразу: хаб не нужен даже для пустого чата.
+        initialState: seed,
       ) {
     // ignore: invalid_use_of_visible_for_testing_member, seed state for widget tests
     emit(seed);

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -145,9 +147,17 @@ class _OnboardingViewState extends State<_OnboardingView> {
     );
   }
 
+  /// Онбординг заканчивается открытым первым чатом. Стек сразу строится вложенным, как при выборе чата в оболочке.
   void _onChatCreated(BuildContext context, OnboardingState state) {
-    context.router.replace(const WorkspaceRoute());
-    context.router.push(ChatRoute(chatId: state.created!));
+    unawaited(
+      context.router.replaceAll([
+        WorkspaceRoute(
+          children: [
+            ChatsTabRoute(children: [ChatRoute(chatId: state.created!)]),
+          ],
+        ),
+      ]),
+    );
   }
 
   static IconData _stepIcon(OnboardingStep step) => switch (step) {
@@ -320,7 +330,9 @@ class _OnboardingViewState extends State<_OnboardingView> {
           OutlinedButton.icon(
             icon: const Icon(Icons.add),
             label: Text(l10n.onboardingAddSsh),
-            onPressed: () => context.router.push(const HostsRoute()),
+            onPressed: () => context.router.push(
+              WorkspaceRoute(children: [const HostsRoute()]),
+            ),
           ),
         if (skippable && step != OnboardingStep.ssh)
           TextButton(onPressed: cubit.next, child: Text(l10n.onboardingSkip)),

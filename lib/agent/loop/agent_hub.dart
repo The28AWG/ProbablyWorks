@@ -85,16 +85,17 @@ class AgentHub {
 
   /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
   Future<Chat> newChat({required String hostId}) async {
-    final chat = await draftChat(hostId: hostId);
+    final chat = draftChat(hostId: hostId);
     await chats.saveChat(chat);
     return chat;
   }
 
   /// Чат на Host, который ещё не записан в БД: появится в списке с первым сообщением.
-  Future<Chat> draftChat({required String hostId}) async {
+  /// Политика берётся из памяти настроек, поэтому чат создаётся синхронно (см. [SettingsRepository.preload]).
+  Chat draftChat({required String hostId}) {
     final now = DateTime.now();
     final policy = PolicyMode.values.byName(
-      await settings.read(SettingsRepository.keyDefaultPolicy) ?? 'ask',
+      settings.cached(SettingsRepository.keyDefaultPolicy) ?? 'ask',
     );
     return Chat(
       id: _uuid.v4(),

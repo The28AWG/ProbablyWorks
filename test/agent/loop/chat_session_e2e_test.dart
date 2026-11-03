@@ -100,6 +100,7 @@ void main() {
     tmp = Directory.systemTemp.createTempSync('pw_e2e');
     final chats = ChatRepository(db);
     final settings = SettingsRepository(db);
+    await settings.preload();
     final hosts = HostRepository(db);
     final pool = SshConnectionPool(
       hosts,
@@ -728,6 +729,17 @@ void main() {
     expect(bloc.state.hosts.map((h) => h.id), ['local']);
     // Ни одного состояния с загрузкой: композер и шапка сразу готовы, без спиннера и скелета.
     expect(states.any((s) => s.loading), isFalse);
+  });
+
+  test('a new chat is ready in the very first state: no read is awaited before the body appears', () {
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+
+    // Сразу после создания блока (без await): чат, модель и хосты уже в состоянии первого кадра.
+    expect(bloc.state.chatId, isNotNull);
+    expect(bloc.state.chat, isNotNull);
+    expect(bloc.state.unsaved, isTrue);
+    expect(bloc.state.effectiveModelId, 'fake/model');
   });
 
   test('a new chat stays out of the database until the first send, then is saved and reported', () async {

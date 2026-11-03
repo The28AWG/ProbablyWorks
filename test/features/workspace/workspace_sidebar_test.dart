@@ -12,6 +12,7 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
@@ -20,6 +21,11 @@ final _now = DateTime.now();
 
 /// Сколько раз панель попросили свернуться, когда тест не передал свой обработчик.
 var _collapseCount = 0;
+
+/// Действия панели, когда тест не передал свой обработчик. Пустых обработчиков не держим: их ловит DCM.
+var _newChatCount = 0;
+final _openedChats = <String>[];
+final _openedTabs = <WorkspaceTab>[];
 
 Chat _chat(
   String id,
@@ -103,13 +109,17 @@ class _FakeHub implements AgentHub {
       throw UnsupportedError('AgentHub is not used in this test');
 }
 
-/// Поднимает развёрнутую панель. [onCollapse] и выбор чата передаются наружу для проверки.
-Future<ChatListCubit> _pumpSidebar(
+/// Поднимает развёрнутую панель. [onCollapse] передаётся наружу для проверки, [selectedChatId] и [activeTab]
+/// задают выделение так же, как это делают маршруты в приложении.
+Future<void> _pumpSidebar(
   WidgetTester tester, {
   required List<Chat> chats,
   List<Host> hosts = const [],
   ThemeData? theme,
   VoidCallback? onCollapse,
+  String? selectedChatId,
+  WorkspaceTab activeTab = WorkspaceTab.chats,
+  void Function(WorkspaceTab tab)? onOpenTab,
 }) async {
   final cubit = ChatListCubit(
     _FakeHub(chats, hosts),
@@ -129,9 +139,12 @@ Future<ChatListCubit> _pumpSidebar(
           child: BlocProvider.value(
             value: cubit,
             child: WorkspaceSidebar(
+              activeTab: activeTab,
+              selectedChatId: selectedChatId,
               onCollapse: onCollapse ?? () => _collapseCount++,
-              onOpenChat: cubit.select,
-              onNewChat: () => cubit.select(null),
+              onOpenChat: _openedChats.add,
+              onNewChat: () => _newChatCount++,
+              onOpenTab: onOpenTab ?? _openedTabs.add,
             ),
           ),
         ),
@@ -139,7 +152,6 @@ Future<ChatListCubit> _pumpSidebar(
     ),
   );
   await tester.pumpAndSettle();
-  return cubit;
 }
 
 void main() {
@@ -239,7 +251,14 @@ void main() {
         locale: const Locale('en'),
         localizationsDelegates: appLocalizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: Scaffold(body: WorkspaceRail(onExpand: () => expanded++)),
+        home: Scaffold(
+          body: WorkspaceRail(
+            activeTab: WorkspaceTab.chats,
+            onExpand: () => expanded++,
+            onNewChat: () => _newChatCount++,
+            onOpenTab: _openedTabs.add,
+          ),
+        ),
       ),
     );
 
@@ -247,6 +266,16 @@ void main() {
     await tester.pump();
 
     expect(expanded, 1);
+  });
+
+  testWidgets('sidebar tabs report the tapped section', (tester) async {
+    final opened = <WorkspaceTab>[];
+    await _pumpSidebar(tester, chats: const [], onOpenTab: opened.add);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pump();
+
+    expect(opened, [WorkspaceTab.settings]);
   });
 
   group('golden', () {
@@ -282,16 +311,15 @@ void main() {
       testWidgets('workspace sidebar ${brightness.name}', (tester) async {
         await tester.binding.setSurfaceSize(const Size(300, 580));
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        final cubit = await _pumpSidebar(
+        await _pumpSidebar(
           tester,
           chats: goldenChats,
           hosts: goldenHosts,
+          selectedChatId: 'b',
           theme: brightness == Brightness.light
               ? AppTheme.light
               : AppTheme.dark,
         );
-        cubit.select('b');
-        await tester.pumpAndSettle();
         await expectLater(
           find.byType(MaterialApp),
           matchesGoldenFile('goldens/workspace_sidebar_${brightness.name}.png'),

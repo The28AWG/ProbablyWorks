@@ -12,6 +12,7 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
@@ -127,7 +128,12 @@ class _SettingsViewState extends State<_SettingsView> {
           ),
         };
         return AppScaffold(
-          appBar: AppBar(title: Text(l10n.settingsTitle)),
+          appBar: AppBar(
+            leading: context.workspaceLayout == .compact
+                ? const WorkspaceLeadingButton()
+                : null,
+            title: Text(l10n.settingsTitle),
+          ),
           body: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= AppBreakpoints.medium;
