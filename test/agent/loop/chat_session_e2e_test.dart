@@ -134,14 +134,7 @@ void main() {
       modelCatalog,
       HostDiagnostics(hosts, MemorySecretStore(), settings, runtimes),
     );
-    final tools = ToolExecutor(
-      chats,
-      commands,
-      broker,
-      state,
-      workspace,
-      self,
-    );
+    final tools = ToolExecutor(chats, commands, broker, state, workspace, self);
     final compactor = ContextCompactor(chats, llm, builder);
     drafts = ChatDraftStore(chats);
     hub = AgentHub(

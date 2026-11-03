@@ -40,10 +40,8 @@ class DiagnosticStep {
 String describeHostFailure(HostFailureKind kind) => switch (kind) {
   HostFailureKind.spawnFailed => 'cannot start the connection',
   HostFailureKind.connectionLost => 'connection lost or host unreachable',
-  HostFailureKind.authFailed =>
-    'authentication failed: check the username and the password or key on the Hosts page',
-  HostFailureKind.hostKeyMismatch =>
-    'host key changed since the last connection (possible man-in-the-middle): the user must check the host on the Hosts page',
+  HostFailureKind.authFailed => 'authentication failed: check the username and the password or key on the Hosts page',
+  HostFailureKind.hostKeyMismatch => 'host key changed since the last connection (possible man-in-the-middle): the user must check the host on the Hosts page',
   HostFailureKind.hostKeyRejected => 'host key was rejected',
 };
 
@@ -78,8 +76,7 @@ class HostDiagnostics {
     } on HostFailure catch (failure) {
       clock.stop();
       result = HostCheckResult(
-        error:
-            '${describeHostFailure(failure.kind)} (${failure.message})',
+        error: '${describeHostFailure(failure.kind)} (${failure.message})',
         kind: failure.kind,
       );
     } on Object catch (caught) {
@@ -203,7 +200,11 @@ class HostDiagnostics {
           'key file not found: $keyPath',
         );
       }
-      return await _checkKey(host, file.readAsStringSync(), 'key file $keyPath');
+      return await _checkKey(
+        host,
+        file.readAsStringSync(),
+        'key file $keyPath',
+      );
     } on FileSystemException catch (error) {
       return DiagnosticStep(
         'credentials',
