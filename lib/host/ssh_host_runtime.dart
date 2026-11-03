@@ -95,8 +95,13 @@ class _SshChannel implements ExecChannel {
   int? get knownPid => null;
 
   @override
-  void closeStdin() {
-    _session.stdin.close();
+  Future<void> finishStdin(Uint8List? data) async {
+    try {
+      if (data != null) _session.stdin.add(data);
+      await _session.stdin.close();
+    } on Object {
+      // Сессия уже закрыта: сбой виден по коду выхода.
+    }
   }
 
   @override

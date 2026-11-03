@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
@@ -78,6 +80,10 @@ class ToolExecutor {
 
   static const _maxDiffLines = 200;
 
+  static const _defaultReadLines = 200;
+  static const _maxReadLines = 1000;
+  static const _minReadChunkBytes = 64;
+
   final _runChanges = StreamController<ToolRun>.broadcast();
 
   /// Каждое сохранение ToolRun: UI и сессия получают изменения статуса без опроса БД.
@@ -99,6 +105,11 @@ class ToolExecutor {
         'invalid arguments JSON: ${error.message}',
         isError: true,
       );
+    } on TypeError {
+      return const ToolResult(
+        'invalid arguments: expected a JSON object',
+        isError: true,
+      );
     }
     try {
       return await switch (call.name) {
@@ -114,15 +125,7 @@ class ToolExecutor {
           args,
           ShellAdapter(ctx.host.os).listDir(_resolve(ctx, _str(args, 'path'))),
         ),
-        ToolNames.readFile => _hostCommand(
-          ctx,
-          call,
-          args,
-          ShellAdapter(ctx.host.os).readFile(
-            _resolve(ctx, _str(args, 'path')),
-            maxBytes: (args['max_bytes'] as num?)?.toInt() ?? 20000,
-          ),
-        ),
+        ToolNames.readFile => _readFile(ctx, call, args),
         ToolNames.grep => _hostCommand(
           ctx,
           call,
@@ -158,7 +161,46 @@ class ToolExecutor {
       };
     } on ArgumentError catch (error) {
       return ToolResult('invalid arguments: ${error.message}', isError: true);
+    } on TypeError {
+      return ToolResult(
+        'invalid argument types for ${call.name}',
+        isError: true,
+      );
     }
+  }
+
+  // ---- read_file -----------------------------------------------------------
+
+  /// Чтение по строкам: курсор offset/byte_offset, лимиты строк и байтов из [AppLimits].
+  /// Размер чанка не превышает половины лимита вывода для модели, иначе [TextClip] вырежет середину.
+  Future<ToolResult> _readFile(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) {
+    final chunk = math.min(
+      math.max(ctx.limits.readFileChunkBytes, _minReadChunkBytes),
+      ctx.limits.toolOutputForModelChars ~/ 2,
+    );
+    return _hostCommand(
+      ctx,
+      call,
+      args,
+      ShellAdapter(ctx.host.os).readFile(
+        _resolve(ctx, _str(args, 'path')),
+        offset: _intArg(args, 'offset', min: 1, fallback: 1),
+        byteOffset: _intArg(args, 'byte_offset', min: 0, fallback: 0),
+        limit: _intArg(
+          args,
+          'limit',
+          min: 1,
+          max: _maxReadLines,
+          fallback: _defaultReadLines,
+        ),
+        chunkBytes: chunk,
+        lineBytes: ctx.limits.readFileLineBytes,
+      ),
+    );
   }
 
   // ---- host commands -----------------------------------------------------
@@ -183,7 +225,11 @@ class ToolExecutor {
   ) async {
     final command = _str(args, 'command');
     final background = args['background'] == true;
-    final cwd = (args['cwd'] as String?) ?? ctx.chat.workspace;
+    final cwdArg = args['cwd'] as String?;
+    // Относительный cwd считается от workspace, как и пути остальных инструментов.
+    final cwd = cwdArg == null || cwdArg.isEmpty
+        ? ctx.chat.workspace
+        : _resolve(ctx, cwdArg);
     // Один id на всю жизнь команды: ожидание подтверждения и выполнение — одна строка в журнале.
     final runId = _uuid.v4();
     final decision = ctx.policy.decide(call.name, args);
@@ -223,6 +269,7 @@ class ToolExecutor {
   ) async {
     final path = _resolve(ctx, _str(args, 'path'));
     final content = _str(args, 'content');
+    final mtime = await _mtimeOrNull(ctx, path);
     final before = await _readOrEmpty(ctx, path);
     return _mutateFile(
       ctx,
@@ -231,7 +278,19 @@ class ToolExecutor {
       path: path,
       before: before,
       after: content,
+      expectedMtime: mtime,
     );
+  }
+
+  /// mtime файла на Host или null, если файла нет (или его не удалось получить: тогда запись
+  /// безопасно откажет, потому что файл существует, а ожидался отсутствующий).
+  Future<String?> _mtimeOrNull(ToolContext ctx, String path) async {
+    final run = await captureRun(
+      ctx.runtime,
+      ShellAdapter(ctx.host.os).statMtime(path),
+    );
+    final value = run.stdout.trim();
+    return run.ok && value.isNotEmpty ? value : null;
   }
 
   Future<ToolResult> _editFile(
@@ -243,17 +302,26 @@ class ToolExecutor {
     final oldString = _str(args, 'old_string');
     final newString = _str(args, 'new_string');
     final replaceAll = args['replace_all'] == true;
+    // mtime снимается раньше содержимого: если файл изменится между ними, защита записи это заметит.
+    final mtime = await _mtimeOrNull(ctx, path);
     final read = await captureRun(
       ctx.runtime,
       ShellAdapter(ctx.host.os).readFileOrEmpty(path),
     );
-    if (!read.ok) {
+    if (mtime == null || !read.ok) {
       return ToolResult(
         'cannot read $path (file missing or unreadable)',
         isError: true,
       );
     }
     final before = read.stdout;
+    // Декодер заменяет байты не в UTF-8 на U+FFFD. Запись такого текста обратно испортила бы файл.
+    if (before.contains('\uFFFD')) {
+      return ToolResult(
+        'cannot edit $path: it is not valid UTF-8 text (or contains U+FFFD), and an edit would corrupt its bytes. The file was not changed.',
+        isError: true,
+      );
+    }
     final occurrences = oldString.isEmpty
         ? 0
         : oldString.allMatches(before).length;
@@ -276,9 +344,12 @@ class ToolExecutor {
       path: path,
       before: before,
       after: after,
+      expectedMtime: mtime,
     );
   }
 
+  /// Запись нового содержимого. [expectedMtime] — mtime файла до чтения ([_mtimeOrNull]); null — файла не было.
+  /// Проверка mtime выполняется на Host непосредственно перед записью, уже после подтверждения пользователя.
   Future<ToolResult> _mutateFile(
     ToolContext ctx,
     LlmToolCall call,
@@ -286,6 +357,7 @@ class ToolExecutor {
     required String path,
     required String before,
     required String after,
+    required String? expectedMtime,
   }) async {
     final diff = _renderDiff(before, after);
     final decision = ctx.policy.decide(call.name, args);
@@ -308,8 +380,11 @@ class ToolExecutor {
       );
       if (!approved) return _rejected(path);
     }
-    final command = ShellAdapter(ctx.host.os)
-        .writeFile(path, after, backupPath: '$path.pw-bak-$runId');
+    final command = ShellAdapter(ctx.host.os).writeFile(
+      path,
+      backupPath: '$path.pw-bak-$runId',
+      expectedMtime: expectedMtime,
+    );
     return _exec(
       ctx,
       call,
@@ -318,6 +393,7 @@ class ToolExecutor {
       background: false,
       displayCommand: 'write $path',
       presetRunId: runId,
+      stdin: Uint8List.fromList(utf8.encode(after)),
     );
   }
 
@@ -467,6 +543,7 @@ class ToolExecutor {
     String? displayCommand,
     String? presetRunId,
     bool inTerminal = false,
+    Uint8List? stdin,
   }) async {
     final runId = presetRunId ?? _uuid.v4();
     var run = _newRun(
@@ -490,6 +567,7 @@ class ToolExecutor {
       limits: ctx.limits,
       background: background,
       inTerminal: inTerminal,
+      stdin: stdin,
     );
     run = run.copyWith(logPath: handle.logPath);
     await _saveRun(run);
@@ -690,5 +768,25 @@ class ToolExecutor {
       throw ArgumentError.value(value, key, 'required string');
     }
     return value;
+  }
+
+  /// Необязательное целое. Дробные значения и значения ниже [min] — ошибка аргумента, а не молчаливая подмена.
+  static int _intArg(
+    Map<String, dynamic> args,
+    String key, {
+    required int min,
+    int? max,
+    required int fallback,
+  }) {
+    final value = args[key];
+    if (value == null) return fallback;
+    if (value is! num || value != value.toInt()) {
+      throw ArgumentError.value(value, key, 'integer expected');
+    }
+    final number = value.toInt();
+    if (number < min) {
+      throw ArgumentError.value(value, key, 'must be at least $min');
+    }
+    return max == null ? number : math.min(number, max);
   }
 }

@@ -65,10 +65,13 @@ class _ProcessChannel implements ExecChannel {
   int? get knownPid => _process.pid;
 
   @override
-  void closeStdin() {
-    _process.stdin.close().catchError((Object _) {
-      return;
-    });
+  Future<void> finishStdin(Uint8List? data) async {
+    try {
+      if (data != null) _process.stdin.add(data);
+      await _process.stdin.close();
+    } on Object {
+      // Процесс уже завершился: сбой виден по коду выхода.
+    }
   }
 
   @override

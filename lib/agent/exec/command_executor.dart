@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
@@ -71,6 +72,7 @@ class CommandExecutor {
     required bool background,
     String? cwd,
     bool inTerminal = false,
+    Uint8List? stdin,
   }) async {
     final release = await _registry.acquireSlot(
       hostId,
@@ -89,7 +91,7 @@ class CommandExecutor {
     final logPath = await _logs.open(chatId, toolCallId);
     final events = inTerminal
         ? await _terminalEvents(exec, runtime, command, cwd)
-        : runtime.run(command, cwd: cwd);
+        : runtime.run(command, cwd: cwd, stdin: stdin);
 
     final started = Completer<int?>();
     final finished = Completer<ExecOutcome>();

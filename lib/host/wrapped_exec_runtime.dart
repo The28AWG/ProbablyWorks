@@ -16,7 +16,9 @@ abstract interface class ExecChannel {
   /// Известен сразу только для локального процесса; для SSH берётся из маркера.
   int? get knownPid;
 
-  void closeStdin();
+  /// Отправляет [data] (если есть) на stdin процесса и закрывает ввод (EOF).
+  /// Ошибка записи не бросается: если процесс уже завершился, код выхода сообщит о сбое.
+  Future<void> finishStdin(Uint8List? data);
 
   /// Завершение канала. Может бросить при обрыве соединения.
   Future<int?> get exitCode;
@@ -44,9 +46,9 @@ abstract base class WrappedExecRuntime implements HostRuntime {
   });
 
   @override
-  Stream<ExecEvent> run(String command, {String? cwd}) {
+  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) {
     final controller = StreamController<ExecEvent>();
-    unawaited(_drive(controller, command, cwd));
+    unawaited(_drive(controller, command, cwd, stdin));
     return controller.stream;
   }
 
@@ -72,6 +74,7 @@ abstract base class WrappedExecRuntime implements HostRuntime {
     StreamController<ExecEvent> out,
     String command,
     String? cwd,
+    Uint8List? stdin,
   ) async {
     final script = cwd == null
         ? command
@@ -99,7 +102,6 @@ abstract base class WrappedExecRuntime implements HostRuntime {
     // команды (та, что нужна для kill) создаётся внутри setsid и видна только в маркере.
     final known = parser == null ? channel.knownPid : null;
     if (known != null) emitStarted(known);
-    channel.closeStdin();
 
     final stdoutDone = Completer<void>();
     final stderrDone = Completer<void>();
@@ -127,6 +129,10 @@ abstract base class WrappedExecRuntime implements HostRuntime {
         if (!stderrDone.isCompleted) stderrDone.complete();
       },
     );
+
+    // stdin пишется только после подписок на stdout и stderr: иначе процесс, пишущий много
+    // в вывод, заблокируется на записи, а мы — на отправке ввода.
+    unawaited(channel.finishStdin(stdin));
 
     int? exitCode;
     try {

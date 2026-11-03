@@ -51,19 +51,36 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.readFile,
       description:
-          'Read the beginning of a text file (up to max_bytes, default 20000).',
+          'Read a text file by lines. The result starts with the file size ("[file: N lines, M bytes]"), '
+          'then numbered lines, then a footer. If the footer says "[more: continue with offset=K]", '
+          'call again with offset=K. A line longer than the per-line limit is cut; the footer then says '
+          '"continue with offset=K byte_offset=B" to read the rest of that line. '
+          'Use grep first to find line numbers in large files.',
       parameters: {
         'type': 'object',
         'properties': {
           'path': _pathProp,
-          'max_bytes': {'type': 'integer', 'description': 'Max bytes to read'},
+          'offset': {
+            'type': 'integer',
+            'description': '1-based line to start from (default 1)',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': 'Max lines to return (default 200, max 1000)',
+          },
+          'byte_offset': {
+            'type': 'integer',
+            'description': 'Byte position inside line offset, from the footer, to continue a cut line (default 0)',
+          },
         },
         'required': ['path'],
       },
     ),
     const LlmToolSpec(
       name: ToolNames.grep,
-      description: 'Search for a text pattern recursively under a path.',
+      description:
+          'Search for a regular expression recursively under a path (skips .git). '
+          'Returns path:line:text, at most 300 lines; a footer says when results are cut.',
       parameters: {
         'type': 'object',
         'properties': {

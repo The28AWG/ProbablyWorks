@@ -51,7 +51,9 @@ abstract interface class HostRuntime {
 
   /// Запускает [command] и отдаёт поток событий. Отписка от потока НЕ останавливает процесс.
   /// Для служебных команд: stdout и stderr разделены, TTY нет.
-  Stream<ExecEvent> run(String command, {String? cwd});
+  /// [stdin] — байты, которые передаются процессу на stdin и затем закрывают его ввод (EOF).
+  /// Так передаётся содержимое файла: оно не попадает в командную строку и не ограничено её длиной.
+  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin});
 
   /// Запускает [command] в PTY-терминале Host: команда видит настоящий TTY размера
   /// [columns]×[rows]. Размер меняется через [HostTerminal.resize]. Бросает [HostFailure],

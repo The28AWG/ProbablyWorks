@@ -10,6 +10,8 @@ class AppLimits {
     this.sshConnectTimeout = const Duration(seconds: 15),
     this.sshKeepAlive = const Duration(seconds: 30),
     this.toolOutputForModelChars = 60000,
+    this.readFileChunkBytes = 20000,
+    this.readFileLineBytes = 2000,
     this.logOutputDbBytes = 1024 * 1024,
     this.attachmentMaxBytes = 256 * 1024,
     this.attachmentsPerMessage = 8,
@@ -57,6 +59,8 @@ class AppLimits {
       sshIdleClose: secondsOf('sshIdleCloseSeconds') ?? d.sshIdleClose,
       toolOutputForModelChars:
           intOf('toolOutputForModelChars') ?? d.toolOutputForModelChars,
+      readFileChunkBytes: intOf('readFileChunkBytes') ?? d.readFileChunkBytes,
+      readFileLineBytes: intOf('readFileLineBytes') ?? d.readFileLineBytes,
       logOutputDbBytes: intOf('logOutputDbBytes') ?? d.logOutputDbBytes,
       attachmentMaxBytes: intOf('attachmentMaxBytes') ?? d.attachmentMaxBytes,
       attachmentsPerMessage:
@@ -87,6 +91,12 @@ class AppLimits {
   final Duration sshConnectTimeout;
   final Duration sshKeepAlive;
   final int toolOutputForModelChars;
+
+  /// Максимум байтов текста за один вызов read_file.
+  final int readFileChunkBytes;
+
+  /// Максимум байтов одной строки за один вызов read_file; остаток читается через byte_offset.
+  final int readFileLineBytes;
   final int logOutputDbBytes;
   final int attachmentMaxBytes;
   final int attachmentsPerMessage;
@@ -106,6 +116,8 @@ class AppLimits {
     Duration? sshConnectTimeout,
     Duration? sshKeepAlive,
     int? toolOutputForModelChars,
+    int? readFileChunkBytes,
+    int? readFileLineBytes,
     int? logOutputDbBytes,
     int? attachmentMaxBytes,
     int? attachmentsPerMessage,
@@ -126,6 +138,8 @@ class AppLimits {
     sshKeepAlive: sshKeepAlive ?? this.sshKeepAlive,
     toolOutputForModelChars:
         toolOutputForModelChars ?? this.toolOutputForModelChars,
+    readFileChunkBytes: readFileChunkBytes ?? this.readFileChunkBytes,
+    readFileLineBytes: readFileLineBytes ?? this.readFileLineBytes,
     logOutputDbBytes: logOutputDbBytes ?? this.logOutputDbBytes,
     attachmentMaxBytes: attachmentMaxBytes ?? this.attachmentMaxBytes,
     attachmentsPerMessage: attachmentsPerMessage ?? this.attachmentsPerMessage,
@@ -148,6 +162,8 @@ class AppLimits {
     'sshKeepAliveSeconds': sshKeepAlive.inSeconds,
     'sshIdleCloseSeconds': sshIdleClose.inSeconds,
     'toolOutputForModelChars': toolOutputForModelChars,
+    'readFileChunkBytes': readFileChunkBytes,
+    'readFileLineBytes': readFileLineBytes,
     'logOutputDbBytes': logOutputDbBytes,
     'attachmentMaxBytes': attachmentMaxBytes,
     'attachmentsPerMessage': attachmentsPerMessage,

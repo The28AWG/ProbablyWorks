@@ -59,13 +59,15 @@ void main() {
       );
       final write = cmd.writeFile(
         r'C:\proj\a.txt',
-        'hello',
         backupPath: r'C:\proj\a.txt.bak',
+        expectedMtime: '123',
       );
       final script = _decodePowershell(write);
       expect(script, contains("'C:\\proj\\a.txt'"));
       expect(script, contains("'C:\\proj'"));
       expect(script, contains("'C:\\proj\\a.txt.bak'"));
+      expect(script, contains('-ne 123'));
+      expect(script, contains('OpenStandardInput'));
     });
 
     test('scanSkills и readHead читают UTF-8 через PowerShell', () {
