@@ -8,19 +8,12 @@ import 'package:probably_works/core/util/short_time.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
-/// Список чатов: создание, поиск, фильтр по хосту, группы по дате, контекстное меню.
+/// Список чатов: создание, группы по дате, контекстное меню.
 /// Используется в широком режиме постоянной панелью, в среднем — в drawer, в компактном — на весь экран.
-class ChatListPanel extends StatefulWidget {
+class ChatListPanel extends StatelessWidget {
   const ChatListPanel({required this.onOpen, super.key});
 
   final void Function(String chatId) onOpen;
-
-  @override
-  State<ChatListPanel> createState() => _ChatListPanelState();
-}
-
-class _ChatListPanelState extends State<ChatListPanel> {
-  var _query = '';
 
   @override
   Widget build(BuildContext context) {
@@ -31,17 +24,12 @@ class _ChatListPanelState extends State<ChatListPanel> {
       buildWhen: (previous, current) =>
           previous.chats != current.chats ||
           previous.hosts != current.hosts ||
-          previous.hostFilter != current.hostFilter ||
           previous.runningIds != current.runningIds ||
           previous.waitingIds != current.waitingIds,
       builder: (context, state) {
         final now = DateTime.now();
         final hosts = {for (final host in state.hosts) host.id: host};
-        final chats = [
-          for (final chat in state.visibleChats)
-            if (_query.isEmpty || chat.title.toLowerCase().contains(_query))
-              chat,
-        ];
+        final chats = state.chats;
         final groups = {
           for (final bucket in DayBucket.values) bucket: <Chat>[],
         };
@@ -61,57 +49,14 @@ class _ChatListPanelState extends State<ChatListPanel> {
               child: FilledButton.icon(
                 icon: const Icon(Icons.add),
                 label: Text(l10n.chatsNew),
-                onPressed: () async => widget.onOpen(await cubit.create()),
+                onPressed: () async => onOpen(await cubit.create()),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: AppTextField(
-                hint: l10n.chatsSearchHint,
-                prefixIcon: Icons.search,
-                onChanged: (value) =>
-                    setState(() => _query = value.trim().toLowerCase()),
-              ),
-            ),
-            if (state.hosts.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(
-                  left: AppSpacing.md,
-                  top: AppSpacing.md,
-                  right: AppSpacing.md,
-                ),
-                child: Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    ChoiceChip(
-                      label: Text(l10n.chatsFilterAll),
-                      selected: state.hostFilter == null,
-                      onSelected: (_) => cubit.setHostFilter(null),
-                    ),
-                    for (final host in state.hosts)
-                      ChoiceChip(
-                        label: Text(
-                          host.isLocal ? l10n.hostLocalName : host.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        selected: state.hostFilter == host.id,
-                        onSelected: (_) => cubit.setHostFilter(host.id),
-                      ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: AppSpacing.sm),
             Expanded(
               child: chats.isEmpty
                   ? AppEmptyState(
-                      icon: _query.isEmpty
-                          ? Icons.forum_outlined
-                          : Icons.search_off,
-                      title: _query.isEmpty
-                          ? l10n.chatsEmpty
-                          : l10n.chatsSearchEmpty,
+                      icon: Icons.forum_outlined,
+                      title: l10n.chatsEmpty,
                     )
                   : ListView(
                       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
@@ -135,9 +80,9 @@ class _ChatListPanelState extends State<ChatListPanel> {
                                   selected: selected,
                                   running: state.runningIds.contains(chat.id),
                                   waiting: state.waitingIds.contains(chat.id),
-                                  onTap: () => widget.onOpen(chat.id),
+                                  onTap: () => onOpen(chat.id),
                                   onMenu: (position) =>
-                                      _showMenu(context, chat, position),
+                                      _showChatMenu(context, chat, position),
                                 ),
                               ),
                           ],
@@ -149,81 +94,81 @@ class _ChatListPanelState extends State<ChatListPanel> {
       },
     );
   }
+}
 
-  Future<void> _showMenu(
-    BuildContext context,
-    Chat chat,
-    Offset position,
-  ) async {
-    final l10n = AppLocalizations.of(context);
-    final scheme = Theme.of(context).colorScheme;
-    final action = await showMenu<_ChatAction>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx,
-        position.dy,
+Future<void> _showChatMenu(
+  BuildContext context,
+  Chat chat,
+  Offset position,
+) async {
+  final l10n = AppLocalizations.of(context);
+  final scheme = Theme.of(context).colorScheme;
+  final action = await showMenu<_ChatAction>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+      position.dx,
+      position.dy,
+      position.dx,
+      position.dy,
+    ),
+    items: [
+      PopupMenuItem(
+        value: _ChatAction.rename,
+        child: Row(
+          children: [
+            const Icon(Icons.edit_outlined, size: 18),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.commonRename),
+          ],
+        ),
       ),
-      items: [
-        PopupMenuItem(
-          value: _ChatAction.rename,
-          child: Row(
-            children: [
-              const Icon(Icons.edit_outlined, size: 18),
-              const SizedBox(width: AppSpacing.sm),
-              Text(l10n.commonRename),
-            ],
-          ),
+      PopupMenuItem(
+        value: _ChatAction.delete,
+        child: Row(
+          children: [
+            Icon(Icons.delete_outline, size: 18, color: scheme.error),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.commonDelete, style: TextStyle(color: scheme.error)),
+          ],
         ),
-        PopupMenuItem(
-          value: _ChatAction.delete,
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline, size: 18, color: scheme.error),
-              const SizedBox(width: AppSpacing.sm),
-              Text(l10n.commonDelete, style: TextStyle(color: scheme.error)),
-            ],
-          ),
-        ),
-      ],
-    );
-    if (!context.mounted || action == null) return;
-    switch (action) {
-      case _ChatAction.rename:
-        await _rename(context, chat);
-      case _ChatAction.delete:
-        await _delete(context, chat);
-    }
+      ),
+    ],
+  );
+  if (!context.mounted || action == null) return;
+  switch (action) {
+    case _ChatAction.rename:
+      await _renameChat(context, chat);
+    case _ChatAction.delete:
+      await _deleteChat(context, chat);
   }
+}
 
-  Future<void> _rename(BuildContext context, Chat chat) async {
-    final l10n = AppLocalizations.of(context);
-    final title = await ConfirmDialog.prompt(
-      context,
-      title: l10n.commonRename,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.commonRename,
-      initialText: chat.title,
-    );
-    if (title != null && context.mounted) {
-      await context.read<ChatListCubit>().rename(chat.id, title);
-    }
+Future<void> _renameChat(BuildContext context, Chat chat) async {
+  final l10n = AppLocalizations.of(context);
+  final title = await ConfirmDialog.prompt(
+    context,
+    title: l10n.commonRename,
+    cancelLabel: l10n.commonCancel,
+    confirmLabel: l10n.commonRename,
+    initialText: chat.title,
+  );
+  if (title != null && context.mounted) {
+    await context.read<ChatListCubit>().rename(chat.id, title);
   }
+}
 
-  Future<void> _delete(BuildContext context, Chat chat) async {
-    final l10n = AppLocalizations.of(context);
-    final ok = await ConfirmDialog.confirm(
-      context,
-      title: l10n.commonDelete,
-      message: l10n.chatsDeleteConfirm,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.commonDelete,
-      destructive: true,
-    );
-    if (ok && context.mounted) {
-      await context.read<ChatListCubit>().delete(chat.id);
-    }
+Future<void> _deleteChat(BuildContext context, Chat chat) async {
+  final l10n = AppLocalizations.of(context);
+  final ok = await ConfirmDialog.confirm(
+    context,
+    title: l10n.commonDelete,
+    message: l10n.chatsDeleteConfirm,
+    cancelLabel: l10n.commonCancel,
+    confirmLabel: l10n.commonDelete,
+    destructive: true,
+  );
+  if (ok && context.mounted) {
+    await context.read<ChatListCubit>().delete(chat.id);
   }
 }
 

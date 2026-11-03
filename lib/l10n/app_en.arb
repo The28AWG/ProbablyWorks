@@ -535,10 +535,6 @@
   "@compactHistory": {
     "description": "Button in the context meter: compress the older part of the chat history now."
   },
-  "chatsFilterAll": "All hosts",
-  "@chatsFilterAll": {
-    "description": "Chip in the chat list: show chats from every host."
-  },
   "chatBadgeRunning": "Running",
   "@chatBadgeRunning": {
     "description": "Tooltip for the spinner badge: the agent is working in this chat."
@@ -881,14 +877,6 @@
   "chatsGroupEarlier": "Earlier",
   "@chatsGroupEarlier": {
     "description": "Chat list group header: chats updated before yesterday."
-  },
-  "chatsSearchHint": "Search chats",
-  "@chatsSearchHint": {
-    "description": "Placeholder of the chat search field."
-  },
-  "chatsSearchEmpty": "Nothing found",
-  "@chatsSearchEmpty": {
-    "description": "Chat list message when search matches nothing."
   },
   "chatContextTitle": "Chat context",
   "@chatContextTitle": {

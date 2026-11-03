@@ -16,7 +16,6 @@ class ChatListState extends Equatable {
     this.chats = const [],
     this.selectedId,
     this.hosts = const [],
-    this.hostFilter,
     this.runningIds = const {},
     this.waitingIds = const {},
   });
@@ -25,47 +24,29 @@ class ChatListState extends Equatable {
   final String? selectedId;
   final List<Host> hosts;
 
-  /// Фильтр списка по Host; null — все чаты.
-  final String? hostFilter;
-
   /// Чаты с идущим ходом агента.
   final Set<String> runningIds;
 
   /// Чаты, где агент ждёт approve или ответа пользователя.
   final Set<String> waitingIds;
 
-  List<Chat> get visibleChats => [
-    for (final chat in chats)
-      if (hostFilter == null || chat.hostId == hostFilter) chat,
-  ];
-
   ChatListState copyWith({
     List<Chat>? chats,
     String? selectedId,
     bool clearSelection = false,
     List<Host>? hosts,
-    String? hostFilter,
-    bool clearHostFilter = false,
     Set<String>? runningIds,
     Set<String>? waitingIds,
   }) => ChatListState(
     chats: chats ?? this.chats,
     selectedId: clearSelection ? null : (selectedId ?? this.selectedId),
     hosts: hosts ?? this.hosts,
-    hostFilter: clearHostFilter ? null : (hostFilter ?? this.hostFilter),
     runningIds: runningIds ?? this.runningIds,
     waitingIds: waitingIds ?? this.waitingIds,
   );
 
   @override
-  List<Object?> get props => [
-    chats,
-    selectedId,
-    hosts,
-    hostFilter,
-    runningIds,
-    waitingIds,
-  ];
+  List<Object?> get props => [chats, selectedId, hosts, runningIds, waitingIds];
 }
 
 class ChatListCubit extends Cubit<ChatListState> {
@@ -103,9 +84,6 @@ class ChatListCubit extends Cubit<ChatListState> {
 
   void select(String? chatId) =>
       emit(state.copyWith(selectedId: chatId, clearSelection: chatId == null));
-
-  void setHostFilter(String? hostId) =>
-      emit(state.copyWith(hostFilter: hostId, clearHostFilter: hostId == null));
 
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
   void _refreshActivity() {

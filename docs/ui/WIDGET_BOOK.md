@@ -315,7 +315,7 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `ChatMetaBar` | `lib/features/chat/presentation/widgets/chat_meta_bar.dart` | Строка настроек под полем ввода. Все интерактивные чипы одного вида (значение и `▾`): хост — меню, папка и модель — диалог выбора, контекст — окно заполнения. Хост и папка недоступны во время работы агента. Чип папки появляется только при назначенной папке, чип контекста — только при данных о заполнении. Модель без значения — подсказка «Выбрать модель» с предупреждением. Заполнение от 90% подсвечивается |
 | `ChatContextDialog` | `lib/features/chat/presentation/widgets/chat_context_dialog.dart` | Диалог окна контекста: заполнение через `ContextUsageBar` и действие «Сжать историю». Сжатие недоступно без данных и во время работы |
 | `ComposerInput` | `lib/features/chat/presentation/widgets/composer_input.dart` | Поле сообщения: Enter отправляет (или ставит в очередь во время работы), Shift+Enter переносит строку, Ctrl/Cmd+Enter во время работы отправляет сразу, IME не перехватывается |
-| `ChatListPanel` | `lib/features/chats/presentation/widgets/chat_list_panel.dart` | Список чатов с поиском, группами «сегодня / вчера / раньше» и контекстным меню |
+| `ChatListPanel` | `lib/features/chats/presentation/widgets/chat_list_panel.dart` | Список чатов с группами «сегодня / вчера / раньше» и контекстным меню |
 | `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск, фильтр «с инструментами», закреплённые модели, группы по провайдеру, клавиатура |
 
 ## 6. Утилиты
