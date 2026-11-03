@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
@@ -11,9 +10,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
-import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
-import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -214,20 +211,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
       for (final m in state.messages)
         if (m.role != MessageRole.tool) m,
     ];
+    // Пустой чат показывает ChatBody (приветствие и композер), здесь лента пуста.
     final empty = visible.isEmpty && !state.isRunning;
     return AnimatedSwitcher(
       duration: AppDurations.normal,
       child: empty
-          ? ChatWelcome(
-              key: const ValueKey('welcome'),
-              hostLabel: hostLabelOf(
-                state.hosts,
-                state.chat?.hostId ?? '',
-                l10n,
-              ),
-              onSuggest: (text) =>
-                  context.read<ChatBloc>().add(ChatSuggestionPicked(text)),
-            )
+          ? const SizedBox.shrink(key: ValueKey('empty'))
           : LayoutBuilder(
               key: const ValueKey('timeline'),
               builder: (context, constraints) =>

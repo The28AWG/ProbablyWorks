@@ -20,6 +20,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_composer.
 import 'package:probably_works/features/chat/presentation/widgets/chat_context_dialog.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
@@ -35,19 +36,24 @@ const _defaultContextLimit = 128000;
 /// держит прежние значения до прихода данных нового чата и заблокирован на время загрузки.
 class ChatView extends StatefulWidget {
   const ChatView({
-    required this.chatId,
+    this.chatId,
     this.seedChat,
     this.seedHosts = const [],
+    this.onCreated,
     super.key,
   });
 
-  final String chatId;
+  /// Открытый чат. Null — новый чат: стартовый экран, чат создастся при первой отправке.
+  final String? chatId;
 
   /// Чат из уже загруженного списка: шапка и композер появляются в первом кадре, без скелета.
   /// Null — чат ещё не в списке (например, открыт по маршруту на узком экране): покажем скелет,
   /// если до этого ничего не открывали.
   final Chat? seedChat;
   final List<Host> seedHosts;
+
+  /// Новый чат записан в БД после первой отправки. Владелец экрана переключает выбор на него.
+  final ValueChanged<String>? onCreated;
 
   @override
   State<ChatView> createState() => _ChatViewState();
@@ -60,21 +66,32 @@ class _ChatViewState extends State<ChatView> {
     getIt<ChatDraftStore>(),
     seedChat: widget.seedChat,
     seedHosts: widget.seedHosts,
-  )..add(ChatOpened(widget.chatId));
+    onChatCreated: (id) => widget.onCreated?.call(id),
+  )..add(_openEvent(widget.chatId));
 
   @override
   void didUpdateWidget(ChatView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.chatId != oldWidget.chatId) {
-      _bloc.add(
-        ChatOpened(
-          widget.chatId,
-          seedChat: widget.seedChat,
-          seedHosts: widget.seedHosts,
-        ),
-      );
-    }
+    final chatId = widget.chatId;
+    if (chatId == oldWidget.chatId) return;
+    // Новый чат, который только что записан после отправки: блок уже открыт на нём, второй раз не открываем.
+    if (chatId != null && chatId == _bloc.state.chatId) return;
+    _bloc.add(
+      _openEvent(
+        chatId,
+        seedChat: widget.seedChat,
+        seedHosts: widget.seedHosts,
+      ),
+    );
   }
+
+  ChatEvent _openEvent(
+    String? chatId, {
+    Chat? seedChat,
+    List<Host> seedHosts = const [],
+  }) => chatId == null
+      ? const ChatDraftOpened()
+      : ChatOpened(chatId, seedChat: seedChat, seedHosts: seedHosts);
 
   @override
   void dispose() {
@@ -97,6 +114,9 @@ class ChatBody extends StatefulWidget {
 
 class _ChatBodyState extends State<ChatBody> {
   final _composer = TextEditingController();
+
+  /// Композер переезжает между центром пустого чата и низом ленты. Ключ сохраняет его состояние при переезде.
+  final _composerKey = GlobalKey();
   var _dragging = false;
   var _draftId = 0;
 
@@ -127,6 +147,8 @@ class _ChatBodyState extends State<ChatBody> {
       builder: (context, state) {
         final chat = state.chat;
         // Без перехода: fade всего тела на каждом открытии рисует весь экран через saveLayer.
+        // Стартовый кадр нового чата: блок ещё готовит пустой чат, спиннера и скелета нет.
+        if (chat == null && state.chatId == null) return const _ChatBlankBody();
         // Без чата (нет в списке) — полный каркас. С чатом из списка шапка и композер настоящие,
         // а при загрузке ленты меняется только её область.
         if (chat == null) return const _ChatLoadingBody();
@@ -135,6 +157,59 @@ class _ChatBodyState extends State<ChatBody> {
             ? null
             : state.promptTokens! /
                   (state.contextLimit ?? _defaultContextLimit);
+        // Пустой чат (в том числе новый): композер по центру под приветствием. Как только появилось
+        // сообщение или ход начался, композер уходит вниз. Переход сохраняет состояние композера (фокус, текст).
+        final empty =
+            !state.loading &&
+            !state.isRunning &&
+            !state.messages.any((m) => m.role != MessageRole.tool);
+        final composer = KeyedSubtree(
+          key: _composerKey,
+          // Во время загрузки чата настройки относятся к прежнему чату: меняются только после загрузки.
+          // Фокус тоже снимаем: иначе текст набрался бы в поле, которое сейчас относится к прежнему чату.
+          child: ExcludeFocus(
+            excluding: state.loading,
+            child: IgnorePointer(
+              ignoring: state.loading,
+              child: ChatComposer(
+                state: state,
+                controller: _composer,
+                attachments: state.attachments,
+                dragging: _dragging,
+                workspace: chat.workspace,
+                policy: chat.policyMode,
+                onPickWorkspace: () => _pickWorkspace(bloc, chat),
+                onPolicySelected: (mode) => bloc.add(ChatPolicyChanged(mode)),
+                settings: ChatMetaBar(
+                  hosts: state.hosts,
+                  hostId: chat.hostId,
+                  onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
+                  workspace: chat.workspace,
+                  onPickWorkspace: () => _pickWorkspace(bloc, chat),
+                  modelLabel: _modelLabel(
+                    state.effectiveModelId,
+                    state.catalog,
+                  ),
+                  modelUnavailable: state.modelUnavailable,
+                  // Спиннер только пока название модели неизвестно: сохранённое показываем сразу.
+                  modelLoading:
+                      state.catalog.initialLoading &&
+                      !state.catalog.knowsName(state.effectiveModelId),
+                  modelPending: state.modelPending,
+                  onPickModel: () => _pickModel(bloc, state, chat),
+                  contextFraction: fraction,
+                  onOpenContext: () => _openContext(bloc),
+                  running: state.isRunning,
+                ),
+                onAttach: _pickFiles,
+                onRemoveAttachment: (index) =>
+                    bloc.add(ChatAttachmentRemoved(index)),
+                onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
+                onStop: () => bloc.add(const ChatStopped()),
+              ),
+            ),
+          ),
+        );
         return DropTarget(
           key: const ValueKey('body'),
           onDragEntered: (_) => setState(() => _dragging = true),
@@ -148,56 +223,43 @@ class _ChatBodyState extends State<ChatBody> {
                     title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
                   ),
                   Expanded(
-                    child: state.loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : ChatTimeline(
-                            state: state,
-                            terminalFor: context.read<ChatBloc>().terminalFor,
-                          ),
-                  ),
-                  ChatAttentionDock(state: state),
-                  // Во время загрузки чата настройки относятся к прежнему чату: меняются только после загрузки.
-                  // Фокус тоже снимаем: иначе текст набрался бы в поле, которое сейчас относится к прежнему чату.
-                  ExcludeFocus(
-                    excluding: state.loading,
-                    child: IgnorePointer(
-                      ignoring: state.loading,
-                      child: ChatComposer(
-                        state: state,
-                        controller: _composer,
-                        attachments: state.attachments,
-                        dragging: _dragging,
-                        workspace: chat.workspace,
-                        policy: chat.policyMode,
-                        onPickWorkspace: () => _pickWorkspace(bloc, chat),
-                        onPolicySelected: (mode) =>
-                            bloc.add(ChatPolicyChanged(mode)),
-                        settings: ChatMetaBar(
-                          hosts: state.hosts,
-                          hostId: chat.hostId,
-                          onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
-                          workspace: chat.workspace,
-                          onPickWorkspace: () => _pickWorkspace(bloc, chat),
-                          modelLabel: _modelLabel(
-                            state.effectiveModelId,
-                            state.catalog,
-                          ),
-                          modelUnavailable: state.modelUnavailable,
-                          modelLoading: state.catalog.initialLoading,
-                          modelPending: state.modelPending,
-                          onPickModel: () => _pickModel(bloc, state, chat),
-                          contextFraction: fraction,
-                          onOpenContext: () => _openContext(bloc),
-                          running: state.isRunning,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: state.loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : ChatTimeline(
+                                  state: state,
+                                  terminalFor: bloc.terminalFor,
+                                ),
                         ),
-                        onAttach: _pickFiles,
-                        onRemoveAttachment: (index) =>
-                            bloc.add(ChatAttachmentRemoved(index)),
-                        onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
-                        onStop: () => bloc.add(const ChatStopped()),
-                      ),
+                        if (empty)
+                          Positioned.fill(
+                            child: Center(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(AppSpacing.lg),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ChatWelcome(
+                                      hostLabel: hostLabelOf(
+                                        state.hosts,
+                                        chat.hostId,
+                                        l10n,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.xl),
+                                    composer,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
+                  ChatAttentionDock(state: state),
+                  if (!empty) composer,
                 ],
               ),
               Positioned.fill(
@@ -334,6 +396,19 @@ class _ChatBodyState extends State<ChatBody> {
   /// Название модели для чипа; null — модель не выбрана ни в чате, ни в настройках.
   static String? _modelLabel(String? id, ModelCatalogState catalog) =>
       id == null ? null : catalog.nameOf(id);
+}
+
+/// Пустой экран нового чата до готовности блока: только заголовок, без спиннера и заглушек.
+class _ChatBlankBody extends StatelessWidget {
+  const _ChatBlankBody();
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      _Header(title: AppLocalizations.of(context).chatsNew),
+      const Spacer(),
+    ],
+  );
 }
 
 /// Каркас чата до загрузки: шапка-заглушка, спиннер в ленте и скелет композера.

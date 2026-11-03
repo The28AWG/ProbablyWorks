@@ -131,6 +131,7 @@ Future<ChatListCubit> _pumpSidebar(
             child: WorkspaceSidebar(
               onCollapse: onCollapse ?? () => _collapseCount++,
               onOpenChat: cubit.select,
+              onNewChat: () => cubit.select(null),
             ),
           ),
         ),

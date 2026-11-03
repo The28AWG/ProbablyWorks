@@ -10,6 +10,8 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_composer.
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
 import 'package:probably_works/test_support/seeded_chat_bloc.dart';
 
@@ -30,9 +32,20 @@ class _App extends StatelessWidget {
   );
 }
 
-/// Чат с рабочей папкой, моделью и заполненным контекстом: в композере появляются все чипы.
+/// Чат с историей, рабочей папкой, моделью и заполненным контекстом: в композере появляются все чипы.
+/// С сообщением композер внизу; пустой чат показывает приветствие с композером по центру.
 ChatState _loaded() => ChatState(
   chatId: 'c',
+  messages: [
+    ChatMessage(
+      id: 'm1',
+      chatId: 'c',
+      seq: 1,
+      role: MessageRole.user,
+      createdAt: DateTime(2026),
+      text: 'Привет',
+    ),
+  ],
   chat: Chat(
     id: 'c',
     hostId: 'local',
@@ -122,6 +135,66 @@ class _RealComposer extends StatelessWidget {
 
 void main() {
   setUpAll(GoldenFonts.load);
+
+  testWidgets(
+    'the model chip shows no spinner while the list loads if the saved name is known',
+    (tester) async {
+      final bloc = SeededChatBloc(
+        _loaded().copyWith(
+          catalog: const ModelCatalogState(
+            loading: true,
+            saved: {
+              'openai/gpt-4o-mini': SavedModel(
+                id: 'openai/gpt-4o-mini',
+                name: 'GPT-4o mini',
+              ),
+            },
+          ),
+        ),
+      );
+      addTearDown(bloc.close);
+      await tester.pumpWidget(
+        _App(
+          BlocProvider<ChatBloc>.value(value: bloc, child: const ChatBody()),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'the model chip shows a spinner while the list loads if the model name is unknown',
+    (tester) async {
+      final bloc = SeededChatBloc(
+        _loaded().copyWith(catalog: const ModelCatalogState(loading: true)),
+      );
+      addTearDown(bloc.close);
+      await tester.pumpWidget(
+        _App(
+          BlocProvider<ChatBloc>.value(value: bloc, child: const ChatBody()),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a new chat before its draft is ready shows no spinner and no skeleton',
+    (tester) async {
+      final bloc = SeededChatBloc(const ChatState());
+      addTearDown(bloc.close);
+      await tester.pumpWidget(
+        _App(
+          BlocProvider<ChatBloc>.value(value: bloc, child: const ChatBody()),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(ComposerSkeleton), findsNothing);
+    },
+  );
 
   testWidgets('composer skeleton has the same card size as the real composer', (
     tester,

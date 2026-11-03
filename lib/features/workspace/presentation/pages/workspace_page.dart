@@ -5,7 +5,6 @@ import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
-import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
@@ -115,6 +114,7 @@ class _WideWorkspaceState extends State<_WideWorkspace> {
                             onCollapse: _toggle,
                             onOpenChat: (id) =>
                                 context.read<ChatListCubit>().select(id),
+                            onNewChat: () => openNewChat(context),
                           ),
                         ),
                 ),
@@ -143,6 +143,12 @@ class _MediumWorkspace extends StatelessWidget {
     Scaffold.of(drawerContext).closeDrawer();
   }
 
+  /// Новый чат из drawer тоже закрывает его: дальше виден стартовый экран.
+  void _newChatFromDrawer(BuildContext drawerContext) {
+    openNewChat(drawerContext);
+    Scaffold.of(drawerContext).closeDrawer();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sidebarWidth = context.select<SidebarCubit, double>(
@@ -156,6 +162,7 @@ class _MediumWorkspace extends StatelessWidget {
             child: WorkspaceSidebar(
               onCollapse: () => Scaffold.of(drawerContext).closeDrawer(),
               onOpenChat: (id) => _openChatFromDrawer(drawerContext, id),
+              onNewChat: () => _newChatFromDrawer(drawerContext),
             ),
           ),
         ),
@@ -189,10 +196,7 @@ class _CompactWorkspace extends StatelessWidget {
           IconButton(
             tooltip: l10n.chatsNew,
             icon: const Icon(Icons.add),
-            onPressed: () => createChat(
-              context,
-              onOpen: (id) => context.router.push(ChatRoute(chatId: id)),
-            ),
+            onPressed: () => context.router.push(const NewChatRoute()),
           ),
         ],
       ),
@@ -230,17 +234,14 @@ class _ChatArea extends StatelessWidget {
         buildWhen: (a, b) => a.selectedId != b.selectedId,
         builder: (context, state) {
           final id = state.selectedId;
-          if (id == null) {
-            return AppEmptyState(
-              icon: Icons.chat_bubble_outline,
-              title: AppLocalizations.of(context).chatsSelectHint,
-            );
-          }
+          // Без выбора — стартовый экран нового чата. Чат появится в списке после первой отправки,
+          // и тогда экран выбирает его.
           // Чат уже есть в списке: передаём его в блок, чтобы шапка и композер открылись сразу.
           return ChatView(
             chatId: id,
             seedChat: state.chats.where((c) => c.id == id).firstOrNull,
             seedHosts: state.hosts,
+            onCreated: (chatId) => context.read<ChatListCubit>().select(chatId),
           );
         },
       );

@@ -8,7 +8,6 @@ import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 
 class ChatListState extends Equatable {
@@ -82,6 +81,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   late final StreamSubscription<ApprovalRequest> _approvalSub;
   late final StreamSubscription<UserQuestion> _questionSub;
 
+  /// Выбор чата. `null` — стартовый экран нового чата: чат создастся при первой отправке.
   void select(String? chatId) =>
       emit(state.copyWith(selectedId: chatId, clearSelection: chatId == null));
 
@@ -101,21 +101,6 @@ class ChatListCubit extends Cubit<ChatListState> {
     }
     emit(state.copyWith(runningIds: running, waitingIds: waiting));
   }
-
-  /// Новый чат: локальный Host по умолчанию. Workspace задаётся в чате.
-  /// Черновик текущего чата переносится в новый, а текущий очищается.
-  Future<String> create() async {
-    final fromId = state.selectedId;
-    final chat = await _hub.newChat(hostId: HostRepository.localHostId);
-    if (fromId != null) {
-      await _drafts.move(fromId, chat.id, fallback: _chatById(fromId));
-    }
-    emit(state.copyWith(selectedId: chat.id));
-    return chat.id;
-  }
-
-  Chat? _chatById(String chatId) =>
-      state.chats.where((chat) => chat.id == chatId).firstOrNull;
 
   Future<void> rename(String chatId, String title) async {
     final chat = await _hub.chats.chat(chatId);

@@ -64,6 +64,10 @@ class ModelCatalogState extends Equatable {
   /// Название: из списка, иначе из сохранённых деталей, иначе id.
   String nameOf(String id) => modelOf(id)?.name ?? saved[id]?.name ?? id;
 
+  /// Название известно без загрузки списка: модель в списке или в сохранённых деталях.
+  bool knowsName(String? id) =>
+      id != null && (modelOf(id) != null || saved.containsKey(id));
+
   ModelCatalogState copyWith({
     List<LlmModelInfo>? models,
     DateTime? syncedAt,

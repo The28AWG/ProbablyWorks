@@ -11,6 +11,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_attention_dock.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
@@ -437,50 +438,78 @@ void main() {
     );
   });
 
-  testWidgets('empty chat suggests a prompt that fills the composer', (
-    tester,
-  ) async {
-    final bloc = SeededChatBloc(
-      ChatState(
-        chatId: 'c',
-        chat: Chat(
-          id: 'c',
-          hostId: 'local',
-          title: '',
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        ),
-        hosts: [
-          Host(
-            id: 'local',
-            name: 'Local',
-            kind: HostKind.local,
+  testWidgets(
+    'empty chat centers the composer under the welcome, without suggestions',
+    (tester) async {
+      final bloc = SeededChatBloc(
+        ChatState(
+          chatId: 'c',
+          chat: Chat(
+            id: 'c',
+            hostId: 'local',
+            title: '',
             createdAt: DateTime(2026),
             updatedAt: DateTime(2026),
           ),
-        ],
-      ),
-    );
-    addTearDown(bloc.close);
+          hosts: [
+            Host(
+              id: 'local',
+              name: 'Local',
+              kind: HostKind.local,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        ),
+      );
+      addTearDown(bloc.close);
+      await tester.binding.setSurfaceSize(const Size(1000, 760));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(_TestApp(const ChatBody(), bloc: bloc));
+      await tester.pumpAndSettle();
+
+      final l10n = AppLocalizations.of(tester.element(find.byType(ChatBody)));
+      expect(find.byType(ActionChip), findsNothing);
+      expect(find.text(l10n.chatWelcomeTitle), findsOneWidget);
+      // Композер в средней части экрана, а не у нижнего края.
+      expect(
+        tester.getCenter(find.byType(ChatComposer)).dy,
+        inInclusiveRange(300, 570),
+      );
+
+      expect(
+        tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
+        isNull,
+      );
+      await tester.enterText(find.byType(TextField), 'Проверь проект');
+      await tester.pump();
+      expect(
+        tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
+        isNotNull,
+      );
+      // Черновик сохраняется с задержкой: дождаться её, иначе таймер останется после теста.
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
+
+  testWidgets('chat with messages keeps the composer at the bottom', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 760));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(_TestApp(const ChatBody(), bloc: bloc));
+    await tester.pumpWidget(
+      _TestApp(const ChatBody(), bloc: SeededChatBloc(_state(count: 2))),
+    );
     await tester.pumpAndSettle();
 
-    final l10n = AppLocalizations.of(tester.element(find.byType(ChatBody)));
     expect(
-      tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
-      isNull,
+      find.text(
+        AppLocalizations.of(tester.element(find.byType(ChatBody)))
+            .chatWelcomeTitle,
+      ),
+      findsNothing,
     );
-
-    await tester.tap(find.text(l10n.chatSuggestion1));
-    await tester.pumpAndSettle();
-    final field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.controller?.text, l10n.chatSuggestion1);
-    expect(
-      tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
-      isNotNull,
-    );
+    expect(tester.getCenter(find.byType(ChatComposer)).dy, greaterThan(600));
   });
 
   testWidgets('copy under an answer exists only for the last answer', (

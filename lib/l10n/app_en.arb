@@ -86,10 +86,6 @@
   "@chatsDeleteConfirm": {
     "description": "Confirmation text before a chat and its messages are deleted."
   },
-  "chatsSelectHint": "Select a chat or create a new one.",
-  "@chatsSelectHint": {
-    "description": "Placeholder shown in the main area when no chat is selected."
-  },
   "sidebarCollapse": "Collapse sidebar",
   "@sidebarCollapse": {
     "description": "Tooltip of the button that collapses the sidebar to icons."
@@ -1002,7 +998,7 @@
   "@chatWelcomeTitle": {
     "description": "Heading of the empty chat."
   },
-  "chatWelcomeSubtitle": "The agent runs commands on “{host}”. Describe a task or start from a suggestion.",
+  "chatWelcomeSubtitle": "The agent runs commands on “{host}”. Describe a task to get started.",
   "@chatWelcomeSubtitle": {
     "description": "Empty chat subtitle naming the host where commands run.",
     "placeholders": {
@@ -1010,18 +1006,6 @@
         "type": "String"
       }
     }
-  },
-  "chatSuggestion1": "Explain the project structure and its main entry points",
-  "@chatSuggestion1": {
-    "description": "Starter prompt in the empty chat; fills the composer."
-  },
-  "chatSuggestion2": "Find why the tests fail and suggest a fix",
-  "@chatSuggestion2": {
-    "description": "Starter prompt in the empty chat; fills the composer."
-  },
-  "chatSuggestion3": "Show what changed since the last commit",
-  "@chatSuggestion3": {
-    "description": "Starter prompt in the empty chat; fills the composer."
   },
   "messageCopied": "Copied",
   "@messageCopied": {

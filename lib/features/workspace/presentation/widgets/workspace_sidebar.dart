@@ -24,15 +24,9 @@ void openWorkspaceDestination(
   }
 }
 
-/// Создаёт чат и передаёт его id в [onOpen], если он задан.
-Future<void> createChat(
-  BuildContext context, {
-  void Function(String chatId)? onOpen,
-}) async {
-  final cubit = context.read<ChatListCubit>();
-  final id = await cubit.create();
-  onOpen?.call(id);
-}
+/// «Новый чат»: снимает выбор и показывает стартовый экран. Чат создастся при первой отправке.
+void openNewChat(BuildContext context) =>
+    context.read<ChatListCubit>().select(null);
 
 /// Развёрнутая боковая панель: кнопка «Новый чат», список чатов по датам и навигация внизу.
 /// Используется постоянно в широком режиме и внутри drawer в среднем.
@@ -40,14 +34,18 @@ class WorkspaceSidebar extends StatelessWidget {
   const WorkspaceSidebar({
     required this.onCollapse,
     required this.onOpenChat,
+    required this.onNewChat,
     super.key,
   });
 
   /// Свернуть панель до иконок (широкий режим) или закрыть drawer (средний режим).
   final VoidCallback onCollapse;
 
-  /// Открыть чат из списка или только что созданный.
+  /// Открыть чат из списка.
   final void Function(String chatId) onOpenChat;
+
+  /// Показать стартовый экран нового чата.
+  final VoidCallback onNewChat;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +92,7 @@ class WorkspaceSidebar extends StatelessWidget {
               icon: Icons.add,
               label: l10n.chatsNew,
               accent: true,
-              onTap: () => createChat(context, onOpen: onOpenChat),
+              onTap: onNewChat,
             ),
           ),
           Expanded(
@@ -163,7 +161,7 @@ class WorkspaceRail extends StatelessWidget {
             IconButton(
               tooltip: l10n.chatsNew,
               icon: const Icon(Icons.add),
-              onPressed: () => createChat(context),
+              onPressed: () => openNewChat(context),
             ),
             const Spacer(),
             IconButton(

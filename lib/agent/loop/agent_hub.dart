@@ -83,13 +83,20 @@ class AgentHub {
 
   static const _uuid = Uuid();
 
-  /// Новый пустой чат на Host; политика — из настроек по умолчанию.
+  /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
   Future<Chat> newChat({required String hostId}) async {
+    final chat = await draftChat(hostId: hostId);
+    await chats.saveChat(chat);
+    return chat;
+  }
+
+  /// Чат на Host, который ещё не записан в БД: появится в списке с первым сообщением.
+  Future<Chat> draftChat({required String hostId}) async {
     final now = DateTime.now();
     final policy = PolicyMode.values.byName(
       await settings.read(SettingsRepository.keyDefaultPolicy) ?? 'ask',
     );
-    final chat = Chat(
+    return Chat(
       id: _uuid.v4(),
       hostId: hostId,
       title: '',
@@ -97,7 +104,5 @@ class AgentHub {
       updatedAt: now,
       policyMode: policy,
     );
-    await chats.saveChat(chat);
-    return chat;
   }
 }

@@ -12,6 +12,7 @@ import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
+import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
@@ -28,7 +29,12 @@ sealed class ChatEvent extends Equatable {
   List<Object?> get props => [];
 }
 
-final class ChatOpened extends ChatEvent {
+/// Открытие чата: существующего или нового. Такие события идут по очереди (см. [ChatBloc]).
+sealed class ChatOpenEvent extends ChatEvent {
+  const ChatOpenEvent();
+}
+
+final class ChatOpened extends ChatOpenEvent {
   const ChatOpened(this.chatId, {this.seedChat, this.seedHosts = const []});
 
   final String chatId;
@@ -209,14 +215,10 @@ final class ChatQueueEdited extends ChatEvent {
   List<Object?> get props => [index];
 }
 
-/// Подставить текст в поле ввода (стартовая подсказка пустого чата). Пользователь дописывает и отправляет сам.
-final class ChatSuggestionPicked extends ChatEvent {
-  const ChatSuggestionPicked(this.text);
-
-  final String text;
-
-  @override
-  List<Object?> get props => [text];
+/// Новый чат: стартовый экран без записи в БД. Чат создаётся при первой отправке. Черновик текущего
+/// чата переносится в новый, а исходный очищается.
+final class ChatDraftOpened extends ChatOpenEvent {
+  const ChatDraftOpened();
 }
 
 /// Закрепить или открепить модель в быстром списке.
@@ -315,10 +317,14 @@ class ChatState extends Equatable {
     this.attachments = const [],
     this.draft = '',
     this.draftId = 0,
+    this.unsaved = false,
   });
 
   final String? chatId;
   final Chat? chat;
+
+  /// Чат ещё не записан в БД (новый чат до первой отправки). Его настройки живут в памяти.
+  final bool unsaved;
   final List<ChatMessage> messages;
   final List<ToolRun> runs;
   final List<String> queue;
@@ -417,6 +423,7 @@ class ChatState extends Equatable {
     List<AttachmentRef>? attachments,
     String? draft,
     int? draftId,
+    bool? unsaved,
   }) => ChatState(
     chatId: chatId ?? this.chatId,
     chat: chat ?? this.chat,
@@ -445,6 +452,7 @@ class ChatState extends Equatable {
     attachments: attachments ?? this.attachments,
     draft: draft ?? this.draft,
     draftId: draftId ?? this.draftId,
+    unsaved: unsaved ?? this.unsaved,
   );
 
   @override
@@ -476,12 +484,17 @@ class ChatState extends Equatable {
     attachments,
     draft,
     draftId,
+    unsaved,
   ];
 }
 
 // ---- bloc -------------------------------------------------------------------
 
 /// UI-состояние одного чата. Данные истины — в БД; состояние держит только то, что нужно отрисовать сейчас.
+/// Обработка событий по одному: каждое следующее ждёт окончания предыдущего.
+EventTransformer<T> _sequential<T>() =>
+    (events, mapper) => events.asyncExpand(mapper);
+
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// [seedChat] — чат из уже загруженного списка. Он попадает в начальное состояние сразу, до первого
   /// кадра: шапка, композер и модель видны без ожидания, а лента грузится в своей области.
@@ -491,9 +504,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     this._drafts, {
     Chat? seedChat,
     List<Host> seedHosts = const [],
+    this.onChatCreated,
   }) : super(_seedState(_hub, _drafts, seedChat, seedHosts)) {
     _composerText = state.draft;
-    on<ChatOpened>(_onOpened);
+    on<ChatOpenEvent>(_onOpenEvent, transformer: _sequential());
     on<ChatDraftEdited>(_onDraftEdited);
     on<ChatAttachmentsAdded>(_onAttachmentsAdded);
     on<ChatAttachmentRemoved>(_onAttachmentRemoved);
@@ -516,7 +530,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
     on<ChatQueueRemoved>((event, _) async => _session?.takeQueued(event.index));
     on<ChatQueueEdited>(_onQueueEdited);
-    on<ChatSuggestionPicked>(_onSuggestionPicked);
     on<ChatCompactRequested>(_onCompactRequested);
     on<_SessionEvent>(_onSessionEvent);
     on<_LiveChunk>(_onLiveChunk);
@@ -535,14 +548,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final LiveOutputBus _bus;
   final ChatDraftStore _drafts;
 
+  /// Вызывается, когда новый чат записан в БД после первой отправки: экран переключает выбор на него.
+  final void Function(String chatId)? onChatCreated;
+
   /// Текст поля ввода, как его знает блок: обновляется из [ChatDraftEdited] без перерисовки.
   String _composerText = '';
 
+  /// Подписки на сессию выбранного чата; меняются при смене чата.
   ChatSession? _session;
   StreamSubscription<AgentEvent>? _sessionSub;
   StreamSubscription<LiveChunk>? _liveSub;
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
+
+  /// Общие подписки блока (каталог, хосты, журнал шагов): живут, пока открыт блок, и не зависят от чата.
+  var _sharedWatching = false;
   StreamSubscription<ModelCatalogState>? _catalogSub;
   StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
@@ -564,7 +584,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     return _pushDraft(
       ChatState(
         chatId: event.chatId,
-        chat: event.seedChat ?? state.chat,
+        // Настройки нового чата к другому чату не относятся: при переключении их не показываем.
+        chat: event.seedChat ?? (state.unsaved ? null : state.chat),
         hosts: event.seedHosts.isEmpty ? state.hosts : event.seedHosts,
         catalog: state.catalog,
         limits: state.limits,
@@ -573,7 +594,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         defaultModelId: state.defaultModelId,
         contextLimit: state.contextLimit,
         draftId: state.draftId,
-        isRunning: _session!.isRunning,
+        isRunning: _session?.isRunning ?? false,
         queue: _queueTexts(),
         approvals: _hub.broker.pendingApprovals(event.chatId),
         questions: _hub.broker.pendingQuestions(event.chatId),
@@ -647,34 +668,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     return super.close();
   }
 
-  Future<void> _onOpened(ChatOpened event, Emitter<ChatState> emit) async {
-    await _sessionSub?.cancel();
-    await _liveSub?.cancel();
-    await _approvalSub?.cancel();
-    await _questionSub?.cancel();
-    await _catalogSub?.cancel();
-    await _hostsSub?.cancel();
-    for (final sub in _stepsSubs) {
-      await sub.cancel();
-    }
-    _stepsSubs.clear();
-    _pendingLive.clear();
-    _session = _hub.session(event.chatId);
-    // Смена чата: композер и шапка держат прежние значения до прихода данных нового чата.
-    if (state.chatId != event.chatId) emit(_switchState(event));
-    _sessionSub = _session!.events.listen((e) => add(_SessionEvent(e)));
-    _liveSub = _bus.stream
-        .where((c) => c.chatId == event.chatId)
-        .listen((c) => add(_LiveChunk(c.toolCallId, c.text)));
-    _approvalSub = _hub.broker.approvalRequests
-        .where((r) => r.chatId == event.chatId)
-        .listen((_) => add(const _Refresh()));
-    _questionSub = _hub.broker.questions
-        .where((q) => q.chatId == event.chatId)
-        .listen((_) => add(const _Refresh()));
+  /// Открытия идут по очереди: поздний ответ БД от предыдущего открытия не перезапишет более позднее.
+  Future<void> _onOpenEvent(ChatOpenEvent event, Emitter<ChatState> emit) =>
+      switch (event) {
+        ChatOpened() => _onOpened(event, emit),
+        ChatDraftOpened() => _onDraftOpened(event, emit),
+      };
+
+  /// Общие подписки блока: каталог моделей, хосты и настройки журнала шагов. Ставятся один раз,
+  /// до первого чтения, чтобы изменение между чтением и подпиской не терялось.
+  void _watchShared() {
+    if (_sharedWatching) return;
+    _sharedWatching = true;
     // Хосты общие для всех чатов: список в композере обновляется при любом изменении, в том числе
-    // пока чат открыт. Подписка до чтения ниже, поэтому изменение между ними не теряется; первое значение
-    // потока пропускаем, оно уже прочитано.
+    // пока чат открыт. Первое значение пропускаем: открытие читает хосты само, после подписки.
     _hostsSub = _hub.hosts
         .watchAll()
         .skip(1)
@@ -688,37 +695,70 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         _hub.settings.watch(key).listen((_) => add(const _StepsChanged())),
       );
     }
-
-    // Только локальные чтения: каталог уже в памяти, сеть здесь не ждём.
-    final hosts = await _hub.hosts.all();
-    final limits = await _hub.limits();
-    final pinned = await _hub.settings.readPinnedModels();
-    final stepsDisplay = await _hub.settings.readStepsDisplay();
-    final defaultModel = await _hub.settings.read(
-      SettingsRepository.keyDefaultModel,
-    );
-    final snapshot = await _readChat(event.chatId);
     // Каталог может обновиться в фоне (старт, таймер, Settings): чат перерисует подпись модели и маркер.
     _catalogSub = _hub.models.watch().listen(
       (catalog) => add(_CatalogChanged(catalog)),
     );
+  }
+
+  /// Снимает подписки на сессию чата, если они были.
+  Future<void> _detach() async {
+    await _sessionSub?.cancel();
+    await _liveSub?.cancel();
+    await _approvalSub?.cancel();
+    await _questionSub?.cancel();
+    _sessionSub = null;
+    _liveSub = null;
+    _approvalSub = null;
+    _questionSub = null;
+    _pendingLive.clear();
+    _session = null;
+  }
+
+  /// Подписывается на сессию, живой вывод, подтверждения и вопросы чата [chatId].
+  Future<void> _attach(String chatId) async {
+    await _detach();
+    _session = _hub.session(chatId);
+    _sessionSub = _session!.events.listen((e) => add(_SessionEvent(e)));
+    _liveSub = _bus.stream
+        .where((c) => c.chatId == chatId)
+        .listen((c) => add(_LiveChunk(c.toolCallId, c.text)));
+    _approvalSub = _hub.broker.approvalRequests
+        .where((r) => r.chatId == chatId)
+        .listen((_) => add(const _Refresh()));
+    _questionSub = _hub.broker.questions
+        .where((q) => q.chatId == chatId)
+        .listen((_) => add(const _Refresh()));
+  }
+
+  Future<void> _onOpened(ChatOpened event, Emitter<ChatState> emit) async {
+    await _attach(event.chatId);
+    // Смена чата: композер и шапка держат прежние значения до прихода данных нового чата.
+    if (state.chatId != event.chatId) emit(_switchState(event));
+    // После первого состояния: подписка на каталог сразу отдаёт текущее значение, и оно не должно
+    // выйти отдельным кадром до загрузки чата.
+    _watchShared();
+
+    final shared = await _readShared();
+    final snapshot = await _readChat(event.chatId);
     // Один emit на открытие: каждый промежуточный emit перестраивает весь экран чата на UI-потоке.
     final loaded = state.copyWith(
-      hosts: hosts,
-      limits: limits,
+      hosts: shared.hosts,
+      limits: shared.limits,
       catalog: _hub.models.state,
-      pinnedModels: pinned,
-      stepsDisplay: stepsDisplay,
-      defaultModelId: defaultModel,
+      pinnedModels: shared.pinned,
+      stepsDisplay: shared.stepsDisplay,
+      defaultModelId: shared.defaultModel,
       chat: snapshot.chat,
       messages: snapshot.messages,
       runs: snapshot.runs,
       approvals: _hub.broker.pendingApprovals(event.chatId),
       questions: _hub.broker.pendingQuestions(event.chatId),
       contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
-      isRunning: _session!.isRunning,
+      isRunning: _session?.isRunning ?? false,
       queue: _queueTexts(),
       loading: false,
+      unsaved: false,
     );
     // Черновик из записи чата нужен, только если в памяти его не было (без списка чатов). Иначе поле уже верное.
     final restored = _drafts.prime(event.chatId, snapshot.chat);
@@ -730,10 +770,61 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ]);
   }
 
+  /// Общие для всех чатов настройки из БД: хосты, лимиты, закреплённые модели, журнал шагов и модель
+  /// по умолчанию. Только локальные чтения: каталог уже в памяти, сеть здесь не ждём.
+  Future<
+    ({
+      List<Host> hosts,
+      AppLimits limits,
+      List<String> pinned,
+      StepsDisplay stepsDisplay,
+      String? defaultModel,
+    })
+  >
+  _readShared() async => (
+    hosts: await _hub.hosts.all(),
+    limits: await _hub.limits(),
+    pinned: await _hub.settings.readPinnedModels(),
+    stepsDisplay: await _hub.settings.readStepsDisplay(),
+    defaultModel: await _hub.settings.read(SettingsRepository.keyDefaultModel),
+  );
+
+  /// Новый чат: пустой экран без записи в БД. Готовое состояние приходит одним кадром, без загрузки:
+  /// модель по умолчанию, хосты и лимиты уже в нём. Черновик текущего чата переносится в новый; исходный очищается.
+  Future<void> _onDraftOpened(
+    ChatDraftOpened _,
+    Emitter<ChatState> emit,
+  ) async {
+    final from = state.chatId;
+    final carried = from != null && !state.unsaved && !_drafts.of(from).isEmpty;
+    await _detach();
+    final chat = await _hub.draftChat(hostId: HostRepository.localHostId);
+    final shared = await _readShared();
+    if (carried) await _drafts.move(from, chat.id);
+    _watchShared();
+    // Номер черновика берём после чтений: он нужен, чтобы поле ввода перерисовалось текстом нового чата.
+    final loaded = ChatState(
+      hosts: shared.hosts,
+      limits: shared.limits,
+      catalog: _hub.models.state,
+      pinnedModels: shared.pinned,
+      stepsDisplay: shared.stepsDisplay,
+      defaultModelId: shared.defaultModel,
+      draftId: state.draftId,
+      chatId: chat.id,
+      chat: chat,
+      unsaved: true,
+    );
+    emit(_pushDraft(loaded, _drafts.of(chat.id)));
+  }
+
   Future<void> _onSubmitted(
     ChatSubmitted event,
     Emitter<ChatState> emit,
   ) async {
+    if (event.text.trim().isEmpty && event.attachments.isEmpty) return;
+    final created = state.unsaved;
+    if (created) await _saveNewChat(emit);
     final session = _session;
     if (session == null) return;
     // Отправленное сразу уходит из черновика: набор во время отправки начнётся уже с пустого поля.
@@ -746,6 +837,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       sendNow: event.sendNow,
     );
     emit(state.copyWith(queue: _queueTexts(), clearFailure: true));
+    if (created) onChatCreated?.call(state.chatId!);
+  }
+
+  /// Первая отправка в новом чате: чат записывается в БД, и блок начинает слушать его сессию.
+  Future<void> _saveNewChat(Emitter<ChatState> emit) async {
+    final now = DateTime.now();
+    final chat = state.chat!.copyWith(createdAt: now, updatedAt: now);
+    await _hub.chats.saveChat(chat);
+    await _attach(chat.id);
+    emit(state.copyWith(chat: chat, unsaved: false));
+  }
+
+  /// Изменения настроек нового чата остаются в памяти: запись появится с первой отправкой.
+  Future<void> _persistChat(Chat chat) async {
+    if (!state.unsaved) await _hub.chats.saveChat(chat);
   }
 
   void _onDraftEdited(ChatDraftEdited event, Emitter<ChatState> emit) {
@@ -819,7 +925,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       contextLength: event.model.contextLength,
     );
     await _hub.models.remember([event.model.id]);
-    await _hub.chats.saveChat(updated);
+    await _persistChat(updated);
     emit(
       state.copyWith(chat: updated, contextLimit: event.model.contextLength),
     );
@@ -839,18 +945,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
     await _hub.settings.savePinnedModels(pins);
     emit(state.copyWith(pinnedModels: pins));
-  }
-
-  void _onSuggestionPicked(
-    ChatSuggestionPicked event,
-    Emitter<ChatState> emit,
-  ) {
-    emit(
-      _pushDraft(
-        state,
-        ChatDraft(text: event.text, attachments: state.attachments),
-      ),
-    );
   }
 
   void _onQueueEdited(ChatQueueEdited event, Emitter<ChatState> emit) {
@@ -880,7 +974,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chat = state.chat;
     if (chat == null) return;
     final updated = chat.copyWith(policyMode: event.mode);
-    await _hub.chats.saveChat(updated);
+    await _persistChat(updated);
     emit(state.copyWith(chat: updated));
   }
 
@@ -889,9 +983,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Emitter<ChatState> emit,
   ) async {
     final chat = state.chat;
-    if (chat == null || _session!.isRunning) return;
+    if (chat == null || (_session?.isRunning ?? false)) return;
     final updated = chat.copyWith(hostId: event.hostId);
-    await _hub.chats.saveChat(updated);
+    await _persistChat(updated);
     emit(state.copyWith(chat: updated));
   }
 
@@ -902,7 +996,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chat = state.chat;
     if (chat == null) return;
     final updated = chat.copyWith(workspace: event.workspace);
-    await _hub.chats.saveChat(updated);
+    await _persistChat(updated);
     emit(state.copyWith(chat: updated, trustNeeded: false));
   }
 
@@ -1011,7 +1105,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _StepsChanged event,
     Emitter<ChatState> emit,
   ) async {
-    emit(state.copyWith(stepsDisplay: await _hub.settings.readStepsDisplay()));
+    final display = await _hub.settings.readStepsDisplay();
+    emit(state.copyWith(stepsDisplay: display));
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {

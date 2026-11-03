@@ -30,7 +30,6 @@ import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/desktop_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
-import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -715,20 +714,67 @@ void main() {
     expect((await hub.chats.chat(chatId))!.draft.isEmpty, isTrue);
   });
 
-  test('creating a chat moves the draft of the current chat into it and clears the old one', () async {
+  test('a new chat opens ready: the default model is selected at once, without a loading state', () async {
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    final states = <ChatState>[];
+    final sub = bloc.stream.listen(states.add);
+    addTearDown(sub.cancel);
+
+    bloc.add(const ChatDraftOpened());
+    await bloc.stream.firstWhere((s) => s.unsaved);
+
+    expect(bloc.state.effectiveModelId, 'fake/model');
+    expect(bloc.state.hosts.map((h) => h.id), ['local']);
+    // Ни одного состояния с загрузкой: композер и шапка сразу готовы, без спиннера и скелета.
+    expect(states.any((s) => s.loading), isFalse);
+  });
+
+  test('a new chat stays out of the database until the first send, then is saved and reported', () async {
+    final created = <String>[];
+    final bloc = ChatBloc(
+      hub,
+      LiveOutputBus(),
+      drafts,
+      onChatCreated: created.add,
+    );
+    addTearDown(bloc.close);
+    bloc.add(const ChatDraftOpened());
+    await bloc.stream.firstWhere((s) => s.unsaved);
+    final id = bloc.state.chatId!;
+
+    expect(await hub.chats.chat(id), isNull);
+    expect(await hub.chats.watchChats().first, isEmpty);
+
+    llm.script.add([const LlmTextDelta('ок'), const LlmCompleted()]);
+    final finished = hub.allEvents.firstWhere((e) => e is AgentTurnFinished);
+    bloc.add(const ChatSubmitted('вопрос'));
+    await finished;
+
+    expect(bloc.state.unsaved, isFalse);
+    expect(created, [id]);
+    expect((await hub.chats.chat(id))!.id, id);
+    expect((await hub.chats.messages(id)).first.text, 'вопрос');
+  });
+
+  test('a new chat takes the draft of the chat it was opened from and clears that chat', () async {
     final first = await createChat();
-    final cubit = ChatListCubit(hub, drafts);
-    addTearDown(cubit.close);
-    cubit.select(first);
+    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    addTearDown(bloc.close);
+    bloc.add(ChatOpened(first));
+    await bloc.stream.firstWhere((s) => !s.loading);
     drafts.update(first, const ChatDraft(text: 'черновик'));
 
-    final created = await cubit.create();
+    bloc.add(const ChatDraftOpened());
+    await bloc.stream.firstWhere((s) => s.unsaved);
+    final fresh = bloc.state.chatId!;
 
-    expect(cubit.state.selectedId, created);
-    expect(drafts.of(created).text, 'черновик');
+    expect(fresh, isNot(first));
+    expect(bloc.state.draft, 'черновик');
+    expect(drafts.of(fresh).text, 'черновик');
     expect(drafts.of(first).isEmpty, isTrue);
-    // Перенос сохраняется в БД сразу, без задержки записи.
-    expect((await hub.chats.chat(created))!.draft.text, 'черновик');
+    // Перенос сохраняется в БД сразу; новый чат в БД не появился.
     expect((await hub.chats.chat(first))!.draft.isEmpty, isTrue);
+    expect(await hub.chats.chat(fresh), isNull);
   });
 }

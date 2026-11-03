@@ -20,6 +20,11 @@ class AppRouter extends RootStackRouter {
       guards: [apiKeyGuard],
     ),
     AutoRoute(
+      page: NewChatRoute.page,
+      path: '/chats/new',
+      guards: [apiKeyGuard],
+    ),
+    AutoRoute(
       page: ChatRoute.page,
       path: '/chats/:chatId',
       guards: [apiKeyGuard],
