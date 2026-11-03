@@ -539,6 +539,14 @@
   "@settingsStepsToolsAll": {
     "description": "Option: show all tool calls of the response, expanded including output."
   },
+  "runExpandFull": "Expand to full height",
+  "@runExpandFull": {
+    "description": "Tooltip of the step block button that removes the height limit of the expanded content."
+  },
+  "runCollapseFull": "Limit height",
+  "@runCollapseFull": {
+    "description": "Tooltip of the step block button that brings back the height limit of the expanded content."
+  },
   "settingsDefaultPolicy": "Default policy for new chats",
   "@settingsDefaultPolicy": {
     "description": "Setting: policy mode applied to new chats."

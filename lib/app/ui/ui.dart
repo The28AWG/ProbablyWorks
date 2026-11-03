@@ -16,6 +16,7 @@ export 'code_block.dart';
 export 'command_output.dart';
 export 'confirm_dialog.dart';
 export 'context_usage_bar.dart';
+export 'copy_button.dart';
 export 'dashed_border.dart';
 export 'diff_view.dart';
 export 'onboarding_stepper.dart';

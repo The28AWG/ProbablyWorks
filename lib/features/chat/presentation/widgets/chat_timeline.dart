@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -8,20 +7,22 @@ import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/features/chat/presentation/widgets/anchored_sliver_list.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Лента чата: сообщения, журнал шагов и текст, который сейчас печатается.
 ///
-/// Лента перевёрнута: новое внизу, прокрутка идёт от низа. Внизу всегда остаётся пустой отступ
-/// в треть высоты окна. Последний ход (сообщение пользователя и ответ агента) имеет минимальную
-/// высоту, которая заполняет окно до этого отступа. Поэтому сообщение пользователя прилипает к верху
-/// окна, а ответ растёт вниз. Когда ответ доходит до отступа, текст ползёт вверх, отступ остаётся.
-/// Прокрутка вверх отключает слежение, и текст под взглядом не уезжает. Кнопка «к новым сообщениям»
-/// возвращает к концу. Отправка своего сообщения всегда возвращает к концу.
+/// Лента сверху вниз: новое внизу. Внизу всегда остаётся пустой отступ в треть высоты окна. Последний ход
+/// (сообщение пользователя и ответ агента) имеет минимальную высоту, которая заполняет окно до этого отступа.
+/// Поэтому сообщение пользователя прилипает к верху окна, а ответ растёт вниз. Пока пользователь следит за
+/// концом, прокрутка едет вместе с новым текстом. Прокрутка вверх отключает слежение, и текст под взглядом
+/// не уезжает: коррекция считается в layout (см. [AnchoredSliverList]), без кадров с рывком.
+/// Кнопка «к новым сообщениям» возвращает к концу. Отправка своего сообщения всегда возвращает к концу.
 class ChatTimeline extends StatefulWidget {
   const ChatTimeline({required this.state, this.terminalFor, super.key});
 
@@ -48,13 +49,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
   /// Сообщение пользователя, после которого ход только что начался: его ход выезжает снизу к верху окна.
   String? _sentId;
 
-  /// Элемент, который держим на месте, пока пользователь читает историю.
-  _Anchor? _anchor;
-  var _anchorScheduled = false;
-
-  /// Ключи элементов ленты. По ним находим место элемента на экране, чтобы держать его на месте.
-  final _itemKeys = <String, GlobalKey>{};
-
   /// Id элементов, построенных в текущем проходе. По ним убираем ключи тех, кого больше нет.
   final _liveIds = <String>{};
 
@@ -80,19 +74,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
     _sentId = messages.last.id;
     _follow = true;
     _showJump = false;
-    _anchor = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scroll.hasClients || _scroll.position.pixels == 0) {
-        return;
-      }
-      unawaited(
-        _scroll.animateTo(
-          0,
-          duration: AppDurations.normal,
-          curve: Curves.easeOutCubic,
-        ),
-      );
-    });
   }
 
   @override
@@ -105,11 +86,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
-    final pixels = _scroll.position.pixels;
-    // Внизу — когда конец ответа виден. Нижний отступ находится внутри прокрутки до нуля.
-    final atEnd = pixels <= _followThreshold;
-    // Пока пользователь читает историю, запоминаем, где стоит верхний элемент: см. _settleAnchor.
-    if (!atEnd) _scheduleAnchor();
+    // Внизу — когда конец ответа виден. Нижний отступ входит в прокрутку, поэтому конец — это maxScrollExtent.
+    final atEnd = _scroll.position.extentAfter <= _followThreshold;
     if (atEnd == _follow) return;
     setState(() {
       _follow = atEnd;
@@ -117,84 +95,14 @@ class _ChatTimelineState extends State<ChatTimeline> {
     });
   }
 
-  /// Держит верхний видимый элемент на месте, пока пользователь не внизу. Прокрутка самого
-  /// пользователя этим не отменяется: компенсируется только то, что изменилось в ленте.
-  void _scheduleAnchor() {
-    if (_anchorScheduled) return;
-    _anchorScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _anchorScheduled = false;
-      if (mounted) _settleAnchor();
-    });
-  }
-
-  void _settleAnchor() {
-    final viewport = context.findRenderObject();
-    if (_follow || !_scroll.hasClients || viewport is! RenderBox) {
-      _anchor = null;
-      return;
-    }
-    final previous = _anchor;
-    final previousTop = previous == null
-        ? null
-        : _topInViewport(previous.key, viewport);
-    if (previous == null || previousTop == null) {
-      _anchor = _pickAnchor(viewport);
-      return;
-    }
-    final pixels = _scroll.position.pixels;
-    // Сдвиг элемента на экране = прокрутка пользователя + изменение ленты над ним или под ним.
-    // Лишь прокрутку пользователя мы не трогаем, а изменение ленты гасим.
-    final shift = (previousTop - previous.top) - (pixels - previous.pixels);
-    if (shift.abs() < 0.5) {
-      _anchor = _Anchor(previous.key, previousTop, pixels);
-      return;
-    }
-    _scroll.jumpTo(pixels - shift);
-    final restored = _scroll.position.pixels;
-    _anchor = _Anchor(
-      previous.key,
-      previousTop + (restored - pixels),
-      restored,
-    );
-  }
-
-  /// Новый якорь: видимый элемент, который ближе всего к верхнему краю окна.
-  _Anchor? _pickAnchor(RenderBox viewport) {
-    _Anchor? best;
-    var bestDistance = double.infinity;
-    for (final entry in _itemKeys.entries) {
-      final top = _topInViewport(entry.value, viewport);
-      if (top == null || top.abs() >= bestDistance) continue;
-      if (!_isVisible(entry.value, top, viewport)) continue;
-      bestDistance = top.abs();
-      best = _Anchor(entry.value, top, _scroll.position.pixels);
-    }
-    return best;
-  }
-
-  /// Верхний край элемента относительно окна, даже если он уже ушёл за край. Null, если элемента нет.
-  double? _topInViewport(GlobalKey key, RenderBox viewport) {
-    final box = key.currentContext?.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
-    return box.localToGlobal(Offset.zero, ancestor: viewport).dy;
-  }
-
-  bool _isVisible(GlobalKey key, double top, RenderBox viewport) {
-    final height =
-        (key.currentContext?.findRenderObject() as RenderBox?)?.size.height;
-    return height != null && top + height > 0 && top < viewport.size.height;
-  }
-
   Future<void> _jumpToLatest() async {
     setState(() {
       _follow = true;
       _showJump = false;
-      _anchor = null;
     });
     if (!_scroll.hasClients) return;
     await _scroll.animateTo(
-      0,
+      _scroll.position.maxScrollExtent,
       duration: AppDurations.normal,
       curve: Curves.easeOutCubic,
     );
@@ -241,7 +149,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
     final lastAnswerId = _lastAnswerId(visible);
     final taskTimes = _taskDurations(state.messages, running: state.isRunning);
 
-    // Строки собираем от старого к новому и только потом переворачиваем: лента перевёрнута.
+    // Строки собираем от старого к новому: лента сверху вниз.
     // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
     _liveIds.clear();
     final display = state.stepsDisplay;
@@ -260,7 +168,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
       rows.add(
         _KeyedTimelineItem(
           id: id,
-          itemKeys: _itemKeys,
           fresh: _isFresh(id),
           child: ChatColumn.item(
             ChatStepLedger(
@@ -303,7 +210,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
       rows.add(
         _KeyedTimelineItem(
           id: id,
-          itemKeys: _itemKeys,
           fresh: _isFresh(id),
           child: ChatColumn.item(child),
         ),
@@ -370,29 +276,37 @@ class _ChatTimelineState extends State<ChatTimeline> {
     final stream = streaming
         ? _KeyedTimelineItem(
             id: 'stream',
-            itemKeys: _itemKeys,
             fresh: _isFresh('stream'),
             child: ChatColumn.item(AppMarkdown(data: state.streamText)),
           )
         : null;
 
-    // Id уже зарегистрированы при сборке строк: убираем только ключи тех, кого в ленте больше нет.
-    _itemKeys.removeWhere((id, _) => !_liveIds.contains(id));
     _seenIds.addAll(_liveIds);
     _built = true;
-    if (!_follow) _scheduleAnchor();
 
     final gap = viewportHeight * _bottomGapFraction;
-    // Высота, которую занимает последний ход: от верха окна до отступа внизу.
-    final turnMinHeight = math.max(0.0, viewportHeight - gap - AppSpacing.md);
+    // Последний ход заполняет окно от верхнего отступа до низа. Отступ внизу входит в ход.
+    final turnMinHeight = math.max(0.0, viewportHeight - AppSpacing.md);
+    // Лента сверху вниз: старое выше, новое ниже. Отступ внизу входит в последний элемент: он и есть
+    // хвост ленты, к которому прокрутка держит конец. Ход заполняет окно до отступа.
+    final gapBox = SizedBox(key: const ValueKey('timeline-gap'), height: gap);
     final List<Widget> children;
     if (lastUser < 0) {
-      children = [?stream, ...rows.reversed];
+      children = [
+        ...rows,
+        Column(
+          key: const ValueKey('tail'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [?stream, gapBox],
+        ),
+      ];
     } else {
       final userId = visible[lastUser].id;
-      final turn = [...rows.sublist(turnStart), ?stream];
+      final turn = [...rows.sublist(turnStart), ?stream, gapBox];
       children = [
-        // Ход заполняет окно до отступа. Высота выезжает от нуля, когда пользователь только отправил сообщение.
+        ...rows.sublist(0, turnStart),
+        // Высота выезжает от нуля, когда пользователь только отправил сообщение.
         TweenAnimationBuilder<double>(
           key: ValueKey('turn:$userId'),
           tween: Tween<double>(begin: _sentId == userId ? 0.0 : 1.0, end: 1.0),
@@ -408,61 +322,58 @@ class _ChatTimelineState extends State<ChatTimeline> {
             child: child,
           ),
         ),
-        ...rows.sublist(0, turnStart).reversed,
       ];
     }
 
-    return Stack(
-      children: [
-        // Любое изменение высоты элемента (анимация, копирование ушло с предыдущего ответа, раскрытие шага)
-        // во время чтения истории гасится якорем на этом же кадре, поэтому текст под взглядом не уезжает.
-        NotificationListener<SizeChangedLayoutNotification>(
-          onNotification: _onLayoutChanged,
-          child: ListView(
+    return ChatViewport(
+      height: viewportHeight,
+      child: Stack(
+        children: [
+          CustomScrollView(
             controller: _scroll,
-            reverse: true,
-            padding: EdgeInsets.only(top: AppSpacing.md, bottom: gap),
-            children: children,
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: AppSpacing.md,
-          child: Center(
-            child: AnimatedSwitcher(
-              duration: AppDurations.fast,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: animation.drive(
-                    Tween<Offset>(
-                      begin: const Offset(0, 0.5),
-                      end: Offset.zero,
-                    ),
-                  ),
-                  child: child,
-                ),
+            slivers: [
+              AnchoredSliverList(
+                following: _follow,
+                delegate: SliverChildListDelegate([
+                  const SizedBox(height: AppSpacing.md),
+                  ...children,
+                ]),
               ),
-              child: _showJump
-                  ? FilledButton.tonalIcon(
-                      key: const ValueKey('jump'),
-                      onPressed: _jumpToLatest,
-                      icon: const Icon(Icons.arrow_downward, size: 16),
-                      label: Text(l10n.chatScrollToLatest),
-                    )
-                  : const SizedBox.shrink(key: ValueKey('none')),
+            ],
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: AppSpacing.md,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: AppDurations.fast,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: animation.drive(
+                      Tween<Offset>(
+                        begin: const Offset(0, 0.5),
+                        end: Offset.zero,
+                      ),
+                    ),
+                    child: child,
+                  ),
+                ),
+                child: _showJump
+                    ? FilledButton.tonalIcon(
+                        key: const ValueKey('jump'),
+                        onPressed: _jumpToLatest,
+                        icon: const Icon(Icons.arrow_downward, size: 16),
+                        label: Text(l10n.chatScrollToLatest),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('none')),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
-  }
-
-  /// Размер элемента изменился: при чтении истории гасим сдвиг якорем на этом же кадре.
-  bool _onLayoutChanged(SizeChangedLayoutNotification _) {
-    if (!_follow) _scheduleAnchor();
-    return false;
   }
 
   /// Id последнего ответа агента, который виден в ленте. Кнопка «Копировать» показывается только у него.
@@ -530,17 +441,15 @@ class _ChatTimelineState extends State<ChatTimeline> {
   }
 }
 
-/// Элемент ленты с ключами по id для стабильного состояния и якоря прокрутки.
+/// Элемент ленты с ключом по id: состояние виджетов сохраняется при перестроении.
 class _KeyedTimelineItem extends StatelessWidget {
   const _KeyedTimelineItem({
     required this.id,
-    required this.itemKeys,
     required this.fresh,
     required this.child,
   });
 
   final String id;
-  final Map<String, GlobalKey> itemKeys;
 
   /// Элемент появился только что: его плавно показываем.
   final bool fresh;
@@ -549,15 +458,7 @@ class _KeyedTimelineItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) => KeyedSubtree(
     key: ValueKey(id),
-    child: SizeChangedLayoutNotifier(
-      child: _Appear(
-        animate: fresh,
-        child: KeyedSubtree(
-          key: itemKeys.putIfAbsent(id, GlobalKey.new),
-          child: child,
-        ),
-      ),
-    ),
+    child: _Appear(animate: fresh, child: child),
   );
 }
 
@@ -611,14 +512,4 @@ class _AppearState extends State<_Appear> with SingleTickerProviderStateMixin {
       ),
     ),
   );
-}
-
-/// Элемент, который держим на месте: его ключ, верхний край на экране и смещение, при котором
-/// это было измерено.
-class _Anchor {
-  const _Anchor(this.key, this.top, this.pixels);
-
-  final GlobalKey key;
-  final double top;
-  final double pixels;
 }

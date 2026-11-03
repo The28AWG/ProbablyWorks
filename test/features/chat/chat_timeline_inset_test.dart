@@ -88,9 +88,9 @@ void main() {
     await pump(tester, 1);
 
     final viewport = _position(tester).viewportDimension;
-    final list = tester.widget<ListView>(find.byType(ListView));
-    expect((list.padding! as EdgeInsets).bottom, closeTo(viewport / 3, 0.5));
-    expect(_position(tester).pixels, 0);
+    final gap = tester.getSize(find.byKey(const ValueKey('timeline-gap')));
+    expect(gap.height, closeTo(viewport / 3, 0.5));
+    expect(_fromEnd(_position(tester)), 0);
   });
 
   testWidgets('the newest question sits under the top edge of the window', (
@@ -108,19 +108,22 @@ void main() {
   ) async {
     await pump(tester, 40);
 
-    expect(_position(tester).pixels, 0);
+    expect(_fromEnd(_position(tester)), 0);
     expect(_position(tester).maxScrollExtent, greaterThan(0));
   });
 
   testWidgets('scrolling up and back down returns to the end', (tester) async {
     await pump(tester, 40);
 
-    _position(tester).jumpTo(200);
+    _position(tester).jumpTo(_position(tester).maxScrollExtent - 200);
     await tester.pumpAndSettle();
-    expect(_position(tester).pixels, 200);
+    expect(_fromEnd(_position(tester)), 200);
 
-    _position(tester).jumpTo(0);
+    _position(tester).jumpTo(_position(tester).maxScrollExtent);
     await tester.pumpAndSettle();
-    expect(_position(tester).pixels, 0);
+    expect(_fromEnd(_position(tester)), 0);
   });
 }
+
+/// Расстояние от конца ленты: 0, когда видно последнее сообщение.
+double _fromEnd(ScrollPosition p) => p.maxScrollExtent - p.pixels;

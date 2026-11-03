@@ -192,6 +192,20 @@ void main() {
     expect(_terminalOf(tester).viewHeight, greaterThan(5));
   });
 
+  testWidgets('scrollbar sits at the right edge of the output', (tester) async {
+    final long = [for (var i = 0; i < 100; i++) 'line $i'].join('\n');
+    await tester.pumpWidget(
+      _TestHost(CommandOutput(text: long, maxHeight: 200)),
+    );
+    await tester.pump();
+    final scrollbar = find.byType(Scrollbar);
+    expect(scrollbar, findsOneWidget);
+    expect(
+      tester.getTopRight(scrollbar).dx,
+      tester.getTopRight(find.byType(TerminalView)).dx,
+    );
+  });
+
   testWidgets('copy puts the visible text on the clipboard', (tester) async {
     String? copied;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -210,13 +224,35 @@ void main() {
       ),
     );
 
+    final controller = CommandOutputController();
     await tester.pumpWidget(
-      _TestHost(const CommandOutput(text: '\x1b[32mfirst\x1b[0m\nsecond')),
+      _TestHost(
+        Column(
+          children: [
+            CopyButton(textOf: () => controller.text),
+            CommandOutput(
+              text: '\x1b[32mfirst\x1b[0m\nsecond',
+              controller: controller,
+            ),
+          ],
+        ),
+      ),
     );
+    expect(controller.text, 'first\nsecond');
     await tester.tap(find.byTooltip('Copy'));
     await tester.pump();
     expect(copied, 'first\nsecond');
     await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('controller has no text once the output is gone', (tester) async {
+    final controller = CommandOutputController();
+    await tester.pumpWidget(
+      _TestHost(CommandOutput(text: 'ok', controller: controller)),
+    );
+    expect(controller.text, 'ok');
+    await tester.pumpWidget(const _TestHost(SizedBox()));
+    expect(controller.text, isEmpty);
   });
 }
 

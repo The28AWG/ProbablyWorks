@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_colors.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
@@ -11,6 +11,14 @@ import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:xterm/xterm.dart';
+
+/// Доступ к тексту терминала снаружи виджета, например для кнопки копирования в заголовке блока.
+/// Пока виджет смонтирован, [text] — то, что видно в терминале (без хвостовых пробелов); иначе пусто.
+class CommandOutputController {
+  String Function()? _read;
+
+  String get text => _read?.call() ?? '';
+}
 
 /// Терминал команды. Пока команда выполняется и передан [terminal], виджет подключён к её PTY:
 /// вывод идёт из Host, клавиши уходят в команду, размер окна передаётся в PTY.
@@ -28,6 +36,7 @@ class CommandOutput extends StatefulWidget {
     this.active = false,
     this.terminal,
     this.maxHeight = 240,
+    this.controller,
     super.key,
   });
 
@@ -47,7 +56,12 @@ class CommandOutput extends StatefulWidget {
   /// Терминал команды на Host (PTY). Вывод, ввод и размер идут через него, пока команда активна.
   final HostTerminal? terminal;
 
+  /// Предел высоты видимой части. Бесконечный предел: видна вся запись по содержимому.
+  /// Для команды с живым PTY предел должен быть конечным: высота задаёт размер экрана, а значит и размер PTY.
   final double maxHeight;
+
+  /// Позволяет читать текст вывода снаружи, например для копирования.
+  final CommandOutputController? controller;
 
   @override
   State<CommandOutput> createState() => _CommandOutputState();
@@ -59,15 +73,10 @@ class _CommandOutputState extends State<CommandOutput> {
     height: 1.5,
     fontFamily: AppTheme.monoFamily,
   );
-  static const _padding = EdgeInsets.fromLTRB(
-    AppSpacing.md,
-    AppSpacing.md,
-    AppSpacing.xxl,
-    AppSpacing.md,
-  );
+  static const _padding = EdgeInsets.all(AppSpacing.md);
   static const _maxLines = 10000;
 
-  /// Толщина скроллбара терминала. Кнопка копирования сдвинута левее него.
+  /// Толщина скроллбара терминала.
   static const _scrollbarThickness = 8.0;
 
   /// Одиночный перевод строки без возврата каретки: в терминале он сдвигает строку без сброса столбца.
@@ -82,8 +91,6 @@ class _CommandOutputState extends State<CommandOutput> {
 
   /// Текст, уже записанный в терминал (режим текста).
   var _written = '';
-
-  var _copied = false;
 
   /// Терминал Host, к которому подключён виджет. `null` — режим текста.
   HostTerminal? _host;
@@ -103,11 +110,16 @@ class _CommandOutputState extends State<CommandOutput> {
     final host = widget.terminal;
     if (host != null) _attach(host);
     _sync();
+    _bindController(widget.controller);
   }
 
   @override
   void didUpdateWidget(covariant CommandOutput oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      oldWidget.controller?._read = null;
+      _bindController(widget.controller);
+    }
     if (widget.command != oldWidget.command) {
       // Строка команды стоит в начале терминала: при смене команды терминал пересоздаётся.
       unawaited(_feed?.cancel());
@@ -122,9 +134,14 @@ class _CommandOutputState extends State<CommandOutput> {
 
   @override
   void dispose() {
+    widget.controller?._read = null;
     unawaited(_feed?.cancel());
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _bindController(CommandOutputController? controller) {
+    controller?._read = () => _plainText;
   }
 
   /// Строка `$ команда` для терминала; пустая строка, если команды нет.
@@ -218,18 +235,9 @@ class _CommandOutputState extends State<CommandOutput> {
     }
   }
 
-  Future<void> _copy() async {
-    // Копируем текст без хвостовых пробелов строк и пустых строк внизу, которые терминал добавляет сам.
-    final text = _terminal.buffer
-        .getText()
-        .replaceAll(_trailingBlanks, '')
-        .trimRight();
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (mounted) setState(() => _copied = false);
-  }
+  /// Текст для копирования без хвостовых пробелов строк и пустых строк внизу, которые терминал добавляет сам.
+  String get _plainText =>
+      _terminal.buffer.getText().replaceAll(_trailingBlanks, '').trimRight();
 
   @override
   Widget build(BuildContext context) {
@@ -253,43 +261,51 @@ class _CommandOutputState extends State<CommandOutput> {
                 ((constraints.maxWidth - _padding.horizontal) / cell.width)
                     .floor()
                     .clamp(1, 1 << 20);
-            final maxRows = ((widget.maxHeight - vertical) / cell.height)
-                .floor()
-                .clamp(1, 1 << 20);
+            final contentRows = live
+                ? _terminalRows()
+                : _rowsFor(_prompt + widget.text, columns);
+            final maxRows = widget.maxHeight.isFinite
+                ? ((widget.maxHeight - vertical) / cell.height).floor().clamp(
+                    1,
+                    1 << 20,
+                  )
+                : contentRows.clamp(1, _maxLines);
             final screenHeight = maxRows * cell.height + vertical;
-            final rows = _clampRows(
-              live ? _terminalRows() : _rowsFor(_prompt + widget.text, columns),
-              maxRows,
-            );
+            final rows = _clampRows(contentRows, maxRows);
 
-            return Stack(
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Экран терминала остаётся полной высоты, видна только часть по содержимому.
-                    // Высота видимой части растёт плавно. Обрезка снаружи не даёт выйти за анимируемую высоту.
-                    ClipRect(
-                      child: AnimatedSize(
-                        duration: AppDurations.fast,
-                        curve: Curves.easeOutCubic,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          key: const ValueKey('command-output-viewport'),
-                          height: rows * cell.height + vertical,
-                          child: ClipRect(
-                            child: OverflowBox(
-                              alignment: Alignment.topCenter,
-                              minHeight: screenHeight,
-                              maxHeight: screenHeight,
-                              // Толщина скроллбара фиксирована: кнопка копирования стоит ровно левее него.
-                              child: ScrollbarTheme(
-                                data: const ScrollbarThemeData(
-                                  thickness: WidgetStatePropertyAll(
-                                    _scrollbarThickness,
-                                  ),
-                                ),
+                // Экран терминала остаётся полной высоты, видна только часть по содержимому.
+                // Высота видимой части растёт плавно. Обрезка снаружи не даёт выйти за анимируемую высоту.
+                ClipRect(
+                  child: AnimatedSize(
+                    duration: AppDurations.fast,
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      key: const ValueKey('command-output-viewport'),
+                      height: rows * cell.height + vertical,
+                      child: ClipRect(
+                        child: OverflowBox(
+                          alignment: Alignment.topCenter,
+                          minHeight: screenHeight,
+                          maxHeight: screenHeight,
+                          // Толщина скроллбара фиксирована: иначе он менял бы ширину вывода при наведении.
+                          child: ScrollbarTheme(
+                            data: const ScrollbarThemeData(
+                              thickness: WidgetStatePropertyAll(
+                                _scrollbarThickness,
+                              ),
+                            ),
+                            // Скроллбар строим снаружи, у края вывода. Встроенный Scrollable ставит его
+                            // внутрь отступов TerminalView, поэтому он отступал бы от края на весь padding.
+                            child: Scrollbar(
+                              controller: _scroll,
+                              child: ScrollConfiguration(
+                                behavior: ScrollConfiguration.of(context)
+                                    .copyWith(scrollbars: false),
                                 child: TerminalView(
                                   _terminal,
                                   key: ValueKey(_generation),
@@ -309,42 +325,24 @@ class _CommandOutputState extends State<CommandOutput> {
                         ),
                       ),
                     ),
-                    if (exitCode case final code? when !widget.active)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: AppSpacing.md,
-                          right: AppSpacing.md,
-                          bottom: AppSpacing.md,
-                        ),
-                        child: Text(
-                          l10n.runExitCode(code),
-                          style: TextStyle(
-                            fontFamily: AppTheme.monoFamily,
-                            fontSize: 12,
-                            color: colors.codeText.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                Positioned(
-                  top: AppSpacing.xs,
-                  right: AppSpacing.xs + _scrollbarThickness,
-                  child: AnimatedSwitcher(
-                    duration: AppDurations.fast,
-                    child: IconButton(
-                      key: ValueKey(_copied),
-                      tooltip: l10n.commonCopy,
-                      visualDensity: VisualDensity.compact,
-                      color: colors.codeText,
-                      icon: Icon(
-                        _copied ? Icons.check : Icons.copy_outlined,
-                        size: 16,
-                      ),
-                      onPressed: _copy,
-                    ),
                   ),
                 ),
+                if (exitCode case final code? when !widget.active)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: AppSpacing.md,
+                      right: AppSpacing.md,
+                      bottom: AppSpacing.md,
+                    ),
+                    child: Text(
+                      l10n.runExitCode(code),
+                      style: TextStyle(
+                        fontFamily: AppTheme.monoFamily,
+                        fontSize: 12,
+                        color: colors.codeText.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
               ],
             );
           },

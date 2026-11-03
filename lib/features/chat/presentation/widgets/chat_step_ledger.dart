@@ -6,6 +6,8 @@ import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
+import 'package:probably_works/features/chat/presentation/widgets/step_block.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -144,98 +146,58 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
           terminalFor: widget.terminalFor,
           expandThoughts: widget.expandThoughts,
           expandTools: widget.expandTools,
+          inGroup: grouped,
         ),
       );
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ChatReveal(
-            open: grouped,
-            child: InkWell(
-              borderRadius: AppRadius.smAll,
-              onTap: () => _toggleGroupExpanded(expanded),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Icon(
-                      _groupIcon(tone),
-                      size: 16,
-                      color: toneColors(context, tone).foreground,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        failed > 0
-                            ? '$title · ${l10n.stepsGroupFailed(failed)}'
-                            : title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    if (duration != null) ...[
-                      const SizedBox(width: AppSpacing.sm),
-                      Text(
-                        l10n.runDuration(duration.inSeconds),
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: AppSpacing.xs),
-                    AnimatedRotation(
-                      turns: expanded ? 0.5 : 0,
-                      duration: AppDurations.fast,
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        Icons.expand_more,
-                        size: 18,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+      child: StepBlock(
+        kind: StepKind.group,
+        accent: toneColors(context, tone).foreground,
+        expanded: expanded,
+        showHeader: grouped,
+        onToggle: grouped ? () => _toggleGroupExpanded(expanded) : null,
+        header: (palette) => Row(
+          children: [
+            Icon(_groupIcon(tone), size: 16, color: palette.accent),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                failed > 0
+                    ? '$title · ${l10n.stepsGroupFailed(failed)}'
+                    : title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: palette.text,
                 ),
               ),
             ),
-          ),
-          ChatReveal(
-            open: expanded,
-            child: AnimatedPadding(
+            if (duration != null) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                l10n.runDuration(duration.inSeconds),
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: palette.muted,
+                ),
+              ),
+            ],
+            const SizedBox(width: AppSpacing.xs),
+            AnimatedRotation(
+              turns: expanded ? 0.5 : 0,
               duration: AppDurations.fast,
               curve: Curves.easeOutCubic,
-              padding: EdgeInsets.only(
-                left: grouped ? AppSpacing.sm : 0.0,
-                top: grouped ? AppSpacing.xs : 0.0,
-              ),
-              child: AnimatedContainer(
-                duration: AppDurations.fast,
-                curve: Curves.easeOutCubic,
-                padding: EdgeInsets.only(left: grouped ? AppSpacing.md : 0.0),
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(
-                      color: theme.colorScheme.outlineVariant,
-                      width: grouped ? 1 : 0,
-                    ),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: rows,
-                ),
-              ),
+              child: Icon(Icons.expand_more, size: 18, color: palette.muted),
             ),
-          ),
-        ],
+          ],
+        ),
+        body: (palette, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: rows,
+        ),
       ),
     );
   }
@@ -292,6 +254,7 @@ class _LedgerStepRow extends StatelessWidget {
     required this.live,
     required this.expandThoughts,
     required this.expandTools,
+    required this.inGroup,
     this.terminalFor,
     super.key,
   });
@@ -301,6 +264,7 @@ class _LedgerStepRow extends StatelessWidget {
   final HostTerminal? Function(String runId)? terminalFor;
   final bool expandThoughts;
   final bool expandTools;
+  final bool inGroup;
 
   @override
   Widget build(BuildContext context) => switch (step) {
@@ -308,6 +272,7 @@ class _LedgerStepRow extends StatelessWidget {
       text: text,
       live: streaming,
       expandedByDefault: expandThoughts,
+      inGroup: inGroup,
     ),
     RunStep(:final run) => _StepRow(
       key: ValueKey(run.id),
@@ -315,6 +280,7 @@ class _LedgerStepRow extends StatelessWidget {
       live: live[run.id],
       terminal: terminalFor?.call(run.id),
       expandedByDefault: expandTools,
+      inGroup: inGroup,
     ),
   };
 }
@@ -325,11 +291,13 @@ class _ThoughtRow extends StatefulWidget {
   const _ThoughtRow({
     required this.text,
     required this.live,
+    required this.inGroup,
     this.expandedByDefault = false,
   });
 
   final String text;
   final bool live;
+  final bool inGroup;
 
   /// Раскрыто, пока пользователь сам не переключил строку.
   final bool expandedByDefault;
@@ -379,85 +347,52 @@ class _ThoughtRowState extends State<_ThoughtRow>
     super.build(context);
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
     final text = widget.text.trim();
     final canExpand = text.isNotEmpty;
     final summary = _firstLine(text);
     final tone = widget.live
         ? toneColors(context, AppTone.progress).foreground
-        : scheme.onSurfaceVariant;
+        : theme.colorScheme.onSurfaceVariant;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          borderRadius: AppRadius.smAll,
-          onTap: canExpand
-              ? () {
-                  setState(() => _userExpanded = !_expanded);
-                  updateKeepAlive();
-                }
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-            child: Row(
-              children: [
-                Icon(Icons.psychology_outlined, size: 16, color: tone),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    summary.isEmpty ? l10n.statusThinking : summary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                ),
-                if (canExpand)
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: AppDurations.fast,
-                    curve: Curves.easeOutCubic,
-                    child: Icon(
-                      Icons.expand_more,
-                      size: 18,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
+    return StepBlock(
+      kind: StepKind.thought,
+      inGroup: widget.inGroup,
+      accent: tone,
+      expanded: _expanded && canExpand,
+      onToggle: canExpand
+          ? () {
+              setState(() => _userExpanded = !_expanded);
+              updateKeepAlive();
+            }
+          : null,
+      canFullHeight: canExpand,
+      header: (palette) => Row(
+        children: [
+          Icon(Icons.psychology_outlined, size: 16, color: palette.accent),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              summary.isEmpty ? l10n.statusThinking : summary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(color: palette.text),
             ),
           ),
-        ),
-        ChatReveal(
-          open: _expanded && canExpand,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: AppRadius.mdAll,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: SingleChildScrollView(
-                    controller: _scroll,
-                    child: SelectableText(
-                      text,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+          if (canExpand)
+            AnimatedRotation(
+              turns: _expanded ? 0.5 : 0,
+              duration: AppDurations.fast,
+              curve: Curves.easeOutCubic,
+              child: Icon(Icons.expand_more, size: 18, color: palette.muted),
             ),
-          ),
-        ),
-      ],
+        ],
+      ),
+      body: (palette, fullHeight) => _ThoughtText(
+        text: text,
+        color: palette.muted,
+        fullHeight: fullHeight,
+        scroll: _scroll,
+      ),
     );
   }
 
@@ -470,11 +405,40 @@ class _ThoughtRowState extends State<_ThoughtRow>
   }
 }
 
+/// Текст рассуждения в теле блока. Полная высота: без внутреннего скролла. Иначе лимит 220 со скроллом.
+class _ThoughtText extends StatelessWidget {
+  const _ThoughtText({
+    required this.text,
+    required this.color,
+    required this.fullHeight,
+    required this.scroll,
+  });
+
+  final String text;
+  final Color color;
+  final bool fullHeight;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = SelectableText(
+      text,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+    );
+    if (fullHeight) return content;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 220),
+      child: SingleChildScrollView(controller: scroll, child: content),
+    );
+  }
+}
+
 /// Одна строка журнала: статус текстом, команда в моно-шрифте, вывод раскрывается по нажатию.
 class _StepRow extends StatefulWidget {
   const _StepRow({
     required this.run,
     required this.live,
+    required this.inGroup,
     this.terminal,
     this.expandedByDefault = false,
     super.key,
@@ -483,6 +447,7 @@ class _StepRow extends StatefulWidget {
   final ToolRun run;
   final String? live;
   final HostTerminal? terminal;
+  final bool inGroup;
 
   /// Вывод раскрыт, пока пользователь сам не переключил строку.
   final bool expandedByDefault;
@@ -495,6 +460,9 @@ class _StepRowState extends State<_StepRow>
     with AutomaticKeepAliveClientMixin<_StepRow> {
   /// Выбор пользователя; `null` — раскрытие задаёт настройка. По умолчанию команда свёрнута, в том числе во время выполнения.
   bool? _userExpanded;
+
+  /// Текст вывода для кнопки копирования в заголовке.
+  final _output = CommandOutputController();
 
   bool get _expanded => _userExpanded ?? widget.expandedByDefault;
 
@@ -523,148 +491,148 @@ class _StepRowState extends State<_StepRow>
     final canExpand = output.isNotEmpty || terminal != null;
     final tone = toneColors(context, visual.tone).foreground;
     final showStop = active && run.status != ToolRunStatus.waitingApproval;
+    // Вывод на всю высоту ограничен видимой областью ленты (окно минус заголовок и композер).
+    // Вне ленты такой области нет, и предела нет совсем.
+    final viewport = ChatViewport.maybeOf(context) ?? double.infinity;
+    final collapsedHeight = active ? 320.0 : 220.0;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          borderRadius: AppRadius.smAll,
-          onTap: canExpand
-              ? () {
-                  setState(() => _userExpanded = !_expanded);
-                  updateKeepAlive();
-                }
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-            child: Row(
-              children: [
-                ChatMorph(
-                  child: Icon(
-                    visual.icon,
-                    key: ValueKey(visual.icon),
-                    size: 16,
-                    color: tone,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    run.command ?? run.toolName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: AppTheme.monoFamily,
-                      fontSize: 13,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ),
-                ChatMorph(
-                  child: meta.isEmpty
-                      ? const SizedBox.shrink(key: ValueKey('no-meta'))
-                      : Row(
-                          key: ValueKey(meta.join(' · ')),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              meta.join(' · '),
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                          ],
+    return StepBlock(
+      kind: StepKind.command,
+      inGroup: widget.inGroup,
+      accent: tone,
+      expanded: _expanded && canExpand,
+      onToggle: canExpand
+          ? () {
+              setState(() => _userExpanded = !_expanded);
+              updateKeepAlive();
+            }
+          : null,
+      // Высота живого PTY задаёт размер терминала, поэтому у выполняющейся команды её не снимаем.
+      canFullHeight: canExpand && !active,
+      trailing: (palette) => CopyButton(
+        key: const ValueKey('step-copy'),
+        textOf: () => _output.text,
+        color: palette.muted,
+        size: 24,
+      ),
+      header: (palette) => Row(
+        children: [
+          ChatMorph(
+            child: Icon(
+              visual.icon,
+              key: ValueKey(visual.icon),
+              size: 16,
+              color: tone,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              run.command ?? run.toolName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppTheme.monoFamily,
+                fontSize: 13,
+                color: palette.text,
+              ),
+            ),
+          ),
+          ChatMorph(
+            child: meta.isEmpty
+                ? const SizedBox.shrink(key: ValueKey('no-meta'))
+                : Row(
+                    key: ValueKey(meta.join(' · ')),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        meta.join(' · '),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: palette.muted,
                         ),
-                ),
-                ChatMorph(
-                  child: run.background
-                      ? Row(
-                          key: const ValueKey('background'),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              l10n.runBackgroundBadge,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                          ],
-                        )
-                      : const SizedBox.shrink(key: ValueKey('no-background')),
-                ),
-                ChatMorph(
-                  child: Text(
-                    visual.label,
-                    key: ValueKey(visual.label),
-                    style: theme.textTheme.labelMedium?.copyWith(color: tone),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
                   ),
-                ),
-                ChatMorph(
-                  child: showStop
-                      ? IconButton(
-                          key: const ValueKey('stop'),
-                          tooltip: l10n.runStop,
-                          visualDensity: VisualDensity.compact,
-                          iconSize: 18,
-                          icon: const Icon(Icons.stop_circle_outlined),
-                          onPressed: () => context.read<ChatBloc>().add(
-                            ChatRunStopRequested(run.id),
-                          ),
-                        )
-                      : const SizedBox.shrink(key: ValueKey('no-stop')),
-                ),
-                ChatMorph(
-                  child: canExpand
-                      ? AnimatedRotation(
-                          key: const ValueKey('chevron'),
-                          turns: _expanded ? 0.5 : 0,
-                          duration: AppDurations.fast,
-                          curve: Curves.easeOutCubic,
-                          child: Icon(
-                            Icons.expand_more,
-                            size: 18,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        )
-                      : const SizedBox.shrink(key: ValueKey('no-chevron')),
-                ),
-              ],
+          ),
+          ChatMorph(
+            child: run.background
+                ? Row(
+                    key: const ValueKey('background'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        l10n.runBackgroundBadge,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: palette.muted,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                    ],
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-background')),
+          ),
+          ChatMorph(
+            child: Text(
+              visual.label,
+              key: ValueKey(visual.label),
+              style: theme.textTheme.labelMedium?.copyWith(color: tone),
             ),
           ),
-        ),
-        ChatReveal(
-          open: _expanded && canExpand,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CommandOutput(
-                  text: output,
-                  command: run.command,
-                  exitCode: run.exitCode,
-                  active: active,
-                  terminal: terminal,
-                  maxHeight: active ? 320 : 220,
-                ),
-                if (run.outputTruncated) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    l10n.runOutputTruncated,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+          ChatMorph(
+            child: showStop
+                ? IconButton(
+                    key: const ValueKey('stop'),
+                    tooltip: l10n.runStop,
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: palette.text,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    onPressed: () => context.read<ChatBloc>().add(
+                      ChatRunStopRequested(run.id),
                     ),
-                  ),
-                ],
-              ],
-            ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-stop')),
           ),
-        ),
-      ],
+          ChatMorph(
+            child: canExpand
+                ? AnimatedRotation(
+                    key: const ValueKey('chevron'),
+                    turns: _expanded ? 0.5 : 0,
+                    duration: AppDurations.fast,
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.expand_more,
+                      size: 18,
+                      color: palette.muted,
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-chevron')),
+          ),
+        ],
+      ),
+      body: (palette, fullHeight) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CommandOutput(
+            controller: _output,
+            text: output,
+            command: run.command,
+            exitCode: run.exitCode,
+            active: active,
+            terminal: terminal,
+            maxHeight: fullHeight && !active ? viewport : collapsedHeight,
+          ),
+          if (run.outputTruncated) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              l10n.runOutputTruncated,
+              style: theme.textTheme.labelSmall?.copyWith(color: palette.muted),
+            ),
+          ],
+        ],
+      ),
     );
   }
 

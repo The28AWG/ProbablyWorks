@@ -539,6 +539,14 @@
   "@settingsStepsToolsAll": {
     "description": "Вариант: показывать все вызовы ответа."
   },
+  "runExpandFull": "Развернуть на всю высоту",
+  "@runExpandFull": {
+    "description": "Tooltip of the step block button that removes the height limit of the expanded content."
+  },
+  "runCollapseFull": "Ограничить высоту",
+  "@runCollapseFull": {
+    "description": "Tooltip of the step block button that brings back the height limit of the expanded content."
+  },
   "settingsDefaultPolicy": "Политика для новых чатов",
   "@settingsDefaultPolicy": {
     "description": "Настройка: режим политики для новых чатов."

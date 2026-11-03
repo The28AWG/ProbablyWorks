@@ -92,12 +92,15 @@ ChatState _state({
 ScrollPosition _position(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable).first).position;
 
-/// Лента перевёрнута: при слежении смещение ноль, внизу виден нижний отступ, а ход прижат к верху окна.
+/// При слежении расстояние от конца ленты ноль: внизу виден нижний отступ, а ход прижат к верху окна.
 const _followOffset = 0.0;
+
+/// Расстояние от конца ленты: 0, когда видно последнее сообщение.
+double _fromEnd(ScrollPosition p) => p.maxScrollExtent - p.pixels;
 
 /// Верхние края сообщений, которые сейчас видны в окне ленты.
 Map<String, double> _visibleTops(WidgetTester tester) {
-  final window = tester.getRect(find.byType(ListView));
+  final window = tester.getRect(find.byType(CustomScrollView));
   final tops = <String, double>{};
   for (final element in find.byType(ChatMessageTile).evaluate()) {
     final tile = element.widget as ChatMessageTile;
@@ -145,7 +148,7 @@ void main() {
     await tester.pumpAndSettle();
     final position = _position(tester);
     expect(position.maxScrollExtent, greaterThan(0));
-    expect(position.pixels, closeTo(_followOffset, 1));
+    expect(_fromEnd(position), closeTo(_followOffset, 1));
   });
 
   testWidgets(
@@ -162,10 +165,10 @@ void main() {
       );
       final position = _position(tester);
 
-      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
       await tester.pumpAndSettle();
       expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
-      final away = position.pixels;
+      final away = _fromEnd(position);
       expect(away, greaterThan(_followOffset + 100));
 
       // Новый ответ ассистента не должен увести читателя от места, на котором он остановился.
@@ -199,7 +202,7 @@ void main() {
       await tester.tap(find.text(l10n.chatScrollToLatest));
       await tester.pumpAndSettle();
       expect(find.text(l10n.chatScrollToLatest), findsNothing);
-      expect(position.pixels, closeTo(_followOffset, 1));
+      expect(_fromEnd(position), closeTo(_followOffset, 1));
     },
   );
 
@@ -214,7 +217,7 @@ void main() {
     await tester.pumpAndSettle();
     final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
     final position = _position(tester);
-    await tester.drag(find.byType(ListView), const Offset(0, 300));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
     await tester.pumpAndSettle();
     expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
 
@@ -247,13 +250,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text(l10n.chatScrollToLatest), findsNothing);
-    expect(position.pixels, closeTo(_followOffset, 1));
+    expect(_fromEnd(position), closeTo(_followOffset, 1));
   });
 
   testWidgets('compaction marker shows and expands the summary', (
     tester,
   ) async {
-    // Лента открывается внизу; маркер стоит в начале, поэтому прокручиваем к нему.
+    // Лента открывается внизу; маркер стоит в начале (сверху), поэтому прокручиваем к нему.
     await tester.pumpWidget(
       _TestApp(
         SizedBox(
@@ -269,7 +272,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    _position(tester).jumpTo(_position(tester).maxScrollExtent);
+    _position(tester).jumpTo(0);
     await tester.pumpAndSettle();
     final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
     expect(find.text(l10n.compactionMarker), findsOneWidget);
@@ -650,9 +653,8 @@ void main() {
       await tester.pumpWidget(_TestApp(ChatTimeline(state: _state())));
       await tester.pumpAndSettle();
 
-      final list = tester.widget<ListView>(find.byType(ListView));
-      final padding = list.padding! as EdgeInsets;
-      expect(padding.bottom, closeTo(600 / 3, 0.5));
+      final gap = tester.getSize(find.byKey(const ValueKey('timeline-gap')));
+      expect(gap.height, closeTo(600 / 3, 0.5));
     },
   );
 
@@ -665,8 +667,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Короткий чат тоже занимает окно до отступа: вопрос стоит у верха, отступ внизу не пропадает.
-    expect(_position(tester).pixels, closeTo(_followOffset, 1));
-    final window = tester.getRect(find.byType(ListView));
+    expect(_fromEnd(_position(tester)), closeTo(_followOffset, 1));
+    final window = tester.getRect(find.byType(CustomScrollView));
     final question = _visibleTops(tester)['m2'];
     expect(question, isNotNull);
     expect(question! - window.top, closeTo(AppSpacing.md, 0.5));
@@ -690,7 +692,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(_position(tester).pixels, closeTo(_followOffset, 1));
+      expect(_fromEnd(_position(tester)), closeTo(_followOffset, 1));
     }
   });
 
@@ -705,13 +707,13 @@ void main() {
     await tester.pumpAndSettle();
     final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
 
-    await tester.drag(find.byType(ListView), const Offset(0, 300));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
     await tester.pumpAndSettle();
     expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1000));
     await tester.pumpAndSettle();
-    expect(_position(tester).pixels, closeTo(_followOffset, 1));
+    expect(_fromEnd(_position(tester)), closeTo(_followOffset, 1));
     expect(find.text(l10n.chatScrollToLatest), findsNothing);
   });
 
@@ -780,14 +782,14 @@ void main() {
     for (var step = 0; step < 30; step++) {
       final before = _visibleTops(tester);
       final pixelsBefore = _position(tester).pixels;
-      await tester.drag(find.byType(ListView), const Offset(0, 40));
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, 40));
       await tester.pump();
       final scrolled = _position(tester).pixels - pixelsBefore;
       final after = _visibleTops(tester);
       for (final id in before.keys.where(after.containsKey)) {
         expect(
           after[id]! - before[id]!,
-          closeTo(scrolled, 0.5),
+          closeTo(-scrolled, 0.5),
           reason: 'step $step, $id',
         );
       }

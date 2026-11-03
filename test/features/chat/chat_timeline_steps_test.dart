@@ -91,7 +91,9 @@ void main() {
     await tester.pumpWidget(_TestApp(_state(runs: [_run()])));
     await tester.pumpAndSettle();
     final scroll = _position(tester);
-    final historyTop = scroll.maxScrollExtent;
+    // Лента сверху вниз: история у нуля, новое внизу.
+    const historyTop = 0.0;
+    final newest = scroll.maxScrollExtent;
 
     // Старое сообщение с шагом: прокручиваем к началу ленты и раскрываем строку команды.
     scroll.jumpTo(historyTop);
@@ -101,7 +103,7 @@ void main() {
     expect(find.byType(CommandOutput), findsOneWidget);
 
     // Уводим группу далеко за край ленты: элементы вне кэша прокрутки уничтожаются.
-    scroll.jumpTo(0);
+    scroll.jumpTo(newest);
     await tester.pumpAndSettle();
     expect(find.text('flutter analyze'), findsNothing);
 
