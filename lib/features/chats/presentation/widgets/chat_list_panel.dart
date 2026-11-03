@@ -17,12 +17,20 @@ const _listInset = AppSpacing.sm + AppSpacing.md;
 /// Список чатов по группам «сегодня / вчера / раньше» с контекстным меню.
 /// Создание чата и навигация живут в оболочке (боковая панель, компактный экран).
 class ChatListPanel extends StatelessWidget {
-  const ChatListPanel({required this.onOpen, this.background, super.key});
+  const ChatListPanel({
+    required this.onOpen,
+    this.background,
+    this.bottomClearance = 0,
+    super.key,
+  });
 
   final void Function(String chatId) onOpen;
 
   /// Фон липких заголовков: совпадает с фоном панели, на которой стоит список.
   final Color? background;
+
+  /// Отступ снизу, чтобы последняя строка не пряталась под плавающей кнопкой.
+  final double bottomClearance;
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +98,9 @@ class ChatListPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+            SliverToBoxAdapter(
+              child: SizedBox(height: AppSpacing.lg + bottomClearance),
+            ),
           ],
         );
       },

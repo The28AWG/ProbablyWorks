@@ -11,9 +11,11 @@ class ChatPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: BackButton(onPressed: () => context.router.maybePop()),
+    body: SafeArea(
+      child: ChatView(
+        chatId: chatId,
+        leading: BackButton(onPressed: () => context.router.maybePop()),
+      ),
     ),
-    body: ChatView(chatId: chatId),
   );
 }

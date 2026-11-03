@@ -40,11 +40,15 @@ class ChatView extends StatefulWidget {
     this.seedChat,
     this.seedHosts = const [],
     this.onCreated,
+    this.leading,
     super.key,
   });
 
   /// Открытый чат. Null — новый чат: стартовый экран, чат создастся при первой отправке.
   final String? chatId;
+
+  /// Слева в шапке, в той же строке, что и название (кнопка «назад» на узком экране).
+  final Widget? leading;
 
   /// Чат из уже загруженного списка: шапка и композер появляются в первом кадре, без скелета.
   /// Null — чат ещё не в списке (например, открыт по маршруту на узком экране): покажем скелет,
@@ -100,13 +104,18 @@ class _ChatViewState extends State<ChatView> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      BlocProvider.value(value: _bloc, child: const ChatBody());
+  Widget build(BuildContext context) => BlocProvider.value(
+    value: _bloc,
+    child: ChatBody(leading: widget.leading),
+  );
 }
 
 /// Тело чата без создания блока: блок должен быть выше по дереву (см. [ChatView]).
 class ChatBody extends StatefulWidget {
-  const ChatBody({super.key});
+  const ChatBody({this.leading, super.key});
+
+  /// См. [ChatView.leading].
+  final Widget? leading;
 
   @override
   State<ChatBody> createState() => _ChatBodyState();
@@ -148,10 +157,12 @@ class _ChatBodyState extends State<ChatBody> {
         final chat = state.chat;
         // Без перехода: fade всего тела на каждом открытии рисует весь экран через saveLayer.
         // Стартовый кадр нового чата: блок ещё готовит пустой чат, спиннера и скелета нет.
-        if (chat == null && state.chatId == null) return const _ChatBlankBody();
+        if (chat == null && state.chatId == null) {
+          return _ChatBlankBody(leading: widget.leading);
+        }
         // Без чата (нет в списке) — полный каркас. С чатом из списка шапка и композер настоящие,
         // а при загрузке ленты меняется только её область.
-        if (chat == null) return const _ChatLoadingBody();
+        if (chat == null) return _ChatLoadingBody(leading: widget.leading);
         final bloc = context.read<ChatBloc>();
         final fraction = state.promptTokens == null
             ? null
@@ -221,6 +232,7 @@ class _ChatBodyState extends State<ChatBody> {
                 children: [
                   _Header(
                     title: chat.title.isEmpty ? l10n.chatsNew : chat.title,
+                    leading: widget.leading,
                   ),
                   Expanded(
                     child: Stack(
@@ -400,12 +412,14 @@ class _ChatBodyState extends State<ChatBody> {
 
 /// Пустой экран нового чата до готовности блока: только заголовок, без спиннера и заглушек.
 class _ChatBlankBody extends StatelessWidget {
-  const _ChatBlankBody();
+  const _ChatBlankBody({this.leading});
+
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      _Header(title: AppLocalizations.of(context).chatsNew),
+      _Header(title: AppLocalizations.of(context).chatsNew, leading: leading),
       const Spacer(),
     ],
   );
@@ -414,25 +428,28 @@ class _ChatBlankBody extends StatelessWidget {
 /// Каркас чата до загрузки: шапка-заглушка, спиннер в ленте и скелет композера.
 /// Шапка, лента и композер занимают те же места и размеры, что и в готовом чате.
 class _ChatLoadingBody extends StatelessWidget {
-  const _ChatLoadingBody();
+  const _ChatLoadingBody({this.leading});
+
+  final Widget? leading;
 
   @override
-  Widget build(BuildContext context) => const Column(
+  Widget build(BuildContext context) => Column(
     children: [
-      _Header(title: null),
+      _Header(title: null, leading: leading),
       Expanded(child: Center(child: CircularProgressIndicator())),
       ComposerSkeleton(),
     ],
   );
 }
 
-/// Шапка чата: только название. Ни одного управляющего элемента:
+/// Шапка чата: название и, на узком экране, кнопка «назад» слева. Ни одного управляющего элемента:
 /// всё, что меняет поведение агента, находится в композере.
 /// Без названия (null) показывает заглушку той же высоты, что и текст.
 class _Header extends StatelessWidget {
-  const _Header({required this.title});
+  const _Header({required this.title, this.leading});
 
   final String? title;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -446,6 +463,7 @@ class _Header extends StatelessWidget {
         ),
         child: Row(
           children: [
+            ?leading,
             Expanded(
               child: title == null
                   ? _TitlePlaceholder(style: theme.textTheme.titleMedium)

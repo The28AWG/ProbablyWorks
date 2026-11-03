@@ -182,6 +182,9 @@ class _MediumWorkspace extends StatelessWidget {
   }
 }
 
+/// Место под плавающую кнопку «Новый чат»: кнопка 56 плюс её отступ 16, и ещё 16 до последней строки.
+const _fabClearance = AppSpacing.xxl * 2;
+
 class _CompactWorkspace extends StatelessWidget {
   const _CompactWorkspace();
 
@@ -190,18 +193,16 @@ class _CompactWorkspace extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final specs = _destinationSpecs(l10n);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.navChats),
-        actions: [
-          IconButton(
-            tooltip: l10n.chatsNew,
-            icon: const Icon(Icons.add),
-            onPressed: () => context.router.push(const NewChatRoute()),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.navChats)),
       body: ChatListPanel(
         onOpen: (id) => context.router.push(ChatRoute(chatId: id)),
+        bottomClearance: _fabClearance,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'chats-new-fab',
+        icon: const Icon(Icons.add),
+        label: Text(l10n.chatsNew),
+        onPressed: () => context.router.push(const NewChatRoute()),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: 0,
