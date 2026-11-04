@@ -29,7 +29,14 @@ class AppSection extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             ?trailing,
           ],
         ),

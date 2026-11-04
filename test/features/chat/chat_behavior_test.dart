@@ -480,10 +480,8 @@ void main() {
         inInclusiveRange(300, 570),
       );
 
-      expect(
-        tester.widget<IconButton>(_sendButtonFinder(l10n)).onPressed,
-        isNull,
-      );
+      // Пустое поле: кнопки отправки нет совсем, а не только неактивна.
+      expect(_sendButtonFinder(l10n), findsNothing);
       await tester.enterText(find.byType(TextField), 'Проверь проект');
       await tester.pump();
       expect(

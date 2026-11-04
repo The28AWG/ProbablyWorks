@@ -131,6 +131,8 @@ class _UserMessageState extends State<_UserMessage> {
                             _expanded
                                 ? l10n.messageCollapse
                                 : l10n.messageShowFull,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
@@ -230,6 +232,8 @@ class _AssistantMessage extends StatelessWidget {
                                 const SizedBox(width: AppSpacing.xs),
                               Text(
                                 formatElapsed(time),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
@@ -322,6 +326,8 @@ class _ChatCompactionMarkerState extends State<ChatCompactionMarker> {
                     const SizedBox(width: AppSpacing.xs),
                     Text(
                       l10n.compactionMarker,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -333,6 +339,8 @@ class _ChatCompactionMarkerState extends State<ChatCompactionMarker> {
                           _open
                               ? l10n.compactionHideSummary
                               : l10n.compactionShowSummary,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                   ],
@@ -423,7 +431,11 @@ class _HoverActionsState extends State<_HoverActions> {
             for (final action in actions)
               ListTile(
                 leading: Icon(action.icon),
-                title: Text(action.tooltip),
+                title: Text(
+                  action.tooltip,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   action.onPressed();

@@ -80,6 +80,8 @@ class _OnboardingViewState extends State<_OnboardingView> {
                   children: [
                     Text(
                       l10n.onboardingTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.headlineSmall,
                       textAlign: TextAlign.center,
                     ),
@@ -121,6 +123,8 @@ class _OnboardingViewState extends State<_OnboardingView> {
                                 Expanded(
                                   child: Text(
                                     _stepTitle(state.step, l10n),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.titleLarge,
                                   ),
                                 ),
@@ -238,7 +242,11 @@ class _OnboardingViewState extends State<_OnboardingView> {
           expandedInsets: EdgeInsets.zero,
           enableFilter: true,
           initialSelection: state.defaultModel,
-          label: Text(l10n.settingsDefaultModel),
+          label: Text(
+            l10n.settingsDefaultModel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           dropdownMenuEntries: [
             for (final model in state.models)
               if (model.supportsTools)
@@ -316,33 +324,61 @@ class _OnboardingViewState extends State<_OnboardingView> {
     final primary = switch (step) {
       OnboardingStep.welcome => FilledButton(
         onPressed: cubit.next,
-        child: Text(l10n.onboardingContinue),
+        child: Text(
+          l10n.onboardingContinue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.key when state.keyVerified => FilledButton(
         onPressed: cubit.next,
-        child: Text(l10n.onboardingContinue),
+        child: Text(
+          l10n.onboardingContinue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.key => FilledButton(
         onPressed: state.checking ? null : () => cubit.verifyKey(_key.text),
-        child: Text(l10n.onboardingVerifyKey),
+        child: Text(
+          l10n.onboardingVerifyKey,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.model => FilledButton(
         onPressed: state.defaultModel == null ? null : cubit.next,
-        child: Text(l10n.onboardingContinue),
+        child: Text(
+          l10n.onboardingContinue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.workspace => FilledButton(
         onPressed: () => _continueFromWorkspace(cubit),
-        child: Text(l10n.onboardingContinue),
+        child: Text(
+          l10n.onboardingContinue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.ssh => FilledButton(
         onPressed: cubit.next,
-        child: Text(l10n.onboardingContinue),
+        child: Text(
+          l10n.onboardingContinue,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       OnboardingStep.finish => FilledButton(
         onPressed: state.created == null && state.canCreate
             ? cubit.createFirstChat
             : null,
-        child: Text(l10n.onboardingFinish),
+        child: Text(
+          l10n.onboardingFinish,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     };
     final skippable =
@@ -355,17 +391,35 @@ class _OnboardingViewState extends State<_OnboardingView> {
       runSpacing: AppSpacing.sm,
       children: [
         if (cubit.steps.indexOf(step) > 0)
-          TextButton(onPressed: cubit.back, child: Text(l10n.onboardingBack)),
+          TextButton(
+            onPressed: cubit.back,
+            child: Text(
+              l10n.onboardingBack,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         if (step == OnboardingStep.ssh)
           OutlinedButton.icon(
             icon: const Icon(Icons.add),
-            label: Text(l10n.onboardingAddSsh),
+            label: Text(
+              l10n.onboardingAddSsh,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             onPressed: () => context.router.push(
               WorkspaceRoute(children: [const HostsRoute()]),
             ),
           ),
         if (skippable && step != OnboardingStep.ssh)
-          TextButton(onPressed: cubit.next, child: Text(l10n.onboardingSkip)),
+          TextButton(
+            onPressed: cubit.next,
+            child: Text(
+              l10n.onboardingSkip,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         primary,
       ],
     );

@@ -46,6 +46,8 @@ class OnboardingStepper extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           counterLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelMedium
               ?.copyWith(color: scheme.onSurfaceVariant),
         ),

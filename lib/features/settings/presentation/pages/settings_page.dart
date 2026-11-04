@@ -133,7 +133,11 @@ class _SettingsViewState extends State<_SettingsView> {
             leading: context.workspaceLayout == .compact
                 ? const WorkspaceLeadingButton()
                 : null,
-            title: Text(l10n.settingsTitle),
+            title: Text(
+              l10n.settingsTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
           body: LayoutBuilder(
             builder: (context, constraints) {
@@ -297,7 +301,11 @@ class _SettingsViewState extends State<_SettingsView> {
         title: l10n.settingsApiKey,
         trailing: FilledButton(
           onPressed: () => _saveApiKey(cubit),
-          child: Text(l10n.commonSave),
+          child: Text(
+            l10n.commonSave,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         children: [
           AppTextField(
@@ -331,7 +339,11 @@ class _SettingsViewState extends State<_SettingsView> {
             trailingIcon: catalog.initialLoading
                 ? const _LoadingSpinner()
                 : null,
-            label: Text(l10n.settingsDefaultModel),
+            label: Text(
+              l10n.settingsDefaultModel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             onSelected: (value) => cubit.saveModels(
               defaultModel: value ?? '',
               titleModel: state.titleModel,
@@ -357,7 +369,11 @@ class _SettingsViewState extends State<_SettingsView> {
             trailingIcon: catalog.initialLoading
                 ? const _LoadingSpinner()
                 : null,
-            label: Text(l10n.settingsTitleModel),
+            label: Text(
+              l10n.settingsTitleModel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             onSelected: (value) => cubit.saveModels(
               defaultModel: state.defaultModel,
               titleModel: value ?? '',
@@ -377,7 +393,11 @@ class _SettingsViewState extends State<_SettingsView> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.refresh),
-                label: Text(l10n.settingsModelsRefresh),
+                label: Text(
+                  l10n.settingsModelsRefresh,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 onPressed: catalog.loading ? null : cubit.refreshModels,
               ),
               const SizedBox(width: AppSpacing.md),
@@ -393,6 +413,8 @@ class _SettingsViewState extends State<_SettingsView> {
                             : l10n.modelsSyncedAt(
                                 formatModelSyncTime(catalog.syncedAt!),
                               ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall,
                       ),
               ),
@@ -410,7 +432,11 @@ class _SettingsViewState extends State<_SettingsView> {
             children: [
               for (final id in state.pinnedModels)
                 InputChip(
-                  label: Text(_modelName(id, catalog)),
+                  label: Text(
+                    _modelName(id, catalog),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   onDeleted: () => cubit.togglePin(id),
                 ),
             ],
@@ -419,7 +445,11 @@ class _SettingsViewState extends State<_SettingsView> {
             key: ValueKey('pin-${state.pinnedModels.length}'),
             expandedInsets: EdgeInsets.zero,
             enableFilter: true,
-            label: Text(l10n.settingsPinnedModels),
+            label: Text(
+              l10n.settingsPinnedModels,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             dropdownMenuEntries: unpinned,
             onSelected: (value) => _onPinModelSelected(cubit, value),
           ),
@@ -439,7 +469,11 @@ class _SettingsViewState extends State<_SettingsView> {
         DropdownMenu<String>(
           expandedInsets: EdgeInsets.zero,
           initialSelection: state.language,
-          label: Text(l10n.settingsLanguage),
+          label: Text(
+            l10n.settingsLanguage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           dropdownMenuEntries: [
             DropdownMenuEntry(
               value: 'system',
@@ -458,10 +492,21 @@ class _SettingsViewState extends State<_SettingsView> {
       children: [
         SegmentedButton<bool>(
           segments: [
-            ButtonSegment(value: true, label: Text(l10n.settingsStepsGroupOn)),
+            ButtonSegment(
+              value: true,
+              label: Text(
+                l10n.settingsStepsGroupOn,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             ButtonSegment(
               value: false,
-              label: Text(l10n.settingsStepsGroupOff),
+              label: Text(
+                l10n.settingsStepsGroupOff,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
           selected: {state.stepsDisplay.group},
@@ -477,10 +522,21 @@ class _SettingsViewState extends State<_SettingsView> {
       children: [
         SegmentedButton<bool>(
           segments: [
-            ButtonSegment(value: true, label: Text(l10n.settingsStepsExpandOn)),
+            ButtonSegment(
+              value: true,
+              label: Text(
+                l10n.settingsStepsExpandOn,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             ButtonSegment(
               value: false,
-              label: Text(l10n.settingsStepsExpandOff),
+              label: Text(
+                l10n.settingsStepsExpandOff,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
           selected: {state.stepsDisplay.expandWhileActive},
@@ -498,15 +554,27 @@ class _SettingsViewState extends State<_SettingsView> {
           segments: [
             ButtonSegment(
               value: ThoughtsVisibility.current,
-              label: Text(l10n.settingsStepsThoughtsCurrent),
+              label: Text(
+                l10n.settingsStepsThoughtsCurrent,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             ButtonSegment(
               value: ThoughtsVisibility.all,
-              label: Text(l10n.settingsStepsHide),
+              label: Text(
+                l10n.settingsStepsHide,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             ButtonSegment(
               value: ThoughtsVisibility.expanded,
-              label: Text(l10n.settingsStepsThoughtsAll),
+              label: Text(
+                l10n.settingsStepsThoughtsAll,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
           selected: {state.stepsDisplay.thoughts},
@@ -524,15 +592,27 @@ class _SettingsViewState extends State<_SettingsView> {
           segments: [
             ButtonSegment(
               value: ToolsVisibility.active,
-              label: Text(l10n.settingsStepsToolsActive),
+              label: Text(
+                l10n.settingsStepsToolsActive,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             ButtonSegment(
               value: ToolsVisibility.all,
-              label: Text(l10n.settingsStepsHide),
+              label: Text(
+                l10n.settingsStepsHide,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             ButtonSegment(
               value: ToolsVisibility.expanded,
-              label: Text(l10n.settingsStepsToolsAll),
+              label: Text(
+                l10n.settingsStepsToolsAll,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
           selected: {state.stepsDisplay.tools},
@@ -554,8 +634,22 @@ class _SettingsViewState extends State<_SettingsView> {
       children: [
         SegmentedButton<PolicyMode>(
           segments: [
-            ButtonSegment(value: PolicyMode.ask, label: Text(l10n.policyAsk)),
-            ButtonSegment(value: PolicyMode.yolo, label: Text(l10n.policyYolo)),
+            ButtonSegment(
+              value: PolicyMode.ask,
+              label: Text(
+                l10n.policyAsk,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            ButtonSegment(
+              value: PolicyMode.yolo,
+              label: Text(
+                l10n.policyYolo,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
           selected: {state.defaultPolicy},
           onSelectionChanged: (value) => cubit.saveDefaultPolicy(value.first),
@@ -566,7 +660,11 @@ class _SettingsViewState extends State<_SettingsView> {
       title: l10n.settingsDenylist,
       trailing: FilledButton(
         onPressed: () => cubit.saveDenylist(_denylist.text),
-        child: Text(l10n.commonSave),
+        child: Text(
+          l10n.commonSave,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       children: [
         AppTextField(
@@ -588,7 +686,11 @@ class _SettingsViewState extends State<_SettingsView> {
       title: l10n.settingsAttachLimits,
       trailing: FilledButton(
         onPressed: () => _saveAttachLimits(cubit, l10n),
-        child: Text(l10n.commonSave),
+        child: Text(
+          l10n.commonSave,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       children: [
         Row(
@@ -618,7 +720,11 @@ class _SettingsViewState extends State<_SettingsView> {
       title: l10n.settingsLimits,
       trailing: FilledButton(
         onPressed: () => cubit.saveLimits(_limits.text),
-        child: Text(l10n.commonSave),
+        child: Text(
+          l10n.commonSave,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       children: [
         AppTextField(
@@ -663,7 +769,12 @@ class _GroupHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: theme.textTheme.titleLarge),
+        Text(
+          title,
+          style: theme.textTheme.titleLarge,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text(
           hint,

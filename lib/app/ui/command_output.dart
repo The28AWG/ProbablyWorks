@@ -336,6 +336,8 @@ class _CommandOutputState extends State<CommandOutput> {
                     ),
                     child: Text(
                       l10n.runExitCode(code),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: AppTheme.monoFamily,
                         fontSize: 12,

@@ -21,6 +21,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_attention
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_context_dialog.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
@@ -150,8 +151,16 @@ class _ChatBodyState extends State<ChatBody> {
   void _onTextChanged() =>
       context.read<ChatBloc>().add(ChatDraftEdited(_composer.text));
 
+  /// Плотность считается по ширине области чата (без боковой панели), а не по окну: см. [ChatDensity].
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => ChatDensityScope(
+      density: ChatDensity.fromWidth(constraints.maxWidth),
+      child: _body(context),
+    ),
+  );
+
+  Widget _body(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return BlocConsumer<ChatBloc, ChatState>(
       listenWhen: (previous, current) => previous.draftId != current.draftId,
@@ -187,6 +196,7 @@ class _ChatBodyState extends State<ChatBody> {
               ignoring: state.loading,
               child: ChatComposer(
                 state: state,
+                centered: empty,
                 controller: _composer,
                 attachments: state.attachments,
                 dragging: _dragging,
@@ -507,6 +517,7 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     final title = this.title;
     return ChatColumn.fixed(
+      context,
       Padding(
         padding: const EdgeInsets.only(
           top: AppSpacing.md,

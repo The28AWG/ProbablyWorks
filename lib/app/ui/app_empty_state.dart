@@ -46,6 +46,8 @@ class AppEmptyState extends StatelessWidget {
                 title,
                 style: theme.textTheme.titleMedium,
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               if (message != null) ...[
                 const SizedBox(height: AppSpacing.xs),

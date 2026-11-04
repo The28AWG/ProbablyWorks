@@ -1,14 +1,19 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 
 /// Поле ввода сообщения. Enter отправляет, Shift+Enter переносит строку,
 /// Ctrl/Cmd+Enter во время работы агента ставит сообщение вперёд очереди (sendNow).
 /// Enter во время IME-композиции (например, русская раскладка до выбора слова) не перехватывается.
+///
+/// [maxLines] — сколько строк поле растёт до прокрутки; значение задаёт [ChatDensity.composerMaxLines].
+/// Подсказка всегда одна строка и обрезается многоточием: на узком экране она не должна занимать высоту.
 class ComposerInput extends StatefulWidget {
   const ComposerInput({
     required this.controller,
     required this.hint,
     required this.busy,
+    required this.maxLines,
     required this.onSubmit,
     super.key,
   });
@@ -16,6 +21,7 @@ class ComposerInput extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
   final bool busy;
+  final int maxLines;
   final ValueChanged<bool> onSubmit;
 
   @override
@@ -50,19 +56,30 @@ class _ComposerInputState extends State<ComposerInput> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller: widget.controller,
-    focusNode: _focusNode,
-    minLines: 1,
-    maxLines: 8,
-    decoration: InputDecoration(
-      hintText: widget.hint,
-      filled: false,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(vertical: 10),
-      border: InputBorder.none,
-      enabledBorder: InputBorder.none,
-      focusedBorder: InputBorder.none,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final density = ChatDensityScope.of(context);
+    final lineHeight = density.inputLineHeight;
+    return TextField(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      minLines: 1,
+      maxLines: widget.maxLines,
+      // Широкая область берёт стиль поля из темы без изменений.
+      style: lineHeight == null
+          ? null
+          : Theme.of(context).textTheme.bodyLarge?.copyWith(height: lineHeight),
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        hintMaxLines: 1,
+        filled: false,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(
+          vertical: density.inputVerticalPadding,
+        ),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+      ),
+    );
+  }
 }

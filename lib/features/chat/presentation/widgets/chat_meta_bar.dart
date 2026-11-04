@@ -1,8 +1,11 @@
+import 'dart:math' show min;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -20,7 +23,7 @@ String? workspaceFolderName(String? path) {
   return parts.isEmpty ? path : parts.last;
 }
 
-/// Строка настроек чата под полем ввода: хост, модель и окно контекста.
+/// Строка настроек чата под полем ввода: хост, папка, модель и окно контекста.
 ///
 /// Единое правило для всех элементов: тихий чип показывает текущее значение и стрелку `▾`
 /// и открывает редактор — меню (хост) или диалог (папка, модель, контекст). Хост и папка меняют
@@ -28,6 +31,9 @@ String? workspaceFolderName(String? path) {
 ///
 /// Чип папки появляется только когда папка назначена, чип контекста — только когда модель сообщила
 /// заполнение окна. Появление и исчезновение плавные, строка не переносится на вторую линию.
+///
+/// Строка никогда не выходит за свою область: если чипы с подписями не помещаются, они по одному
+/// сворачиваются до значка в порядке [_Chip] (см. [_collapsedChips]). Значение при этом остаётся в подсказке.
 class ChatMetaBar extends StatelessWidget {
   const ChatMetaBar({
     required this.hosts,
@@ -77,101 +83,238 @@ class ChatMetaBar extends StatelessWidget {
     final current = hosts.where((h) => h.id == hostId).firstOrNull;
     final fraction = contextFraction;
     final folder = workspaceFolderName(workspace);
+    final density = ChatDensityScope.of(context);
+    final hostLabel = hostLabelOf(hosts, hostId, l10n);
+    // Подписи в узкой области ограничены по ширине; на широкой берутся значения из темы.
+    double capped(double regular) =>
+        density == ChatDensity.regular ? regular : AppLayout.chipNarrowMaxWidth;
+    final modelText = modelPending
+        ? null
+        : modelLabel == null
+        ? l10n.chatModelPick
+        : (modelUnavailable ? '! $modelLabel' : modelLabel);
+    // Ширины считаются заранее, до раскладки: по ним решается, какие чипы свернуть до значка.
+    final labeled = <_Chip, _ChipWidth?>{
+      _Chip.host: _chipWidth(context, hostLabel, cap: capped(180)),
+      _Chip.folder: folder == null
+          ? null
+          : _chipWidth(context, folder, cap: capped(140)),
+      _Chip.model: _chipWidth(
+        context,
+        modelText,
+        cap: capped(180),
+        loading: modelLoading || modelPending,
+      ),
+      _Chip.context: fraction == null
+          ? null
+          : _chipWidth(
+              context,
+              '${(fraction * 100).round()}%',
+              cap: double.infinity,
+            ),
+    };
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PopupMenuButton<String>(
-            tooltip: l10n.chatHostLabel,
-            enabled: !running,
-            onSelected: onHostSelected,
-            itemBuilder: (_) => [
-              for (final host in hosts)
-                PopupMenuItem(
-                  value: host.id,
-                  child: _CheckedRow(
-                    checked: host.id == hostId,
-                    child: Text(
-                      host.isLocal ? localHostTitle(l10n) : host.name,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // На очень узкой области чипы только значки всегда; иначе — сколько нужно, чтобы строка уместилась.
+        final collapsed = density.iconOnlyChips
+            ? _Chip.values.toSet()
+            : _collapsedChips(labeled, constraints.maxWidth);
+        bool iconOnly(_Chip chip) => collapsed.contains(chip);
+        // Страховка от переполнения на случай расхождения округлений: строка прокручивается внутри области,
+        // а не выходит за карточку композера.
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PopupMenuButton<String>(
+                tooltip: iconOnly(_Chip.host)
+                    ? l10n.chatHostTooltip(hostLabel)
+                    : l10n.chatHostLabel,
+                enabled: !running,
+                onSelected: onHostSelected,
+                itemBuilder: (_) => [
+                  for (final host in hosts)
+                    PopupMenuItem(
+                      value: host.id,
+                      child: _CheckedRow(
+                        checked: host.id == hostId,
+                        child: Text(
+                          host.isLocal ? localHostTitle(l10n) : host.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
+                ],
+                child: ConstrainedBox(
+                  // Имя хоста может быть длинным: чип ограничивается по ширине, текст обрезается многоточием.
+                  constraints: BoxConstraints(maxWidth: capped(180)),
+                  child: _MetaChip(
+                    icon: current?.isLocal ?? true
+                        ? localHostIcon()
+                        : Icons.dns_outlined,
+                    label: iconOnly(_Chip.host) ? null : hostLabel,
+                    enabled: !running,
                   ),
                 ),
+              ),
+              // Папка появляется, когда назначена: без неё чип не нужен.
+              ChatMorph(
+                child: folder == null
+                    ? const SizedBox.shrink(key: ValueKey('no-folder'))
+                    : Row(
+                        key: const ValueKey('folder'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: AppSpacing.xs),
+                          _ActionChip(
+                            tooltip: workspace ?? l10n.chatWorkspaceHint,
+                            icon: Icons.folder_outlined,
+                            label: iconOnly(_Chip.folder) ? null : folder,
+                            maxWidth: capped(140),
+                            onTap: running ? null : onPickWorkspace,
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              _ActionChip(
+                tooltip: modelUnavailable
+                    ? l10n.chatModelUnavailableTooltip
+                    : iconOnly(_Chip.model) && modelLabel != null
+                    ? l10n.chatModelTooltip(modelLabel!)
+                    : l10n.chatModelLabel,
+                icon: Icons.memory,
+                label: iconOnly(_Chip.model) || modelPending ? null : modelText,
+                tone: !modelPending && (modelLabel == null || modelUnavailable)
+                    ? AppTone.warning
+                    : null,
+                loading: modelLoading || modelPending,
+                maxWidth: capped(180),
+                onTap: onPickModel,
+              ),
+              // Окно контекста появляется, когда модель сообщила заполнение.
+              ChatMorph(
+                child: fraction == null
+                    ? const SizedBox.shrink(key: ValueKey('no-context'))
+                    : Row(
+                        key: const ValueKey('context'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: AppSpacing.xs),
+                          _ActionChip(
+                            tooltip: iconOnly(_Chip.context)
+                                ? l10n.chatContextTooltip(
+                                    '${(fraction * 100).round()}',
+                                  )
+                                : l10n.chatContextTitle,
+                            icon: Icons.data_usage,
+                            label: iconOnly(_Chip.context)
+                                ? null
+                                : '${(fraction * 100).round()}%',
+                            tone: fraction >= _warnFraction
+                                ? AppTone.warning
+                                : null,
+                            onTap: onOpenContext,
+                          ),
+                        ],
+                      ),
+              ),
             ],
-            child: _MetaChip(
-              icon: current?.isLocal ?? true
-                  ? localHostIcon()
-                  : Icons.dns_outlined,
-              label: hostLabelOf(hosts, hostId, l10n),
-              enabled: !running,
-            ),
           ),
-          // Папка появляется, когда назначена: без неё чип не нужен.
-          ChatMorph(
-            child: folder == null
-                ? const SizedBox.shrink(key: ValueKey('no-folder'))
-                : Row(
-                    key: const ValueKey('folder'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(width: AppSpacing.xs),
-                      _ActionChip(
-                        tooltip: workspace ?? l10n.chatWorkspaceHint,
-                        icon: Icons.folder_outlined,
-                        label: folder,
-                        maxWidth: 140,
-                        onTap: running ? null : onPickWorkspace,
-                      ),
-                    ],
-                  ),
-          ),
-          const SizedBox(width: AppSpacing.xs),
-          _ActionChip(
-            tooltip: modelUnavailable
-                ? l10n.chatModelUnavailableTooltip
-                : l10n.chatModelLabel,
-            icon: Icons.memory,
-            label: modelPending
-                ? null
-                : modelLabel == null
-                ? l10n.chatModelPick
-                : (modelUnavailable ? '! $modelLabel' : modelLabel),
-            tone: !modelPending && (modelLabel == null || modelUnavailable)
-                ? AppTone.warning
-                : null,
-            loading: modelLoading || modelPending,
-            maxWidth: 180,
-            onTap: onPickModel,
-          ),
-          // Окно контекста появляется, когда модель сообщила заполнение.
-          ChatMorph(
-            child: fraction == null
-                ? const SizedBox.shrink(key: ValueKey('no-context'))
-                : Row(
-                    key: const ValueKey('context'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(width: AppSpacing.xs),
-                      _ActionChip(
-                        tooltip: l10n.chatContextTitle,
-                        icon: Icons.data_usage,
-                        label: '${(fraction * 100).round()}%',
-                        tone: fraction >= _warnFraction
-                            ? AppTone.warning
-                            : null,
-                        onTap: onOpenContext,
-                      ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   /// Порог, с которого окно контекста подсвечивается (совпадает с порогом сжатия в агенте).
   static const _warnFraction = 0.9;
+}
+
+/// Чипы строки настроек в порядке сворачивания: сначала хост (его значение длиннее всего), затем папка,
+/// модель и контекст. Контекст сворачивается последним: его подпись короткая и нужна для оценки заполнения.
+enum _Chip { host, folder, model, context }
+
+/// Ширина чипа в двух состояниях: с подписью (не больше ограничения) и только значком.
+typedef _ChipWidth = ({double full, double collapsed});
+
+/// Минимальная высота чипа: одинакова у всех чипов, в том числе у чипа из одной иконки. Той же величиной
+/// равна ширина чипа из одной иконки, потому что он квадратный.
+const _chipMinSize = 28.0;
+
+/// Размер иконки в чипе и толщина рамки. Рамка входит в размер чипа.
+const _chipIconSize = 14.0;
+const _chipBorderWidth = 1.0;
+
+/// Ширина чипа без подписи: всё, кроме текста. Две рамки, поля по бокам, иконка, отступ до подписи,
+/// отступ до стрелки и сама стрелка. Значение зависит от констант отрисовки в [_MetaChip].
+const _chipLabelChrome =
+    _chipBorderWidth * 2 +
+    (AppSpacing.xs + 2) * 2 +
+    _chipIconSize +
+    AppSpacing.xs +
+    2 +
+    _chipIconSize;
+
+/// Стиль подписи чипа: на узкой области мельче, чтобы строка занимала меньше ширины.
+TextStyle? _chipLabelStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  return ChatDensityScope.of(context) == ChatDensity.regular
+      ? theme.textTheme.labelMedium
+      : theme.textTheme.labelSmall;
+}
+
+/// Ширина чипа с подписью [text], но не больше [cap]. Текст меряется тем же стилем, что и отрисовка,
+/// поэтому расчёт совпадает с тем, что потом выводится. [text] null — чип без подписи (значок и спиннер).
+_ChipWidth _chipWidth(
+  BuildContext context,
+  String? text, {
+  required double cap,
+  bool loading = false,
+}) {
+  final spinner = loading ? AppSpacing.xs + _chipIconSize : 0.0;
+  const collapsed = _chipMinSize;
+  if (text == null) {
+    return (full: collapsed + spinner, collapsed: collapsed + spinner);
+  }
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: _chipLabelStyle(context)),
+    maxLines: 1,
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout();
+  final full = min(painter.width + _chipLabelChrome + spinner, cap);
+  return (full: full, collapsed: collapsed + spinner);
+}
+
+/// Какие чипы свернуть до значка, чтобы строка с отступами уместилась в [available].
+///
+/// Чипы сворачиваются по одному в порядке [_Chip]: сначала самый длинный хост. Проверка «помещается ли»
+/// идёт перед каждым сворачиванием, поэтому широкая строка не теряет подписи, которые ещё помещаются.
+/// Чип, которого нет (папка не назначена, контекст не отчитался), в строке не участвует и не сворачивается.
+Set<_Chip> _collapsedChips(Map<_Chip, _ChipWidth?> chips, double available) {
+  final collapsed = <_Chip>{};
+  double rowWidth() {
+    var total = 0.0;
+    for (final chip in _Chip.values) {
+      final width = chips[chip];
+      if (width == null) continue;
+      // Перед каждым чипом, кроме первого, стоит отступ. Он же стоит перед чипом папки и контекста.
+      if (chip != _Chip.host) total += AppSpacing.xs;
+      total += collapsed.contains(chip) ? width.collapsed : width.full;
+    }
+    return total;
+  }
+
+  for (final chip in _Chip.values) {
+    if (rowWidth() <= available) break;
+    if (chips[chip] != null) {
+      collapsed.add(chip);
+    }
+  }
+  return collapsed;
 }
 
 /// Строка меню с галочкой у выбранного пункта.
@@ -242,13 +385,6 @@ class _ActionChip extends StatelessWidget {
   }
 }
 
-/// Минимальная высота чипа: одинакова у всех чипов, в том числе у чипа из одной иконки.
-const _chipMinSize = 28.0;
-
-/// Размер иконки в чипе и толщина рамки. Рамка входит в размер чипа.
-const _chipIconSize = 14.0;
-const _chipBorderWidth = 1.0;
-
 /// Чип настройки: иконка, значение и стрелка `▾` на собственной заливке и рамке.
 /// `tone` подсвечивает состояние, которое стоит заметить: почти полный контекст.
 class _MetaChip extends StatelessWidget {
@@ -274,6 +410,7 @@ class _MetaChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final labelStyle = _chipLabelStyle(context);
     final colors = tone == null ? null : toneColors(context, tone!);
     final foreground = colors?.foreground ?? scheme.onSurfaceVariant;
     return Opacity(
@@ -323,7 +460,7 @@ class _MetaChip extends StatelessWidget {
                   text,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
+                  style: labelStyle?.copyWith(
                     color: colors?.foreground ?? scheme.onSurface,
                   ),
                 ),

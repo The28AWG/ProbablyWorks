@@ -4,6 +4,7 @@ import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/composer_input.dart';
@@ -12,8 +13,9 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 /// Композер: поле ввода, вложения, настройки чата и отправка в одной карточке.
 ///
 /// Всё, что меняет поведение следующего шага, собрано в меню «+»: прикрепление файла, рабочая папка
-/// и режим выполнения. Внизу карточки одна строка: «+», чипы настроек, остановка и отправка.
-/// Во время работы кнопка отправки становится очередью, а рядом появляется остановка.
+/// и режим выполнения. Внизу карточки одна строка: «+», строка настроек и одна кнопка действия справа.
+/// Кнопка действия зависит от состояния: при тексте или вложениях это отправка (во время работы агента —
+/// очередь), а при работе агента с пустым полем — остановка. Иначе справа ничего нет.
 class ChatComposer extends StatelessWidget {
   const ChatComposer({
     required this.state,
@@ -29,6 +31,7 @@ class ChatComposer extends StatelessWidget {
     required this.onRemoveAttachment,
     required this.onSubmit,
     required this.onStop,
+    this.centered = false,
     super.key,
   });
 
@@ -47,17 +50,22 @@ class ChatComposer extends StatelessWidget {
   final VoidCallback onPickWorkspace;
   final ValueChanged<PolicyMode> onPolicySelected;
   final void Function(int index) onRemoveAttachment;
+
+  /// Отправка; `sendNow` — Ctrl/Cmd+Enter во время работы агента (вперёд очереди).
   final void Function(bool sendNow) onSubmit;
   final VoidCallback onStop;
 
-  /// Модель недоступна: отправка заблокирована, пока модель не сменят.
+  /// Композер стоит по центру пустого чата. Там поле может вырасти вдвое больше (см. [ChatDensity.composerMaxLines]).
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
+    final density = ChatDensityScope.of(context);
     final busy = state.isRunning;
     return ChatColumn.fixed(
+      context,
       Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: DecoratedBox(
@@ -70,12 +78,7 @@ class ChatComposer extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.sm,
-              AppSpacing.xs,
-              AppSpacing.xs,
-            ),
+            padding: density.composerPadding,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -90,15 +93,24 @@ class ChatComposer extends StatelessWidget {
                         runSpacing: AppSpacing.xs,
                         children: [
                           for (var i = 0; i < attachments.length; i++)
-                            InputChip(
-                              avatar: Icon(
-                                attachments[i].mode == AttachmentMode.attach
-                                    ? Icons.description_outlined
-                                    : Icons.attach_file,
-                                size: 16,
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: AppLayout.attachmentChipMaxWidth,
                               ),
-                              label: Text(attachments[i].name),
-                              onDeleted: () => onRemoveAttachment(i),
+                              child: InputChip(
+                                avatar: Icon(
+                                  attachments[i].mode == AttachmentMode.attach
+                                      ? Icons.description_outlined
+                                      : Icons.attach_file,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  attachments[i].name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onDeleted: () => onRemoveAttachment(i),
+                              ),
                             ),
                         ],
                       ),
@@ -113,6 +125,7 @@ class ChatComposer extends StatelessWidget {
                     controller: controller,
                     hint: l10n.composerHint,
                     busy: busy,
+                    maxLines: density.composerMaxLines(centered: centered),
                     onSubmit: onSubmit,
                   ),
                 ),
@@ -129,28 +142,14 @@ class ChatComposer extends StatelessWidget {
                     ),
                     const SizedBox(width: AppSpacing.xs),
                     Expanded(child: settings),
-                    ChatMorph(
-                      child: busy
-                          ? Row(
-                              key: const ValueKey('stop'),
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton.filledTonal(
-                                  visualDensity: VisualDensity.compact,
-                                  tooltip: l10n.composerStop,
-                                  icon: const Icon(Icons.stop),
-                                  onPressed: onStop,
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                              ],
-                            )
-                          : const SizedBox.shrink(key: ValueKey('no-stop')),
-                    ),
-                    _SendButton(
+                    _ActionSlot(
                       controller: controller,
                       hasAttachments: attachments.isNotEmpty,
-                      tooltip: l10n.composerSend,
-                      onPressed: () => onSubmit(false),
+                      busy: busy,
+                      sendTooltip: l10n.composerSend,
+                      stopTooltip: l10n.composerStop,
+                      onSend: () => onSubmit(false),
+                      onStop: onStop,
                     ),
                   ],
                 ),
@@ -161,6 +160,61 @@ class ChatComposer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Одна кнопка действия справа от строки настроек. Её состояние выбирается по полю и работе агента:
+///
+/// - есть текст или вложения: отправка (во время работы — очередь), стоп скрыт;
+/// - поле пустое и агент работает: только стоп;
+/// - поле пустое и агент не работает: ничего, место справа освобождается.
+///
+/// Переход между состояниями плавный ([ChatMorph]). Ключи у кнопок обязательны, иначе смену не видно.
+class _ActionSlot extends StatelessWidget {
+  const _ActionSlot({
+    required this.controller,
+    required this.hasAttachments,
+    required this.busy,
+    required this.sendTooltip,
+    required this.stopTooltip,
+    required this.onSend,
+    required this.onStop,
+  });
+
+  final TextEditingController controller;
+  final bool hasAttachments;
+  final bool busy;
+  final String sendTooltip;
+  final String stopTooltip;
+  final VoidCallback onSend;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) =>
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final canSend = hasAttachments || value.text.trim().isNotEmpty;
+          return ChatMorph(
+            child: canSend
+                ? IconButton.filled(
+                    key: const ValueKey('send'),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: sendTooltip,
+                    icon: const Icon(Icons.arrow_upward),
+                    onPressed: onSend,
+                  )
+                : busy
+                ? IconButton.filledTonal(
+                    key: const ValueKey('stop'),
+                    visualDensity: VisualDensity.compact,
+                    tooltip: stopTooltip,
+                    icon: const Icon(Icons.stop),
+                    onPressed: onStop,
+                  )
+                : const SizedBox.shrink(key: ValueKey('none')),
+          );
+        },
+      );
 }
 
 /// Каркас композера на время загрузки чата: та же карточка и те же высоты, что у [ChatComposer],
@@ -178,6 +232,7 @@ class ComposerSkeleton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final fill = scheme.surfaceContainerHighest;
     return ChatColumn.fixed(
+      context,
       Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
         child: DecoratedBox(
@@ -186,12 +241,7 @@ class ComposerSkeleton extends StatelessWidget {
             borderRadius: AppRadius.lgAll,
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.sm,
-              AppSpacing.xs,
-              AppSpacing.xs,
-            ),
+            padding: ChatDensityScope.of(context).composerPadding,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -228,6 +278,7 @@ class ComposerSkeleton extends StatelessWidget {
                           ),
                         ),
                       ),
+                      // Место под кнопку действия: скелет держит ту же высоту строки, что и готовый композер.
                       SizedBox.square(
                         dimension: _buttonSize,
                         child: DecoratedBox(
@@ -305,7 +356,11 @@ class _PlusMenu extends StatelessWidget {
         MenuItemButton(
           leadingIcon: const Icon(Icons.attach_file),
           onPressed: onAttach,
-          child: Text(l10n.composerAttach),
+          child: Text(
+            l10n.composerAttach,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         // Папку нельзя менять во время работы: место выполнения фиксировано.
         MenuItemButton(
@@ -317,10 +372,15 @@ class _PlusMenu extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(l10n.chatWorkspaceLabel),
+                Text(
+                  l10n.chatWorkspaceLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (folder != null)
                   Text(
                     folder,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
@@ -350,7 +410,11 @@ class _PlusMenu extends StatelessWidget {
               onSelected: onPolicySelected,
             ),
           ],
-          child: Text(l10n.composerModeLabel),
+          child: Text(
+            l10n.composerModeLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
       builder: (context, controller, child) => IconButton(
@@ -401,7 +465,12 @@ class _PolicyMenuItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(title, style: theme.textTheme.titleSmall),
+            Text(
+              title,
+              style: theme.textTheme.titleSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             const SizedBox(height: AppSpacing.xs),
             Text(
               hint,
@@ -414,36 +483,6 @@ class _PolicyMenuItem extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Кнопка отправки неактивна, пока отправлять нечего: пустое поле и без вложений.
-class _SendButton extends StatelessWidget {
-  const _SendButton({
-    required this.controller,
-    required this.hasAttachments,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final TextEditingController controller;
-  final bool hasAttachments;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) =>
-      ValueListenableBuilder<TextEditingValue>(
-        valueListenable: controller,
-        builder: (context, value, _) {
-          final canSend = hasAttachments || value.text.trim().isNotEmpty;
-          return IconButton.filled(
-            visualDensity: VisualDensity.compact,
-            tooltip: tooltip,
-            icon: const Icon(Icons.arrow_upward),
-            onPressed: canSend ? onPressed : null,
-          );
-        },
-      );
 }
 
 /// Подсветка при перетаскивании файлов в окно чата.
@@ -467,7 +506,12 @@ class ChatDropOverlay extends StatelessWidget {
               children: [
                 Icon(Icons.upload_file, size: 32, color: scheme.primary),
                 const SizedBox(height: AppSpacing.sm),
-                Text(label, style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.titleSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),

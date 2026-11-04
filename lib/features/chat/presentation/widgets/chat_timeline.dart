@@ -170,6 +170,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           id: id,
           fresh: _isFresh(id),
           child: ChatColumn.item(
+            context,
             ChatStepLedger(
               steps: value,
               live: state.live,
@@ -212,7 +213,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
         _KeyedTimelineItem(
           id: id,
           fresh: _isFresh(id),
-          child: ChatColumn.item(child),
+          child: ChatColumn.item(context, child),
         ),
       );
       anchor = id;
@@ -278,7 +279,10 @@ class _ChatTimelineState extends State<ChatTimeline> {
         ? _KeyedTimelineItem(
             id: 'stream',
             fresh: _isFresh('stream'),
-            child: ChatColumn.item(AppMarkdown(data: state.streamText)),
+            child: ChatColumn.item(
+              context,
+              AppMarkdown(data: state.streamText),
+            ),
           )
         : null;
 
@@ -366,7 +370,11 @@ class _ChatTimelineState extends State<ChatTimeline> {
                         key: const ValueKey('jump'),
                         onPressed: _jumpToLatest,
                         icon: const Icon(Icons.arrow_downward, size: 16),
-                        label: Text(l10n.chatScrollToLatest),
+                        label: Text(
+                          l10n.chatScrollToLatest,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       )
                     : const SizedBox.shrink(key: ValueKey('none')),
               ),

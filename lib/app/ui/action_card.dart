@@ -40,7 +40,14 @@ class ActionCard extends StatelessWidget {
                   Icon(icon, size: 20, color: colors.foreground),
                   const SizedBox(width: AppSpacing.sm),
                 ],
-                Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: AppSpacing.md),

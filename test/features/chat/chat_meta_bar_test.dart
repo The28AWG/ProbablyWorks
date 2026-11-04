@@ -5,6 +5,7 @@ import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/app_tone.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
@@ -342,6 +343,62 @@ void main() {
     expect(find.text('Claude Sonnet'), findsNothing);
   });
 
+  for (final brightness in Brightness.values) {
+    _desktopWidgetTest(
+      'chat meta bar icons on a tiny area (${brightness.name})',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(260, 60));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _TestHost(
+            ChatDensityScope(
+              density: ChatDensity.tiny,
+              child: _TestChatMetaBar(
+                workspace: '/home/me/projects/app',
+                contextFraction: 0.93,
+              ),
+            ),
+            brightness == Brightness.light ? AppTheme.light : AppTheme.dark,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await expectLater(
+          find.byType(Scaffold),
+          matchesGoldenFile(
+            'goldens/chat_meta_bar_tiny_${brightness.name}.png',
+          ),
+        );
+      },
+    );
+  }
+
+  _desktopWidgetTest(
+    'tiny density shows icons and moves values into tooltips',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestHost(
+          ChatDensityScope(
+            density: ChatDensity.tiny,
+            child: _TestChatMetaBar(
+              workspace: '/home/me/projects/app',
+              contextFraction: 0.42,
+            ),
+          ),
+          AppTheme.light,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('This computer'), findsNothing);
+      expect(find.text('Claude Sonnet'), findsNothing);
+      expect(find.text('app'), findsNothing);
+      expect(find.text('42%'), findsNothing);
+      expect(find.byIcon(Icons.expand_more), findsNothing);
+      expect(find.byTooltip('Host: This computer'), findsOneWidget);
+      expect(find.byTooltip('Model: Claude Sonnet'), findsOneWidget);
+      expect(find.byTooltip('Chat context: 42%'), findsOneWidget);
+    },
+  );
+
   _desktopWidgetTest('model chip shows a spinner while the first list loads', (
     tester,
   ) async {
@@ -358,4 +415,87 @@ void main() {
       findsOneWidget,
     );
   });
+
+  _desktopWidgetTest(
+    'narrow row collapses chips to icons and keeps every chip inside its width',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 120));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _TestHost(
+          ChatDensityScope(
+            density: ChatDensity.narrow,
+            child: SizedBox(
+              key: const ValueKey('bounds'),
+              width: 240,
+              child: _TestChatMetaBar(
+                workspace: '/home/me/projects/app',
+                contextFraction: 0.42,
+              ),
+            ),
+          ),
+          AppTheme.light,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      _expectChipsInside(
+        tester,
+        tester.getRect(find.byKey(const ValueKey('bounds'))),
+      );
+      // Хост, папка и модель сворачиваются первыми: их значения уходят в подсказки, контекст остаётся видимым.
+      expect(find.text('This computer'), findsNothing);
+      expect(find.text('app'), findsNothing);
+      expect(find.text('Claude Sonnet'), findsNothing);
+      expect(find.byTooltip('Model: Claude Sonnet'), findsOneWidget);
+      expect(find.text('42%'), findsOneWidget);
+    },
+  );
+
+  _desktopWidgetTest('wide row keeps every label', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(600, 120));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestHost(
+        ChatDensityScope(
+          density: ChatDensity.narrow,
+          child: SizedBox(
+            key: const ValueKey('bounds'),
+            width: 560,
+            child: _TestChatMetaBar(
+              workspace: '/home/me/projects/app',
+              contextFraction: 0.42,
+            ),
+          ),
+        ),
+        AppTheme.light,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    _expectChipsInside(
+      tester,
+      tester.getRect(find.byKey(const ValueKey('bounds'))),
+    );
+    expect(find.text('This computer'), findsOneWidget);
+    expect(find.text('app'), findsOneWidget);
+    expect(find.text('Claude Sonnet'), findsOneWidget);
+    expect(find.text('42%'), findsOneWidget);
+  });
+}
+
+/// Проверяет, что каждый чип строки настроек (его `InkWell`) лежит внутри [bounds] по горизонтали.
+/// Чип, вылезший за область, не виден целиком, поэтому выход за границы считается ошибкой вёрстки.
+void _expectChipsInside(WidgetTester tester, Rect bounds) {
+  final chips = find.descendant(
+    of: find.byType(ChatMetaBar),
+    matching: find.byType(InkWell),
+  );
+  final count = chips.evaluate().length;
+  expect(count, greaterThan(0));
+  for (var i = 0; i < count; i++) {
+    final rect = tester.getRect(chips.at(i));
+    expect(rect.left, greaterThanOrEqualTo(bounds.left - 0.5));
+    expect(rect.right, lessThanOrEqualTo(bounds.right + 0.5));
+  }
 }

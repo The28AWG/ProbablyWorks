@@ -81,6 +81,7 @@ class ChatAttentionDock extends StatelessWidget {
         _DockItem('queue', _QueueCard(items: state.queue)),
     ];
     return ChatColumn.fixed(
+      context,
       ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 320),
         child: SingleChildScrollView(child: _DockList(items: items)),

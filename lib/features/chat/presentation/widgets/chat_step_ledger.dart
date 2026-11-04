@@ -186,6 +186,8 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
               const SizedBox(width: AppSpacing.sm),
               Text(
                 l10n.runDuration(duration.inSeconds),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelMedium?.copyWith(
                   color: palette.muted,
                 ),
@@ -554,6 +556,8 @@ class _StepRowState extends State<_StepRow>
                     children: [
                       Text(
                         meta.join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: palette.muted,
                         ),
@@ -570,6 +574,8 @@ class _StepRowState extends State<_StepRow>
                     children: [
                       Text(
                         l10n.runBackgroundBadge,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: palette.muted,
                         ),
@@ -583,6 +589,8 @@ class _StepRowState extends State<_StepRow>
             child: Text(
               visual.label,
               key: ValueKey(visual.label),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelMedium?.copyWith(color: tone),
             ),
           ),
@@ -635,6 +643,8 @@ class _StepRowState extends State<_StepRow>
             const SizedBox(height: AppSpacing.xs),
             Text(
               l10n.runOutputTruncated,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(color: palette.muted),
             ),
           ],

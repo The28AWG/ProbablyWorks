@@ -134,7 +134,11 @@ Future<void> _showChatMenu(
           children: [
             const Icon(Icons.edit_outlined, size: 18),
             const SizedBox(width: AppSpacing.sm),
-            Text(l10n.commonRename),
+            Text(
+              l10n.commonRename,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
       ),
@@ -144,7 +148,12 @@ Future<void> _showChatMenu(
           children: [
             Icon(Icons.delete_outline, size: 18, color: scheme.error),
             const SizedBox(width: AppSpacing.sm),
-            Text(l10n.commonDelete, style: TextStyle(color: scheme.error)),
+            Text(
+              l10n.commonDelete,
+              style: TextStyle(color: scheme.error),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
       ),
@@ -226,6 +235,8 @@ class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
         padding: const EdgeInsets.only(left: _listInset, bottom: AppSpacing.xs),
         child: Text(
           title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.labelMedium
               ?.copyWith(color: color),
         ),

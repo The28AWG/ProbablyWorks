@@ -37,14 +37,22 @@ class HostsPage extends StatelessWidget {
           leading: context.workspaceLayout == .compact
               ? const WorkspaceLeadingButton()
               : null,
-          title: Text(l10n.hostsTitle),
+          title: Text(
+            l10n.hostsTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         maxWidth: AppLayout.pageMaxWidth,
         floatingActionButton: Builder(
           builder: (context) => FloatingActionButton.extended(
             heroTag: 'hosts-add-fab',
             icon: const Icon(Icons.add),
-            label: Text(l10n.hostsAdd),
+            label: Text(
+              l10n.hostsAdd,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
             onPressed: () => _openForm(context, null),
           ),
         ),
@@ -181,13 +189,13 @@ class _HostCard extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   address,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: AppTheme.monoFamily,
                     fontSize: 12.5,
                     color: scheme.onSurfaceVariant,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -224,7 +232,14 @@ class _HostCard extends StatelessWidget {
             tooltip: l10n.commonMore,
             onSelected: (action) => action == 'edit' ? onEdit() : onDelete(),
             itemBuilder: (_) => [
-              PopupMenuItem(value: 'edit', child: Text(l10n.messageEdit)),
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(
+                  l10n.messageEdit,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (!host.isLocal)
                 PopupMenuItem(
                   value: 'delete',
@@ -479,15 +494,27 @@ class _HostFormState extends State<_HostForm> {
                       segments: [
                         ButtonSegment(
                           value: HostOs.posix,
-                          label: Text(l10n.hostOsPosix),
+                          label: Text(
+                            l10n.hostOsPosix,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         ButtonSegment(
                           value: HostOs.macos,
-                          label: Text(l10n.hostOsMacos),
+                          label: Text(
+                            l10n.hostOsMacos,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         ButtonSegment(
                           value: HostOs.windows,
-                          label: Text(l10n.hostOsWindows),
+                          label: Text(
+                            l10n.hostOsWindows,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                       selected: {_os},
@@ -503,11 +530,19 @@ class _HostFormState extends State<_HostForm> {
                       segments: [
                         ButtonSegment(
                           value: SshAuthType.key,
-                          label: Text(l10n.hostAuthKey),
+                          label: Text(
+                            l10n.hostAuthKey,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         ButtonSegment(
                           value: SshAuthType.password,
-                          label: Text(l10n.hostAuthPassword),
+                          label: Text(
+                            l10n.hostAuthPassword,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                       selected: {_auth},
@@ -518,7 +553,11 @@ class _HostFormState extends State<_HostForm> {
                       OutlinedButton.icon(
                         onPressed: _pickKeyFile,
                         icon: const Icon(Icons.key_outlined),
-                        label: Text(l10n.hostPickKeyFile),
+                        label: Text(
+                          l10n.hostPickKeyFile,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       if (_keyPath.text.isNotEmpty)
                         Text(
@@ -589,11 +628,19 @@ class _HostFormState extends State<_HostForm> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text(l10n.commonCancel),
+          child: Text(
+            l10n.commonCancel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         FilledButton(
           onPressed: () => _saveHost(l10n),
-          child: Text(l10n.commonSave),
+          child: Text(
+            l10n.commonSave,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );

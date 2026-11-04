@@ -15,7 +15,11 @@ void main() {
 
   tearDown(() => controller.dispose());
 
-  Future<void> pump(WidgetTester tester, {bool busy = false}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    bool busy = false,
+    int maxLines = 8,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light,
@@ -24,6 +28,7 @@ void main() {
             controller: controller,
             hint: 'Message',
             busy: busy,
+            maxLines: maxLines,
             onSubmit: submits.add,
           ),
         ),
@@ -68,5 +73,20 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(submits, [false]);
+  });
+
+  testWidgets('field grows up to maxLines and then scrolls', (tester) async {
+    await pump(tester, maxLines: 5);
+    expect(tester.widget<TextField>(find.byType(TextField)).maxLines, 5);
+  });
+
+  testWidgets('hint is a single line that is cut with an ellipsis', (
+    tester,
+  ) async {
+    await pump(tester);
+    final decoration = tester
+        .widget<TextField>(find.byType(TextField))
+        .decoration;
+    expect(decoration?.hintMaxLines, 1);
   });
 }

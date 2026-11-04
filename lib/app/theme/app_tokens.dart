@@ -43,6 +43,10 @@ abstract final class AppBreakpoints {
 
   /// Средний режим: список чатов в drawer.
   static const double medium = 800;
+
+  /// Очень узкая область (телефон и узкое окно): значки вместо чипов, плотные отступы композера.
+  /// Ширина меряется по области чата, а не по окну, поэтому порог совпадает с отступами внутри колонки.
+  static const double tiny = 360;
 }
 
 abstract final class AppLayout {
@@ -72,4 +76,11 @@ abstract final class AppLayout {
 
   /// Ширина текстового блока пустого состояния.
   static const double emptyStateWidth = 320;
+
+  /// Максимальная ширина чипа вложения в композере: длинное имя файла обрезается многоточием.
+  static const double attachmentChipMaxWidth = 180;
+
+  /// Максимальная ширина значения в чипе строки настроек на узкой области. На широкой берутся
+  /// значения из `ChatMetaBar` (модель 180, папка 140).
+  static const double chipNarrowMaxWidth = 120;
 }

@@ -28,7 +28,11 @@ class ChatContextDialog extends StatelessWidget {
     final used = this.used;
     final canCompact = used != null && !running;
     return AlertDialog(
-      title: Text(l10n.chatContextTitle),
+      title: Text(
+        l10n.chatContextTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       content: SizedBox(
         width: AppLayout.dialogWidth,
         child: Column(
@@ -65,7 +69,11 @@ class ChatContextDialog extends StatelessWidget {
                       }
                     : null,
                 icon: const Icon(Icons.compress, size: 18),
-                label: Text(l10n.compactHistory),
+                label: Text(
+                  l10n.compactHistory,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ],
@@ -74,7 +82,11 @@ class ChatContextDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.commonClose),
+          child: Text(
+            l10n.commonClose,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );

@@ -962,6 +962,36 @@
   "@chatContextTitle": {
     "description": "Title of the side panel with workspace and context usage; also its toolbar tooltip."
   },
+  "chatHostTooltip": "Host: {name}",
+  "@chatHostTooltip": {
+    "description": "Tooltip of the host chip in the chat settings row when the chip shows only an icon.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "prod-server"
+      }
+    }
+  },
+  "chatModelTooltip": "Model: {name}",
+  "@chatModelTooltip": {
+    "description": "Tooltip of the model chip when the chip shows only an icon.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Claude Sonnet"
+      }
+    }
+  },
+  "chatContextTooltip": "Chat context: {percent}%",
+  "@chatContextTooltip": {
+    "description": "Tooltip of the context chip when the chip shows only an icon. The percent is the filled share of the model window.",
+    "placeholders": {
+      "percent": {
+        "type": "String",
+        "example": "42"
+      }
+    }
+  },
   "chatContextHint": "The model's context window fills up as the chat grows. Compacting replaces the older part of the history with a short summary and frees space.",
   "@chatContextHint": {
     "description": "Hint in the chat context panel."

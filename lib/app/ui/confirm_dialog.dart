@@ -22,12 +22,16 @@ abstract final class ConfirmDialog {
       builder: (dialogContext) {
         final scheme = Theme.of(dialogContext).colorScheme;
         return AlertDialog(
-          title: Text(title),
+          title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           content: content ?? (message == null ? null : Text(message)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(cancelLabel),
+              child: Text(
+                cancelLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             FilledButton(
               style: destructive
@@ -37,7 +41,11 @@ abstract final class ConfirmDialog {
                     )
                   : null,
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(confirmLabel),
+              child: Text(
+                confirmLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         );
@@ -105,7 +113,7 @@ class _PromptDialogState extends State<_PromptDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
+    title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
     content: SizedBox(
       width: 420,
       child: TextField(
@@ -119,11 +127,19 @@ class _PromptDialogState extends State<_PromptDialog> {
     actions: [
       TextButton(
         onPressed: () => Navigator.pop(context),
-        child: Text(widget.cancelLabel),
+        child: Text(
+          widget.cancelLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       FilledButton(
         onPressed: () => Navigator.pop(context, _controller.text),
-        child: Text(widget.confirmLabel),
+        child: Text(
+          widget.confirmLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     ],
   );

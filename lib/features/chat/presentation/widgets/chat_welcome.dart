@@ -37,6 +37,8 @@ class ChatWelcome extends StatelessWidget {
           Text(
             l10n.chatWelcomeTitle,
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.headlineSmall,
           ),
           const SizedBox(height: AppSpacing.sm),

@@ -315,14 +315,22 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   FilterChip(
-                    label: Text(l10n.modelFilterToolsOnly),
+                    label: Text(
+                      l10n.modelFilterToolsOnly,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     selected: _query.toolsOnly,
                     onSelected: (value) => setState(
                       () => _query = _query.copyWith(toolsOnly: value),
                     ),
                   ),
                   FilterChip(
-                    label: Text(l10n.modelFilterFree),
+                    label: Text(
+                      l10n.modelFilterFree,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     selected: _query.freeOnly,
                     onSelected: (value) => setState(
                       () => _query = _query.copyWith(freeOnly: value),
@@ -332,7 +340,11 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                     width: 200,
                     enableFilter: true,
                     initialSelection: _query.provider,
-                    label: Text(l10n.modelFilterProvider),
+                    label: Text(
+                      l10n.modelFilterProvider,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     dropdownMenuEntries: [
                       DropdownMenuEntry(
                         value: '',
@@ -348,7 +360,11 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                   DropdownMenu<ModelSort>(
                     width: 200,
                     initialSelection: _query.sort,
-                    label: Text(l10n.modelSortLabel),
+                    label: Text(
+                      l10n.modelSortLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     dropdownMenuEntries: [
                       for (final sort in ModelSort.values)
                         DropdownMenuEntry(
@@ -379,6 +395,8 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                           : l10n.modelsSyncedAt(
                               formatModelSyncTime(_catalog.syncedAt!),
                             ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
                   ),
@@ -412,7 +430,11 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                 padding: const EdgeInsets.all(AppSpacing.sm),
                 child: TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: Text(l10n.commonClose),
+                  child: Text(
+                    l10n.commonClose,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
             ),
