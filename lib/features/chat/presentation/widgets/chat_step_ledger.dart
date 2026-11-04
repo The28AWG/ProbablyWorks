@@ -532,7 +532,6 @@ class _StepRowState extends State<_StepRow>
     };
     final meta = [
       ?range,
-      if (run.pid != null) l10n.runPid(run.pid!),
       if (finishedAt != null)
         l10n.runDuration(finishedAt.difference(run.startedAt).inSeconds),
     ];
