@@ -269,6 +269,31 @@ void main() {
     expect(numberMoved, textMoved);
   });
 
+  testWidgets('выделение охватывает текст, но не номера строк', (tester) async {
+    await _pump(
+      tester,
+      const ReadFileText(
+        totalLines: 2,
+        totalBytes: 10,
+        lines: [
+          ReadFileLine(number: 1, text: 'alpha'),
+          ReadFileLine(number: 2, text: 'beta'),
+        ],
+        footer: ReadFileEndOfFile(),
+      ),
+    );
+
+    final selection = find.byType(SelectionArea);
+    expect(
+      find.descendant(of: selection, matching: find.text('alpha')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: selection, matching: find.text('1')),
+      findsNothing,
+    );
+  });
+
   testWidgets('текст строки очищается от ESC-последовательностей файла', (
     tester,
   ) async {

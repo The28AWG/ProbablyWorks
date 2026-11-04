@@ -18,7 +18,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 /// начало за концом) выводятся обычной строкой, а не как сбой: для модели это штатный исход.
 /// Текст строк проходит через [plainTerminalText], иначе ESC-последовательности из файла поменяли бы вид.
 ///
-/// Высота растёт по содержимому до [maxHeight], дальше прокрутка по вертикали. Выделение охватывает все строки.
+/// Высота растёт по содержимому до [maxHeight], дальше прокрутка по вертикали. Выделение охватывает только текст строк: номера не попадают в выделение и в копирование с клавиатуры.
 class ReadFileView extends StatelessWidget {
   const ReadFileView({required this.output, this.maxHeight = 240, super.key});
 
@@ -215,57 +215,56 @@ class _ReadFileBodyState extends State<_ReadFileBody> {
                 padding: const EdgeInsets.all(_ReadFileBody._padding),
                 child: SizedBox(
                   height: visibleHeight,
-                  child: SelectionArea(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Колонка номеров вне горизонтального скролла: остаётся на месте.
-                        SizedBox(
-                          width: measure.numberWidth,
-                          child: SingleChildScrollView(
-                            controller: _numbers,
-                            child: SizedBox(
-                              height: naturalHeight,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  for (final line in lines)
-                                    SizedBox(
-                                      height: measure.rowHeight,
-                                      width: measure.numberWidth,
-                                      child: Text(
-                                        '${line.number}',
-                                        textAlign: TextAlign.right,
-                                        softWrap: false,
-                                        style: numberStyle,
-                                      ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Колонка номеров вне горизонтального скролла: остаётся на месте.
+                      SizedBox(
+                        width: measure.numberWidth,
+                        child: SingleChildScrollView(
+                          controller: _numbers,
+                          child: SizedBox(
+                            height: naturalHeight,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (final line in lines)
+                                  SizedBox(
+                                    height: measure.rowHeight,
+                                    width: measure.numberWidth,
+                                    child: Text(
+                                      '${line.number}',
+                                      textAlign: TextAlign.right,
+                                      softWrap: false,
+                                      style: numberStyle,
                                     ),
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: _ReadFileBody._gap),
-                        // Скроллбары снаружи области текста: см. описание класса.
-                        Expanded(
+                      ),
+                      const SizedBox(width: _ReadFileBody._gap),
+                      // Скроллбары снаружи области текста: см. описание класса.
+                      Expanded(
+                        child: Scrollbar(
+                          controller: _rows,
+                          notificationPredicate: _ReadFileBody._anyNotification,
                           child: Scrollbar(
-                            controller: _rows,
+                            controller: _columns,
                             notificationPredicate:
                                 _ReadFileBody._anyNotification,
-                            child: Scrollbar(
+                            child: SingleChildScrollView(
                               controller: _columns,
-                              notificationPredicate:
-                                  _ReadFileBody._anyNotification,
-                              child: SingleChildScrollView(
-                                controller: _columns,
-                                scrollDirection: Axis.horizontal,
-                                child: SizedBox(
-                                  width: textColumnWidth,
-                                  height: visibleHeight,
-                                  child: SingleChildScrollView(
-                                    controller: _rows,
-                                    child: SizedBox(
-                                      height: naturalHeight,
+                              scrollDirection: Axis.horizontal,
+                              child: SizedBox(
+                                width: textColumnWidth,
+                                height: visibleHeight,
+                                child: SingleChildScrollView(
+                                  controller: _rows,
+                                  child: SizedBox(
+                                    height: naturalHeight,
+                                    child: SelectionArea(
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
@@ -291,8 +290,8 @@ class _ReadFileBodyState extends State<_ReadFileBody> {
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
