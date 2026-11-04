@@ -37,6 +37,7 @@ import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
+import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
@@ -365,6 +366,37 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'read_file: шаг хранит путь вместо скрипта, вывод разбирается видом',
+    () async {
+      final chatId = await createChat();
+      final file = File('${tmp.path}/sample.txt')
+        ..writeAsStringSync('alpha\nbeta');
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call('c1', 'read_file', jsonEncode({'path': file.path})),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('готово'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'прочитай файл');
+
+      final runs = await hub.chats.toolRunsForChat(chatId);
+      expect(runs, hasLength(1));
+      expect(runs.single.toolName, 'read_file');
+      expect(runs.single.command, 'read ${file.path}');
+      final parsed = parseReadFileOutput(runs.single.outputText ?? '');
+      expect(parsed, isA<ReadFileText>());
+      expect(
+        [for (final line in (parsed! as ReadFileText).lines) line.text],
+        ['alpha', 'beta'],
+      );
+    },
+  );
 
   test('reasoning is stored on its step, streamed, and kept out of the model context', () async {
     final chatId = await createChat();

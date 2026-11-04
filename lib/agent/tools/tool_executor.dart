@@ -201,12 +201,13 @@ class ToolExecutor {
       math.max(ctx.limits.readFileChunkBytes, _minReadChunkBytes),
       ctx.limits.toolOutputForModelChars ~/ 2,
     );
+    final path = _resolve(ctx, _str(args, 'path'));
     return _hostCommand(
       ctx,
       call,
       args,
       ShellAdapter(ctx.host.os).readFile(
-        _resolve(ctx, _str(args, 'path')),
+        path,
         offset: _intArg(args, 'offset', min: 1, fallback: 1),
         byteOffset: _intArg(args, 'byte_offset', min: 0, fallback: 0),
         limit: _intArg(
@@ -219,6 +220,8 @@ class ToolExecutor {
         chunkBytes: chunk,
         lineBytes: ctx.limits.readFileLineBytes,
       ),
+      // В журнале и шаге показываем путь, а не скрипт awk/PowerShell: скрипт длинный и не читается.
+      displayCommand: 'read $path',
     );
   }
 
@@ -228,13 +231,21 @@ class ToolExecutor {
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args,
-    String command,
-  ) {
+    String command, {
+    String? displayCommand,
+  }) {
     final decision = ctx.policy.decide(call.name, args);
     if (decision == PolicyDecision.deny) {
       return _denied(ctx, call, args, ctx.policy.reasonFor(call.name, args));
     }
-    return _exec(ctx, call, args, command: command, background: false);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: command,
+      displayCommand: displayCommand,
+      background: false,
+    );
   }
 
   Future<ToolResult> _runCommand(

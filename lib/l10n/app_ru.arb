@@ -1053,6 +1053,73 @@
   "@runBackgroundBadge": {
     "description": "Badge on a tool card of a background command (kept short on purpose)."
   },
+  "readFileLinesRange": "строки {first}–{last} из {total}",
+  "@readFileLinesRange": {
+    "description": "Заголовок карточки read_file: диапазон показанных строк.",
+    "placeholders": {
+      "first": {
+        "type": "int"
+      },
+      "last": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileEmpty": "Файл пуст",
+  "@readFileEmpty": {
+    "description": "Вид read_file: в файле нет строк."
+  },
+  "readFileBeyondEnd": "Строка {offset} за концом файла (строк: {total})",
+  "@readFileBeyondEnd": {
+    "description": "Вид read_file: начальная строка находится после последней.",
+    "placeholders": {
+      "offset": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileEndOfFile": "Конец файла",
+  "@readFileEndOfFile": {
+    "description": "Подвал вида read_file: файл показан целиком."
+  },
+  "readFileMore": "Вывод ограничен лимитом. Продолжение со строки {offset}",
+  "@readFileMore": {
+    "description": "Подвал вида read_file: файл продолжается, указана начальная строка следующего вызова.",
+    "placeholders": {
+      "offset": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileCut": "Строка {line} обрезана на байте {byte} из {lineBytes}. Остаток читается следующим вызовом",
+  "@readFileCut": {
+    "description": "Подвал вида read_file: последняя строка обрезана лимитом длины строки.",
+    "placeholders": {
+      "line": {
+        "type": "int"
+      },
+      "byte": {
+        "type": "int"
+      },
+      "lineBytes": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileNotReadable": "Не обычный файл или нет прав на чтение",
+  "@readFileNotReadable": {
+    "description": "Вид read_file: путь отсутствует, это не обычный файл или файл нельзя прочитать."
+  },
+  "readFileBinary": "Бинарный файл: показать как текст нельзя",
+  "@readFileBinary": {
+    "description": "Вид read_file: файл содержит NUL-байты и не читается как текст."
+  },
   "runPid": "pid {pid}",
   "@runPid": {
     "description": "Tool card header: process id of the command.",

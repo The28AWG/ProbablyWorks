@@ -53,6 +53,10 @@ Get-ChildItem -Force -LiteralPath __PATH__ -ErrorAction Stop |
   ///
   /// Курсор: строка [offset] (с 1), не больше [limit] строк и [chunkBytes] байтов за вызов.
   /// Строка длиннее [lineBytes] режется; продолжение — через [byteOffset] (байт внутри строки [offset]).
+  /// Ошибки скрипта read_file. Текст одинаковый на POSIX и Windows, и парсер вывода узнаёт его по этим строкам.
+  static const readFileNotReadableMessage = 'not a readable regular file';
+  static const readFileBinaryMessage = 'binary file, cannot be read as text';
+
   /// Границы символов UTF-8 соблюдаются, поэтому курсор всегда указывает на начало символа.
   String readFile(
     String path, {
@@ -69,16 +73,18 @@ Get-ChildItem -Force -LiteralPath __PATH__ -ErrorAction Stop |
           .replaceAll('__BYTEOFFSET__', '$byteOffset')
           .replaceAll('__LIMIT__', '$limit')
           .replaceAll('__CHUNKBYTES__', '$chunkBytes')
-          .replaceAll('__LINEBYTES__', '$lineBytes');
+          .replaceAll('__LINEBYTES__', '$lineBytes')
+          .replaceAll('__NOTREADABLE__', readFileNotReadableMessage)
+          .replaceAll('__BINARY__', readFileBinaryMessage);
       return powershell(script);
     }
     final p = quotePath(path);
-    return 'if [ ! -f $p ] || [ ! -r $p ]; then echo "not a readable regular file" >&2; false; '
+    return 'if [ ! -f $p ] || [ ! -r $p ]; then echo "$readFileNotReadableMessage" >&2; false; '
         "elif LC_ALL=C tr -d '\\000' < $p | cmp -s - $p; then "
         'LC_ALL=C awk -v off=$offset -v boff=$byteOffset -v lim=$limit '
         '-v chunk=$chunkBytes -v lcap=$lineBytes -v size="\$(wc -c < $p)" '
         "'$_readFileAwk' $p; "
-        'else echo "binary file, cannot be read as text" >&2; false; fi';
+        'else echo "$readFileBinaryMessage" >&2; false; fi';
   }
 
   /// Тот же алгоритм, что и в [_readFilePs]: байтовый курсор, режим LC_ALL=C.
@@ -123,9 +129,9 @@ END {
 
   static const _readFilePs = r'''
 $p = __PATH__
-if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { [Console]::Error.WriteLine('not a readable regular file'); exit 1 }
+if (-not (Test-Path -LiteralPath $p -PathType Leaf)) { [Console]::Error.WriteLine('__NOTREADABLE__'); exit 1 }
 $d = [IO.File]::ReadAllBytes($p)
-if ([Array]::IndexOf($d, [byte]0) -ge 0) { [Console]::Error.WriteLine('binary file, cannot be read as text'); exit 1 }
+if ([Array]::IndexOf($d, [byte]0) -ge 0) { [Console]::Error.WriteLine('__BINARY__'); exit 1 }
 $off = __OFFSET__; $boff = __BYTEOFFSET__; $lim = __LIMIT__; $chunk = __CHUNKBYTES__; $lcap = __LINEBYTES__
 $n = $d.Length
 $enc = [Text.Encoding]::UTF8

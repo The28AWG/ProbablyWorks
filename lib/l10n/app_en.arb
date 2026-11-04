@@ -1053,6 +1053,73 @@
   "@runBackgroundBadge": {
     "description": "Badge on a tool card of a background command (kept short on purpose)."
   },
+  "readFileLinesRange": "lines {first}–{last} of {total}",
+  "@readFileLinesRange": {
+    "description": "Tool card header for read_file: range of the shown lines.",
+    "placeholders": {
+      "first": {
+        "type": "int"
+      },
+      "last": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileEmpty": "File is empty",
+  "@readFileEmpty": {
+    "description": "read_file view: the file has no lines."
+  },
+  "readFileBeyondEnd": "Line {offset} is past the end of the file ({total} lines)",
+  "@readFileBeyondEnd": {
+    "description": "read_file view: the requested start line is after the last line.",
+    "placeholders": {
+      "offset": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileEndOfFile": "End of file",
+  "@readFileEndOfFile": {
+    "description": "read_file view footer: the whole file was shown."
+  },
+  "readFileMore": "Output limit reached. Continue from line {offset}",
+  "@readFileMore": {
+    "description": "read_file view footer: the file continues, the next start line is given.",
+    "placeholders": {
+      "offset": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileCut": "Line {line} is cut at byte {byte} of {lineBytes}; the rest is read in the next call",
+  "@readFileCut": {
+    "description": "read_file view footer: the last line was cut by the per-line limit.",
+    "placeholders": {
+      "line": {
+        "type": "int"
+      },
+      "byte": {
+        "type": "int"
+      },
+      "lineBytes": {
+        "type": "int"
+      }
+    }
+  },
+  "readFileNotReadable": "Not a regular file or no read permission",
+  "@readFileNotReadable": {
+    "description": "read_file view: the path is missing, not a regular file, or not readable."
+  },
+  "readFileBinary": "Binary file: cannot be shown as text",
+  "@readFileBinary": {
+    "description": "read_file view: the file contains NUL bytes and is not read as text."
+  },
   "runPid": "pid {pid}",
   "@runPid": {
     "description": "Tool card header: process id of the command.",

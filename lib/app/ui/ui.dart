@@ -22,4 +22,5 @@ export 'copy_button.dart';
 export 'dashed_border.dart';
 export 'diff_view.dart';
 export 'onboarding_stepper.dart';
+export 'read_file_view.dart';
 export 'status_dot.dart';

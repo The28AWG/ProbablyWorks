@@ -1,14 +1,17 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
 import 'package:probably_works/features/chat/presentation/widgets/step_block.dart';
 import 'package:probably_works/host/host_terminal.dart';
+import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Шаг журнала ответа: рассуждения модели или запуск команды. В группе идут в порядке появления.
@@ -473,11 +476,37 @@ class _StepRowState extends State<_StepRow>
   /// Текст вывода для кнопки копирования в заголовке.
   final _output = CommandOutputController();
 
+  /// Исходный текст, из которого получен [_parsed]: разбор не повторяется при каждой перерисовке.
+  String? _parsedFrom;
+
+  /// Разобранный вывод read_file; `null`, если инструмент другой или вывод не в формате read_file.
+  ReadFileOutput? _parsed;
+
   bool get _expanded => _userExpanded ?? widget.expandedByDefault;
 
   /// Строку держим живой, пока пользователь её переключал: её выбор нельзя потерять при прокрутке.
   @override
   bool get wantKeepAlive => _userExpanded != null;
+
+  /// Разбор вывода read_file. Для других инструментов всегда `null`.
+  ReadFileOutput? _readFileOf(String output) {
+    if (widget.run.toolName != ToolNames.readFile) return null;
+    if (output != _parsedFrom) {
+      _parsedFrom = output;
+      _parsed = parseReadFileOutput(output);
+    }
+    return _parsed;
+  }
+
+  /// Текст для копирования. Для read_file копируется содержимое без номеров строк,
+  /// для нераспознанного вывода — текст терминала, как раньше.
+  String _copyText() => switch (_parsed) {
+    ReadFileText(:final lines) => [
+      for (final line in lines) plainTerminalText(line.text),
+    ].join('\n'),
+    null => _output.text,
+    _ => widget.run.outputText ?? '',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -486,11 +515,23 @@ class _StepRowState extends State<_StepRow>
     final theme = Theme.of(context);
     final run = widget.run;
     final output = widget.live ?? run.outputText ?? '';
+    final readFile = _readFileOf(output);
     final active =
         run.isActive || run.status == ToolRunStatus.backgroundRunning;
     final visual = _visualOf(run, l10n);
     final finishedAt = run.finishedAt;
+    // Диапазон показанных строк read_file заменяет служебный заголовок вывода: он уже в видах ReadFileView.
+    final range = switch (readFile) {
+      ReadFileText(:final lines, :final totalLines) when lines.isNotEmpty =>
+        l10n.readFileLinesRange(
+          lines.first.number,
+          lines.last.number,
+          totalLines,
+        ),
+      _ => null,
+    };
     final meta = [
+      ?range,
       if (run.pid != null) l10n.runPid(run.pid!),
       if (finishedAt != null)
         l10n.runDuration(finishedAt.difference(run.startedAt).inSeconds),
@@ -520,7 +561,7 @@ class _StepRowState extends State<_StepRow>
       canFullHeight: canExpand && !active,
       trailing: (palette) => CopyButton(
         key: const ValueKey('step-copy'),
-        textOf: () => _output.text,
+        textOf: _copyText,
         color: palette.muted,
         size: 24,
       ),
@@ -630,15 +671,22 @@ class _StepRowState extends State<_StepRow>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          CommandOutput(
-            controller: _output,
-            text: output,
-            command: run.command,
-            exitCode: run.exitCode,
-            active: active,
-            terminal: terminal,
-            maxHeight: fullHeight && !active ? viewport : collapsedHeight,
-          ),
+          // Распознанный вывод read_file показываем видом с номерами строк. Остальное — терминалом, как раньше.
+          if (readFile != null)
+            ReadFileView(
+              output: readFile,
+              maxHeight: fullHeight && !active ? viewport : collapsedHeight,
+            )
+          else
+            CommandOutput(
+              controller: _output,
+              text: output,
+              command: run.command,
+              exitCode: run.exitCode,
+              active: active,
+              terminal: terminal,
+              maxHeight: fullHeight && !active ? viewport : collapsedHeight,
+            ),
           if (run.outputTruncated) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(
