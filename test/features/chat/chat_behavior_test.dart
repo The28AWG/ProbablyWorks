@@ -396,7 +396,15 @@ void main() {
       tester.element(find.byType(ChatStepLedger)),
     );
     expect(find.text('flutter test test/core'), findsOneWidget);
-    expect(find.text(l10n.runStatusFailed), findsOneWidget);
+    // Статус выведен иконкой, а её подпись живёт в richMessage подсказки: find.byTooltip ищет только message.
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Tooltip &&
+            w.richMessage?.toPlainText() == l10n.runStatusFailed,
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('approval waits in the dock, not in the timeline', (
