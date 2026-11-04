@@ -101,7 +101,6 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i913.SettingsRepository>(),
       ),
     );
-    gh.lazySingleton<_i404.AppNotifier>(() => _i404.PluginAppNotifier());
     gh.singleton<_i432.LlmProvider>(
       () => coreModule.llmProvider(gh<_i617.SecretStore>()),
     );
@@ -114,6 +113,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i359.WorkspaceContextLoader>(
       () => _i359.WorkspaceContextLoader(gh<_i913.SettingsRepository>()),
+    );
+    gh.lazySingleton<_i404.AppNotifier>(
+      () => _i404.PluginAppNotifier(gh<_i675.LocaleController>()),
     );
     gh.lazySingleton<_i519.ApiKeyGuard>(
       () => _i519.ApiKeyGuard(gh<_i617.SecretStore>()),

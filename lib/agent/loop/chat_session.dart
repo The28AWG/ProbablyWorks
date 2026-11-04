@@ -19,6 +19,7 @@ import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/core/util/cancel_token.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
@@ -38,24 +39,10 @@ class ChatSession {
     // Ожидание пользователя должно быть заметно, даже если окно приложения не в фокусе.
     _waitSub = _hub.broker.approvalRequests
         .where((r) => r.chatId == chatId)
-        .listen(
-          (_) => unawaited(
-            _hub.notifier.notify(
-              title: 'ProbablyWorks',
-              body: 'Approval needed',
-            ),
-          ),
-        );
+        .listen((_) => unawaited(_notify(AgentNoticeKind.approvalNeeded)));
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
-        .listen(
-          (_) => unawaited(
-            _hub.notifier.notify(
-              title: 'ProbablyWorks',
-              body: 'The agent is waiting for an answer',
-            ),
-          ),
-        );
+        .listen((_) => unawaited(_notify(AgentNoticeKind.questionAsked)));
   }
 
   final String chatId;
@@ -225,14 +212,30 @@ class ChatSession {
       _stepCancel = null;
       _emit(AgentTurnFinished(chatId, end));
     }
-    if (end == TurnEnd.completed) {
-      unawaited(
-        _hub.notifier.notify(title: 'ProbablyWorks', body: 'Task finished'),
+    // Stop пользователем уведомления не даёт: он сам знает, что остановил ход.
+    switch (end) {
+      case TurnEnd.completed:
+        unawaited(_notify(AgentNoticeKind.turnFinished));
+      case TurnEnd.failed:
+        unawaited(_notify(AgentNoticeKind.turnFailed));
+      case TurnEnd.stepLimit:
+        unawaited(_notify(AgentNoticeKind.stepLimitReached));
+      case TurnEnd.stopped:
+    }
+  }
+
+  /// Системное уведомление о событии этого чата. Название чата читается здесь, потому что
+  /// оно принадлежит данным сессии. Сбой чтения или показа уведомление не ломает ход агента.
+  Future<void> _notify(AgentNoticeKind kind, {String? detail}) async {
+    try {
+      final chat = await _hub.chats.chat(chatId);
+      await _hub.notifier.notify(
+        kind: kind,
+        chatTitle: chat?.title ?? '',
+        detail: detail,
       );
-    } else if (end == TurnEnd.failed) {
-      unawaited(
-        _hub.notifier.notify(title: 'ProbablyWorks', body: 'Task failed'),
-      );
+    } on Object catch (error) {
+      _log.warning('notification skipped: $error');
     }
   }
 
@@ -539,10 +542,7 @@ class ChatSession {
         'Command: ${run.command ?? run.toolName}\n'
         '${TextClip.headTail(outcome.outputText, maxChars: 2000)}';
     unawaited(
-      _hub.notifier.notify(
-        title: 'ProbablyWorks',
-        body: 'Background command ${outcome.status.name}',
-      ),
+      _notify(AgentNoticeKind.backgroundFinished, detail: outcome.status.name),
     );
     unawaited(_deliverEvent(text));
   }

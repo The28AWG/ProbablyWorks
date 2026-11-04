@@ -87,7 +87,11 @@ class _FakeLlm implements LlmProvider {
 
 class _SilentNotifier implements AppNotifier {
   @override
-  Future<void> notify({required String title, required String body}) async {
+  Future<void> notify({
+    required AgentNoticeKind kind,
+    required String chatTitle,
+    String? detail,
+  }) async {
     return;
   }
 }

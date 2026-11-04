@@ -1246,5 +1246,51 @@
   "composerModeLabel": "Execution mode",
   "@composerModeLabel": {
     "description": "Submenu in the \"+\" menu: choosing between asking for approval and auto-approve."
+  },
+  "notifyApprovalBody": "Choose whether to approve or deny the agent's action.",
+  "@notifyApprovalBody": {
+    "description": "System notification body when the agent waits for an approval. Says what the user must do."
+  },
+  "notifyQuestionBody": "Answer the agent's question so it can continue.",
+  "@notifyQuestionBody": {
+    "description": "System notification body when the agent waits for an answer to its question."
+  },
+  "notifyFinishedTitle": "Task finished",
+  "@notifyFinishedTitle": {
+    "description": "System notification title (action part) when an agent turn completes normally."
+  },
+  "notifyFinishedBody": "The agent has finished. The result is in the chat.",
+  "@notifyFinishedBody": {
+    "description": "System notification body when an agent turn completes normally."
+  },
+  "notifyFailedTitle": "Task failed",
+  "@notifyFailedTitle": {
+    "description": "System notification title (action part) when an agent turn ends with an error."
+  },
+  "notifyFailedBody": "The run stopped because of an error. Open the chat to see the reason.",
+  "@notifyFailedBody": {
+    "description": "System notification body when an agent turn ends with an error."
+  },
+  "notifyStepLimitTitle": "Step limit reached",
+  "@notifyStepLimitTitle": {
+    "description": "System notification title (action part) when the agent hits the step limit and waits for the user."
+  },
+  "notifyStepLimitBody": "The agent paused. Continue the task in the chat.",
+  "@notifyStepLimitBody": {
+    "description": "System notification body when the agent paused at the step limit and needs the user to continue."
+  },
+  "notifyBackgroundTitle": "Background command finished",
+  "@notifyBackgroundTitle": {
+    "description": "System notification title (action part) when a background command finishes."
+  },
+  "notifyBackgroundBody": "Status: {status}. The result has been passed to the agent.",
+  "@notifyBackgroundBody": {
+    "description": "System notification body when a background command finishes. The status is the technical ToolRunStatus name and is not translated.",
+    "placeholders": {
+      "status": {
+        "type": "String",
+        "example": "done"
+      }
+    }
   }
 }
