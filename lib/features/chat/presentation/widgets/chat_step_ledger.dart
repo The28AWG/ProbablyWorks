@@ -567,11 +567,26 @@ class _StepRowState extends State<_StepRow>
       header: (palette) => Row(
         children: [
           ChatMorph(
-            child: Icon(
-              visual.icon,
-              key: ValueKey(visual.icon),
-              size: 16,
-              color: tone,
+            child: Tooltip(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              richMessage: TextSpan(
+                children: [
+                  TextSpan(
+                    text: visual.label,
+                    style: theme.textTheme.labelMedium?.copyWith(color: tone),
+                  ),
+                ],
+              ),
+              child: Icon(
+                visual.icon,
+                key: ValueKey(visual.icon),
+                size: 16,
+                color: tone,
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -624,15 +639,6 @@ class _StepRowState extends State<_StepRow>
                     ],
                   )
                 : const SizedBox.shrink(key: ValueKey('no-background')),
-          ),
-          ChatMorph(
-            child: Text(
-              visual.label,
-              key: ValueKey(visual.label),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(color: tone),
-            ),
           ),
           ChatMorph(
             child: showStop
