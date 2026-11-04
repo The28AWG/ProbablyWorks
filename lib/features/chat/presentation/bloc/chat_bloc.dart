@@ -886,6 +886,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onDraftEdited(ChatDraftEdited event, Emitter<ChatState> emit) {
+    // Поле уведомляет и о смене выделения (например, при получении фокуса): тот же текст в черновик не пишем.
+    if (event.text == _composerText) return;
     _composerText = event.text;
     _saveDraft();
   }

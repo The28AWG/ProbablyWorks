@@ -1,10 +1,14 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 
 /// Поле ввода сообщения. Enter отправляет, Shift+Enter переносит строку,
 /// Ctrl/Cmd+Enter во время работы агента ставит сообщение вперёд очереди (sendNow).
 /// Enter во время IME-композиции (например, русская раскладка до выбора слова) не перехватывается.
+///
+/// На десктопе фокус ставится при появлении поля и повторно, когда закончилась загрузка чата (см. [ComposerInput.loading]).
+/// На мобильных фокус при открытии не ставится, чтобы не открывать клавиатуру (см. [AppPlatform.focusesInputOnOpen]).
 ///
 /// [maxLines] — сколько строк поле растёт до прокрутки; значение задаёт [ChatDensity.composerMaxLines].
 /// Подсказка всегда одна строка и обрезается многоточием: на узком экране она не должна занимать высоту.
@@ -13,6 +17,7 @@ class ComposerInput extends StatefulWidget {
     required this.controller,
     required this.hint,
     required this.busy,
+    required this.loading,
     required this.maxLines,
     required this.onSubmit,
     super.key,
@@ -21,6 +26,10 @@ class ComposerInput extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
   final bool busy;
+
+  /// Чат загружается, и родитель исключил композер из фокуса ([ExcludeFocus]). Фокус ставим,
+  /// когда загрузка закончилась: запрос, сделанный во время исключения, теряется.
+  final bool loading;
   final int maxLines;
   final ValueChanged<bool> onSubmit;
 
@@ -33,9 +42,31 @@ class _ComposerInputState extends State<ComposerInput> {
   late final _focusNode = FocusNode(onKeyEvent: _onKey);
 
   @override
+  void initState() {
+    super.initState();
+    if (!widget.loading) _focusAfterFrame();
+  }
+
+  @override
+  void didUpdateWidget(ComposerInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Смена чата на месте: композер остаётся, но ждёт загрузку, и фокус должен вернуться после неё.
+    if (oldWidget.loading && !widget.loading) _focusAfterFrame();
+  }
+
+  @override
   void dispose() {
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Фокус после кадра: на момент initState или didUpdateWidget родитель может ещё не снять [ExcludeFocus].
+  /// На мобильных фокус не ставим ([AppPlatform.focusesInputOnOpen]): иначе клавиатура открывалась бы при каждом чате.
+  void _focusAfterFrame() {
+    if (!AppPlatform.current.focusesInputOnOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

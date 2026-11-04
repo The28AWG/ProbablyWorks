@@ -125,6 +125,7 @@ class ChatComposer extends StatelessWidget {
                     controller: controller,
                     hint: l10n.composerHint,
                     busy: busy,
+                    loading: state.loading,
                     maxLines: density.composerMaxLines(centered: centered),
                     onSubmit: onSubmit,
                   ),

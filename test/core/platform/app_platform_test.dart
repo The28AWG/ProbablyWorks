@@ -14,6 +14,7 @@ void main() {
       expect(ios.supportsFileDrop, isFalse);
       expect(ios.canOpenExternalKeys, isFalse);
       expect(ios.isMobile, isTrue);
+      expect(ios.focusesInputOnOpen, isFalse);
     });
 
     test(
@@ -26,6 +27,7 @@ void main() {
         expect(android.supportsFileDrop, isFalse);
         expect(android.canOpenExternalKeys, isFalse);
         expect(android.isAndroid, isTrue);
+        expect(android.focusesInputOnOpen, isFalse);
       },
     );
 
@@ -42,6 +44,7 @@ void main() {
         expect(platform.supportsFileDrop, isTrue, reason: '$target');
         expect(platform.canOpenExternalKeys, isTrue, reason: '$target');
         expect(platform.isMobile, isFalse, reason: '$target');
+        expect(platform.focusesInputOnOpen, isTrue, reason: '$target');
       }
     });
   });
