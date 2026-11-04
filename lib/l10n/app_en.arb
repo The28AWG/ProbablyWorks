@@ -12,6 +12,10 @@
   "@commonSave": {
     "description": "Generic save button label."
   },
+  "commonEdit": "Edit",
+  "@commonEdit": {
+    "description": "Подсказка иконки-кнопки: изменить элемент."
+  },
   "commonDelete": "Delete",
   "@commonDelete": {
     "description": "Generic delete button label."
@@ -307,6 +311,58 @@
   "@chatEmptyState": {
     "description": "Empty state of a new chat."
   },
+  "hostsEmptyTitle": "No hosts yet",
+  "@hostsEmptyTitle": {
+    "description": "Заголовок пустого списка хостов."
+  },
+  "hostsEmptyMessage": "Add an SSH server so the agent can run commands there.",
+  "@hostsEmptyMessage": {
+    "description": "Пояснение пустого списка хостов."
+  },
+  "hostNameHint": "My server",
+  "@hostNameHint": {
+    "description": "Подсказка в поле названия хоста."
+  },
+  "hostAddressHint": "example.com or 192.168.1.10",
+  "@hostAddressHint": {
+    "description": "Подсказка в поле адреса хоста."
+  },
+  "hostUserHint": "Login on the server",
+  "@hostUserHint": {
+    "description": "Подсказка в поле пользователя SSH."
+  },
+  "hostOsDescription": "How commands run on the server",
+  "@hostOsDescription": {
+    "description": "Пояснение к выбору системы хоста."
+  },
+  "hostAuthKeyDescription": "Key file or pasted PEM, stored in secure storage",
+  "@hostAuthKeyDescription": {
+    "description": "Пояснение к варианту входа по ключу."
+  },
+  "hostAuthPasswordDescription": "Password stored in secure storage",
+  "@hostAuthPasswordDescription": {
+    "description": "Пояснение к варианту входа по паролю."
+  },
+  "hostKeyFileHint": "Not chosen",
+  "@hostKeyFileHint": {
+    "description": "Подсказка пустого поля пути к файлу ключа."
+  },
+  "hostSecretHint": "Stored in secure storage",
+  "@hostSecretHint": {
+    "description": "Подсказка в поле пароля или passphrase."
+  },
+  "hostWorkspaceDescription": "Default folder for new chats on this host",
+  "@hostWorkspaceDescription": {
+    "description": "Пояснение к рабочей папке хоста."
+  },
+  "hostTimeoutHint": "Empty means default",
+  "@hostTimeoutHint": {
+    "description": "Подсказка в поле таймаута подключения."
+  },
+  "hostNotesHint": "Optional",
+  "@hostNotesHint": {
+    "description": "Подсказка в поле заметок хоста."
+  },
   "hostsTitle": "Hosts",
   "@hostsTitle": {
     "description": "Header of the hosts management page."
@@ -370,6 +426,22 @@
   "hostOsWindows": "Windows",
   "@hostOsWindows": {
     "description": "Remote OS option: Windows (cmd and PowerShell)."
+  },
+  "hostOsPosixHint": "Commands run through sh or bash",
+  "@hostOsPosixHint": {
+    "description": "Explanation for the Linux / Unix card in the host system choice."
+  },
+  "hostOsMacosHint": "Unix commands, as on Linux",
+  "@hostOsMacosHint": {
+    "description": "Explanation for the macOS card in the host system choice."
+  },
+  "hostOsWindowsHint": "Commands run through PowerShell",
+  "@hostOsWindowsHint": {
+    "description": "Explanation for the Windows card in the host system choice."
+  },
+  "hostOsUnknown": "Unknown system",
+  "@hostOsUnknown": {
+    "description": "Remote OS option: system not detected."
   },
   "hostPickKeyFile": "Choose key file",
   "@hostPickKeyFile": {

@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 
-/// Вариант выбора для [AppChoiceGroup]: значение, заголовок, пояснение и необязательная иконка.
+/// Вариант выбора для [AppChoiceGroup]: значение, заголовок, пояснение и необязательный значок.
 class AppChoiceOption<T> {
   const AppChoiceOption({
     required this.value,
@@ -20,8 +20,9 @@ class AppChoiceOption<T> {
   /// Пояснение: что изменится при выборе. Видно не больше двух строк; полный текст — в подсказке.
   final String subtitle;
 
-  /// Иконка справа от заголовка; null — без иконки.
-  final IconData? icon;
+  /// Значок справа от заголовка: `Icon` или `AppSvgIcon`. Размер и цвет берутся из `IconTheme` карточки
+  /// (см. [AppChoiceGroup.iconSize]); null — без значка.
+  final Widget? icon;
 }
 
 /// Выбор одного варианта карточками с радио-индикатором. Заменяет `SegmentedButton`, когда у вариантов
@@ -33,6 +34,8 @@ class AppChoiceGroup<T> extends StatelessWidget {
     required this.options,
     required this.selected,
     required this.onChanged,
+    this.iconSize = _defaultIconSize,
+    this.iconAboveTitle = false,
     super.key,
   });
 
@@ -40,14 +43,21 @@ class AppChoiceGroup<T> extends StatelessWidget {
   final T selected;
   final ValueChanged<T> onChanged;
 
+  /// Размер значков вариантов. Крупные значки (например, системы на хосте) задают высоту строки
+  /// заголовка, и высота всех карточек группы растёт вместе с ними.
+  final double iconSize;
+
+  /// Значок над заголовком, а не справа от него. Нужно для крупных значков в узких карточках: справа
+  /// от заголовка он съел бы почти всю ширину текста, и названия обрезались бы.
+  final bool iconAboveTitle;
+
   /// Минимальная ширина карточки: при меньшей области вариантов становится меньше в ряд.
   static const _minCardWidth = 180.0;
 
   /// Размер радио-индикатора: он задаёт минимальную высоту строки заголовка.
   static const _radioSize = 20.0;
 
-  /// Размер иконки варианта рядом с заголовком.
-  static const _iconSize = 18.0;
+  static const _defaultIconSize = 18.0;
 
   /// Сколько строк пояснения помещается в карточку. Больше — обрезается многоточием.
   static const _subtitleLines = 2;
@@ -80,6 +90,8 @@ class AppChoiceGroup<T> extends StatelessWidget {
                 child: _ChoiceCard(
                   option: option,
                   selected: option.value == selected,
+                  iconSize: iconSize,
+                  iconAboveTitle: iconAboveTitle,
                   onTap: () => onChanged(option.value),
                 ),
               ),
@@ -108,15 +120,16 @@ class AppChoiceGroup<T> extends StatelessWidget {
       return result;
     }
 
-    final titleHeight = math.max(
-      lineBlockHeight('Ag', textTheme.labelLarge),
-      math.max(_radioSize, _iconSize),
-    );
+    final labelHeight = lineBlockHeight('Ag', textTheme.labelLarge);
     final subtitleHeight = lineBlockHeight(
       List.filled(_subtitleLines, 'Ag').join('\n'),
       textTheme.bodySmall,
     );
-    return AppSpacing.md * 2 + titleHeight + AppSpacing.xs + subtitleHeight;
+    // Над заголовком значок занимает свою строку; справа от него — делит строку с заголовком и радио.
+    final titleBlock = iconAboveTitle
+        ? iconSize + AppSpacing.xs + labelHeight
+        : math.max(labelHeight, math.max(_radioSize, iconSize));
+    return AppSpacing.md * 2 + titleBlock + AppSpacing.xs + subtitleHeight;
   }
 }
 
@@ -124,11 +137,15 @@ class _ChoiceCard<T> extends StatelessWidget {
   const _ChoiceCard({
     required this.option,
     required this.selected,
+    required this.iconSize,
+    required this.iconAboveTitle,
     required this.onTap,
   });
 
   final AppChoiceOption<T> option;
   final bool selected;
+  final double iconSize;
+  final bool iconAboveTitle;
   final VoidCallback onTap;
 
   @override
@@ -136,6 +153,12 @@ class _ChoiceCard<T> extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final icon = option.icon;
+    final themedIcon = icon == null
+        ? null
+        : IconTheme(
+            data: IconThemeData(size: iconSize, color: scheme.onSurfaceVariant),
+            child: icon,
+          );
     return Tooltip(
       // Подсказка показывает полный текст: заголовок жирным, пояснение на следующей строке.
       richMessage: TextSpan(
@@ -184,6 +207,10 @@ class _ChoiceCard<T> extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (iconAboveTitle && themedIcon != null) ...[
+                          themedIcon,
+                          const SizedBox(height: AppSpacing.xs),
+                        ],
                         Row(
                           children: [
                             Expanded(
@@ -194,13 +221,9 @@ class _ChoiceCard<T> extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (icon != null) ...[
+                            if (!iconAboveTitle && themedIcon != null) ...[
                               const SizedBox(width: AppSpacing.xs),
-                              Icon(
-                                icon,
-                                size: AppChoiceGroup._iconSize,
-                                color: scheme.onSurfaceVariant,
-                              ),
+                              themedIcon,
                             ],
                           ],
                         ),

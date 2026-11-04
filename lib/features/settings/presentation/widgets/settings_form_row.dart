@@ -10,8 +10,8 @@ import 'package:probably_works/app/theme/app_tokens.dart';
 class SettingsFormRow extends StatelessWidget {
   const SettingsFormRow({
     required this.title,
-    required this.description,
     required this.child,
+    this.description,
     this.trailing,
     this.action,
     super.key,
@@ -20,7 +20,8 @@ class SettingsFormRow extends StatelessWidget {
   final String title;
 
   /// Пояснение: что задаёт строка и как работают значения. Видно целиком, переносится по словам.
-  final String description;
+  /// Null — пояснения нет: строка держится на названии и полях.
+  final String? description;
 
   /// Поле строки.
   final Widget child;
@@ -39,13 +40,15 @@ class SettingsFormRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(title, style: theme.textTheme.titleSmall),
-        const SizedBox(height: AppSpacing.xs),
-        Text(
-          description,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+        if (description != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            description!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
+        ],
       ],
     );
     final body = Column(

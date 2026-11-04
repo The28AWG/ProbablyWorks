@@ -11,6 +11,7 @@ export 'app_markdown.dart';
 export 'app_scaffold.dart';
 export 'app_section.dart';
 export 'app_snack_bar.dart';
+export 'app_svg_icon.dart';
 export 'app_text_field.dart';
 export 'app_tone.dart';
 export 'code_block.dart';

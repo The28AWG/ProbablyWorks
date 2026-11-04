@@ -156,8 +156,10 @@ abstract final class AppTheme {
         labelStyle: text.labelMedium,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       ),
+      // Фон диалога на ступень ниже полей ввода (surfaceContainerHigh): иначе поля сливаются с окном.
+      // Тот же тон, что у карточек, поэтому поля в диалогах выглядят как в настройках.
       dialogTheme: DialogThemeData(
-        backgroundColor: scheme.surfaceContainerHigh,
+        backgroundColor: scheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: AppRadius.xlAll),

@@ -40,7 +40,7 @@ import 'package:probably_works/app/ui/ui.dart';
 | `LinearProgressIndicator` с подписью | `ContextUsageBar` | Заполнение контекста модели. Цвет меняется у предела. |
 | `Stepper` или набор точек | `OnboardingStepper` | Шаги онбординга: сегменты и счётчик. |
 | `Container` с `BoxDecoration` и штрихом | `DashedBorder` | Зона перетаскивания файлов и пустые слоты. |
-| `SegmentedButton`, `RadioListTile` в списке для выбора одного варианта с пояснением | `AppChoiceGroup` | Настройки: тема, журнал шагов, политика. Варианты карточками с радио-индикатором, делят ширину и переносятся. Без пояснений `SegmentedButton` допустим. |
+| `SegmentedButton`, `RadioListTile` в списке для выбора одного варианта с пояснением | `AppChoiceGroup` | Настройки: тема, журнал шагов, политика, система хоста. Варианты карточками с радио-индикатором, делят ширину и переносятся. Без пояснений `SegmentedButton` допустим. |
 
 Стандартные виджеты, которые не заменены, допустимы: `ListView`, `ListTile`, `IconButton`,
 `FilledButton`, `TextButton`, `OutlinedButton`, `SegmentedButton`, `FilterChip`,
@@ -120,8 +120,10 @@ AppTextField(
 (`ComposerInput`, см. раздел 5).
 
 **`AppChoiceGroup<T>`**: выбор одного варианта карточками. Каждый вариант: радио-индикатор, заголовок,
-пояснение (`subtitle`, обязательное) и иконка справа (`icon`). Карточки делят ширину поровну, минимальная
-ширина карточки 180, на узкой области переносятся. Все карточки группы одной высоты: заголовок в одну строку,
+пояснение (`subtitle`, обязательное) и значок (`icon`: `Icon` или `AppSvgIcon`). По умолчанию значок стоит
+справа от заголовка размером `iconSize` (18). Крупные значки (например, система на хосте, `iconSize: 40`)
+ставятся над заголовком через `iconAboveTitle: true`, иначе справа они съедают ширину текста и названия
+обрезаются. Карточки делят ширину поровну, минимальная ширина карточки 180, на узкой области переносятся. Все карточки группы одной высоты: заголовок в одну строку,
 пояснение в две, лишнее обрезается многоточием. Полный текст показывает подсказка при наведении или долгом
 нажатии: заголовок жирным и пояснение с новой строки. Выбор отдаётся через `onChanged`, семантика — `selected` в группе.
 
@@ -132,7 +134,7 @@ AppChoiceGroup<ThemeMode>(
       value: ThemeMode.system,
       title: l10n.settingsThemeSystem,
       subtitle: l10n.settingsThemeSystemHint,
-      icon: Icons.brightness_auto_outlined,
+      icon: Icon(Icons.brightness_auto_outlined),
     ),
     AppChoiceOption(
       value: ThemeMode.dark,
@@ -318,6 +320,22 @@ AppMarkdown(data: message.text)
 Не менять `MarkdownConfig` в экранах. Новые правила оформления Markdown добавляются в
 `lib/app/ui/app_markdown.dart`, чтобы все места ленты выглядели одинаково.
 
+**`AppSvgIcon`**: SVG из `assets/` для значка, которого нет в Material или который в Material не узнаётся
+(логотипы систем). Размер и цвет берутся из `IconTheme`, как у `Icon`, поэтому значок реагирует на выбор и тему.
+Пакет `flutter_svg`; ассеты перечислены в `pubspec.yaml`. Значки систем: `assets/icons/os_linux.svg` (пингвин),
+`os_macos.svg` (яблоко), `os_windows.svg` (четыре окна). Все три нарисованы в сетке 24×24 с содержимым высотой
+20 единиц, как у Material-иконок, поэтому при одном `iconSize` выглядят одинакового размера. Material-ноутбук
+(`Icons.laptop_mac`) для систем не годится: одинаков для macOS и Windows.
+
+```dart
+AppChoiceOption(
+  value: HostOs.posix,
+  title: l10n.hostOsPosix,
+  subtitle: l10n.hostOsPosixHint,
+  icon: const AppSvgIcon('assets/icons/os_linux.svg'),
+)
+```
+
 ### Оформление
 
 **`DashedBorder`**: пунктирная рамка вокруг содержимого. Используется для зоны перетаскивания
@@ -353,10 +371,11 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `WorkspaceRail` | `lib/features/workspace/presentation/widgets/workspace_sidebar.dart` | Свёрнутая панель: развернуть, новый чат, хосты, настройки (только иконки). Активный раздел выделен |
 | `WorkspaceLeadingButton` | `lib/features/workspace/presentation/widgets/workspace_shell.dart` | Кнопка слева в шапке страницы на узком экране: меню (`WorkspaceMenuButton`), а поверх оболочки — «назад». В остальных раскладках страницы передают `null` |
 | `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск, фильтр «с инструментами», закреплённые модели, группы по провайдеру, клавиатура. `onTogglePin` задан — есть кнопки закрепления (композер, настройки закреплённых); `null` — кнопок нет (выбор модели по умолчанию и заголовков). `requireTools: false` — модель без tool calling выбирается. `managePins: true` (настройки закреплённых) — нажатие на строку закрепляет или открепляет модель, диалог остаётся открытым и ничего не возвращает; Enter делает то же для подсвеченной строки |
+| `HostFormDialog` | `lib/features/hosts/presentation/widgets/host_form_dialog.dart` | Диалог «Хост» (SSH-хост и «Этот компьютер»): строки `SettingsFormRow` в секциях `AppSection`, подписей над полями нет, у каждого поля есть подсказка. Способ входа и система на сервере — `AppChoiceGroup` с пояснениями; система — отдельная секция с крупными значками над заголовками. Ширина содержимого до `AppLayout.formMaxWidth`. Локальный хост редактирует только окружение. Сохранение через колбэк `onSave`, открывается `showHostFormDialog` |
 | `ModelSettingField` | `lib/features/settings/presentation/widgets/model_setting_field.dart` | Поле модели в настройках: название, id и предупреждение о статусе (недоступна, нет tool calling). Нажатие открывает `ModelPickerDialog` без кнопок закрепления |
 | `ApiKeyInfoCard` | `lib/features/settings/presentation/widgets/api_key_info_card.dart` | Сведения о ключе из сервиса: метка, расходы, лимит и остаток, сброс лимита, срок, тариф. Загрузка, ошибка с «повторить» и пустое состояние внутри карточки |
 | `ApiKeySection` | `lib/features/settings/presentation/widgets/api_key_section.dart` | Блок «API-ключ» на вкладке «Аккаунт» — одна строка `SettingsFormRow`: поле и иконки в одну линию. Сохранённый ключ — то же поле в режиме «только чтение» с маской `•••• abc` и иконками «Проверить», «Заменить», «Удалить» (с подтверждением). Без ключа или при замене — поле ввода с иконками «Отмена» (если ключ уже есть) и «Сохранить». Высота строки одинакова в обоих состояниях: пояснение однострочное. Черновик ключа живёт в виджете, не в состоянии экрана |
-| `SettingsFormRow` | `lib/features/settings/presentation/widgets/settings_form_row.dart` | Строка формы настроек: слева название и пояснение, справа поле. `trailing` — иконки действий в той же линии, что и поле (ключ API); `action` — кнопка под полем, прижатая справа (например «Сохранить» у многострочных полей). Ниже `AppLayout.formMaxWidth` колонки складываются. Заменяет «заголовок над полем с подписью» |
+| `SettingsFormRow` | `lib/features/settings/presentation/widgets/settings_form_row.dart` | Строка формы: слева название и необязательное пояснение (`description`), справа поле. `trailing` — иконки действий в той же линии, что и поле (ключ API); `action` — кнопка под полем, прижатая справа (например «Сохранить» у многострочных полей). Ниже `AppLayout.formMaxWidth` колонки складываются. Заменяет «заголовок над полем с подписью». Используется в настройках и в диалоге хоста |
 
 ## 6. Утилиты
 

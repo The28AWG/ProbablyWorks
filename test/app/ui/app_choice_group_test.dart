@@ -14,17 +14,24 @@ const _options = [
     value: 'light',
     title: 'Light',
     subtitle: _longSubtitle,
-    icon: Icons.light_mode,
+    icon: Icon(Icons.light_mode),
   ),
   AppChoiceOption(value: 'dark', title: 'Dark', subtitle: 'Dark theme'),
 ];
 
 /// Хост с состоянием: выбор меняется сам, как в настройках через cubit.
 class _Host extends StatefulWidget {
-  const _Host({this.width = 600, this.onChanged});
+  const _Host({
+    this.width = 600,
+    this.onChanged,
+    this.iconSize = 18,
+    this.iconAboveTitle = false,
+  });
 
   final double width;
   final ValueChanged<String>? onChanged;
+  final double iconSize;
+  final bool iconAboveTitle;
 
   @override
   State<_Host> createState() => _HostState();
@@ -44,6 +51,8 @@ class _HostState extends State<_Host> {
             options: _options,
             selected: selected,
             onChanged: _select,
+            iconSize: widget.iconSize,
+            iconAboveTitle: widget.iconAboveTitle,
           ),
         ),
       ),
@@ -119,6 +128,34 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const _Host(width: 200));
+
+    final heights = {
+      for (var i = 0; i < _options.length; i++)
+        tester.getSize(_cards.at(i)).height,
+    };
+    expect(heights, hasLength(1));
+  });
+
+  testWidgets('a large icon above the title is left-aligned with it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _Host(width: 600, iconSize: 40, iconAboveTitle: true),
+    );
+
+    final icon = tester.getTopLeft(find.byIcon(Icons.light_mode));
+    final title = tester.getTopLeft(find.text('Light'));
+    expect(icon.dy < title.dy, isTrue);
+    expect(icon.dx, closeTo(title.dx, 0.5));
+    expect(tester.getSize(find.byIcon(Icons.light_mode)).width, 40);
+  });
+
+  testWidgets('a large icon above the title keeps one card height', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const _Host(width: 600, iconSize: 40, iconAboveTitle: true),
+    );
 
     final heights = {
       for (var i = 0; i < _options.length; i++)

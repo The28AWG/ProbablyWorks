@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- Логотип Windows (четыре окна) в сетке 24×24 Material: 20 единиц по высоте. Монохромный, цвет из IconTheme. -->
+  <path fill="#000000" d="M2 2H11V11H2Z M12.5 2H22V11H12.5Z M2 12.5H11V22H2Z M12.5 12.5H22V22H12.5Z"/>
+</svg>

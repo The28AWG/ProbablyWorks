@@ -25,6 +25,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_secure_storage: ^10.3.1
+  flutter_svg: ^2.3.0
   get_it: ^9.2.1
   injectable: ^3.0.0
   intl: ^0.20.3
@@ -55,6 +56,10 @@ dev_dependencies:
 flutter:
   generate: true
   uses-material-design: true
+  assets:
+    - assets/icons/os_linux.svg
+    - assets/icons/os_macos.svg
+    - assets/icons/os_windows.svg
   fonts:
     - family: Inter
       fonts:

@@ -75,13 +75,13 @@ const _choiceOptions = [
     value: 'ask',
     title: 'Ask',
     subtitle: 'Confirm each command',
-    icon: Icons.front_hand_outlined,
+    icon: Icon(Icons.front_hand_outlined),
   ),
   AppChoiceOption(
     value: 'yolo',
     title: 'Auto',
     subtitle: 'Run without asking',
-    icon: Icons.bolt_outlined,
+    icon: Icon(Icons.bolt_outlined),
   ),
 ];
 
