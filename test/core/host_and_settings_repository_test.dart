@@ -81,6 +81,32 @@ void main() {
     ]);
   });
 
+  test('watch on pinned models emits after every save', () async {
+    final settings = SettingsRepository(db);
+    final values = <String?>[];
+    final sub = settings
+        .watch(SettingsRepository.keyPinnedModels)
+        .listen(values.add);
+    addTearDown(sub.cancel);
+
+    await settings.savePinnedModels(['openai/gpt-4o']);
+    await settings.savePinnedModels(const []);
+    await pumpEventQueue();
+
+    expect(values.last, '[]');
+    expect(values, contains('["openai/gpt-4o"]'));
+  });
+
+  test('theme mode is stored by name and read back', () async {
+    final settings = SettingsRepository(db);
+    expect(await settings.read(SettingsRepository.keyThemeMode), isNull);
+
+    await settings.write(SettingsRepository.keyThemeMode, 'dark');
+    await settings.preload();
+
+    expect(settings.cached(SettingsRepository.keyThemeMode), 'dark');
+  });
+
   test(
     'preloaded settings answer synchronously and stay in sync on write',
     () async {

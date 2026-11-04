@@ -487,6 +487,18 @@
   "@settingsLanguageSystem": {
     "description": "Вариант языка: следовать языку системы."
   },
+  "settingsLanguageSystemHint": "Язык устройства.",
+  "@settingsLanguageSystemHint": {
+    "description": "Пояснение к варианту языка: как на устройстве."
+  },
+  "settingsLanguageEnglishHint": "Интерфейс на английском.",
+  "@settingsLanguageEnglishHint": {
+    "description": "Пояснение к варианту языка: английский интерфейс."
+  },
+  "settingsLanguageRussianHint": "Интерфейс на русском.",
+  "@settingsLanguageRussianHint": {
+    "description": "Пояснение к варианту языка: русский интерфейс."
+  },
   "settingsStepsGroup": "Группировать шаги",
   "@settingsStepsGroup": {
     "description": "Section: group the steps of one response into one journal."
@@ -567,9 +579,13 @@
   "@settingsDefaultPolicy": {
     "description": "Настройка: режим политики для новых чатов."
   },
-  "settingsDenylist": "Denylist (регулярные выражения, по одному в строке)",
+  "settingsDenylist": "Запрещённые команды",
   "@settingsDenylist": {
-    "description": "Настройка: шаблоны команд, которые всегда запрещены. Это UX-страховка, а не граница безопасности."
+    "description": "Заголовок раздела: команды, которые отклоняются."
+  },
+  "settingsDenylistHint": "Одно регулярное выражение в строке. Команда, подходящая под шаблон, отклоняется без вопроса. Это страховка, а не граница безопасности.",
+  "@settingsDenylistHint": {
+    "description": "Пояснение под заголовком denylist: как работают шаблоны и их границы."
   },
   "settingsLimits": "Лимиты (JSON)",
   "@settingsLimits": {
@@ -578,6 +594,174 @@
   "settingsLimitsInvalid": "JSON лимитов некорректен",
   "@settingsLimitsInvalid": {
     "description": "Ошибка, если JSON лимитов не разбирается."
+  },
+  "settingsApiKeySet": "Ключ сохранён",
+  "@settingsApiKeySet": {
+    "description": "Пояснение в строке API-ключа, когда ключ сохранён. Одна строка, чтобы высота строки не менялась."
+  },
+  "settingsApiKeyCheck": "Проверить",
+  "@settingsApiKeyCheck": {
+    "description": "Кнопка: запросить у сервиса проверку сохранённого ключа и обновить его сведения."
+  },
+  "settingsApiKeyReplace": "Заменить",
+  "@settingsApiKeyReplace": {
+    "description": "Кнопка: открыть поле для ввода нового API-ключа."
+  },
+  "settingsApiKeyDelete": "Удалить ключ",
+  "@settingsApiKeyDelete": {
+    "description": "Кнопка: удалить сохранённый API-ключ."
+  },
+  "settingsApiKeyDeleteTitle": "Удалить ключ API?",
+  "@settingsApiKeyDeleteTitle": {
+    "description": "Заголовок подтверждения перед удалением API-ключа."
+  },
+  "settingsApiKeyDeleteBody": "Чаты не смогут работать с моделями, пока не добавлен новый ключ. Список моделей сохранится.",
+  "@settingsApiKeyDeleteBody": {
+    "description": "Текст подтверждения перед удалением API-ключа: что перестанет работать."
+  },
+  "settingsApiKeyNotSet": "Ключ не задан",
+  "@settingsApiKeyNotSet": {
+    "description": "Строка статуса над полем ключа, когда ключ не сохранён. Одна строка: иначе карточка выше, чем с сохранённым ключом."
+  },
+  "settingsKeyInfoTitle": "Сведения о ключе",
+  "@settingsKeyInfoTitle": {
+    "description": "Заголовок карточки со сведениями о ключе из сервиса."
+  },
+  "settingsKeyInfoEmpty": "Нажмите «Проверить», чтобы загрузить сведения о ключе.",
+  "@settingsKeyInfoEmpty": {
+    "description": "Подсказка в карточке сведений о ключе до их загрузки."
+  },
+  "settingsKeyLabel": "Метка",
+  "@settingsKeyLabel": {
+    "description": "Строка сведений о ключе: метка, которую сервис выдал ключу."
+  },
+  "settingsKeyUsage": "Потрачено",
+  "@settingsKeyUsage": {
+    "description": "Строка сведений о ключе: всего потрачено по ключу."
+  },
+  "settingsKeyLimit": "Лимит",
+  "@settingsKeyLimit": {
+    "description": "Строка сведений о ключе: лимит расходов."
+  },
+  "settingsKeyNoLimit": "Без лимита",
+  "@settingsKeyNoLimit": {
+    "description": "Значение сведений о ключе, когда лимита нет."
+  },
+  "settingsKeyRemaining": "Осталось",
+  "@settingsKeyRemaining": {
+    "description": "Строка сведений о ключе: остаток лимита."
+  },
+  "settingsKeyLimitReset": "Сброс лимита",
+  "@settingsKeyLimitReset": {
+    "description": "Строка сведений о ключе: как часто сбрасывается лимит расходов."
+  },
+  "settingsKeyExpires": "Истекает",
+  "@settingsKeyExpires": {
+    "description": "Строка сведений о ключе: дата истечения ключа."
+  },
+  "settingsKeyNeverExpires": "Никогда",
+  "@settingsKeyNeverExpires": {
+    "description": "Значение сведений о ключе, когда ключ не истекает."
+  },
+  "settingsKeyPlan": "Тариф",
+  "@settingsKeyPlan": {
+    "description": "Строка сведений о ключе: бесплатный или платный ключ."
+  },
+  "settingsKeyPlanFree": "Бесплатный",
+  "@settingsKeyPlanFree": {
+    "description": "Значение сведений о ключе для бесплатного тарифа."
+  },
+  "settingsKeyPlanPaid": "Платный",
+  "@settingsKeyPlanPaid": {
+    "description": "Значение сведений о ключе для платного ключа."
+  },
+  "settingsModelNotSelected": "Не выбрана",
+  "@settingsModelNotSelected": {
+    "description": "Значение поля модели, когда модель не выбрана."
+  },
+  "settingsPinnedManage": "Изменить",
+  "@settingsPinnedManage": {
+    "description": "Подсказка иконки-кнопки в настройках: открыть выбор модели для закрепления и открепления."
+  },
+  "settingsPinnedEmpty": "Закреплённых моделей пока нет.",
+  "@settingsPinnedEmpty": {
+    "description": "Пустое состояние списка закреплённых моделей в настройках."
+  },
+  "settingsTheme": "Тема",
+  "@settingsTheme": {
+    "description": "Заголовок раздела настроек: тема приложения."
+  },
+  "settingsThemeHint": "Светлая или тёмная тема, либо как в системе.",
+  "@settingsThemeHint": {
+    "description": "Подсказка раздела настроек: тема приложения."
+  },
+  "settingsThemeSystem": "Системная",
+  "@settingsThemeSystem": {
+    "description": "Вариант темы: как в системе."
+  },
+  "settingsThemeLight": "Светлая",
+  "@settingsThemeLight": {
+    "description": "Вариант темы: светлая."
+  },
+  "settingsThemeDark": "Тёмная",
+  "@settingsThemeDark": {
+    "description": "Вариант темы: тёмная."
+  },
+  "settingsThemeSystemHint": "Как в настройках системы.",
+  "@settingsThemeSystemHint": {
+    "description": "Пояснение к варианту темы: следовать системе."
+  },
+  "settingsThemeLightHint": "Всегда светлое оформление.",
+  "@settingsThemeLightHint": {
+    "description": "Пояснение к варианту темы: всегда светлая."
+  },
+  "settingsThemeDarkHint": "Всегда тёмное оформление.",
+  "@settingsThemeDarkHint": {
+    "description": "Пояснение к варианту темы: всегда тёмная."
+  },
+  "settingsStepsGroupOnHint": "Шаги одного ответа собираются в один журнал.",
+  "@settingsStepsGroupOnHint": {
+    "description": "Подпись карточки варианта: шаги сгруппированы."
+  },
+  "settingsStepsGroupOffHint": "Каждый шаг отдельной строкой.",
+  "@settingsStepsGroupOffHint": {
+    "description": "Подпись карточки варианта: шаги по одному."
+  },
+  "settingsStepsExpandOnHint": "Группа открывается сама, пока работает.",
+  "@settingsStepsExpandOnHint": {
+    "description": "Подпись карточки варианта: раскрывать группу во время работы."
+  },
+  "settingsStepsExpandOffHint": "Группа свёрнута, пока её не откроют.",
+  "@settingsStepsExpandOffHint": {
+    "description": "Подпись карточки варианта: группа не раскрывается сама."
+  },
+  "settingsStepsThoughtsCurrentHint": "Только рассуждения, которые модель пишет сейчас.",
+  "@settingsStepsThoughtsCurrentHint": {
+    "description": "Подпись карточки варианта: только текущие рассуждения."
+  },
+  "settingsStepsThoughtsHideHint": "Все рассуждения ответа свёрнуты.",
+  "@settingsStepsThoughtsHideHint": {
+    "description": "Подпись карточки варианта: все рассуждения свёрнуты."
+  },
+  "settingsStepsThoughtsAllHint": "Все рассуждения ответа развёрнуты.",
+  "@settingsStepsThoughtsAllHint": {
+    "description": "Подпись карточки варианта: все рассуждения развёрнуты."
+  },
+  "settingsStepsToolsActiveHint": "Только вызовы, которые выполняются или ждут ответа.",
+  "@settingsStepsToolsActiveHint": {
+    "description": "Подпись карточки варианта: только активные вызовы инструментов."
+  },
+  "settingsStepsToolsHideHint": "Все вызовы инструментов ответа свёрнуты.",
+  "@settingsStepsToolsHideHint": {
+    "description": "Подпись карточки варианта: все вызовы свёрнуты."
+  },
+  "settingsStepsToolsAllHint": "Все вызовы развёрнуты, включая вывод.",
+  "@settingsStepsToolsAllHint": {
+    "description": "Подпись карточки варианта: все вызовы развёрнуты с выводом."
+  },
+  "settingsLimitsHelper": "Сохраняется по кнопке «Сохранить». Некорректный JSON не сохраняется.",
+  "@settingsLimitsHelper": {
+    "description": "Подсказка под полем лимитов в JSON."
   },
   "settingsSaved": "Настройки сохранены",
   "@settingsSaved": {
@@ -756,6 +940,10 @@
   "@modelNoTools": {
     "description": "Marker for a model that does not support tool calling; the agent cannot use it."
   },
+  "modelPinManageHint": "Нажмите модель, чтобы закрепить или открепить её. Закреплённые показываются первыми в выборе модели в чате.",
+  "@modelPinManageHint": {
+    "description": "Подсказка в диалоге закреплений моделей в настройках: нажатие закрепляет или открепляет модель."
+  },
   "modelPin": "Закрепить",
   "@modelPin": {
     "description": "Tooltip of the star button: pin the model to the top of the picker."
@@ -841,13 +1029,17 @@
   "@settingsAttachLimits": {
     "description": "Settings section title: how many files and how many bytes can be attached to a message."
   },
-  "settingsAttachPerMessage": "Файлов в сообщении",
-  "@settingsAttachPerMessage": {
-    "description": "Settings field: maximum number of attachments per message."
+  "settingsAttachLimitsHint": "Сколько файлов можно приложить к одному сообщению и какой максимальный размер файла попадает в контекст модели.",
+  "@settingsAttachLimitsHint": {
+    "description": "Пояснение под заголовком лимитов вложений: что задают два числа."
   },
-  "settingsAttachMaxBytes": "Макс. размер файла, байт",
-  "@settingsAttachMaxBytes": {
-    "description": "Settings field: files larger than this are refused as attachments."
+  "settingsAttachUnitFiles": "файлов",
+  "@settingsAttachUnitFiles": {
+    "description": "Суффикс внутри поля: количество файлов в сообщении."
+  },
+  "settingsAttachUnitBytes": "байт",
+  "@settingsAttachUnitBytes": {
+    "description": "Суффикс внутри поля: размер в байтах."
   },
   "settingsModelUnavailable": "Модель больше недоступна в OpenRouter: выберите другую.",
   "@settingsModelUnavailable": {

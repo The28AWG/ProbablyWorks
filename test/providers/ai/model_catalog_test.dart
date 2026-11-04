@@ -14,7 +14,8 @@ class _ScriptedLlm implements LlmProvider {
   int calls = 0;
 
   @override
-  Future<void> checkKey() => Future<void>.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Future<List<LlmModelInfo>> listModels() {

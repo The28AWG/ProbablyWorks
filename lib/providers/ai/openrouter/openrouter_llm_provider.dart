@@ -108,11 +108,22 @@ class OpenRouterLlmProvider implements LlmProvider {
     );
   }
 
+  /// Метаданные текущего ключа: он же подтверждает, что ключ принят сервисом.
   @override
-  Future<void> checkKey() async {
+  Future<LlmKeyInfo> checkKey() async {
     final client = await _client();
     try {
-      await client.apiKeys.getCurrentKeyMetadata();
+      final key = (await client.apiKeys.getCurrentKeyMetadata()).data;
+      return LlmKeyInfo(
+        label: key.label,
+        usage: key.usage.toDouble(),
+        limit: key.limit?.toDouble(),
+        limitRemaining: key.limitRemaining?.toDouble(),
+        limitReset: key.limitReset,
+        isFreeTier: key.isFreeTier,
+        // Строка ISO 8601 в UTC; пустая или неразобранная дата трактуется как бессрочный ключ.
+        expiresAt: DateTime.tryParse(key.expiresAt ?? ''),
+      );
     } on OpenRouterException catch (error, stack) {
       Error.throwWithStackTrace(llmFailureOf(error), stack);
     } on SocketException catch (error, stack) {

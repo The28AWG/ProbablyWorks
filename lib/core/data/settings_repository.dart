@@ -21,6 +21,7 @@ class SettingsRepository {
   static const keyDefaultModel = 'defaultModel';
   static const keyTitleModel = 'titleModel';
   static const keyLanguage = 'language';
+  static const keyThemeMode = 'themeMode';
   static const keyDefaultPolicy = 'defaultPolicy';
   static const keyDenylist = 'denylist';
   static const keyLimits = 'limits';

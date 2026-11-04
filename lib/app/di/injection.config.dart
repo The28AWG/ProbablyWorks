@@ -46,6 +46,7 @@ import '../bootstrap/app_paths.dart' as _i859;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/locale_controller.dart' as _i675;
 import '../router/app_router.dart' as _i81;
+import '../theme/theme_controller.dart' as _i699;
 import 'core_module.dart' as _i154;
 
 extension GetItInjectableX on _i174.GetIt {
@@ -65,6 +66,7 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i765.InteractionBroker>(() => _i765.InteractionBroker());
     gh.singleton<_i558.FlutterSecureStorage>(() => coreModule.secureStorage);
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
+    gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
     gh.lazySingleton<_i531.ContextBuilder>(() => _i531.ContextBuilder());
     gh.lazySingleton<_i719.HostKeyConfirmations>(
       () => _i719.HostKeyConfirmations(),
@@ -169,6 +171,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i250.HostRepository>(),
         gh<_i913.SettingsRepository>(),
         gh<_i675.LocaleController>(),
+        gh<_i699.ThemeController>(),
         gh<_i758.ModelCatalogService>(),
         gh<_i441.HostDiagnostics>(),
       ),

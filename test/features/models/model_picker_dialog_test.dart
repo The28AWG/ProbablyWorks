@@ -15,7 +15,8 @@ class _FakeLlm implements LlmProvider {
   final List<LlmModelInfo> models;
 
   @override
-  Future<void> checkKey() => Future<void>.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Future<List<LlmModelInfo>> listModels() async => models;
@@ -46,14 +47,28 @@ class _Host extends StatelessWidget {
     required this.catalog,
     required this.currentId,
     required this.onPicked,
-  });
+    this.pinnable = true,
+    this.requireTools = true,
+    this.managePins = false,
+    List<String>? pins,
+  }) : pins = pins ?? [];
 
   final ModelCatalogService catalog;
   final String? currentId;
   final void Function(LlmModelInfo?) onPicked;
 
-  // Закрепление в этих тестах не проверяется; ids просто собираются.
-  final _pins = <String>[];
+  /// Есть ли у строк кнопка закрепления (композер — да, настройки модели — нет).
+  final bool pinnable;
+  final bool requireTools;
+
+  /// Закреплённые id: нажатие переключает модель (как в приложении), список видно из теста.
+  final List<String> pins;
+
+  final bool managePins;
+
+  void _toggle(String id) {
+    if (!pins.remove(id)) pins.add(id);
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -80,7 +95,9 @@ class _Host extends StatelessWidget {
         catalog: catalog,
         pinned: const [],
         currentId: currentId,
-        onTogglePin: _pins.add,
+        onTogglePin: pinnable ? _toggle : null,
+        requireTools: requireTools,
+        managePins: managePins,
       ),
     );
   }
@@ -137,6 +154,150 @@ void main() {
     },
   );
 
+  const plain = LlmModelInfo(id: 'x/plain', name: 'Plain');
+
+  testWidgets('without onTogglePin rows have no pin button', (tester) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: _ignorePick,
+        pinnable: false,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.star_border), findsNothing);
+    expect(find.byIcon(Icons.star), findsNothing);
+  });
+
+  testWidgets('with onTogglePin rows show the pin button', (tester) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    await tester.pumpWidget(
+      _Host(catalog: catalog, currentId: null, onPicked: _ignorePick),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.star_border), findsOneWidget);
+  });
+
+  testWidgets('manage mode: a tap pins and unpins without closing', (
+    tester,
+  ) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    final pins = <String>[];
+    LlmModelInfo? picked;
+    var closed = false;
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: (value) {
+          picked = value;
+          closed = true;
+        },
+        managePins: true,
+        requireTools: false,
+        pins: pins,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('GPT-4o'));
+    await tester.pumpAndSettle();
+    expect(pins, ['openai/gpt-4o']);
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(closed, isFalse);
+
+    await tester.tap(find.text('GPT-4o'));
+    await tester.pumpAndSettle();
+    expect(pins, isEmpty);
+    expect(picked, isNull);
+  });
+
+  testWidgets('manage mode lets a model without tools be pinned', (
+    tester,
+  ) async {
+    // Одна строка: вторая уходит за край окна теста и не получает нажатие.
+    final catalog = await _catalog(listed: const [plain]);
+    final pins = <String>[];
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: _ignorePick,
+        managePins: true,
+        requireTools: false,
+        pins: pins,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Plain'));
+    await tester.pumpAndSettle();
+    expect(pins, ['x/plain']);
+  });
+
+  testWidgets('requireTools false lets a model without tools be picked', (
+    tester,
+  ) async {
+    final catalog = await _catalog(listed: const [gpt, plain]);
+    LlmModelInfo? picked;
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: (value) => picked = value,
+        pinnable: false,
+        requireTools: false,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(Dialog)));
+
+    // Бейдж «нет tool calling» нужен только тем, кому инструменты требуются.
+    expect(find.text(l10n.modelNoTools), findsNothing);
+    await tester.tap(find.text('Plain'));
+    await tester.pumpAndSettle();
+    expect(picked?.id, 'x/plain');
+  });
+
+  testWidgets('requireTools true keeps a model without tools unpicked', (
+    tester,
+  ) async {
+    final catalog = await _catalog(listed: const [gpt, plain]);
+    LlmModelInfo? picked;
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: (value) => picked = value,
+        pinnable: false,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(Dialog)));
+
+    // По умолчанию фильтр «tool calling» скрывает модели без инструментов.
+    expect(find.text('Plain'), findsNothing);
+
+    // Фильтр снят вручную: модель видна с бейджем, но выбрать её нельзя.
+    await tester.tap(find.text(l10n.modelFilterToolsOnly));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.modelNoTools), findsOneWidget);
+    await tester.tap(find.text('Plain'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(picked, isNull);
+  });
+
   testWidgets('closing the picker keeps the old choice', (tester) async {
     final catalog = await _catalog(listed: const [gpt]);
     LlmModelInfo? picked = gpt;
@@ -155,4 +316,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(picked, isNull);
   });
+}
+
+void _ignorePick(LlmModelInfo? _) {
+  return;
 }

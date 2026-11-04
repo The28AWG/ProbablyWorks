@@ -22,6 +22,7 @@ import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -58,7 +59,8 @@ class _FakeLlm implements LlmProvider {
   LlmFailure? nextFailure;
 
   @override
-  Future<void> checkKey() => Future<void>.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
@@ -135,6 +137,7 @@ void main() {
       hosts,
       settings,
       LocaleController(),
+      ThemeController(),
       modelCatalog,
       HostDiagnostics(hosts, MemorySecretStore(), settings, runtimes),
     );

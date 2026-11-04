@@ -12,9 +12,11 @@ class AppTextField extends StatelessWidget {
     this.error,
     this.prefixIcon,
     this.suffix,
+    this.suffixText,
     this.obscure = false,
     this.mono = false,
     this.enabled = true,
+    this.readOnly = false,
     this.autofocus = false,
     this.minLines,
     this.maxLines = 1,
@@ -32,9 +34,16 @@ class AppTextField extends StatelessWidget {
   final String? error;
   final IconData? prefixIcon;
   final Widget? suffix;
+
+  /// Единица измерения внутри поля справа, например «байт»: вместо подписи, которой поле не нужно.
+  final String? suffixText;
   final bool obscure;
   final bool mono;
   final bool enabled;
+
+  /// Только чтение: поле сохраняет высоту и оформление, но текст не редактируется. Так сохранённый
+  /// ключ и поле ввода занимают одну строку одинаковой высоты.
+  final bool readOnly;
   final bool autofocus;
   final int? minLines;
   final int? maxLines;
@@ -51,6 +60,7 @@ class AppTextField extends StatelessWidget {
       focusNode: focusNode,
       obscureText: obscure,
       enabled: enabled,
+      readOnly: readOnly,
       autofocus: autofocus,
       minLines: minLines,
       maxLines: obscure ? 1 : maxLines,
@@ -70,6 +80,7 @@ class AppTextField extends StatelessWidget {
         errorText: error,
         prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 20),
         suffixIcon: suffix,
+        suffixText: suffixText,
       ),
     );
   }

@@ -13,23 +13,35 @@ import 'package:probably_works/providers/ai/model_catalog.dart';
 
 /// Выбор модели: поиск по id/имени, фильтры (tool calling, бесплатные, провайдер), сортировка,
 /// закреплённые сверху и обновление списка из OpenRouter. Стрелки ↑/↓ двигают подсветку, Enter выбирает.
-/// Возвращает выбранную модель или null. [onTogglePin] сохраняет закрепление вне диалога.
+/// Возвращает выбранную модель или null.
+/// [onTogglePin] задан — у каждой строки есть кнопка закрепления, которая сохраняет закрепление вне диалога.
+/// Null — кнопки нет (настройки), закреплённые всё равно показываются сверху по [pinned].
+/// [requireTools] — выбирать только модели с tool calling (нужно агенту). Для заголовков чатов не нужно.
+/// [managePins] — режим управления закреплениями (настройки): нажатие на строку закрепляет или
+/// открепляет модель, диалог остаётся открытым и ничего не возвращает. Требует [onTogglePin].
 /// Недоступная текущая модель показывается отдельно и не выбирается.
 Future<LlmModelInfo?> showModelPickerDialog(
   BuildContext context, {
   required ModelCatalogService catalog,
   required List<String> pinned,
   required String? currentId,
-  required void Function(String modelId) onTogglePin,
-}) => showDialog<LlmModelInfo>(
-  context: context,
-  builder: (_) => _ModelPickerDialog(
-    catalog: catalog,
-    pinned: pinned,
-    currentId: currentId,
-    onTogglePin: onTogglePin,
-  ),
-);
+  void Function(String modelId)? onTogglePin,
+  bool requireTools = true,
+  bool managePins = false,
+}) {
+  assert(!managePins || onTogglePin != null, 'managePins нужен onTogglePin');
+  return showDialog<LlmModelInfo>(
+    context: context,
+    builder: (_) => _ModelPickerDialog(
+      catalog: catalog,
+      pinned: pinned,
+      currentId: currentId,
+      onTogglePin: onTogglePin,
+      requireTools: requireTools,
+      managePins: managePins,
+    ),
+  );
+}
 
 class _ModelPickerDialog extends StatefulWidget {
   const _ModelPickerDialog({
@@ -37,12 +49,16 @@ class _ModelPickerDialog extends StatefulWidget {
     required this.pinned,
     required this.currentId,
     required this.onTogglePin,
+    required this.requireTools,
+    required this.managePins,
   });
 
   final ModelCatalogService catalog;
   final List<String> pinned;
   final String? currentId;
-  final void Function(String modelId) onTogglePin;
+  final void Function(String modelId)? onTogglePin;
+  final bool requireTools;
+  final bool managePins;
 
   @override
   State<_ModelPickerDialog> createState() => _ModelPickerDialogState();
@@ -70,12 +86,15 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
   late final List<String> _pinned = [...widget.pinned];
   late final StreamSubscription<ModelCatalogState> _catalogSub;
   late ModelCatalogState _catalog = widget.catalog.state;
-  var _query = const ModelListQuery();
+  // Фильтр «с tool calling» по умолчанию включён только если диалог этого требует:
+  // иначе для заголовков чатов модели без инструментов были бы скрыты без видимой причины.
+  late ModelListQuery _query;
   String? _highlightId;
 
   @override
   void initState() {
     super.initState();
+    _query = ModelListQuery(toolsOnly: widget.requireTools);
     _search.addListener(
       () => setState(() => _query = _query.copyWith(search: _search.text)),
     );
@@ -97,7 +116,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     setState(() {
       if (!_pinned.remove(id)) _pinned.add(id);
     });
-    widget.onTogglePin(id);
+    widget.onTogglePin?.call(id);
   }
 
   /// Ошибка и статус загрузки приходят из состояния каталога; здесь только запускаем обновление.
@@ -161,13 +180,17 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     ];
   }
 
-  /// Подсвечиваемые строки в порядке показа; недоступные и без tool calling не выбираются.
+  /// Подсвечиваемые строки в порядке показа; недоступные и (если нужно агенту) без tool calling не выбираются.
   List<LlmModelInfo> _selectable(List<_Section> sections) => [
     for (final section in sections)
       if (!section.unavailable)
         for (final model in section.models)
-          if (model.supportsTools) model,
+          if (_usable(model)) model,
   ];
+
+  /// Модель можно выбрать: с tool calling, если диалог этого требует.
+  bool _usable(LlmModelInfo model) =>
+      model.supportsTools || !widget.requireTools;
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
@@ -189,7 +212,11 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
         key == LogicalKeyboardKey.numpadEnter) {
       final match = selectable.where((m) => m.id == _highlightId);
       if (match.isEmpty) return KeyEventResult.ignored;
-      Navigator.pop(context, match.first);
+      if (widget.managePins) {
+        _togglePin(match.first.id);
+      } else {
+        Navigator.pop(context, match.first);
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -271,8 +298,13 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                       current: model.id == widget.currentId,
                       highlighted: model.id == _highlightId,
                       pinned: _pinned.contains(model.id),
-                      onTogglePin: () => _togglePin(model.id),
-                      onSelect: () => Navigator.pop(context, model),
+                      requireTools: widget.requireTools,
+                      onTogglePin: widget.onTogglePin == null
+                          ? null
+                          : () => _togglePin(model.id),
+                      onSelect: widget.managePins
+                          ? () => _togglePin(model.id)
+                          : () => Navigator.pop(context, model),
                     );
                   },
                 ),
@@ -304,6 +336,18 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                 prefixIcon: Icons.search,
               ),
             ),
+            if (widget.managePins)
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: AppSpacing.lg,
+                  right: AppSpacing.lg,
+                  bottom: AppSpacing.xs,
+                ),
+                child: Text(
+                  l10n.modelPinManageHint,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppSpacing.lg,
@@ -507,6 +551,7 @@ class _ModelTile extends StatelessWidget {
     required this.current,
     required this.highlighted,
     required this.pinned,
+    required this.requireTools,
     required this.onTogglePin,
     required this.onSelect,
     super.key,
@@ -518,14 +563,19 @@ class _ModelTile extends StatelessWidget {
   final bool current;
   final bool highlighted;
   final bool pinned;
-  final VoidCallback onTogglePin;
+
+  /// Выбирать только модели с tool calling. Без этого бейдж «нет tool calling» не показывается.
+  final bool requireTools;
+
+  /// Null — кнопки закрепления нет (диалог настроек).
+  final VoidCallback? onTogglePin;
   final VoidCallback onSelect;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final usable = !unavailable && model.supportsTools;
+    final usable = !unavailable && (model.supportsTools || !requireTools);
     return ListTile(
       selected: current,
       selectedTileColor: scheme.secondaryContainer,
@@ -558,7 +608,7 @@ class _ModelTile extends StatelessWidget {
                 _modelPickerPerMillion(model.completionPrice!),
               ),
             ),
-          if (!model.supportsTools)
+          if (requireTools && !model.supportsTools)
             _Badge(text: l10n.modelNoTools, tone: AppTone.warning),
           if (unavailable)
             _Badge(
@@ -567,7 +617,7 @@ class _ModelTile extends StatelessWidget {
             ),
         ],
       ),
-      trailing: unavailable
+      trailing: unavailable || onTogglePin == null
           ? null
           : IconButton(
               tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,

@@ -17,7 +17,8 @@ class _ScriptedLlm implements LlmProvider {
   final List<LlmRequest> requests = [];
 
   @override
-  Future<void> checkKey() => Future<void>.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {

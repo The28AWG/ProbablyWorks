@@ -5,6 +5,7 @@ library;
 export 'action_card.dart';
 export 'app_banner.dart';
 export 'app_card.dart';
+export 'app_choice_group.dart';
 export 'app_empty_state.dart';
 export 'app_markdown.dart';
 export 'app_scaffold.dart';

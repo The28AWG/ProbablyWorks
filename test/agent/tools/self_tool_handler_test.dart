@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
@@ -28,7 +29,8 @@ class _NoNetworkLlm implements LlmProvider {
   Future<List<LlmModelInfo>> listModels() async => const [];
 
   @override
-  Future<void> checkKey() => Future.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 }
 
 void main() {
@@ -54,6 +56,7 @@ void main() {
       hosts,
       settings,
       LocaleController(),
+      ThemeController(),
       ModelCatalogService(SavedModelRepository(db), _NoNetworkLlm()),
       HostDiagnostics(
         hosts,

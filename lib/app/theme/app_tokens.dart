@@ -58,6 +58,10 @@ abstract final class AppLayout {
   /// Формы и мастер онбординга.
   static const double formMaxWidth = 560;
 
+  /// Колонка названия в строке формы настроек. Ниже [formMaxWidth] строка складывается в колонку,
+  /// поэтому колонка названия и поля делят ширину только там, где есть место для двух колонок.
+  static const double formLabelWidth = 240;
+
   /// Страницы настроек и хостов.
   static const double pageMaxWidth = 720;
 

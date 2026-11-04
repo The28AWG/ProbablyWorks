@@ -58,10 +58,35 @@ class _KitGallery extends StatelessWidget {
         const SizedBox(height: AppSpacing.md),
         const ContextUsageBar(label: 'Context 72%', fraction: 0.72),
         const SizedBox(height: AppSpacing.md),
+        AppChoiceGroup<String>(
+          options: _choiceOptions,
+          selected: 'ask',
+          onChanged: _ignoreChoice,
+        ),
+        const SizedBox(height: AppSpacing.md),
         const AppMarkdown(data: _markdownSample),
       ],
     ),
   );
+}
+
+const _choiceOptions = [
+  AppChoiceOption(
+    value: 'ask',
+    title: 'Ask',
+    subtitle: 'Confirm each command',
+    icon: Icons.front_hand_outlined,
+  ),
+  AppChoiceOption(
+    value: 'yolo',
+    title: 'Auto',
+    subtitle: 'Run without asking',
+    icon: Icons.bolt_outlined,
+  ),
+];
+
+void _ignoreChoice(String _) {
+  return;
 }
 
 const _markdownSample = '''

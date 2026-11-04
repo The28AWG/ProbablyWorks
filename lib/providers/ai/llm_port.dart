@@ -156,6 +156,50 @@ class LlmModelInfo {
   final List<String>? inputModalities;
 }
 
+/// Сведения о ключе сервиса: что показывает экран настроек. Все суммы в USD.
+class LlmKeyInfo extends Equatable {
+  const LlmKeyInfo({
+    required this.label,
+    required this.usage,
+    this.limit,
+    this.limitRemaining,
+    this.limitReset,
+    this.isFreeTier = false,
+    this.expiresAt,
+  });
+
+  /// Метка ключа, которую сервис выдаёт сам (обычно маска вида `sk-or-v1-...`).
+  final String label;
+
+  /// Всего потрачено по ключу.
+  final double usage;
+
+  /// Лимит ключа; null — без лимита.
+  final double? limit;
+
+  /// Остаток лимита; null — без лимита.
+  final double? limitRemaining;
+
+  /// Период сброса лимита (`monthly`, `weekly`, ...); null — лимит не сбрасывается.
+  final String? limitReset;
+
+  final bool isFreeTier;
+
+  /// Дата истечения ключа; null — ключ бессрочный.
+  final DateTime? expiresAt;
+
+  @override
+  List<Object?> get props => [
+    label,
+    usage,
+    limit,
+    limitRemaining,
+    limitReset,
+    isFreeTier,
+    expiresAt,
+  ];
+}
+
 /// Принимает ли модель файл данного типа: `image/*` требует модальность image, остальное — file.
 /// Неизвестные модальности (null) означают «не принимает»: лучше отказать, чем отправить зря.
 bool acceptsFileType(List<String>? modalities, String mimeType) {
@@ -198,7 +242,7 @@ abstract interface class LlmProvider {
 
   Future<List<LlmModelInfo>> listModels();
 
-  /// Проверяет, что сервис принимает ключ (запрос с авторизацией). Ошибка — [LlmFailure] с причиной.
-  /// В отличие от [listModels], публичный список моделей не подтверждает ключ.
-  Future<void> checkKey();
+  /// Проверяет, что сервис принимает ключ (запрос с авторизацией), и возвращает сведения о нём.
+  /// Ошибка — [LlmFailure] с причиной. В отличие от [listModels], публичный список моделей ключ не подтверждает.
+  Future<LlmKeyInfo> checkKey();
 }

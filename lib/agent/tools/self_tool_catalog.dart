@@ -98,7 +98,7 @@ abstract final class SelfToolCatalog {
     LlmToolSpec(
       name: ToolNames.settingsRead,
       description:
-          'Read the app settings that can be changed: language, defaultModel, titleModel, pinnedModels, '
+          'Read the app settings that can be changed: language, themeMode, defaultModel, titleModel, pinnedModels, '
           'limits (JSON), stepsGroup, stepsExpandWhileActive, stepsThoughts, stepsTools.',
       parameters: {'type': 'object', 'properties': <String, dynamic>{}},
     ),
@@ -106,7 +106,7 @@ abstract final class SelfToolCatalog {
       name: ToolNames.settingsUpdate,
       description:
           'Change one app setting by key (see settings_read). Value is text: '
-          'language is system, en or ru; models are model ids; pinnedModels is a JSON array of ids; '
+          'language is system, en or ru; themeMode is system, light or dark; models are model ids; pinnedModels is a JSON array of ids; '
           'limits is a JSON object; stepsGroup and stepsExpandWhileActive are yes or no; '
           'stepsThoughts is current, all or expanded; '
           'stepsTools is active, all or expanded.',
@@ -117,6 +117,7 @@ abstract final class SelfToolCatalog {
             'type': 'string',
             'enum': [
               'language',
+              'themeMode',
               'defaultModel',
               'titleModel',
               'pinnedModels',

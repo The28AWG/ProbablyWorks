@@ -17,6 +17,7 @@ import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -41,7 +42,8 @@ class _NoNetworkLlm implements LlmProvider {
   Future<List<LlmModelInfo>> listModels() async => const [];
 
   @override
-  Future<void> checkKey() => Future.value();
+  Future<LlmKeyInfo> checkKey() =>
+      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 }
 
 void main() {
@@ -76,6 +78,7 @@ void main() {
       hosts,
       settings,
       LocaleController(),
+      ThemeController(),
       ModelCatalogService(SavedModelRepository(db), _NoNetworkLlm()),
       HostDiagnostics(hosts, secrets, settings, runtimes),
     );

@@ -3,6 +3,7 @@ import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/db_connection.dart';
@@ -43,6 +44,11 @@ Future<bool> bootstrap() async {
     ),
   );
   getIt<LocaleController>().apply(language);
+  // Тема применяется до первого кадра, иначе приложение сначала мелькает в системной теме.
+  final themeMode = await getIt<SettingsRepository>().read(
+    SettingsRepository.keyThemeMode,
+  );
+  getIt<ThemeController>().apply(ThemeController.modeFrom(themeMode));
   // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.
   await getIt<ModelCatalogService>().start(hasKey: _hasOpenRouterKey);
   return true;

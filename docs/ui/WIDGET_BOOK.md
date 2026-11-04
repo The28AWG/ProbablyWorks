@@ -24,7 +24,7 @@ import 'package:probably_works/app/ui/ui.dart';
 | --- | --- | --- |
 | `Scaffold` | `AppScaffold` | Всегда для страниц. Ограничивает ширину через `maxWidth`. |
 | `Card` | `AppCard` | Все карточки. Поддерживает `onTap`, `accent` (полоска слева), `color`. |
-| `TextField` / `TextFormField` | `AppTextField` | Все поля ввода. Есть `label`, `hint`, `helper`, `error`, `mono`, `suffix`. |
+| `TextField` / `TextFormField` | `AppTextField` | Все поля ввода. Есть `label`, `hint`, `helper`, `error`, `mono`, `suffix`, `suffixText`. |
 | `Column` с заголовком и полями | `AppSection` | Группа полей или настроек с заголовком, описанием и действием справа. |
 | `MaterialBanner`, встроенные `Container` с текстом | `AppBanner` | Статусы в потоке: предупреждение, ошибка, доверие к workspace, лимит шагов. |
 | `Card` + `Row` с кнопками (ожидание ответа) | `ActionCard` | Подтверждение команды агента, вопрос агента, очередь сообщений. |
@@ -40,6 +40,7 @@ import 'package:probably_works/app/ui/ui.dart';
 | `LinearProgressIndicator` с подписью | `ContextUsageBar` | Заполнение контекста модели. Цвет меняется у предела. |
 | `Stepper` или набор точек | `OnboardingStepper` | Шаги онбординга: сегменты и счётчик. |
 | `Container` с `BoxDecoration` и штрихом | `DashedBorder` | Зона перетаскивания файлов и пустые слоты. |
+| `SegmentedButton`, `RadioListTile` в списке для выбора одного варианта с пояснением | `AppChoiceGroup` | Настройки: тема, журнал шагов, политика. Варианты карточками с радио-индикатором, делят ширину и переносятся. Без пояснений `SegmentedButton` допустим. |
 
 Стандартные виджеты, которые не заменены, допустимы: `ListView`, `ListTile`, `IconButton`,
 `FilledButton`, `TextButton`, `OutlinedButton`, `SegmentedButton`, `FilterChip`,
@@ -110,12 +111,39 @@ AppTextField(
 )
 ```
 
-Параметры: `controller`, `label`, `hint`, `helper`, `error`, `prefixIcon`, `suffix`, `obscure`,
-`mono`, `enabled`, `autofocus`, `minLines`, `maxLines` (по умолчанию 1), `keyboardType`,
+Параметры: `controller`, `label`, `hint`, `helper`, `error`, `prefixIcon`, `suffix`, `suffixText` (единица
+измерения внутри поля, например «байт»; вместо подписи), `obscure`,
+`mono`, `enabled`, `readOnly` (поле сохраняет высоту и оформление, текст не редактируется), `autofocus`, `minLines`, `maxLines` (по умолчанию 1), `keyboardType`,
 `onChanged`, `onSubmitted`, `focusNode`.
 
 Поле сообщения в чате не является `AppTextField`: там нужен собственный обработчик клавиш
 (`ComposerInput`, см. раздел 5).
+
+**`AppChoiceGroup<T>`**: выбор одного варианта карточками. Каждый вариант: радио-индикатор, заголовок,
+пояснение (`subtitle`, обязательное) и иконка справа (`icon`). Карточки делят ширину поровну, минимальная
+ширина карточки 180, на узкой области переносятся. Все карточки группы одной высоты: заголовок в одну строку,
+пояснение в две, лишнее обрезается многоточием. Полный текст показывает подсказка при наведении или долгом
+нажатии: заголовок жирным и пояснение с новой строки. Выбор отдаётся через `onChanged`, семантика — `selected` в группе.
+
+```dart
+AppChoiceGroup<ThemeMode>(
+  options: [
+    AppChoiceOption(
+      value: ThemeMode.system,
+      title: l10n.settingsThemeSystem,
+      subtitle: l10n.settingsThemeSystemHint,
+      icon: Icons.brightness_auto_outlined,
+    ),
+    AppChoiceOption(
+      value: ThemeMode.dark,
+      title: l10n.settingsThemeDark,
+      subtitle: l10n.settingsThemeHint,
+    ),
+  ],
+  selected: state.themeMode,
+  onChanged: cubit.saveThemeMode,
+)
+```
 
 ### Обратная связь
 
@@ -324,7 +352,11 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `WorkspaceSidebar` | `lib/features/workspace/presentation/widgets/workspace_sidebar.dart` | Боковая панель: новый чат, `ChatListPanel`, навигация «Хосты» и «Настройки» внизу. Выбранный чат и активный раздел приходят из маршрутов. Сворачивается кнопкой |
 | `WorkspaceRail` | `lib/features/workspace/presentation/widgets/workspace_sidebar.dart` | Свёрнутая панель: развернуть, новый чат, хосты, настройки (только иконки). Активный раздел выделен |
 | `WorkspaceLeadingButton` | `lib/features/workspace/presentation/widgets/workspace_shell.dart` | Кнопка слева в шапке страницы на узком экране: меню (`WorkspaceMenuButton`), а поверх оболочки — «назад». В остальных раскладках страницы передают `null` |
-| `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск, фильтр «с инструментами», закреплённые модели, группы по провайдеру, клавиатура |
+| `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск, фильтр «с инструментами», закреплённые модели, группы по провайдеру, клавиатура. `onTogglePin` задан — есть кнопки закрепления (композер, настройки закреплённых); `null` — кнопок нет (выбор модели по умолчанию и заголовков). `requireTools: false` — модель без tool calling выбирается. `managePins: true` (настройки закреплённых) — нажатие на строку закрепляет или открепляет модель, диалог остаётся открытым и ничего не возвращает; Enter делает то же для подсвеченной строки |
+| `ModelSettingField` | `lib/features/settings/presentation/widgets/model_setting_field.dart` | Поле модели в настройках: название, id и предупреждение о статусе (недоступна, нет tool calling). Нажатие открывает `ModelPickerDialog` без кнопок закрепления |
+| `ApiKeyInfoCard` | `lib/features/settings/presentation/widgets/api_key_info_card.dart` | Сведения о ключе из сервиса: метка, расходы, лимит и остаток, сброс лимита, срок, тариф. Загрузка, ошибка с «повторить» и пустое состояние внутри карточки |
+| `ApiKeySection` | `lib/features/settings/presentation/widgets/api_key_section.dart` | Блок «API-ключ» на вкладке «Аккаунт» — одна строка `SettingsFormRow`: поле и иконки в одну линию. Сохранённый ключ — то же поле в режиме «только чтение» с маской `•••• abc` и иконками «Проверить», «Заменить», «Удалить» (с подтверждением). Без ключа или при замене — поле ввода с иконками «Отмена» (если ключ уже есть) и «Сохранить». Высота строки одинакова в обоих состояниях: пояснение однострочное. Черновик ключа живёт в виджете, не в состоянии экрана |
+| `SettingsFormRow` | `lib/features/settings/presentation/widgets/settings_form_row.dart` | Строка формы настроек: слева название и пояснение, справа поле. `trailing` — иконки действий в той же линии, что и поле (ключ API); `action` — кнопка под полем, прижатая справа (например «Сохранить» у многострочных полей). Ниже `AppLayout.formMaxWidth` колонки складываются. Заменяет «заголовок над полем с подписью» |
 
 ## 6. Утилиты
 

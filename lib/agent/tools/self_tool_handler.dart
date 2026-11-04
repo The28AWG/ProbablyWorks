@@ -4,6 +4,7 @@ import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
@@ -36,6 +37,7 @@ class SelfToolHandler {
     this._hosts,
     this._settings,
     this._locale,
+    this._theme,
     this._catalog,
     this._diagnostics,
   );
@@ -43,6 +45,7 @@ class SelfToolHandler {
   final HostRepository _hosts;
   final SettingsRepository _settings;
   final LocaleController _locale;
+  final ThemeController _theme;
   final ModelCatalogService _catalog;
   final HostDiagnostics _diagnostics;
 
@@ -52,6 +55,7 @@ class SelfToolHandler {
 
   static const _settingKeys = [
     SettingsRepository.keyLanguage,
+    SettingsRepository.keyThemeMode,
     SettingsRepository.keyDefaultModel,
     SettingsRepository.keyTitleModel,
     SettingsRepository.keyPinnedModels,
@@ -124,6 +128,8 @@ class SelfToolHandler {
     return {
       SettingsRepository.keyLanguage:
           await _settings.read(SettingsRepository.keyLanguage) ?? 'system',
+      SettingsRepository.keyThemeMode:
+          await _settings.read(SettingsRepository.keyThemeMode) ?? 'system',
       SettingsRepository.keyDefaultModel:
           await _settings.read(SettingsRepository.keyDefaultModel) ?? '',
       SettingsRepository.keyTitleModel:
@@ -323,6 +329,19 @@ class SelfToolHandler {
           await _settings.write(key, value);
           _locale.apply(value);
           return 'language set to $value';
+        };
+      case SettingsRepository.keyThemeMode:
+        if (!const {'system', 'light', 'dark'}.contains(value)) {
+          throw ArgumentError.value(
+            value,
+            'value',
+            'expected system, light or dark',
+          );
+        }
+        return () async {
+          await _settings.write(key, value);
+          _theme.apply(ThemeController.modeFrom(value));
+          return 'themeMode set to $value';
         };
       case SettingsRepository.keyDefaultModel:
       case SettingsRepository.keyTitleModel:

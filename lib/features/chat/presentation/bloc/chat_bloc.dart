@@ -277,6 +277,11 @@ final class _StepsChanged extends ChatEvent {
   const _StepsChanged();
 }
 
+/// Закреплённые модели изменились в Settings или в композере другого чата: список выбора обновляется сразу.
+final class _PinnedChanged extends ChatEvent {
+  const _PinnedChanged();
+}
+
 /// Список хостов изменился (добавлен, отредактирован, удалён): меню хостов в композере обновляется сразу.
 final class _HostsChanged extends ChatEvent {
   const _HostsChanged(this.hosts);
@@ -538,6 +543,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_LiveFlush>(_onLiveFlush);
     on<_Refresh>(_onRefresh);
     on<_StepsChanged>(_onStepsChanged);
+    on<_PinnedChanged>(_onPinnedChanged);
     on<_CatalogChanged>(
       (event, emit) => emit(state.copyWith(catalog: event.catalog)),
     );
@@ -568,6 +574,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<ModelCatalogState>? _catalogSub;
   StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
+  StreamSubscription<String?>? _pinsSub;
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
 
@@ -660,6 +667,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     for (final sub in _stepsSubs) {
       await sub.cancel();
     }
+    await _pinsSub?.cancel();
     await _sessionSub?.cancel();
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
@@ -698,6 +706,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         _hub.settings.watch(key).listen((_) => add(const _StepsChanged())),
       );
     }
+    // Закрепления пишут и Settings, и композер (в том числе другой чат), и агент: подписка на ключ в БД.
+    _pinsSub = _hub.settings
+        .watch(SettingsRepository.keyPinnedModels)
+        .listen((_) => add(const _PinnedChanged()));
     // Каталог может обновиться в фоне (старт, таймер, Settings): чат перерисует подпись модели и маркер.
     _catalogSub = _hub.models.watch().listen(
       (catalog) => add(_CatalogChanged(catalog)),
@@ -1140,6 +1152,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final display = await _hub.settings.readStepsDisplay();
     emit(state.copyWith(stepsDisplay: display));
+  }
+
+  /// Перечитывает закрепления из БД: источник правды один, поэтому состояние чата совпадает с настройками.
+  Future<void> _onPinnedChanged(
+    _PinnedChanged event,
+    Emitter<ChatState> emit,
+  ) async {
+    final pinned = await _hub.settings.readPinnedModels();
+    emit(state.copyWith(pinnedModels: pinned));
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {

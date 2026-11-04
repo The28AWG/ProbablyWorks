@@ -487,6 +487,18 @@
   "@settingsLanguageSystem": {
     "description": "Language option: follow the system locale."
   },
+  "settingsLanguageSystemHint": "Follows the device language.",
+  "@settingsLanguageSystemHint": {
+    "description": "Language option hint: follow the device language."
+  },
+  "settingsLanguageEnglishHint": "Interface in English.",
+  "@settingsLanguageEnglishHint": {
+    "description": "Language option hint: English interface."
+  },
+  "settingsLanguageRussianHint": "Interface in Russian.",
+  "@settingsLanguageRussianHint": {
+    "description": "Language option hint: Russian interface."
+  },
   "settingsStepsGroup": "Group steps",
   "@settingsStepsGroup": {
     "description": "Section: group the steps of one response into one journal."
@@ -567,9 +579,13 @@
   "@settingsDefaultPolicy": {
     "description": "Setting: policy mode applied to new chats."
   },
-  "settingsDenylist": "Denylist (regular expressions, one per line)",
+  "settingsDenylist": "Denylist",
   "@settingsDenylist": {
-    "description": "Setting: patterns of commands that are always denied. It is a UX guard, not a security boundary."
+    "description": "Settings section title: commands that are refused."
+  },
+  "settingsDenylistHint": "One regular expression per line. A command that matches is refused without asking. This is a safety net, not a security boundary.",
+  "@settingsDenylistHint": {
+    "description": "Hint under the denylist title: how patterns work and their limits."
   },
   "settingsLimits": "Limits (JSON)",
   "@settingsLimits": {
@@ -578,6 +594,174 @@
   "settingsLimitsInvalid": "Limits JSON is invalid",
   "@settingsLimitsInvalid": {
     "description": "Error shown when the limits JSON cannot be parsed."
+  },
+  "settingsApiKeySet": "Key saved",
+  "@settingsApiKeySet": {
+    "description": "Status line above the masked API key: the key is stored."
+  },
+  "settingsApiKeyCheck": "Check",
+  "@settingsApiKeyCheck": {
+    "description": "Button that asks the service to verify the saved API key and reload its details."
+  },
+  "settingsApiKeyReplace": "Replace",
+  "@settingsApiKeyReplace": {
+    "description": "Button that opens the input field to enter a new API key."
+  },
+  "settingsApiKeyDelete": "Delete key",
+  "@settingsApiKeyDelete": {
+    "description": "Button that removes the saved API key."
+  },
+  "settingsApiKeyDeleteTitle": "Delete the API key?",
+  "@settingsApiKeyDeleteTitle": {
+    "description": "Confirmation dialog title before deleting the API key."
+  },
+  "settingsApiKeyDeleteBody": "Chats cannot reach models until you add a new key. The model list stays.",
+  "@settingsApiKeyDeleteBody": {
+    "description": "Confirmation dialog text before deleting the API key: what stops working."
+  },
+  "settingsApiKeyNotSet": "No API key",
+  "@settingsApiKeyNotSet": {
+    "description": "Empty state of the API key section when no key is saved."
+  },
+  "settingsKeyInfoTitle": "Key details",
+  "@settingsKeyInfoTitle": {
+    "description": "Heading of the card with details of the API key from the service."
+  },
+  "settingsKeyInfoEmpty": "Press Check to load the key details.",
+  "@settingsKeyInfoEmpty": {
+    "description": "Hint in the key details card before the details are loaded."
+  },
+  "settingsKeyLabel": "Label",
+  "@settingsKeyLabel": {
+    "description": "Key details row: the label the service gives to the key."
+  },
+  "settingsKeyUsage": "Spent",
+  "@settingsKeyUsage": {
+    "description": "Key details row: total spent by the key."
+  },
+  "settingsKeyLimit": "Limit",
+  "@settingsKeyLimit": {
+    "description": "Key details row: spending limit of the key."
+  },
+  "settingsKeyNoLimit": "No limit",
+  "@settingsKeyNoLimit": {
+    "description": "Key details value when the key has no spending limit."
+  },
+  "settingsKeyRemaining": "Remaining",
+  "@settingsKeyRemaining": {
+    "description": "Key details row: how much of the limit is left."
+  },
+  "settingsKeyLimitReset": "Limit resets",
+  "@settingsKeyLimitReset": {
+    "description": "Key details row: how often the spending limit resets."
+  },
+  "settingsKeyExpires": "Expires",
+  "@settingsKeyExpires": {
+    "description": "Key details row: expiration date of the key."
+  },
+  "settingsKeyNeverExpires": "Never",
+  "@settingsKeyNeverExpires": {
+    "description": "Key details value when the key does not expire."
+  },
+  "settingsKeyPlan": "Plan",
+  "@settingsKeyPlan": {
+    "description": "Key details row: free or paid key."
+  },
+  "settingsKeyPlanFree": "Free",
+  "@settingsKeyPlanFree": {
+    "description": "Key details value for a free-tier key."
+  },
+  "settingsKeyPlanPaid": "Paid",
+  "@settingsKeyPlanPaid": {
+    "description": "Key details value for a paid key."
+  },
+  "settingsModelNotSelected": "Not selected",
+  "@settingsModelNotSelected": {
+    "description": "Model field value when no model is chosen."
+  },
+  "settingsPinnedManage": "Manage",
+  "@settingsPinnedManage": {
+    "description": "Tooltip of the icon button that opens the model picker to pin and unpin models in settings."
+  },
+  "settingsPinnedEmpty": "No pinned models yet.",
+  "@settingsPinnedEmpty": {
+    "description": "Empty state of the pinned models list in settings."
+  },
+  "settingsTheme": "Theme",
+  "@settingsTheme": {
+    "description": "Settings section title for the app theme."
+  },
+  "settingsThemeHint": "Light or dark, or follow the system theme.",
+  "@settingsThemeHint": {
+    "description": "Settings section hint for the app theme."
+  },
+  "settingsThemeSystem": "System",
+  "@settingsThemeSystem": {
+    "description": "Theme option: follow the system theme."
+  },
+  "settingsThemeLight": "Light",
+  "@settingsThemeLight": {
+    "description": "Theme option: light theme."
+  },
+  "settingsThemeDark": "Dark",
+  "@settingsThemeDark": {
+    "description": "Theme option: dark theme."
+  },
+  "settingsThemeSystemHint": "Follows the system setting.",
+  "@settingsThemeSystemHint": {
+    "description": "Theme option hint: follow the system theme."
+  },
+  "settingsThemeLightHint": "Always light.",
+  "@settingsThemeLightHint": {
+    "description": "Theme option hint: always light."
+  },
+  "settingsThemeDarkHint": "Always dark.",
+  "@settingsThemeDarkHint": {
+    "description": "Theme option hint: always dark."
+  },
+  "settingsStepsGroupOnHint": "The steps of one answer go into one journal.",
+  "@settingsStepsGroupOnHint": {
+    "description": "Choice card hint for grouped steps."
+  },
+  "settingsStepsGroupOffHint": "Each step is a separate row.",
+  "@settingsStepsGroupOffHint": {
+    "description": "Choice card hint for steps one by one."
+  },
+  "settingsStepsExpandOnHint": "The group opens by itself while it runs.",
+  "@settingsStepsExpandOnHint": {
+    "description": "Choice card hint for expanding the group while running."
+  },
+  "settingsStepsExpandOffHint": "The group stays collapsed until you open it.",
+  "@settingsStepsExpandOffHint": {
+    "description": "Choice card hint for keeping the group collapsed while running."
+  },
+  "settingsStepsThoughtsCurrentHint": "Only the reasoning the model writes now.",
+  "@settingsStepsThoughtsCurrentHint": {
+    "description": "Choice card hint for showing only the current reasoning."
+  },
+  "settingsStepsThoughtsHideHint": "All reasoning of the answer is collapsed.",
+  "@settingsStepsThoughtsHideHint": {
+    "description": "Choice card hint for collapsing all reasoning."
+  },
+  "settingsStepsThoughtsAllHint": "All reasoning of the answer is expanded.",
+  "@settingsStepsThoughtsAllHint": {
+    "description": "Choice card hint for expanding all reasoning."
+  },
+  "settingsStepsToolsActiveHint": "Only calls that run or wait for an answer.",
+  "@settingsStepsToolsActiveHint": {
+    "description": "Choice card hint for showing only active tool calls."
+  },
+  "settingsStepsToolsHideHint": "All tool calls of the answer are collapsed.",
+  "@settingsStepsToolsHideHint": {
+    "description": "Choice card hint for collapsing all tool calls."
+  },
+  "settingsStepsToolsAllHint": "All calls are expanded, including their output.",
+  "@settingsStepsToolsAllHint": {
+    "description": "Choice card hint for expanding all tool calls with output."
+  },
+  "settingsLimitsHelper": "Saved after you press Save. Invalid JSON is not saved.",
+  "@settingsLimitsHelper": {
+    "description": "Helper text under the runtime limits JSON field."
   },
   "settingsSaved": "Settings saved",
   "@settingsSaved": {
@@ -756,6 +940,10 @@
   "@modelNoTools": {
     "description": "Marker for a model that does not support tool calling; the agent cannot use it."
   },
+  "modelPinManageHint": "Tap a model to pin or unpin it. Pinned models are listed first in the chat model picker.",
+  "@modelPinManageHint": {
+    "description": "Подсказка в диалоге закреплений моделей в настройках: нажатие закрепляет или открепляет модель."
+  },
   "modelPin": "Pin",
   "@modelPin": {
     "description": "Tooltip of the star button: pin the model to the top of the picker."
@@ -841,13 +1029,17 @@
   "@settingsAttachLimits": {
     "description": "Settings section title: how many files and how many bytes can be attached to a message."
   },
-  "settingsAttachPerMessage": "Files per message",
-  "@settingsAttachPerMessage": {
-    "description": "Settings field: maximum number of attachments per message."
+  "settingsAttachLimitsHint": "How many files one message can carry and the largest file that goes into the model context.",
+  "@settingsAttachLimitsHint": {
+    "description": "Hint under the attachment limits title: what the two numbers control."
   },
-  "settingsAttachMaxBytes": "Max file size in context, bytes",
-  "@settingsAttachMaxBytes": {
-    "description": "Settings field: files larger than this are refused as attachments."
+  "settingsAttachUnitFiles": "files",
+  "@settingsAttachUnitFiles": {
+    "description": "Unit suffix shown inside the field: number of files per message."
+  },
+  "settingsAttachUnitBytes": "bytes",
+  "@settingsAttachUnitBytes": {
+    "description": "Unit suffix shown inside the field: size in bytes."
   },
   "settingsModelUnavailable": "This model is no longer available in OpenRouter: choose another one.",
   "@settingsModelUnavailable": {
