@@ -244,6 +244,24 @@ void main() {
     expect(picked, 0);
   });
 
+  testWidgets('composer card is smaller only on the tiniest density', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const _Harness(density: ChatDensity.tiny));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((w) => _isCard(w, AppRadius.mdAll)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const _Harness(density: ChatDensity.narrow));
+    await tester.pumpAndSettle();
+    expect(
+      find.byWidgetPredicate((w) => _isCard(w, AppRadius.lgAll)),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('settings chips stay inside the card on a 375px screen', (
     tester,
   ) async {
@@ -279,18 +297,20 @@ void main() {
   });
 }
 
-/// Карточка композера: внешний `DecoratedBox` со скруглением `lg`. Вложенные декорации скругления не используют.
-bool _isCard(Widget widget) {
+/// Карточка композера: `DecoratedBox` с заданным скруглением. Вложенные декорации с тем же скруглением
+/// в композере не используются, поэтому первый найденный и есть карточка.
+bool _isCard(Widget widget, BorderRadius radius) {
   if (widget is! DecoratedBox) return false;
   final decoration = widget.decoration;
-  return decoration is BoxDecoration &&
-      decoration.borderRadius == AppRadius.lgAll;
+  return decoration is BoxDecoration && decoration.borderRadius == radius;
 }
 
 /// Проверяет, что каждый чип строки настроек (его `InkWell`) лежит внутри карточки композера по горизонтали.
 /// Чип, вылезший за карточку, обрезается её краем, поэтому такой выход считается ошибкой вёрстки.
 void _expectSettingsInsideCard(WidgetTester tester) {
-  final card = tester.getRect(find.byWidgetPredicate(_isCard).first);
+  final card = tester.getRect(
+    find.byWidgetPredicate((w) => _isCard(w, AppRadius.lgAll)).first,
+  );
   final chips = find.descendant(
     of: find.byType(ChatMetaBar),
     matching: find.byType(InkWell),

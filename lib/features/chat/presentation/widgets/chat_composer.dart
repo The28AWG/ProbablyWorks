@@ -71,7 +71,7 @@ class ChatComposer extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh,
-            borderRadius: AppRadius.lgAll,
+            borderRadius: density.composerRadius,
             border: Border.all(
               color: dragging ? scheme.primary : Colors.transparent,
               width: 1.5,
@@ -238,7 +238,7 @@ class ComposerSkeleton extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh,
-            borderRadius: AppRadius.lgAll,
+            borderRadius: ChatDensityScope.of(context).composerRadius,
           ),
           child: Padding(
             padding: ChatDensityScope.of(context).composerPadding,

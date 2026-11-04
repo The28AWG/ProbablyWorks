@@ -257,16 +257,23 @@ class _ChatBodyState extends State<ChatBody> {
                       if (empty)
                         Positioned.fill(
                           child: Center(
+                            // Боковые отступы берутся у колонки, как у нижнего композера: иначе прокрутка
+                            // добавляла бы второй отступ, и композер в пустом чате был бы заметно уже.
                             child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(AppSpacing.lg),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppSpacing.lg,
+                              ),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  ChatWelcome(
-                                    hostLabel: hostLabelOf(
-                                      state.hosts,
-                                      chat.hostId,
-                                      l10n,
+                                  ChatColumn.fixed(
+                                    context,
+                                    ChatWelcome(
+                                      hostLabel: hostLabelOf(
+                                        state.hosts,
+                                        chat.hostId,
+                                        l10n,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(height: AppSpacing.xl),

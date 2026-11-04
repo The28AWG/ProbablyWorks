@@ -5,8 +5,10 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_view.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -184,6 +186,44 @@ Future<void> _pump(
 
 void main() {
   setUpAll(GoldenFonts.load);
+
+  testWidgets('empty chat on a phone uses the column gutter on both sides', (
+    tester,
+  ) async {
+    // Узкий экран: колонка даёт только свой отступ. Прокрутка пустого чата не должна добавлять второй,
+    // иначе композер по центру заметно уже, чем нижний композер в том же окне.
+    const width = 375.0;
+    await tester.binding.setSurfaceSize(const Size(width, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('ru'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: BlocProvider<ChatBloc>.value(
+            value: SeededChatBloc(_empty()),
+            child: const ChatBody(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final body = tester.getRect(find.byType(ChatBody));
+    final card = tester.getRect(
+      find.byWidgetPredicate((w) {
+        if (w is! DecoratedBox) return false;
+        final decoration = w.decoration;
+        return decoration is BoxDecoration &&
+            decoration.borderRadius == AppRadius.lgAll;
+      }).first,
+    );
+    final gutter = ChatDensity.fromWidth(width).gutter;
+    expect(card.left - body.left, closeTo(gutter, 0.5));
+    expect(body.right - card.right, closeTo(gutter, 0.5));
+  });
 
   for (final brightness in Brightness.values) {
     testWidgets('chat screen: empty chat (${brightness.name})', (tester) async {
