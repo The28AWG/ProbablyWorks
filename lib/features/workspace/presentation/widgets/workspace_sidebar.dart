@@ -94,11 +94,7 @@ class WorkspaceSidebar extends StatelessWidget {
           ),
           const Divider(),
           Padding(
-            padding: const EdgeInsets.only(
-              left: AppSpacing.sm,
-              right: AppSpacing.sm,
-              bottom: AppSpacing.sm,
-            ),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
