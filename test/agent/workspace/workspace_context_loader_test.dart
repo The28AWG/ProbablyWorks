@@ -8,6 +8,7 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/host/local_host_runtime.dart';
 
 void main() {
@@ -22,7 +23,7 @@ void main() {
     db = openInMemoryDatabase();
     settings = SettingsRepository(db);
     loader = WorkspaceContextLoader(settings);
-    await HostRepository(db).ensureLocalHost(now);
+    await HostRepository(db, MemorySecretStore()).ensureLocalHost(now);
     workspace = Directory.systemTemp.createTempSync('pw_ws');
   });
 

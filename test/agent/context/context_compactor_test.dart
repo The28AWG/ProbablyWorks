@@ -9,6 +9,7 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
 /// Ответы сводки по очереди; запросы сохраняются для проверки.
@@ -44,7 +45,7 @@ void main() {
     chats = ChatRepository(db);
     llm = _ScriptedLlm();
     compactor = ContextCompactor(chats, llm, ContextBuilder());
-    await HostRepository(db).ensureLocalHost(now);
+    await HostRepository(db, MemorySecretStore()).ensureLocalHost(now);
     chat = Chat(
       id: 'c1',
       hostId: HostRepository.localHostId,

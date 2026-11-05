@@ -8,15 +8,18 @@ import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/security/secret_store.dart';
 
 void main() {
   late AppDatabase db;
   late HostRepository hosts;
+  late MemorySecretStore secrets;
   final now = DateTime(2026, 11, 1);
 
   setUp(() {
     db = openInMemoryDatabase();
-    hosts = HostRepository(db);
+    secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
   });
 
   tearDown(() => db.close());
@@ -71,6 +74,76 @@ void main() {
       expect(failed.notes, 'prod API box');
     },
   );
+
+  test(
+    'окружение переживает save и byId и не лежит в таблице хостов',
+    () async {
+      await hosts.save(
+        sshHost().copyWith(
+          environment: const {'TOKEN': 'secret-value', 'A': '1'},
+        ),
+      );
+
+      final loaded = (await hosts.byId('h1'))!;
+      expect(loaded.environment, {'TOKEN': 'secret-value', 'A': '1'});
+      expect(
+        await secrets.read(hostEnvironmentKey('h1')),
+        contains('secret-value'),
+      );
+      expect((await hosts.all()).single.environment['TOKEN'], 'secret-value');
+      expect(
+        (await hosts.watchAll().first).single.environment['TOKEN'],
+        'secret-value',
+      );
+
+      final raw = await db.customSelect('SELECT * FROM hosts').getSingle();
+      final joined = raw.data.values.map((value) => '$value').join('\n');
+      expect(joined, isNot(contains('secret-value')));
+      expect(joined, isNot(contains('TOKEN')));
+    },
+  );
+
+  test('пустая карта и удаление хоста стирают ключ окружения', () async {
+    await hosts.save(
+      sshHost().copyWith(environment: const {'TOKEN': 'secret-value'}),
+    );
+    await hosts.save(sshHost());
+    expect(await secrets.read(hostEnvironmentKey('h1')), isNull);
+    expect((await hosts.byId('h1'))!.environment, isEmpty);
+
+    await hosts.save(
+      sshHost().copyWith(environment: const {'TOKEN': 'secret-value'}),
+    );
+    await hosts.delete('h1');
+    expect(secrets.values.containsKey(hostEnvironmentKey('h1')), isFalse);
+    expect(await hosts.byId('h1'), isNull);
+  });
+
+  test('плохое имя переменной не записывается', () async {
+    await expectLater(
+      hosts.save(sshHost().copyWith(environment: const {'BAD-NAME': 'x'})),
+      throwsArgumentError,
+    );
+    expect(await hosts.byId('h1'), isNull);
+    expect(await secrets.read(hostEnvironmentKey('h1')), isNull);
+  });
+
+  test('битый JSON окружения читается как пустая карта', () async {
+    await hosts.save(sshHost());
+    await secrets.write(hostEnvironmentKey('h1'), '{');
+    expect((await hosts.byId('h1'))!.environment, isEmpty);
+
+    await secrets.write(hostEnvironmentKey('h1'), '{"TOKEN":1}');
+    expect((await hosts.all()).single.environment, isEmpty);
+  });
+
+  test('recordCheck не затирает окружение', () async {
+    await hosts.save(
+      sshHost().copyWith(environment: const {'TOKEN': 'secret-value'}),
+    );
+    await hosts.recordCheck('h1', at: now, latencyMs: 1);
+    expect((await hosts.byId('h1'))!.environment['TOKEN'], 'secret-value');
+  });
 
   test('pinned models round-trip and default to an empty list', () async {
     final settings = SettingsRepository(db);

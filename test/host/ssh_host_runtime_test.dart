@@ -39,8 +39,8 @@ void main() {
 
   setUp(() async {
     db = openInMemoryDatabase();
-    hosts = HostRepository(db);
     secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
     confirmations = HostKeyConfirmations();
     pool = SshConnectionPool(
       hosts,

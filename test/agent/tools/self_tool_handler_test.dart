@@ -42,11 +42,11 @@ void main() {
 
   setUp(() async {
     db = openInMemoryDatabase();
-    hosts = HostRepository(db);
+    final secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
     settings = SettingsRepository(db);
     await settings.preload();
     await hosts.ensureLocalHost(DateTime.now());
-    final secrets = MemorySecretStore();
     final pool = SshConnectionPool(
       hosts,
       secrets,

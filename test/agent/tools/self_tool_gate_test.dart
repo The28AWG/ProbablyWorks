@@ -64,12 +64,12 @@ void main() {
     db = openInMemoryDatabase();
     tmp = Directory.systemTemp.createTempSync('pw_gate');
     chats = ChatRepository(db);
-    hosts = HostRepository(db);
+    final secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
     final settings = SettingsRepository(db);
     await settings.preload();
     await hosts.ensureLocalHost(DateTime.now());
     final local = (await hosts.byId(HostRepository.localHostId))!;
-    final secrets = MemorySecretStore();
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),
       const PipePtyLauncher(),

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/host/host_environment.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/portable_pty_launcher.dart';
 import 'package:probably_works/host/pty_launcher.dart';
@@ -13,11 +14,15 @@ final class LocalHostRuntime extends WrappedExecRuntime {
   LocalHostRuntime({
     required HostOs os,
     String? shell,
+    this.environment = const {},
     this.pty = const PortablePtyLauncher(),
   }) : super(os, shell: shell);
 
   /// Создание PTY для команд терминала (см. [openTerminal]).
   final PtyLauncher pty;
+
+  /// Карта хоста. Накладывается на окружение машины и в обычном процессе, и в PTY.
+  final Map<String, String> environment;
 
   @override
   Future<ExecChannel> spawn(String wrappedScript) async {
@@ -26,6 +31,10 @@ final class LocalHostRuntime extends WrappedExecRuntime {
         control.shellExecutable,
         control.shellArgs(wrappedScript),
         mode: ProcessStartMode.normal,
+        environment: localSessionEnvironment(
+          machine: Platform.environment,
+          host: environment,
+        ),
       );
       return _ProcessChannel(process);
     } on ProcessException catch (error, stack) {
@@ -44,7 +53,11 @@ final class LocalHostRuntime extends WrappedExecRuntime {
   }) => pty.start(
     control.shellExecutable,
     control.shellArgs(wrappedScript),
-    environment: {...Platform.environment, 'TERM': 'xterm-256color'},
+    environment: localSessionEnvironment(
+      machine: Platform.environment,
+      host: environment,
+      terminal: true,
+    ),
     columns: columns,
     rows: rows,
   );

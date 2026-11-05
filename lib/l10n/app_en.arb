@@ -1417,7 +1417,35 @@
   },
   "hostFormSectionEnvironment": "Environment",
   "@hostFormSectionEnvironment": {
-    "description": "Host form section: workspace, shell, timeout and notes."
+    "description": "Host form section: workspace, shell, timeout, notes and variables."
+  },
+  "hostEnvironmentLabel": "Variables",
+  "@hostEnvironmentLabel": {
+    "description": "Host form label for the list of environment variables."
+  },
+  "hostEnvironmentHint": "Added to every session on this host. Values are stored with the other secrets.",
+  "@hostEnvironmentHint": {
+    "description": "Host form hint under the environment variables label."
+  },
+  "hostEnvironmentNameHint": "NAME",
+  "@hostEnvironmentNameHint": {
+    "description": "Placeholder for an environment variable name."
+  },
+  "hostEnvironmentValueHint": "value",
+  "@hostEnvironmentValueHint": {
+    "description": "Placeholder for an environment variable value."
+  },
+  "hostEnvironmentAdd": "Add variable",
+  "@hostEnvironmentAdd": {
+    "description": "Button that adds an empty environment variable row."
+  },
+  "hostEnvironmentRemove": "Remove variable",
+  "@hostEnvironmentRemove": {
+    "description": "Tooltip of the button that removes an environment variable row."
+  },
+  "hostEnvironmentNameInvalid": "Use a name of letters, digits and underscores, starting with a letter or underscore.",
+  "@hostEnvironmentNameInvalid": {
+    "description": "Error shown when an environment variable name is not a shell identifier."
   },
   "settingsGroupAccount": "API and models",
   "@settingsGroupAccount": {

@@ -10,6 +10,7 @@ class AppTextField extends StatelessWidget {
     this.hint,
     this.helper,
     this.error,
+    this.errorMaxLines,
     this.prefixIcon,
     this.suffix,
     this.suffixText,
@@ -32,6 +33,10 @@ class AppTextField extends StatelessWidget {
   final String? hint;
   final String? helper;
   final String? error;
+
+  /// Сколько строк занимает [error]. Без значения — одна строка, длинный текст обрезается.
+  final int? errorMaxLines;
+
   final IconData? prefixIcon;
   final Widget? suffix;
 
@@ -78,6 +83,7 @@ class AppTextField extends StatelessWidget {
         hintText: hint,
         helperText: helper,
         errorText: error,
+        errorMaxLines: errorMaxLines,
         prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 20),
         suffixIcon: suffix,
         suffixText: suffixText,

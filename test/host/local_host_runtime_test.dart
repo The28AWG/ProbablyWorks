@@ -81,6 +81,22 @@ Future<_RunResult> _collect(Stream<ExecEvent> events) async {
 void main() {
   final runtime = LocalHostRuntime(os: HostOs.posix);
 
+  test('процесс получает переменную хоста и PATH машины', () async {
+    final machinePath = Platform.environment['PATH'];
+    final withHost = LocalHostRuntime(
+      os: HostOs.posix,
+      environment: const {'TOKEN': 'secret-value'},
+    );
+
+    final result = await _collect(
+      withHost.run('printenv TOKEN; printenv PATH'),
+    );
+
+    expect(result.exitCode, 0);
+    expect(result.stdout, contains('secret-value'));
+    expect(result.stdout, contains(machinePath));
+  });
+
   test('streams stdout and reports exit code', () async {
     final result = await _collect(
       runtime.run('echo hello; echo oops 1>&2; exit 3'),

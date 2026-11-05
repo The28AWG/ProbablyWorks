@@ -117,10 +117,11 @@ void main() {
     final chats = ChatRepository(db);
     final settings = SettingsRepository(db);
     await settings.preload();
-    final hosts = HostRepository(db);
+    final secrets = MemorySecretStore();
+    final hosts = HostRepository(db, secrets);
     final pool = SshConnectionPool(
       hosts,
-      MemorySecretStore(),
+      secrets,
       settings,
       HostKeyConfirmations(),
     );
@@ -949,7 +950,7 @@ void main() {
       createdAt: now,
       updatedAt: now,
     );
-    await HostRepository(db).save(sandbox);
+    await HostRepository(db, MemorySecretStore()).save(sandbox);
     await VirtualHostProvisioner(db).provision(sandbox);
     await hub.chats.saveChat(
       Chat(

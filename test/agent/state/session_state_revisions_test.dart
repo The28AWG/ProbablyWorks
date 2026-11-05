@@ -5,6 +5,7 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
+import 'package:probably_works/core/security/secret_store.dart';
 
 void main() {
   late AppDatabase db;
@@ -15,7 +16,10 @@ void main() {
     db = openInMemoryDatabase();
     chats = ChatRepository(db);
     service = SessionStateService(chats);
-    await HostRepository(db).ensureLocalHost(DateTime.now());
+    await HostRepository(
+      db,
+      MemorySecretStore(),
+    ).ensureLocalHost(DateTime.now());
     final now = DateTime.now();
     await chats.saveChat(
       Chat(

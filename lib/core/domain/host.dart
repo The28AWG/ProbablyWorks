@@ -7,6 +7,12 @@ enum HostOs { posix, macos, windows, unknown }
 
 enum SshAuthType { password, key }
 
+final _hostEnvironmentName = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+/// Имя переменной окружения хоста: буква или `_`, дальше буквы, цифры и `_`.
+/// То же правило, что у оболочки виртуального хоста, чтобы карта не отвергалась при старте сессии.
+bool isHostEnvironmentName(String name) => _hostEnvironmentName.hasMatch(name);
+
 /// Удалённый Host по умолчанию, когда локального нет (iOS): сначала SSH, иначе виртуальный. Виртуальный
 /// доступен всегда, поэтому без SSH он остаётся рабочим вариантом, а не пустым списком. Null — хостов нет.
 Host? preferredRemoteHost(Iterable<Host> hosts) {
@@ -40,6 +46,7 @@ class Host {
     this.lastCheckAt,
     this.lastLatencyMs,
     this.lastCheckError,
+    this.environment = const {},
   });
 
   final String id;
@@ -63,6 +70,11 @@ class Host {
   final DateTime? lastCheckAt;
   final int? lastLatencyMs;
   final String? lastCheckError;
+
+  /// Переменные, которые хост добавляет в каждую сессию: виртуальный профиль, локальный процесс и SSH.
+  /// Значения могут быть токенами, поэтому карта хранится в SecretStore, а не в таблице хостов.
+  final Map<String, String> environment;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -87,6 +99,7 @@ class Host {
     DateTime? lastCheckAt,
     int? lastLatencyMs,
     String? lastCheckError,
+    Map<String, String>? environment,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Host(
@@ -111,5 +124,6 @@ class Host {
     lastCheckAt: lastCheckAt ?? this.lastCheckAt,
     lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
     lastCheckError: lastCheckError ?? this.lastCheckError,
+    environment: environment ?? this.environment,
   );
 }

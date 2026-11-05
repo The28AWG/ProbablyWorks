@@ -85,9 +85,6 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i193.ChatRepository>(
       () => _i193.ChatRepository(gh<_i386.AppDatabase>()),
     );
-    gh.lazySingleton<_i250.HostRepository>(
-      () => _i250.HostRepository(gh<_i386.AppDatabase>()),
-    );
     gh.lazySingleton<_i503.SavedModelRepository>(
       () => _i503.SavedModelRepository(gh<_i386.AppDatabase>()),
     );
@@ -105,6 +102,12 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i193.ChatRepository>(),
         gh<_i67.ExecLogStore>(),
         gh<_i913.SettingsRepository>(),
+      ),
+    );
+    gh.lazySingleton<_i250.HostRepository>(
+      () => _i250.HostRepository(
+        gh<_i386.AppDatabase>(),
+        gh<_i617.SecretStore>(),
       ),
     );
     gh.singleton<_i432.LlmProvider>(

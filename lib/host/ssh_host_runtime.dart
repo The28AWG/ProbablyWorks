@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/host/host_environment.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/host/wrapped_exec_runtime.dart';
@@ -22,7 +23,13 @@ final class SshHostRuntime extends WrappedExecRuntime {
     final client = await _client();
     _pool.acquire(host.id);
     try {
-      final session = await client.execute(wrappedScript);
+      final session = await client.execute(
+        withHostEnvironment(
+          wrappedScript,
+          os: host.os,
+          environment: host.environment,
+        ),
+      );
       return _SshChannel(session, () => _pool.release(host.id));
     } on Object catch (error, stack) {
       _pool.release(host.id);
@@ -46,7 +53,11 @@ final class SshHostRuntime extends WrappedExecRuntime {
     _pool.acquire(host.id);
     try {
       final session = await client.execute(
-        wrappedScript,
+        withHostEnvironment(
+          wrappedScript,
+          os: host.os,
+          environment: host.environment,
+        ),
         pty: SSHPtyConfig(width: columns, height: rows),
       );
       return _SshPtyChannel(session, () => _pool.release(host.id));

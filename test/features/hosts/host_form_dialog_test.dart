@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
@@ -268,6 +269,88 @@ void main() {
 
     expect(saved.single.kind, HostKind.virtual);
     expect(saved.single.address, isNull);
+  });
+
+  testWidgets('environment rows save a valid pair and reject a bad name', (
+    tester,
+  ) async {
+    final saved = <Host>[];
+    await tester.pumpWidget(_Host(saved: saved, existing: _local));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(AlertDialog)));
+
+    await tester.ensureVisible(find.text(l10n.hostEnvironmentAdd));
+    await tester.tap(find.text(l10n.hostEnvironmentAdd));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == l10n.hostEnvironmentNameHint,
+      ),
+      '1BAD',
+    );
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == l10n.hostEnvironmentValueHint,
+      ),
+      'secret-value',
+    );
+    await tester.ensureVisible(find.text(l10n.commonSave));
+    await tester.tap(find.text(l10n.commonSave));
+    await tester.pumpAndSettle();
+
+    expect(saved, isEmpty);
+    expect(find.text(l10n.hostEnvironmentNameInvalid), findsOneWidget);
+
+    final nameField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == l10n.hostEnvironmentNameHint,
+    );
+    final valueField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == l10n.hostEnvironmentValueHint,
+    );
+    final nameBox = tester.getRect(nameField);
+    final valueBox = tester.getRect(valueField);
+    final content = tester.getSize(
+      find.byKey(const ValueKey('host-form-content')),
+    );
+    final row = find.ancestor(of: nameField, matching: find.byType(Row)).first;
+
+    expect(nameBox.top, closeTo(valueBox.top, 1));
+    expect(tester.getSize(row).width, closeTo(content.width, 1));
+    expect(
+      tester
+          .renderObject<RenderParagraph>(
+            find.text(l10n.hostEnvironmentNameInvalid),
+          )
+          .didExceedMaxLines,
+      isFalse,
+    );
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == l10n.hostEnvironmentNameHint,
+      ),
+      'TOKEN',
+    );
+    await tester.ensureVisible(find.text(l10n.hostEnvironmentAdd));
+    await tester.tap(find.text(l10n.hostEnvironmentAdd));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text(l10n.commonSave));
+    await tester.tap(find.text(l10n.commonSave));
+    await tester.pumpAndSettle();
+
+    expect(saved, hasLength(1));
+    expect(saved.single.environment, {'TOKEN': 'secret-value'});
   });
 }
 

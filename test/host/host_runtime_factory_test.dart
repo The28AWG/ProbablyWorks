@@ -29,10 +29,11 @@ void main() {
     db = openInMemoryDatabase();
     final settings = SettingsRepository(db);
     await settings.preload();
+    final secrets = MemorySecretStore();
     factory = HostRuntimeFactory(
       SshConnectionPool(
-        HostRepository(db),
-        MemorySecretStore(),
+        HostRepository(db, secrets),
+        secrets,
         settings,
         HostKeyConfirmations(),
       ),

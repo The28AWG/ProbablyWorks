@@ -1417,7 +1417,35 @@
   },
   "hostFormSectionEnvironment": "Окружение",
   "@hostFormSectionEnvironment": {
-    "description": "Host form section: workspace, shell, timeout and notes."
+    "description": "Host form section: workspace, shell, timeout, notes and variables."
+  },
+  "hostEnvironmentLabel": "Переменные",
+  "@hostEnvironmentLabel": {
+    "description": "Host form label for the list of environment variables."
+  },
+  "hostEnvironmentHint": "Попадают в каждую сессию этого хоста. Значения хранятся вместе с остальными секретами.",
+  "@hostEnvironmentHint": {
+    "description": "Host form hint under the environment variables label."
+  },
+  "hostEnvironmentNameHint": "ИМЯ",
+  "@hostEnvironmentNameHint": {
+    "description": "Placeholder for an environment variable name."
+  },
+  "hostEnvironmentValueHint": "значение",
+  "@hostEnvironmentValueHint": {
+    "description": "Placeholder for an environment variable value."
+  },
+  "hostEnvironmentAdd": "Добавить переменную",
+  "@hostEnvironmentAdd": {
+    "description": "Button that adds an empty environment variable row."
+  },
+  "hostEnvironmentRemove": "Удалить переменную",
+  "@hostEnvironmentRemove": {
+    "description": "Tooltip of the button that removes an environment variable row."
+  },
+  "hostEnvironmentNameInvalid": "Имя — буквы, цифры и подчёркивания, начинается с буквы или подчёркивания.",
+  "@hostEnvironmentNameInvalid": {
+    "description": "Error shown when an environment variable name is not a shell identifier."
   },
   "settingsGroupAccount": "API и модели",
   "@settingsGroupAccount": {

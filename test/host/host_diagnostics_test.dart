@@ -23,10 +23,10 @@ void main() {
     // flutter_test по умолчанию эмулирует Android, где ключи не читаются по пути.
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     db = openInMemoryDatabase();
-    hosts = HostRepository(db);
+    secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
     final settings = SettingsRepository(db);
     await settings.preload();
-    secrets = MemorySecretStore();
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),
       const PipePtyLauncher(),

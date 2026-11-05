@@ -31,10 +31,10 @@ void main() {
 
   setUp(() async {
     db = openInMemoryDatabase();
-    hosts = HostRepository(db);
+    final secrets = MemorySecretStore();
+    hosts = HostRepository(db, secrets);
     final settings = SettingsRepository(db);
     await settings.preload();
-    final secrets = MemorySecretStore();
     provisioner = VirtualHostProvisioner(db);
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),

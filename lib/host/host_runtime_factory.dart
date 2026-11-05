@@ -43,6 +43,7 @@ class HostRuntimeFactory {
     HostKind.local => LocalHostRuntime(
       os: host.os,
       shell: host.shellOverride,
+      environment: host.environment,
       pty: _pty,
     ),
     HostKind.ssh => SshHostRuntime(host: host, pool: _pool),

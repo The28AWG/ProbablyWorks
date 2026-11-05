@@ -102,8 +102,16 @@ class _HostFormDialogState extends State<HostFormDialog> {
   /// Режим SSH: показываются поля подключения, ОС и аутентификации.
   bool get _ssh => _kind == HostKind.ssh;
 
-  /// Режим виртуального хоста: только название и рабочая папка.
+  /// Режим виртуального хоста: название, рабочая папка, заметки и переменные.
   bool get _virtual => _kind == HostKind.virtual;
+
+  /// Пары «имя / значение». Пустые строки при сохранении отбрасываются.
+  late final List<_EnvRow> _env = [
+    for (final entry
+        in widget.existing?.environment.entries ??
+            const <MapEntry<String, String>>[])
+      _EnvRow(entry.key, entry.value),
+  ];
 
   @override
   void dispose() {
@@ -121,6 +129,9 @@ class _HostFormDialogState extends State<HostFormDialog> {
       _secret,
     ]) {
       c.dispose();
+    }
+    for (final row in _env) {
+      row.dispose();
     }
     super.dispose();
   }
@@ -150,6 +161,7 @@ class _HostFormDialogState extends State<HostFormDialog> {
     final timeoutText = _timeout.text.trim();
     final timeout = int.tryParse(timeoutText);
     final shell = _shell.text.trim();
+    var environmentOk = true;
     setState(() {
       _addressError = _ssh && _address.text.trim().isEmpty
           ? l10n.hostAddressRequired
@@ -165,12 +177,50 @@ class _HostFormDialogState extends State<HostFormDialog> {
           !_virtual && shell.isNotEmpty && !ProcessControl.isValidShell(shell)
           ? l10n.hostShellInvalid
           : null;
+      environmentOk = _validateEnvironment(l10n);
     });
     return _addressError == null &&
         _portError == null &&
         _timeoutError == null &&
-        _shellError == null;
+        _shellError == null &&
+        environmentOk;
   }
+
+  /// Пустая строка не ошибка: она не сохраняется. Имя проверяется тем же правилом, что и репозиторий.
+  /// Повтор имени — та же ошибка у второй строки, иначе в карте осталось бы незаметное затирание.
+  bool _validateEnvironment(AppLocalizations l10n) {
+    var ok = true;
+    final seen = <String>{};
+    for (final row in _env) {
+      final name = row.name.text.trim();
+      if (name.isEmpty && row.value.text.isEmpty) {
+        row.nameError = null;
+        continue;
+      }
+      if (!isHostEnvironmentName(name) || !seen.add(name)) {
+        row.nameError = l10n.hostEnvironmentNameInvalid;
+        ok = false;
+        continue;
+      }
+      row.nameError = null;
+    }
+    return ok;
+  }
+
+  Map<String, String> _collectedEnvironment() {
+    final environment = <String, String>{};
+    for (final row in _env) {
+      final name = row.name.text.trim();
+      if (name.isEmpty && row.value.text.isEmpty) continue;
+      environment[name] = row.value.text;
+    }
+    return environment;
+  }
+
+  void _addEnvironment() => setState(() => _env.add(_EnvRow('', '')));
+
+  void _removeEnvironment(int index) =>
+      setState(() => _env.removeAt(index).dispose());
 
   Future<void> _saveHost(AppLocalizations l10n) async {
     if (!_validate(l10n)) return;
@@ -216,6 +266,7 @@ class _HostFormDialogState extends State<HostFormDialog> {
       lastCheckAt: existing?.lastCheckAt,
       lastLatencyMs: existing?.lastLatencyMs,
       lastCheckError: existing?.lastCheckError,
+      environment: _collectedEnvironment(),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     );
@@ -465,6 +516,11 @@ class _HostFormDialogState extends State<HostFormDialog> {
                       maxLines: 4,
                     ),
                   ),
+                  _EnvironmentEditor(
+                    rows: _env,
+                    onAdd: _addEnvironment,
+                    onRemove: _removeEnvironment,
+                  ),
                 ],
               ),
             ],
@@ -490,5 +546,94 @@ class _HostFormDialogState extends State<HostFormDialog> {
         ),
       ],
     );
+  }
+}
+
+/// Список пар «имя / значение» на всю ширину формы. Пустые строки отбрасывает сохранение.
+class _EnvironmentEditor extends StatelessWidget {
+  const _EnvironmentEditor({
+    required this.rows,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<_EnvRow> rows;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(l10n.hostEnvironmentLabel, style: theme.textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          l10n.hostEnvironmentHint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        for (var i = 0; i < rows.length; i++) ...[
+          // Строка на всю ширину формы, а не в правой колонке подписи: там имя и значение
+          // делили узкую половину, и ошибка имени обрезалась.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: AppTextField(
+                  controller: rows[i].name,
+                  hint: l10n.hostEnvironmentNameHint,
+                  error: rows[i].nameError,
+                  errorMaxLines: 8,
+                  mono: true,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: AppTextField(
+                  controller: rows[i].value,
+                  hint: l10n.hostEnvironmentValueHint,
+                  mono: true,
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.hostEnvironmentRemove,
+                icon: const Icon(Icons.close),
+                onPressed: () => onRemove(i),
+              ),
+            ],
+          ),
+          if (i != rows.length - 1) const SizedBox(height: AppSpacing.sm),
+        ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: Text(l10n.hostEnvironmentAdd),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Одна пара переменной в форме. Контроллеры живут, пока строка в списке.
+class _EnvRow {
+  _EnvRow(String name, String value)
+    : name = TextEditingController(text: name),
+      value = TextEditingController(text: value);
+
+  final TextEditingController name;
+  final TextEditingController value;
+  String? nameError;
+
+  void dispose() {
+    name.dispose();
+    value.dispose();
   }
 }
