@@ -86,11 +86,58 @@ abstract final class ShellScan {
     }
   }
 
-  /// Конец `{...}` параметра. Вложенные `${}` не поддерживаются, поэтому первая `}` закрывает.
+  /// Конец `{...}` параметра, открытого `{` в [open]. Внутри учитываются кавычки, `\`, `$(...)`, обратные
+  /// кавычки и вложенные `${...}`: `${x:-${y:-}}` закрывается последней `}`, а `${x:-'}'}` — не первой.
+  /// Литеральная `{` без `$` в операнде не меняет вложенность, как в bash.
   static int braceEnd(String text, int open) {
-    final close = text.indexOf('}', open + 1);
-    if (close < 0) throw _eof('}');
-    return close + 1;
+    var i = open + 1;
+    while (true) {
+      if (i >= text.length) throw _eof('}');
+      final c = text[i];
+      if (c == '}') return i + 1;
+      if (c == r'\') {
+        i += 2;
+      } else if (c == "'") {
+        i = singleQuoteEnd(text, i);
+      } else if (c == '"') {
+        i = doubleQuoteEnd(text, i);
+      } else if (c == '`') {
+        i = backquoteEnd(text, i);
+      } else if (c == r'$' && _next(text, i) == '(') {
+        i = parenEnd(text, i + 1);
+      } else if (c == r'$' && _next(text, i) == '{') {
+        i = braceEnd(text, i + 1);
+      } else {
+        i++;
+      }
+    }
+  }
+
+  /// Индекс первого символа [stop], начиная с [from], который стоит вне кавычек, подстановок и `${}`.
+  /// Возвращает -1, если такого нет. Нужно, чтобы найти `/` в образце замены или `:` в срезе, не путая
+  /// их с разделителями внутри вложенных конструкций.
+  static int indexOfTop(String text, String stop, int from) {
+    var i = from;
+    while (i < text.length) {
+      final c = text[i];
+      if (c == stop) return i;
+      if (c == r'\') {
+        i += 2;
+      } else if (c == "'") {
+        i = singleQuoteEnd(text, i);
+      } else if (c == '"') {
+        i = doubleQuoteEnd(text, i);
+      } else if (c == '`') {
+        i = backquoteEnd(text, i);
+      } else if (c == r'$' && _next(text, i) == '(') {
+        i = parenEnd(text, i + 1);
+      } else if (c == r'$' && _next(text, i) == '{') {
+        i = braceEnd(text, i + 1);
+      } else {
+        i++;
+      }
+    }
+    return -1;
   }
 
   /// Символ после [i] или null, если это конец строки.

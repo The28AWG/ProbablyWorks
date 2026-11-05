@@ -178,6 +178,7 @@ final class _Grep implements Applet {
   ) {
     final selected = <int>[];
     for (var i = 0; i < lines.length; i++) {
+      io.checkpoint();
       if (options.matcher.hasMatch(lines[i]) != options.invert) selected.add(i);
     }
     if (options.quiet) return selected.isNotEmpty;
@@ -299,6 +300,7 @@ final class _Sort implements Applet {
     final lines = <String>[];
     final operands = parsed.operands.isEmpty ? ['-'] : parsed.operands;
     for (final operand in operands) {
+      io.checkpoint();
       final bytes = await readSource(io, name, operand);
       if (bytes == null) return 2;
       lines.addAll(splitText(bytes).lines);

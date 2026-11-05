@@ -1,5 +1,7 @@
 /// Вид токена. Слова хранятся сырым текстом: их части разбирает [ShellWordParser] уже после лексера.
-enum TokenKind { word, ioNumber, operator, newline, eof }
+/// [TokenKind.arith] — `((...))` целиком: лексер читает сырой текст до парной `))`, потому что внутри
+/// выражение не разбирается как команды. Если пары нет, это подоболочка `( (...) )` и токена нет.
+enum TokenKind { word, ioNumber, operator, newline, eof, arith }
 
 /// Здесь-документ, которому лексер читает тело со следующей строки после текущей.
 ///
@@ -36,13 +38,18 @@ final class HeredocSpec {
   int eofLine = 0;
 }
 
-/// Токен лексера. Для [TokenKind.word] текст — исходная запись слова, для оператора — сам оператор.
+/// Токен лексера. Для [TokenKind.word] текст — исходная запись слова, для оператора — сам оператор,
+/// для [TokenKind.arith] — сырой текст выражения между `((` и `))`.
 final class Token {
-  const Token(this.kind, this.text, this.line, {this.heredoc});
+  const Token(this.kind, this.text, this.line, {this.heredoc, this.offset = 0});
 
   final TokenKind kind;
   final String text;
   final int line;
+
+  /// Индекс начала токена в исходном тексте. Нужен `[[ =~ ]]`, чтобы сохранить пробелы между лексемами
+  /// регулярного выражения. У `eof` — позиция конца текста.
+  final int offset;
 
   /// Задан только у операторов `<<` и `<<-`.
   final HeredocSpec? heredoc;

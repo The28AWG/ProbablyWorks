@@ -79,7 +79,11 @@ class CommandClassifier {
     'ls-files',
   };
 
-  static final _unsafeSyntax = RegExp(r'[|;&<>`\n]|\$\(');
+  /// Кроме пайпов и подстановок команд, Ask получают присваивания в параметрах
+  /// (`${x:=}`, `${x=}`, `${x:?}`) и арифметика `((...))`: они меняют состояние оболочки.
+  static final _unsafeSyntax = RegExp(
+    r'[|;&<>`\n]|\$\(|\$\{[^}]*(:=|=|\?)|\(\(',
+  );
 
   CommandClassification classify(String command) {
     final trimmed = command.trim();
@@ -117,12 +121,31 @@ class CommandClassifier {
           : const CommandClassification(CommandRisk.ask, 'git write operation');
     }
     if (readOnlyBinaries.contains(first)) {
+      if (_writesDespiteReadOnly(first, tokens)) {
+        return CommandClassification(
+          CommandRisk.ask,
+          'read-only command with a writing flag: $first',
+        );
+      }
       return const CommandClassification(CommandRisk.auto, 'read-only command');
     }
     return CommandClassification(
       CommandRisk.ask,
       'unknown or write command: $first',
     );
+  }
+
+  /// Флаги, которые пишут в файл или меняют систему, хотя команда есть в списке чтения.
+  static bool _writesDespiteReadOnly(String command, List<String> tokens) {
+    if (command == 'sort') {
+      return tokens.any((token) => token == '-o' || token.startsWith('-o'));
+    }
+    if (command == 'date') {
+      return tokens.any((token) => token == '-s' || token == '--set');
+    }
+    if (command == 'hostname') return tokens.length > 1;
+    if (command == 'printf') return tokens.contains('-v');
+    return false;
   }
 
   static List<String> _tokens(String command) => command

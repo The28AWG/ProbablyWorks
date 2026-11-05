@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:probably_works/core/util/cancel_token.dart';
 
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/virtual/shell/applets/applet.dart';
 import 'package:probably_works/host/virtual/shell/shell_ast.dart';
 import 'package:probably_works/host/virtual/shell/shell_builtins.dart';
+import 'package:probably_works/host/virtual/shell/shell_cond.dart';
 import 'package:probably_works/host/virtual/shell/shell_errors.dart';
 import 'package:probably_works/host/virtual/shell/shell_expander.dart';
 import 'package:probably_works/host/virtual/shell/shell_io.dart';
@@ -41,21 +45,83 @@ final class ShellInterpreter {
   /// Выполняет [command] в каталоге [cwd] (по умолчанию домашний каталог) и отдаёт события как
   /// [HostRuntime.run]: stdout и stderr по мере записи, в конце [ExecDone] с кодом выхода.
   /// Состояние оболочки (cd, переменные, функции) живёт только в этом запуске.
-  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
-      Stream.fromFuture(
-        _execute(command, cwd ?? profile.home, stdin ?? Uint8List(0)),
-      ).expand((events) => events);
+  ///
+  /// Отписка от потока отменяет запуск: следующая команда не стартует, срабатывает ловушка
+  /// [cancelSignal] (`INT`, код 130, или `TERM`, код 143), затем `EXIT`. Реальных процессов нет,
+  /// поэтому отмена — это закрытие потока, а не `kill`.
+  Stream<ExecEvent> run(
+    String command, {
+    String? cwd,
+    Uint8List? stdin,
+    String cancelSignal = 'INT',
+  }) {
+    final cancel = CancelToken();
+    var stopped = false;
+    late final StreamController<ExecEvent> controller;
+    controller = StreamController<ExecEvent>(
+      onListen: () {
+        unawaited(
+          _drive(
+            controller,
+            command,
+            cwd ?? profile.home,
+            stdin ?? Uint8List(0),
+            cancel,
+            cancelSignal,
+            () => stopped || !controller.hasListener || controller.isClosed,
+          ),
+        );
+      },
+      onCancel: () {
+        // Не ждём завершения скрипта: слушатель часто отменяет подписку прямо из обработчика
+        // события, то есть со стека самого скрипта. Ожидание здесь зациклило бы запуск.
+        stopped = true;
+        cancel.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
-  Future<List<ExecEvent>> _execute(
+  /// Дописывает события в контроллер, пока его слушают. После отмены ловушки уже отработали внутри
+  /// [_execute], а писать в закрытую подписку нельзя.
+  Future<void> _drive(
+    StreamController<ExecEvent> controller,
     String command,
     String cwd,
     Uint8List stdin,
+    CancelToken cancel,
+    String cancelSignal,
+    bool Function() stopped,
   ) async {
-    final run = _Run(limits);
+    try {
+      final code = await _execute(command, cwd, stdin, cancel, cancelSignal, (
+        event,
+      ) {
+        if (!stopped()) controller.add(event);
+      });
+      if (stopped()) return;
+      controller.add(ExecDone(exitCode: code));
+      await controller.close();
+    } on Object catch (error, stack) {
+      if (stopped()) return;
+      controller.addError(error, stack);
+      await controller.close();
+    }
+  }
+
+  Future<int> _execute(
+    String command,
+    String cwd,
+    Uint8List stdin,
+    CancelToken cancel,
+    String cancelSignal,
+    void Function(ExecEvent event) emit,
+  ) async {
+    final run = _Run(limits, cancel, cancelSignal);
     final streams = _Io(
       ShellInput(stdin),
-      EventSink(run.events, isStderr: false, budget: run.budget),
-      EventSink(run.events, isStderr: true, budget: run.budget),
+      EventSink(run.events, isStderr: false, budget: run.budget, onEvent: emit),
+      EventSink(run.events, isStderr: true, budget: run.budget, onEvent: emit),
     );
     final code = await _program(command, cwd, streams, run);
     if (run.budget.truncated) {
@@ -64,10 +130,9 @@ final class ShellInterpreter {
         'bash: output limit of ${limits.maxOutputBytes} bytes exceeded; '
         'the rest was dropped\n',
       );
-      run.events.add(ExecStderr(Uint8List.fromList(note)));
+      emit(ExecStderr(Uint8List.fromList(note)));
     }
-    run.events.add(ExecDone(exitCode: code));
-    return run.events;
+    return code;
   }
 
   Future<int> _program(String command, String cwd, _Io io, _Run run) async {
@@ -80,17 +145,21 @@ final class ShellInterpreter {
     try {
       final script = ShellParser.parse(command, limits: limits);
       final state = ShellState.initial(profile, cwd);
-      return await _Evaluator(
-        fs,
-        applets,
-        profile,
-        run,
-      ).script(script, state, io);
+      final evaluator = _Evaluator(fs, applets, profile, run);
+      try {
+        final code = await evaluator.script(script, state, io);
+        return await evaluator.finishExit(code, state, io);
+      } on ShellExit catch (e) {
+        return await evaluator.finishExit(e.code, state, io);
+      } on ShellParamError catch (e) {
+        // Ошибка раскрытия в верхнем уровне прерывает весь скрипт с кодом bash (127 или 1).
+        return await evaluator.finishExit(e.exitCode, state, io);
+      } on ShellCancelled catch (e) {
+        return await evaluator.finishSignal(e, state, io);
+      }
     } on ShellSyntaxException catch (e) {
       io.stderr.writeText('${e.text}\n');
       return 2;
-    } on ShellExit catch (e) {
-      return e.code;
     } on ShellLimitExceeded catch (e) {
       io.stderr.writeText('bash: ${e.message}\n');
       return e.exitCode;
@@ -116,17 +185,30 @@ final class _Io {
 
 /// Учёт одного запуска: события, бюджет вывода, число команд и время.
 final class _Run {
-  _Run(this._limits) : budget = OutputBudget(_limits.maxOutputBytes);
+  _Run(this._limits, this._cancel, this._signal)
+    : budget = OutputBudget(_limits.maxOutputBytes);
 
   final VirtualLimits _limits;
+  final CancelToken _cancel;
+  final String _signal;
   final OutputBudget budget;
   final List<ExecEvent> events = [];
   final Stopwatch _elapsed = Stopwatch()..start();
   int _commands = 0;
 
+  /// Пока выполняется ловушка отмены, повторная проверка не прерывает её саму.
+  bool handlingSignal = false;
+
+  /// Бросает [ShellCancelled], если подписчик закрыл поток. Апплет зовёт это из длинного цикла.
+  void throwIfCancelled() {
+    if (handlingSignal || !_cancel.isCancelled) return;
+    throw ShellCancelled(_signal);
+  }
+
   /// Учитывает команду и проверяет время. Вызывается перед каждой командой, в том числе составной:
   /// так бесконечный цикл с пустым телом тоже останавливается лимитом.
   void countCommand() {
+    throwIfCancelled();
     _commands++;
     if (_commands > _limits.maxCommandsPerRun) {
       throw ShellLimitExceeded(
@@ -154,21 +236,94 @@ final class _Evaluator {
   final VirtualProfile _profile;
   final _Run _run;
 
+  /// Ловушка уже выполняется. Вторая ERR или EXIT из неё не запускается, иначе `set -e` зацикливается.
+  bool _inHook = false;
+
+  /// Глубина `source`/`.`. `return` на нулевой глубине функции завершает файл, а не печатает ошибку.
+  int _sourceDepth = 0;
+
+  /// Глубина `eval` и `source`. Слишком глубокая вложенность останавливается тем же лимитом, что и `$(...)`.
+  int _evalDepth = 0;
+
+  /// Разбирает и выполняет текст в текущем состоянии. Синтаксическая ошибка — код 2 и сообщение,
+  /// внешний скрипт при этом продолжается, как у `eval` в bash.
+  Future<int> _runText(
+    String text,
+    ShellState state,
+    _Io io, {
+    bool sourced = false,
+  }) async {
+    if (_evalDepth >= _limits.maxNestingDepth) {
+      throw ShellLimitExceeded(
+        'nesting is deeper than ${_limits.maxNestingDepth}',
+      );
+    }
+    if (sourced) _sourceDepth++;
+    _evalDepth++;
+    try {
+      final node = ShellParser.parse(text, limits: _limits);
+      return await script(node, state, io);
+    } on ShellSyntaxException catch (e) {
+      io.stderr.writeText('${e.text}\n');
+      return 2;
+    } on ShellReturn catch (e) {
+      if (sourced && state.functionDepth == 0) return e.status;
+      rethrow;
+    } finally {
+      _evalDepth--;
+      if (sourced) _sourceDepth--;
+    }
+  }
+
+  /// Сигнал отмены: ловушка INT или TERM, затем EXIT. Код — 130 или 143, если ловушка сама не вызвала `exit`.
+  Future<int> finishSignal(
+    ShellCancelled signal,
+    ShellState state,
+    _Io io,
+  ) async {
+    _run.handlingSignal = true;
+    try {
+      await _hook(signal.signal, state, io);
+    } on ShellExit catch (e) {
+      return finishExit(e.code, state, io);
+    }
+    return finishExit(signal.code, state, io);
+  }
+
   VirtualLimits get _limits => _fs.limits;
 
   /// Скрипт: цепочки выполняются по порядку. Возвращает код последней.
-  Future<int> script(ScriptNode node, ShellState state, _Io io) async {
+  ///
+  /// [exempt] — условие `if`/`while`/`until` и левая часть `&&`/`||`: неудача не включает `set -e` и `ERR`.
+  Future<int> script(
+    ScriptNode node,
+    ShellState state,
+    _Io io, {
+    bool exempt = false,
+  }) async {
     var status = 0;
     for (final list in node.lists) {
-      status = await _andOr(list, state, io);
+      status = await _andOr(list, state, io, exempt: exempt);
     }
     return status;
   }
 
   /// `&&` и `||` идут слева направо с одинаковым приоритетом, как в bash. Пропущенный конвейер не
-  /// меняет код выхода, поэтому `false && a || b` запускает `b`.
-  Future<int> _andOr(AndOrList list, ShellState state, _Io io) async {
-    var status = await _pipeline(list.pipelines.first, state, io);
+  /// меняет код выхода, поэтому `false && a || b` запускает `b`. Не последняя команда списка не
+  /// включает `set -e`: `false && echo no` не прерывает оболочку, а `true && false` — прерывает.
+  Future<int> _andOr(
+    AndOrList list,
+    ShellState state,
+    _Io io, {
+    required bool exempt,
+  }) async {
+    final last = list.pipelines.length - 1;
+    var status = await _pipeline(
+      list.pipelines.first,
+      state,
+      io,
+      exempt: exempt || last > 0,
+    );
     state.lastStatus = status;
     for (var i = 0; i < list.operators.length; i++) {
       final runNext = switch (list.operators[i]) {
@@ -176,22 +331,79 @@ final class _Evaluator {
         AndOrOperator.or => status != 0,
       };
       if (!runNext) continue;
-      status = await _pipeline(list.pipelines[i + 1], state, io);
+      status = await _pipeline(
+        list.pipelines[i + 1],
+        state,
+        io,
+        exempt: exempt || i + 1 != last,
+      );
       state.lastStatus = status;
     }
     return status;
   }
 
-  Future<int> _pipeline(Pipeline pipeline, ShellState state, _Io io) async {
+  Future<int> _pipeline(
+    Pipeline pipeline,
+    ShellState state,
+    _Io io, {
+    required bool exempt,
+  }) async {
+    // `!` освобождает команды внутри от `set -e` и делает неудачу всего конвейера тоже свободной.
     final status = pipeline.commands.length == 1
         ? await _command(pipeline.commands.single, state, io)
         : await _stages(pipeline.commands, state, io);
-    if (!pipeline.negated) return status;
-    return status == 0 ? 1 : 0;
+    final result = pipeline.negated ? (status == 0 ? 1 : 0) : status;
+    return _checkFailure(result, state, io, exempt: exempt || pipeline.negated);
+  }
+
+  /// Неудача вне условия, `&&`/`||` и `!`: ловушка `ERR`, затем выход при `set -e`.
+  Future<int> _checkFailure(
+    int status,
+    ShellState state,
+    _Io io, {
+    required bool exempt,
+  }) async {
+    if (status == 0 || exempt || _inHook) return status;
+    await _hook('ERR', state, io);
+    if (state.options.contains('errexit')) throw ShellExit(status);
+    return status;
+  }
+
+  /// Ловушка `EXIT` в конце оболочки. `exit` внутри неё меняет код. Повторный вход не запускает её снова.
+  Future<int> finishExit(int code, ShellState state, _Io io) async {
+    if (_inHook || !state.traps.containsKey('EXIT')) return code;
+    _inHook = true;
+    state.lastStatus = code;
+    try {
+      await _hook('EXIT', state, io);
+    } on ShellExit catch (e) {
+      return e.code;
+    } finally {
+      _inHook = false;
+    }
+    return code;
+  }
+
+  /// Выполняет текст ловушки в текущем состоянии. Пустая ловушка ничего не делает.
+  Future<void> _hook(String name, ShellState state, _Io io) async {
+    final command = state.traps[name];
+    if (command == null || command.isEmpty) return;
+    if (_inHook && name != 'EXIT') return;
+    final previous = _inHook;
+    _inHook = true;
+    try {
+      final node = ShellParser.parse(command, limits: _limits);
+      await script(node, state, io, exempt: true);
+    } on ShellSyntaxException catch (e) {
+      io.stderr.writeText('${e.text}\n');
+    } finally {
+      _inHook = previous;
+    }
   }
 
   /// Конвейер. Каждая стадия работает в копии состояния (как подоболочка в bash), её stdout уходит в
-  /// буфер, который становится stdin следующей стадии. Код — код последней стадии.
+  /// буфер, который становится stdin следующей стадии. Без `pipefail` код — код последней стадии,
+  /// иначе код последней неудачи.
   Future<int> _stages(
     List<ShellCommand> commands,
     ShellState state,
@@ -199,12 +411,19 @@ final class _Evaluator {
   ) async {
     var input = io.stdin;
     var status = 0;
+    var failed = 0;
+    final pipefail = state.options.contains('pipefail');
     for (var i = 0; i < commands.length; i++) {
       final isLast = i == commands.length - 1;
       final buffer = isLast ? null : BufferSink(_limits.maxOutputBytes);
       final stage = _Io(input, buffer ?? io.stdout, io.stderr);
       final command = commands[i];
-      status = await _isolated(() => _command(command, state.fork(), stage));
+      status = await _subshell(
+        state,
+        stage,
+        (child) => _command(command, child, stage),
+      );
+      if (pipefail && status != 0) failed = status;
       if (buffer != null) {
         if (buffer.truncated) {
           io.stderr.writeText(
@@ -215,7 +434,27 @@ final class _Evaluator {
         input = ShellInput(buffer.bytes);
       }
     }
-    return status;
+    return pipefail && failed != 0 ? failed : status;
+  }
+
+  /// Подоболочка: свой `fork`, свои ловушки. `EXIT` выполняется при её завершении и не виден родителю.
+  Future<int> _subshell(
+    ShellState parent,
+    _Io io,
+    Future<int> Function(ShellState child) body,
+  ) {
+    final child = parent.fork();
+    return _isolated(() async {
+      try {
+        final code = await body(child);
+        return await finishExit(code, child, io);
+      } on ShellExit catch (e) {
+        return await finishExit(e.code, child, io);
+      } on ShellParamError {
+        // В подоболочке `${x:?}` и `set -u` дают код 1, а не 127 верхнего уровня.
+        return await finishExit(1, child, io);
+      }
+    });
   }
 
   /// Выполнение в подоболочке: `exit`, `return` и управление циклом внутри неё завершают только её.
@@ -225,6 +464,9 @@ final class _Evaluator {
       return await run();
     } on ShellExit catch (e) {
       return e.code;
+    } on ShellParamError {
+      // Как в bash: ошибка раскрытия в подоболочке завершает только её, и её код всегда 1.
+      return 1;
     } on ShellReturn catch (e) {
       return e.status;
     } on ShellBreak {
@@ -234,9 +476,11 @@ final class _Evaluator {
     }
   }
 
-  /// Одна команда. Счётчик лимитов учитывает и составные, и простые; ошибка выполнения (например, деление
-  /// на ноль в `$((...))`) отменяет только эту команду.
+  /// Одна команда. Счётчик лимитов учитывает и составные, и простые. [ShellRuntimeError] отменяет только
+  /// эту команду (`((1/0))`, `let`). Ошибка раскрытия слова приходит как [ShellParamError] и прерывает
+  /// оболочку.
   Future<int> _command(ShellCommand cmd, ShellState state, _Io io) async {
+    state.lineNo = cmd.line;
     _run.countCommand();
     try {
       return switch (cmd) {
@@ -247,6 +491,22 @@ final class _Evaluator {
     } on ShellRuntimeError catch (e) {
       io.stderr.writeText('bash: line ${cmd.line}: ${e.message}\n');
       return 1;
+    } on ShellReadonlyError catch (e, stack) {
+      // Как в bash: запись в readonly прерывает весь скрипт, а не только команду.
+      io.stderr.writeText(
+        'bash: line ${cmd.line}: ${e.name}: readonly variable\n',
+      );
+      Error.throwWithStackTrace(const ShellExit(1), stack);
+    } on ShellParamError catch (e, stack) {
+      // `set -u`, `${x:?}`, неверная косвенность печатаются в команде, где известна строка. Ошибка
+      // всплывает дальше помеченной, чтобы внешние команды (например, вызов функции) не печатали её снова.
+      // Код выхода не задаётся здесь: верхний уровень возвращает `exitCode`, подоболочка — 1.
+      if (e.reported) rethrow;
+      io.stderr.writeText('bash: line ${cmd.line}: ${e.message}\n');
+      Error.throwWithStackTrace(
+        ShellParamError(e.message, exitCode: e.exitCode, reported: true),
+        stack,
+      );
     }
   }
 
@@ -278,11 +538,34 @@ final class _Evaluator {
     for (final word in cmd.words) {
       fields.addAll(await expander.fields(word));
     }
+    final streams = io.copy();
+    if (fields.isNotEmpty && state.options.contains('xtrace') && !_inHook) {
+      io.stderr.writeText('+ ${fields.join(' ')}\n');
+    }
+    if (fields.isEmpty) {
+      // Присваивание без команды меняет оболочку и выполняется по порядку: `x=1 y=$x` даёт `y=1`.
+      // Запись происходит даже если перенаправление потом не откроется: `x=1 >/no/such` оставляет `x`.
+      for (final assignment in cmd.assignments) {
+        await _assignOrAbort(assignment, state, expander);
+      }
+      if (!await _redirect(
+        cmd.redirects,
+        expander,
+        io,
+        streams,
+        opened,
+        cmd.line,
+      )) {
+        return 1;
+      }
+      // Код — код последней подстановки в присваиваниях или 0.
+      return expander.substitutionStatus ?? 0;
+    }
+    // С командой присваивания — только окружение этой команды; значения раскрываются до её запуска.
     final values = <String, String>{};
     for (final assignment in cmd.assignments) {
-      values[assignment.name] = await expander.text(assignment.value);
+      values[assignment.name] = await _prefixValue(assignment, state, expander);
     }
-    final streams = io.copy();
     if (!await _redirect(
       cmd.redirects,
       expander,
@@ -293,14 +576,85 @@ final class _Evaluator {
     )) {
       return 1;
     }
-    if (fields.isEmpty) {
-      // Присваивание без команды меняет оболочку. Код — код последней подстановки или 0.
-      for (final entry in values.entries) {
-        state.set(entry.key, entry.value);
-      }
-      return expander.substitutionStatus ?? 0;
-    }
     return _invoke(fields, values, state, streams, cmd.line);
+  }
+
+  /// Значение присваивания перед командой (`x=v cmd`, `x+=v cmd`). С `+=` дописывается к текущему значению.
+  /// Элементы и литералы сюда не попадают: парсер отвергает их перед командой с аргументами.
+  Future<String> _prefixValue(
+    Assignment assignment,
+    ShellState state,
+    ShellExpander expander,
+  ) async {
+    final value = await expander.text(assignment.value);
+    return assignment.append
+        ? '${state.get(assignment.name) ?? ''}$value'
+        : value;
+  }
+
+  /// Присваивание без команды. Ошибка индекса или литерала (`a[-9]=1`) прерывает оболочку, как в bash,
+  /// а не только эту команду.
+  Future<void> _assignOrAbort(
+    Assignment assignment,
+    ShellState state,
+    ShellExpander expander,
+  ) async {
+    try {
+      await _assignVariable(assignment, state, expander);
+    } on ShellRuntimeError catch (e, stack) {
+      Error.throwWithStackTrace(ShellParamError(e.message, exitCode: 1), stack);
+    }
+  }
+
+  /// Одно присваивание без команды: скаляр, элемент `NAME[index]=` или литерал `NAME=(...)`. Запись идёт в
+  /// состояние, поэтому `readonly` проверяется там же, что и при обычном `NAME=value`.
+  Future<void> _assignVariable(
+    Assignment assignment,
+    ShellState state,
+    ShellExpander expander,
+  ) async {
+    final elements = assignment.elements;
+    if (elements != null) {
+      final entries = <ArrayEntry>[];
+      for (final element in elements) {
+        final key = element.key;
+        if (key == null) {
+          // Обычный элемент делится по IFS и раскрывает глобы, как аргумент команды.
+          for (final field in await expander.fields(element.value)) {
+            entries.add((subscript: null, value: field));
+          }
+        } else {
+          // Ключ `[k]=` и значение не делятся: это одно слово, как в bash.
+          entries.add((
+            subscript: await expander.text(key),
+            value: await expander.text(element.value),
+          ));
+        }
+      }
+      state.setArrayLiteral(
+        assignment.name,
+        entries,
+        append: assignment.append,
+      );
+      return;
+    }
+    final index = assignment.index;
+    if (index != null) {
+      // Индекс раскрывается раньше значения, как слева направо в bash.
+      final key = await expander.text(index);
+      state.setElement(
+        assignment.name,
+        key,
+        await expander.text(assignment.value),
+        append: assignment.append,
+      );
+      return;
+    }
+    state.set(
+      assignment.name,
+      await expander.text(assignment.value),
+      append: assignment.append,
+    );
   }
 
   /// Составная команда с её перенаправлениями: они применяются один раз ко всей конструкции.
@@ -333,19 +687,84 @@ final class _Evaluator {
 
   Future<int> _compound(CompoundCommand cmd, ShellState state, _Io io) =>
       switch (cmd) {
-        SubshellCommand() => _isolated(
-          () => script(cmd.body, state.fork(), io),
+        SubshellCommand() => _subshell(
+          state,
+          io,
+          (child) => script(cmd.body, child, io),
         ),
         GroupCommand() => script(cmd.body, state, io),
         IfCommand() => _if(cmd, state, io),
         LoopCommand() => _loop(cmd, state, io),
         ForCommand() => _for(cmd, state, io),
+        SelectCommand() => _select(cmd, state, io),
+        ArithmeticFor() => _arithmeticFor(cmd, state, io),
+        ArithmeticCommand() => _arithmeticCommand(cmd, state, io),
+        CondCommand() => _cond(cmd, state, io),
         CaseCommand() => _case(cmd, state, io),
       };
 
+  /// `[[ выражение ]]`: код 0, если условие истинно, иначе 1. Ошибки арифметики внутри `-eq` и родственных
+  /// отменяют только эту команду, как `((...))`.
+  Future<int> _cond(CondCommand cmd, ShellState state, _Io io) async {
+    final ok = await ShellCond.evaluate(
+      cmd.expr,
+      expander: _expander(state, io),
+      state: state,
+      fs: _fs,
+    );
+    return ok ? 0 : 1;
+  }
+
+  /// `((выражение))`: код 0, если значение ненулевое, иначе 1. Ошибки арифметики идут в [_command] с
+  /// префиксом `((`, как у bash.
+  Future<int> _arithmeticCommand(
+    ArithmeticCommand cmd,
+    ShellState state,
+    _Io io,
+  ) async {
+    final value = await _expander(
+      state,
+      io,
+    ).arithmetic(cmd.expression, context: '((');
+    return value == 0 ? 1 : 0;
+  }
+
+  /// `for ((init; cond; step))`. [ArithmeticFor.init] выполняется один раз, пустое условие истинно, шаг
+  /// идёт после каждой итерации, в том числе после `continue`. Код — код последнего тела, как у `for`.
+  Future<int> _arithmeticFor(
+    ArithmeticFor cmd,
+    ShellState state,
+    _Io io,
+  ) async {
+    final expander = _expander(state, io);
+    final init = cmd.init;
+    if (init != null) await expander.arithmetic(init, context: '((');
+    var status = 0;
+    state.loopDepth++;
+    try {
+      while (true) {
+        final condition = cmd.condition;
+        if (condition != null &&
+            await expander.arithmetic(condition, context: '((') == 0) {
+          break;
+        }
+        final step = await _iteration(cmd.body, state, io);
+        status = step.status;
+        if (step.stop) break;
+        final increment = cmd.step;
+        if (increment != null) {
+          await expander.arithmetic(increment, context: '((');
+        }
+      }
+    } finally {
+      state.loopDepth--;
+    }
+    return status;
+  }
+
   Future<int> _if(IfCommand cmd, ShellState state, _Io io) async {
     for (final branch in cmd.branches) {
-      if (await script(branch.condition, state, io) == 0) {
+      if (await script(branch.condition, state, io, exempt: true) == 0) {
         return script(branch.body, state, io);
       }
     }
@@ -359,7 +778,7 @@ final class _Evaluator {
     state.loopDepth++;
     try {
       while (true) {
-        final condition = await script(cmd.condition, state, io);
+        final condition = await script(cmd.condition, state, io, exempt: true);
         if (cmd.until ? condition == 0 : condition != 0) break;
         final step = await _iteration(cmd.body, state, io);
         status = step.status;
@@ -371,17 +790,59 @@ final class _Evaluator {
     return status;
   }
 
-  Future<int> _for(ForCommand cmd, ShellState state, _Io io) async {
+  /// `select`: меню на stderr, ответ — строка из stdin. Пустая строка печатает меню снова.
+  /// Конец входа завершает цикл с кодом 1, как в bash без терминала.
+  Future<int> _select(SelectCommand cmd, ShellState state, _Io io) async {
+    final values = await _loopWords(cmd.words, state, io);
+    var status = 0;
+    state.loopDepth++;
+    try {
+      while (true) {
+        for (var i = 0; i < values.length; i++) {
+          io.stderr.writeText('${i + 1}) ${values[i]}\n');
+        }
+        io.stderr.writeText(state.get('PS3') ?? '#? ');
+        final answer = io.stdin.readLine();
+        if (answer == null) {
+          // bash при конце входа печатает перевод строки в stdout и завершает select с кодом 1.
+          io.stdout.writeText('\n');
+          return 1;
+        }
+        final choice = int.tryParse(answer.text);
+        final picked = choice != null && choice >= 1 && choice <= values.length
+            ? values[choice - 1]
+            : '';
+        state
+          ..set(cmd.variable, picked)
+          ..set('REPLY', answer.text);
+        if (answer.text.isEmpty) continue;
+        final step = await _iteration(cmd.body, state, io);
+        status = step.status;
+        if (step.stop) break;
+      }
+    } finally {
+      state.loopDepth--;
+    }
+    return status;
+  }
+
+  /// Слова `for`/`select`. Без `in` — позиционные параметры.
+  Future<List<String>> _loopWords(
+    List<ShellWord>? words,
+    ShellState state,
+    _Io io,
+  ) async {
+    if (words == null) return [...state.positional];
     final expander = _expander(state, io);
     final values = <String>[];
-    final words = cmd.words;
-    if (words == null) {
-      values.addAll(state.positional);
-    } else {
-      for (final word in words) {
-        values.addAll(await expander.fields(word));
-      }
+    for (final word in words) {
+      values.addAll(await expander.fields(word));
     }
+    return values;
+  }
+
+  Future<int> _for(ForCommand cmd, ShellState state, _Io io) async {
+    final values = await _loopWords(cmd.words, state, io);
     var status = 0;
     state.loopDepth++;
     try {
@@ -404,9 +865,12 @@ final class _Evaluator {
       return (status: await script(body, state, io), stop: false);
     } on ShellBreak catch (e, stack) {
       if (e.levels > 1) {
-        Error.throwWithStackTrace(ShellBreak(e.levels - 1), stack);
+        Error.throwWithStackTrace(
+          ShellBreak(e.levels - 1, status: e.status),
+          stack,
+        );
       }
-      return (status: 0, stop: true);
+      return (status: e.status, stop: true);
     } on ShellContinue catch (e, stack) {
       if (e.levels > 1) {
         Error.throwWithStackTrace(ShellContinue(e.levels - 1), stack);
@@ -448,7 +912,7 @@ final class _Evaluator {
 
   /// Определение функции: запись в состояние. Тело не выполняется.
   int _define(FunctionDefinition cmd, ShellState state) {
-    state.functions[cmd.name] = cmd;
+    state.defineFunction(cmd.name, cmd);
     return 0;
   }
 
@@ -585,12 +1049,14 @@ final class _Evaluator {
     Map<String, String> values,
     ShellState state,
     _Io streams,
-    int line,
-  ) async {
+    int line, {
+    bool functions = true,
+  }) async {
     final name = fields.first;
     final args = fields.sublist(1);
     // Функция, определённая в скрипте, перекрывает встроенные команды и апплеты, как в bash.
-    final function = state.functions[name];
+    // `command имя` этот шаг пропускает.
+    final function = functions ? state.function(name) : null;
     if (function != null) {
       return _callFunction(function, args, values, state, streams);
     }
@@ -605,6 +1071,12 @@ final class _Evaluator {
           stderr: streams.stderr,
           fs: _fs,
           line: line,
+          applets: _applets,
+          inSource: _sourceDepth > 0,
+          runText: (text, {required sourced}) =>
+              _runText(text, state, streams, sourced: sourced),
+          execArgv: (argv, {required functions}) =>
+              _invoke(argv, values, state, streams, line, functions: functions),
         ),
       );
     }
@@ -630,6 +1102,7 @@ final class _Evaluator {
       profile: _profile,
       applets: _applets,
       exec: _execArgv,
+      checkpoint: _run.throwIfCancelled,
     );
     try {
       return await applet.run(io, args);
@@ -650,24 +1123,53 @@ final class _Evaluator {
     ShellState state,
     _Io io,
   ) async {
-    final saved = state.enterFunction(args);
+    final saved = state.enterFunction(function.name, args);
     // Внутри функции цикл вызывающего кода не виден: `break` в ней — предупреждение, как в bash.
     final callerLoops = state.loopDepth;
     state.loopDepth = 0;
+    // Без `set -E`/`set -T` ловушки ERR и RETURN вызывающего внутри функции не видны.
+    final keepErr = state.options.contains('errtrace');
+    final keepReturn = state.options.contains('functrace');
+    final savedErr = state.traps['ERR'];
+    final savedReturn = state.traps['RETURN'];
+    if (!keepErr) state.traps.remove('ERR');
+    if (!keepReturn) state.traps.remove('RETURN');
     var status = 0;
     try {
       for (final entry in values.entries) {
-        state.declareLocal(entry.key, entry.value);
+        state
+          ..declareLocal(entry.key)
+          ..set(entry.key, entry.value);
       }
       status = await _command(function.body, state, io);
     } on ShellReturn catch (e) {
       status = e.status;
     } finally {
+      // RETURN срабатывает до отката local: ловушка ещё видит локальные переменные.
+      await _hook('RETURN', state, io);
+      _restoreTrap(state, 'ERR', savedErr, keep: keepErr);
+      _restoreTrap(state, 'RETURN', savedReturn, keep: keepReturn);
       state
         ..loopDepth = callerLoops
         ..leaveFunction(saved);
     }
     return status;
+  }
+
+  /// Возвращает ловушку вызывающего, если функция её не наследовала. Наследованная остаётся как есть:
+  /// функция могла заменить её, и это видно снаружи, как в bash.
+  void _restoreTrap(
+    ShellState state,
+    String name,
+    String? saved, {
+    required bool keep,
+  }) {
+    if (keep) return;
+    if (saved == null) {
+      state.traps.remove(name);
+    } else {
+      state.traps[name] = saved;
+    }
   }
 
   /// Вызов команды по argv без разбора строки (для `xargs` и подобных). Команды сверх реестра нет.
@@ -727,8 +1229,10 @@ final class _Evaluator {
     substitute: (script) async {
       final buffer = BufferSink(_limits.maxOutputBytes);
       final inner = _Io(io.stdin, buffer, io.stderr);
-      final status = await _isolated(
-        () => this.script(script, state.fork(), inner),
+      final status = await _subshell(
+        state,
+        inner,
+        (child) => this.script(script, child, inner),
       );
       if (buffer.truncated) {
         io.stderr.writeText(

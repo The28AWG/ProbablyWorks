@@ -43,12 +43,19 @@ final class OutputBudget {
 }
 
 /// Приёмник, который отдаёт байты как события запуска. Stdout и stderr различаются типом события.
+/// [onEvent] вызывается сразу при записи: подписчик видит вывод до конца команды и может отменить запуск.
 final class EventSink implements ShellSink {
-  EventSink(this._events, {required this.isStderr, required this.budget});
+  EventSink(
+    this._events, {
+    required this.isStderr,
+    required this.budget,
+    this.onEvent,
+  });
 
   final List<ExecEvent> _events;
   final bool isStderr;
   final OutputBudget budget;
+  final void Function(ExecEvent event)? onEvent;
 
   @override
   void write(Uint8List bytes) {
@@ -56,7 +63,9 @@ final class EventSink implements ShellSink {
     if (allowed == 0) return;
     // Копия: отправитель может переиспользовать свой буфер после записи.
     final chunk = Uint8List.fromList(bytes.sublist(0, allowed));
-    _events.add(isStderr ? ExecStderr(chunk) : ExecStdout(chunk));
+    final event = isStderr ? ExecStderr(chunk) : ExecStdout(chunk);
+    _events.add(event);
+    onEvent?.call(event);
   }
 }
 
@@ -117,6 +126,31 @@ final class ShellInput {
     final terminated = end < bytes.length;
     _offset = terminated ? end + 1 : end;
     return (text: text, terminated: terminated);
+  }
+
+  /// До [count] байт, не дожидаясь перевода строки (`read -n`).
+  /// null — вход уже кончился. [full] — прочитано ровно [count] байт; иначе вход кончился раньше.
+  ({String text, bool full})? readCount(int count) {
+    if (count <= 0 || _offset >= bytes.length) return null;
+    final start = _offset;
+    final end = start + count;
+    final take = end > bytes.length ? bytes.length : end;
+    final text = utf8.decode(bytes.sublist(start, take), allowMalformed: true);
+    _offset = take;
+    return (text: text, full: take - start == count);
+  }
+
+  /// Байты до [delimiter], не включая его (`read -d`). [found] — разделитель встретился.
+  ({String text, bool found})? readUntil(int delimiter) {
+    if (_offset >= bytes.length) return null;
+    var end = _offset;
+    while (end < bytes.length && bytes[end] != delimiter) {
+      end++;
+    }
+    final found = end < bytes.length;
+    final text = utf8.decode(bytes.sublist(_offset, end), allowMalformed: true);
+    _offset = found ? end + 1 : end;
+    return (text: text, found: found);
   }
 }
 

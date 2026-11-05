@@ -32,7 +32,13 @@ final class AppletIo {
     required this.profile,
     required this.applets,
     required this.exec,
+    this.checkpoint = _noop,
   });
+
+  static void _noop() {
+    // Отмены нет: апплет без интерпретатора читает вход до конца.
+    return;
+  }
 
   /// Источник оставшегося входа. Интерпретатор передаёт `ShellInput.takeRest`, поэтому вход
   /// забирается из общего буфера, а не копируется заранее.
@@ -63,6 +69,10 @@ final class AppletIo {
 
   final AppletExec exec;
 
+  /// Проверка отмены. Долгий цикл (`cat`, `grep`, `sort`) вызывает её на каждой порции входа:
+  /// отписка от потока запуска останавливает апплет, не дожидаясь конца файла.
+  final void Function() checkpoint;
+
   /// Копия окружения с заменой части полей. Нужна `env` (другой набор переменных) и `xargs` (другой stdin).
   AppletIo copyWith({
     Uint8List Function()? readStdin,
@@ -74,6 +84,7 @@ final class AppletIo {
     VirtualProfile? profile,
     AppletRegistry? applets,
     AppletExec? exec,
+    void Function()? checkpoint,
   }) => AppletIo(
     readStdin: readStdin ?? this.readStdin,
     stdout: stdout ?? this.stdout,
@@ -84,6 +95,7 @@ final class AppletIo {
     profile: profile ?? this.profile,
     applets: applets ?? this.applets,
     exec: exec ?? this.exec,
+    checkpoint: checkpoint ?? this.checkpoint,
   );
 }
 

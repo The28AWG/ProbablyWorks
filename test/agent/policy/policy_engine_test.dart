@@ -30,6 +30,32 @@ void main() {
       expect(classifier.classify('echo \$(id)').risk, CommandRisk.ask);
     });
 
+    test('parameter assignment and arithmetic are ask', () {
+      expect(classifier.classify('echo \${x:=y}').risk, CommandRisk.ask);
+      expect(classifier.classify('echo \${x=y}').risk, CommandRisk.ask);
+      expect(classifier.classify('echo \${x:?missing}').risk, CommandRisk.ask);
+      expect(classifier.classify('echo \${x:-y}').risk, CommandRisk.auto);
+      expect(classifier.classify('((x=1))').risk, CommandRisk.ask);
+      expect(classifier.classify('echo \$((x=1))').risk, CommandRisk.ask);
+    });
+
+    test('writing flags of read-only commands are ask', () {
+      expect(classifier.classify('sort -o out file').risk, CommandRisk.ask);
+      expect(classifier.classify('sort -n file').risk, CommandRisk.auto);
+      expect(classifier.classify('date -s now').risk, CommandRisk.ask);
+      expect(classifier.classify('date').risk, CommandRisk.auto);
+      expect(classifier.classify('hostname box').risk, CommandRisk.ask);
+      expect(classifier.classify('hostname').risk, CommandRisk.auto);
+      expect(classifier.classify('printf -v x %s a').risk, CommandRisk.ask);
+    });
+
+    test('shell builtins that run code are ask', () {
+      expect(classifier.classify('eval echo hi').risk, CommandRisk.ask);
+      expect(classifier.classify('source ./f.sh').risk, CommandRisk.ask);
+      expect(classifier.classify('declare -f').risk, CommandRisk.ask);
+      expect(classifier.classify('trap echo INT').risk, CommandRisk.ask);
+    });
+
     test('privilege escalation is always deny', () {
       expect(classifier.classify('sudo ls').risk, CommandRisk.deny);
       expect(classifier.classify('su -c id').risk, CommandRisk.deny);

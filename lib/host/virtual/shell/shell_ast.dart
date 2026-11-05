@@ -25,11 +25,142 @@ final class TildePart extends WordPart {
   const TildePart();
 }
 
-/// Ссылка на переменную: `$NAME`, `${NAME}`, `$?`, `$1`, `$#`, `$@`, `$*`.
+/// Ссылка на переменную: `$NAME`, `${NAME}`, `$?`, `$1`, `$#`, `$@`, `$*`, а также все формы `${...}`:
+/// индекс, длина, косвенность, ключи и модификаторы. Простое `$NAME` — частный случай с видом
+/// [ParamKind.value] без индекса и модификатора.
 final class ParamPart extends WordPart {
-  const ParamPart(this.name);
+  const ParamPart(
+    this.name, {
+    this.subscript,
+    this.kind = ParamKind.value,
+    this.op,
+  });
 
+  /// Имя переменной или спецпараметр. Для [ParamKind.names] — префикс имён.
   final String name;
+
+  /// Индекс `[...]`, `[@]` или `[*]`. null — без индекса.
+  final ParamSubscript? subscript;
+
+  /// Что берётся из параметра: значение, длина, косвенное значение, ключи или имена.
+  final ParamKind kind;
+
+  /// Модификатор, который применяется к значению. null — без модификатора.
+  final ParamOp? op;
+}
+
+/// Вид обращения, заданный префиксом внутри `${...}`: `#` — длина, `!` — косвенность (`${!x}`), `!x[@]` —
+/// ключи массива, `!prefix*` и `!prefix@` — имена переменных с префиксом.
+enum ParamKind { value, length, indirect, keys, names }
+
+/// Индекс в `[...]` после имени переменной.
+sealed class ParamSubscript {
+  const ParamSubscript();
+}
+
+/// `[@]` или `[*]`: все элементы. [star] — `*`, который в кавычках склеивает элементы через IFS.
+final class AllElements extends ParamSubscript {
+  const AllElements({required this.star});
+
+  final bool star;
+}
+
+/// `[выражение]`: индекс индексированного массива (арифметика) или ключ ассоциативного массива (строка).
+/// [source] — исходный текст между скобками: нужен для сообщений об ошибках.
+final class IndexElement extends ParamSubscript {
+  const IndexElement(this.index, this.source);
+
+  final ShellWord index;
+  final String source;
+}
+
+/// Недопустимая форма `${...}`, например `${}` или `${x:}`. Как в bash, ошибка возникает при раскрытии,
+/// а не при разборе: команды до неё успевают выполниться.
+final class BadSubstitutionPart extends WordPart {
+  const BadSubstitutionPart(this.text);
+
+  /// Текст между `{` и `}`.
+  final String text;
+}
+
+/// Модификатор `${NAME op ...}`. Операнды — вложенные слова: раскрываются только тогда, когда нужны
+/// (правая часть `:-` не выполняется, если значение задано).
+sealed class ParamOp {
+  const ParamOp();
+}
+
+/// Вид оператора из группы «значение по умолчанию».
+enum ParamDefaultKind { useDefault, assign, error, alternative }
+
+/// `-`/`:-` (значение по умолчанию), `=`/`:=` (присвоить по умолчанию), `?`/`:?` (ошибка, если не задано),
+/// `+`/`:+` (альтернатива, если задано). [nullIsUnset] — форма с двоеточием: пустое значение тоже считается
+/// незаданным.
+final class ParamDefaultOp extends ParamOp {
+  const ParamDefaultOp(this.kind, this.word, {required this.nullIsUnset});
+
+  final ParamDefaultKind kind;
+  final ShellWord word;
+  final bool nullIsUnset;
+}
+
+/// `#`, `##`, `%`, `%%`: удаление начала или конца значения по образцу. [longest] — двойной символ,
+/// который удаляет самое длинное совпадение вместо самого короткого.
+final class ParamTrimOp extends ParamOp {
+  const ParamTrimOp({
+    required this.prefix,
+    required this.longest,
+    required this.pattern,
+  });
+
+  /// true — с начала (`#`), false — с конца (`%`).
+  final bool prefix;
+  final bool longest;
+  final ShellWord pattern;
+}
+
+/// Режим замены: `/` — первое совпадение, `//` — все, `/#` — в начале, `/%` — в конце.
+enum ReplaceMode { first, all, prefix, suffix }
+
+/// `/`, `//`, `/#`, `/%`: замена по образцу. [replacement] пуст, если его нет в записи.
+final class ParamReplaceOp extends ParamOp {
+  const ParamReplaceOp(this.mode, this.pattern, this.replacement);
+
+  final ReplaceMode mode;
+  final ShellWord pattern;
+  final ShellWord replacement;
+}
+
+/// `:offset` и `:offset:length`: срез строки по байтам или списка по элементам. [length] — null, если не задан.
+final class ParamSliceOp extends ParamOp {
+  const ParamSliceOp(this.offset, this.length);
+
+  final ShellWord offset;
+  final ShellWord? length;
+}
+
+/// Режим смены регистра: `^` и `,` — первый символ, `^^` и `,,` — все, `~` и `~~` — переключение.
+enum ParamCaseMode {
+  upperFirst,
+  upperAll,
+  lowerFirst,
+  lowerAll,
+  toggleFirst,
+  toggleAll,
+}
+
+/// `^`, `^^`, `,`, `,,`, `~`, `~~`. [pattern] — символы, к которым применяется смена (null — ко всем).
+final class ParamCaseOp extends ParamOp {
+  const ParamCaseOp(this.mode, this.pattern);
+
+  final ParamCaseMode mode;
+  final ShellWord? pattern;
+}
+
+/// Преобразование `@Q`, `@E`, `@U`, `@u`, `@L`, `@l`. [letter] — буква после `@`.
+final class ParamTransformOp extends ParamOp {
+  const ParamTransformOp(this.letter);
+
+  final String letter;
 }
 
 /// Подстановка команды `$(...)` или `` `...` ``. Вывод команды, без хвостовых переводов строк.
@@ -102,12 +233,39 @@ final class HeredocRedirect extends Redirect {
   final int eofLine;
 }
 
-/// Присваивание перед командой (`NAME=value`) или сама переменная без команды.
+/// Элемент литерала массива `NAME=(...)`: обычный `value` или `[key]=value`. [key] — null для обычного
+/// элемента. Ключ раскрывается как слово; для индексированного массива его потом вычисляет арифметика.
+final class ArrayElement {
+  const ArrayElement(this.value, {this.key});
+
+  final ShellWord? key;
+  final ShellWord value;
+}
+
+/// Присваивание перед командой или без неё: `NAME=value`, `NAME+=value`, `NAME[index]=value` и литерал
+/// массива `NAME=(...)` / `NAME+=(...)`.
+///
+/// Для литерала [elements] задан, а [value] — пустое слово и не используется. [index] задан только у
+/// присваивания элементу. [append] — форма с `+=`: значение дописывается, а массив дополняется.
 final class Assignment {
-  const Assignment(this.name, this.value);
+  const Assignment(
+    this.name,
+    this.value, {
+    this.index,
+    this.elements,
+    this.append = false,
+  });
 
   final String name;
   final ShellWord value;
+
+  /// Индекс `NAME[index]=value`: слово, которое раскрывается до вычисления или чтения ключа.
+  final ShellWord? index;
+
+  /// Элементы литерала `NAME=(...)`. null — не литерал.
+  final List<ArrayElement>? elements;
+
+  final bool append;
 }
 
 /// Команда конвейера: простая, составная или определение функции.
@@ -185,6 +343,22 @@ final class LoopCommand extends CompoundCommand {
   final bool until;
 }
 
+/// `select NAME [in WORDS]; do ...; done`. Без `in` пункты меню — позиционные параметры.
+/// Номер ответа записывается в `REPLY`, выбранное слово — в [variable].
+final class SelectCommand extends CompoundCommand {
+  const SelectCommand(
+    this.variable,
+    this.words,
+    this.body,
+    super.line,
+    super.redirects,
+  );
+
+  final String variable;
+  final List<ShellWord>? words;
+  final ScriptNode body;
+}
+
 /// `for NAME [in WORDS]; do ...; done`. Без `in` (`words == null`) цикл идёт по позиционным параметрам.
 final class ForCommand extends CompoundCommand {
   const ForCommand(
@@ -219,6 +393,86 @@ final class CaseCommand extends CompoundCommand {
 
   final ShellWord subject;
   final List<CaseClause> clauses;
+}
+
+/// `((выражение))`: код 0, если значение ненулевое, иначе 1. Выражение — слово: `$VAR` и подстановки
+/// раскрываются до вычисления, как в `$((...))`. Присваивания внутри выражения меняют оболочку.
+final class ArithmeticCommand extends CompoundCommand {
+  const ArithmeticCommand(this.expression, super.line, super.redirects);
+
+  final ShellWord expression;
+}
+
+/// `for ((init; cond; step)); do ... done`. Любая из трёх частей может быть пустой: пустое условие истинно.
+/// [init] выполняется один раз, [step] — после каждой итерации, включая `continue`.
+final class ArithmeticFor extends CompoundCommand {
+  const ArithmeticFor(
+    this.init,
+    this.condition,
+    this.step,
+    this.body,
+    super.line,
+    super.redirects,
+  );
+
+  final ShellWord? init;
+  final ShellWord? condition;
+  final ShellWord? step;
+  final ScriptNode body;
+}
+
+/// Узел условия `[[ ... ]]`. `&&` и `||` вычисляются слева направо с коротким замыканием, `!` относится
+/// к ближайшему операнду, как в bash.
+sealed class CondNode {
+  const CondNode();
+}
+
+/// `левое || правое`. Правая часть не вычисляется, если левая истинна.
+final class CondOr extends CondNode {
+  const CondOr(this.left, this.right);
+
+  final CondNode left;
+  final CondNode right;
+}
+
+/// `левое && правое`. Правая часть не вычисляется, если левая ложна.
+final class CondAnd extends CondNode {
+  const CondAnd(this.left, this.right);
+
+  final CondNode left;
+  final CondNode right;
+}
+
+/// `! выражение`.
+final class CondNot extends CondNode {
+  const CondNot(this.inner);
+
+  final CondNode inner;
+}
+
+/// `( выражение )` внутри `[[ ]]`.
+final class CondGroup extends CondNode {
+  const CondGroup(this.inner);
+
+  final CondNode inner;
+}
+
+/// Первичный операнд: слово (непустая строка истинна), унарный оператор (`-f`, `-z`) или бинарный
+/// (`==`, `=~`, `-eq`). У слова [op] и [right] равны null. У унарного [left] равен null.
+final class CondPrimary extends CondNode {
+  const CondPrimary(this.op, this.left, this.right);
+
+  final String? op;
+  final ShellWord? left;
+  final ShellWord? right;
+}
+
+/// `[[ выражение ]]`. Слова внутри не режутся по пробелам и не глобятся. Перенаправления после `]]`
+/// применяются один раз, как у остальных составных команд.
+final class CondCommand extends CompoundCommand {
+  const CondCommand(this.expr, super.line, super.redirects);
+
+  final CondNode expr;
 }
 
 /// `name() составная-команда` или `function name [()] составная-команда`. Само определение ничего не

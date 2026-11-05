@@ -56,10 +56,12 @@ final class ShellLexer {
         } else if (c == '#') {
           _skipComment();
         } else if (c == '\n') {
-          _tokens.add(Token(TokenKind.newline, '\n', _line));
+          _tokens.add(Token(TokenKind.newline, '\n', _line, offset: _pos));
           _pos++;
           _line++;
           _readHeredocBodies();
+        } else if (_arithmeticClose() case final close?) {
+          _readArithmetic(close);
         } else if (_operatorAt(_pos) case final op?) {
           _readOperator(op);
         } else {
@@ -71,7 +73,7 @@ final class ShellLexer {
       // Ошибка без номера строки получает номер текущей строки лексера; сохраняем исходный стек.
       Error.throwWithStackTrace(e.line == 1 ? e.withLine(_line) : e, stack);
     }
-    _tokens.add(Token(TokenKind.eof, '', _line));
+    _tokens.add(Token(TokenKind.eof, '', _line, offset: _pos));
     return _tokens;
   }
 
@@ -122,7 +124,53 @@ final class ShellLexer {
     return null;
   }
 
+  /// Индекс первого `)` пары `))`, которая закрывает `((` в текущей позиции. null — если `((` не начинается
+  /// здесь или пары нет: тогда bash читает `((` как две подоболочки, и лексер отдаёт `(` обычным оператором.
+  ///
+  /// Скобки внутри выражения считаются, кавычки и `\` пропускаются. Одиночная `)` на нулевой глубине без
+  /// второй `)` сразу за ней означает подоболочку: `((echo a); (echo b))` и `((1)+(2))` так же разбирает bash.
+  int? _arithmeticClose() {
+    if (_char(_pos) != '(' || _char(_pos + 1) != '(') return null;
+    var depth = 0;
+    var i = _pos + 2;
+    while (i < _units.length) {
+      final c = _char(i);
+      if (c == r'\') {
+        i += 2;
+      } else if (c == "'") {
+        i = ShellScan.singleQuoteEnd(_src, i);
+      } else if (c == '"') {
+        i = ShellScan.doubleQuoteEnd(_src, i);
+      } else if (c == '(') {
+        depth++;
+        i++;
+      } else if (c == ')') {
+        if (depth > 0) {
+          depth--;
+          i++;
+        } else {
+          return _char(i + 1) == ')' ? i : null;
+        }
+      } else {
+        i++;
+      }
+    }
+    return null;
+  }
+
+  /// Токен [TokenKind.arith] от `((` до `))` включительно. Переводы строк внутри учитываются в номере строки.
+  void _readArithmetic(int close) {
+    final start = _pos;
+    final raw = _slice(_pos + 2, close);
+    _tokens.add(Token(TokenKind.arith, raw, _line, offset: start));
+    _pos = close + 2;
+    for (var k = 0; k < raw.length; k++) {
+      if (raw[k] == '\n') _line++;
+    }
+  }
+
   void _readOperator(String op) {
+    final start = _pos;
     _pos += op.length;
     if (op == '<<' || op == '<<-') {
       _tokens.add(
@@ -131,10 +179,11 @@ final class ShellLexer {
           op,
           _line,
           heredoc: _readHeredocSpec(op == '<<-'),
+          offset: start,
         ),
       );
     } else {
-      _tokens.add(Token(TokenKind.operator, op, _line));
+      _tokens.add(Token(TokenKind.operator, op, _line, offset: start));
     }
   }
 
@@ -196,14 +245,15 @@ final class ShellLexer {
   }
 
   void _readWord() {
+    final start = _pos;
     final startLine = _line;
     final raw = _scanWord();
     final isNumber = RegExp(r'^[0-9]+$').hasMatch(raw);
     final redirectFollows = _char(_pos) == '<' || _char(_pos) == '>';
     if (isNumber && redirectFollows) {
-      _tokens.add(Token(TokenKind.ioNumber, raw, startLine));
+      _tokens.add(Token(TokenKind.ioNumber, raw, startLine, offset: start));
     } else {
-      _tokens.add(Token(TokenKind.word, raw, startLine));
+      _tokens.add(Token(TokenKind.word, raw, startLine, offset: start));
     }
   }
 

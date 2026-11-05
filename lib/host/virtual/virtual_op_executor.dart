@@ -113,9 +113,10 @@ final class VirtualOpExecutor {
 
   // ---- Сведения о Host ----
 
-  /// Тот же вывод, что у `ShellAdapter.hostInfo` на POSIX.
   /// Сводка для модели и диагностики. Строка `applets=` есть только когда реестр не пуст: модель видит, какие
   /// утилиты доступны, и не перебирает их наугад. Список отсортирован, чтобы вывод был детерминированным.
+  /// Ниже — границы виртуальной оболочки: у неё нет терминала, состояние не переживает `run_command`,
+  /// и часть синтаксиса bash отвергается до запуска. Подробности — в `docs/shell.md`.
   VirtualOpResult _hostInfo(String dir) {
     final applets = commands.toList()..sort();
     return VirtualOpResult.text(
@@ -123,6 +124,11 @@ final class VirtualOpExecutor {
       'user=${_profile.user}\n'
       'cwd=$dir\n'
       'shell=${_profile.shell}\n'
+      'pty=no\n'
+      'state=does not survive run_command\n'
+      'shell_subset=bash functions, if/while/for/select/case, [[ ]], (( )), arrays, traps, set -e/-u/-o pipefail\n'
+      'unsupported=job control, shopt, exec, coproc, extglob, background\n'
+      'divergences=\$\$ PPID RANDOM differ from a real process; declare -f is normalized; [[ =~ ]] is a translated ERE; eval nesting is limited\n'
       '${applets.isEmpty ? '' : 'applets=${applets.join(' ')}\n'}',
     );
   }

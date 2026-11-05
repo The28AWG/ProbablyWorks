@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:probably_works/host/virtual/shell/applets/applet.dart';
 import 'package:probably_works/host/virtual/shell/applets/applet_args.dart';
 import 'package:probably_works/host/virtual/shell/shell_io.dart';
+import 'package:probably_works/host/virtual/shell/shell_text.dart';
 import 'package:probably_works/host/virtual/virtual_fs.dart';
 
 /// Текстовые апплеты: вывод строк, преобразование и счёт. Фильтры по шаблону и сортировка — в
@@ -124,6 +125,11 @@ final class _Printf implements Applet {
   }
 }
 
+/// Форматирует аргументы как `printf`. Текст и первая ошибка числа, если она была.
+/// Встроенная команда `printf -v` пользуется тем же разбором, что и апплет.
+({String text, String? error}) formatPrintf(String format, List<String> args) =>
+    _format(format, args);
+
 /// Результат форматирования: текст и первая ошибка числа, если была.
 ({String text, String? error}) _format(String format, List<String> args) {
   final out = StringBuffer();
@@ -220,7 +226,7 @@ _Spec? _parseSpec(String format, int start) {
       i++;
     }
   }
-  if (i >= format.length || !'sdiuxXocbf'.contains(format[i])) return null;
+  if (i >= format.length || !'sdiuxXocbfegq'.contains(format[i])) return null;
   return _Spec(
     end: i + 1,
     conv: format[i],
@@ -258,6 +264,24 @@ bool _isDigit(String ch) =>
         text: _pad(spec, _signed(spec, negative, digits), numeric: true),
         error: error,
       );
+    case 'e':
+      final value = _double(arg, (e) => error ??= e);
+      return (
+        text: _pad(
+          spec,
+          _exponential(value, spec.precision ?? 6),
+          numeric: true,
+        ),
+        error: error,
+      );
+    case 'g':
+      final value = _double(arg, (e) => error ??= e);
+      return (
+        text: _pad(spec, _general(value, spec.precision ?? 6), numeric: true),
+        error: error,
+      );
+    case 'q':
+      body = _quote(arg ?? '');
     default:
       numeric = true;
       final value = _number(arg, (e) => error ??= e);
@@ -320,6 +344,135 @@ double _double(String? arg, void Function(String) onError) {
   return value;
 }
 
+/// `%e`: мантисса с точкой и показатель из двух цифр (`1.250000e+01`). Округление до 10 поднимает степень.
+String _exponential(double value, int precision) {
+  if (value.isNaN) return 'nan';
+  if (value.isInfinite) return value.isNegative ? '-inf' : 'inf';
+  final negative = value < 0 || (value == 0 && value.isNegative);
+  var mantissa = value.abs();
+  var exponent = 0;
+  if (mantissa != 0) {
+    while (mantissa >= 10) {
+      mantissa /= 10;
+      exponent++;
+    }
+    while (mantissa < 1) {
+      mantissa *= 10;
+      exponent--;
+    }
+  }
+  var digits = mantissa.toStringAsFixed(precision);
+  if (digits.startsWith('10')) {
+    digits = 1.toStringAsFixed(precision);
+    exponent++;
+  }
+  final sign = exponent < 0 ? '-' : '+';
+  final shown = exponent.abs().toString().padLeft(2, '0');
+  return '${negative ? '-' : ''}${digits}e$sign$shown';
+}
+
+/// `%g`: более короткая из форм `%f` и `%e`, без хвостовых нулей. Точность — число значащих цифр.
+String _general(double value, int precision) {
+  final digits = precision == 0 ? 1 : precision;
+  if (value == 0) return '0';
+  var scaled = value.abs();
+  var exponent = 0;
+  while (scaled >= 10) {
+    scaled /= 10;
+    exponent++;
+  }
+  while (scaled < 1) {
+    scaled *= 10;
+    exponent--;
+  }
+  if (exponent < -4 || exponent >= digits) {
+    return _trimExponent(_exponential(value, digits - 1));
+  }
+  final places = digits - exponent - 1;
+  var fixed = value.abs().toStringAsFixed(places < 0 ? 0 : places);
+  if (fixed.startsWith('10')) {
+    return _trimExponent(_exponential(value, digits - 1));
+  }
+  final dot = fixed.indexOf('.');
+  if (dot >= 0) {
+    var end = fixed.length;
+    while (end > dot + 1 && fixed[end - 1] == '0') {
+      end--;
+    }
+    if (end == dot + 1) end = dot;
+    fixed = ShellText.cut(fixed, 0, end);
+  }
+  return value < 0 ? '-$fixed' : fixed;
+}
+
+String _trimExponent(String text) {
+  final mark = text.indexOf('e');
+  if (mark < 0) return text;
+  var mantissa = ShellText.cut(text, 0, mark);
+  final exponent = ShellText.cut(text, mark);
+  final dot = mantissa.indexOf('.');
+  if (dot < 0) return text;
+  var end = mantissa.length;
+  while (end > dot + 1 && mantissa[end - 1] == '0') {
+    end--;
+  }
+  if (end == dot + 1) end = dot;
+  mantissa = ShellText.cut(mantissa, 0, end);
+  return '$mantissa$exponent';
+}
+
+/// `%q`: форма, которую оболочка прочитает как ту же строку. Управляющие байты — в `$'\ldots'`.
+String _quote(String value) {
+  if (value.isEmpty) return "''";
+  final bytes = utf8.encode(value);
+  for (final unit in bytes) {
+    if (unit < 0x20 || unit > 0x7e) return _ansiQuote(bytes);
+  }
+  const safe =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%+./:@=-_';
+  final buffer = StringBuffer();
+  for (final unit in bytes) {
+    final ch = String.fromCharCode(unit);
+    if (!safe.contains(ch)) buffer.write(r'\');
+    buffer.write(ch);
+  }
+  return buffer.toString();
+}
+
+String _ansiQuote(List<int> bytes) {
+  final buffer = StringBuffer(r"$'");
+  for (final unit in bytes) {
+    switch (unit) {
+      case 0x07:
+        buffer.write(r'\a');
+      case 0x08:
+        buffer.write(r'\b');
+      case 0x09:
+        buffer.write(r'\t');
+      case 0x0a:
+        buffer.write(r'\n');
+      case 0x0b:
+        buffer.write(r'\v');
+      case 0x0c:
+        buffer.write(r'\f');
+      case 0x0d:
+        buffer.write(r'\r');
+      case 0x5c:
+        buffer.write(r'\\');
+      case 0x27:
+        buffer.write(r"\'");
+      default:
+        if (unit < 0x20 || unit > 0x7e) {
+          buffer.write('\\${unit.toRadixString(8).padLeft(3, '0')}');
+        } else {
+          buffer.writeCharCode(unit);
+        }
+    }
+  }
+  buffer.write("'");
+  return buffer.toString();
+}
+
 /// `cat [-n] [FILE...]`: файлы подряд, без операндов или для `-` — stdin. `-n` нумерует все строки.
 /// Ошибка одного файла не останавливает остальные, итог — код 1.
 final class _Cat implements Applet {
@@ -336,6 +489,7 @@ final class _Cat implements Applet {
     var status = 0;
     var number = 0;
     for (final operand in operands) {
+      io.checkpoint();
       final bytes = await readSource(io, name, operand);
       if (bytes == null) {
         status = 1;
@@ -347,6 +501,7 @@ final class _Cat implements Applet {
       }
       final text = splitText(bytes);
       for (final line in text.lines) {
+        io.checkpoint();
         number++;
         io.stdout.writeText('${number.toString().padLeft(6)}\t$line\n');
       }

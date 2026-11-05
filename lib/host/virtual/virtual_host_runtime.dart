@@ -51,6 +51,7 @@ final class VirtualHostRuntime implements HostRuntime {
   }
 
   /// Выполняет строку команды интерпретатором оболочки; он сам отдаёт [ExecDone] с кодом выхода.
+  /// Поток — тот же, что у интерпретатора: отписка отменяет запуск (ловушка INT, код 130).
   @override
   Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
       _shell.run(command, cwd: _cwd(cwd), stdin: stdin);
