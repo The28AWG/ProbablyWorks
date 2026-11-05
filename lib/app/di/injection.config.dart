@@ -32,6 +32,7 @@ import '../../core/data/chat_repository.dart' as _i193;
 import '../../core/data/host_repository.dart' as _i250;
 import '../../core/data/saved_model_repository.dart' as _i503;
 import '../../core/data/settings_repository.dart' as _i913;
+import '../../core/data/virtual_host_provisioner.dart' as _i354;
 import '../../core/db/app_database.dart' as _i386;
 import '../../core/notify/app_notifier.dart' as _i404;
 import '../../core/security/secret_store.dart' as _i617;
@@ -93,6 +94,9 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i913.SettingsRepository>(
       () => _i913.SettingsRepository(gh<_i386.AppDatabase>()),
     );
+    gh.lazySingleton<_i354.VirtualHostProvisioner>(
+      () => _i354.VirtualHostProvisioner(gh<_i386.AppDatabase>()),
+    );
     gh.lazySingleton<_i617.SecretStore>(
       () => _i617.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
     );
@@ -136,27 +140,18 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i719.HostKeyConfirmations>(),
       ),
     );
+    gh.lazySingleton<_i559.HostRuntimeFactory>(
+      () => _i559.HostRuntimeFactory(
+        gh<_i719.SshConnectionPool>(),
+        gh<_i532.PtyLauncher>(),
+        gh<_i354.VirtualHostProvisioner>(),
+      ),
+    );
     gh.lazySingleton<_i622.SessionStateService>(
       () => _i622.SessionStateService(gh<_i193.ChatRepository>()),
     );
     gh.lazySingleton<_i314.ChatDraftStore>(
       () => _i314.ChatDraftStore(gh<_i193.ChatRepository>()),
-    );
-    gh.lazySingleton<_i422.ContextCompactor>(
-      () => _i422.ContextCompactor(
-        gh<_i193.ChatRepository>(),
-        gh<_i432.LlmProvider>(),
-        gh<_i531.ContextBuilder>(),
-      ),
-    );
-    gh.singleton<_i81.AppRouter>(
-      () => coreModule.appRouter(gh<_i519.ApiKeyGuard>()),
-    );
-    gh.lazySingleton<_i559.HostRuntimeFactory>(
-      () => _i559.HostRuntimeFactory(
-        gh<_i719.SshConnectionPool>(),
-        gh<_i532.PtyLauncher>(),
-      ),
     );
     gh.lazySingleton<_i441.HostDiagnostics>(
       () => _i441.HostDiagnostics(
@@ -164,6 +159,13 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i617.SecretStore>(),
         gh<_i913.SettingsRepository>(),
         gh<_i559.HostRuntimeFactory>(),
+      ),
+    );
+    gh.lazySingleton<_i422.ContextCompactor>(
+      () => _i422.ContextCompactor(
+        gh<_i193.ChatRepository>(),
+        gh<_i432.LlmProvider>(),
+        gh<_i531.ContextBuilder>(),
       ),
     );
     gh.lazySingleton<_i235.SelfToolHandler>(
@@ -185,6 +187,9 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i359.WorkspaceContextLoader>(),
         gh<_i235.SelfToolHandler>(),
       ),
+    );
+    gh.singleton<_i81.AppRouter>(
+      () => coreModule.appRouter(gh<_i519.ApiKeyGuard>()),
     );
     gh.singleton<_i168.AgentHub>(
       () => _i168.AgentHub(

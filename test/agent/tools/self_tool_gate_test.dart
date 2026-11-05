@@ -23,6 +23,7 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/security/secret_store.dart';
@@ -72,6 +73,7 @@ void main() {
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),
       const PipePtyLauncher(),
+      VirtualHostProvisioner(db),
     );
     broker = InteractionBroker();
     final self = SelfToolHandler(

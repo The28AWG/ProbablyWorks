@@ -22,8 +22,8 @@ import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/line_diff.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/host/host_capture.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/shell_adapter.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -125,31 +125,25 @@ class ToolExecutor {
     }
     try {
       return await switch (call.name) {
-        ToolNames.hostInfo => _hostCommand(
+        ToolNames.hostInfo => _hostOp(ctx, call, args, const HostInfoOp()),
+        ToolNames.listDir => _hostOp(
           ctx,
           call,
           args,
-          ShellAdapter(ctx.host.os).hostInfo(),
-        ),
-        ToolNames.listDir => _hostCommand(
-          ctx,
-          call,
-          args,
-          ShellAdapter(ctx.host.os).listDir(_resolve(ctx, _str(args, 'path'))),
+          ListDirOp(_resolve(ctx, _str(args, 'path'))),
         ),
         ToolNames.readFile => _readFile(ctx, call, args),
-        ToolNames.grep => _hostCommand(
+        ToolNames.grep => _hostOp(
           ctx,
           call,
           args,
-          ShellAdapter(ctx.host.os)
-              .grep(_str(args, 'pattern'), _resolve(ctx, _str(args, 'path'))),
+          GrepOp(_str(args, 'pattern'), _resolve(ctx, _str(args, 'path'))),
         ),
-        ToolNames.which => _hostCommand(
+        ToolNames.which => _hostOp(
           ctx,
           call,
           args,
-          ShellAdapter(ctx.host.os).which(_str(args, 'name')),
+          WhichOp(_str(args, 'name')),
         ),
         ToolNames.runCommand => _runCommand(ctx, call, args),
         ToolNames.writeFile => _writeFile(ctx, call, args),
@@ -202,11 +196,11 @@ class ToolExecutor {
       ctx.limits.toolOutputForModelChars ~/ 2,
     );
     final path = _resolve(ctx, _str(args, 'path'));
-    return _hostCommand(
+    return _hostOp(
       ctx,
       call,
       args,
-      ShellAdapter(ctx.host.os).readFile(
+      ReadFileOp(
         path,
         offset: _intArg(args, 'offset', min: 1, fallback: 1),
         byteOffset: _intArg(args, 'byte_offset', min: 0, fallback: 0),
@@ -220,32 +214,24 @@ class ToolExecutor {
         chunkBytes: chunk,
         lineBytes: ctx.limits.readFileLineBytes,
       ),
-      // В журнале и шаге показываем путь, а не скрипт awk/PowerShell: скрипт длинный и не читается.
-      displayCommand: 'read $path',
     );
   }
 
   // ---- host commands -----------------------------------------------------
 
-  Future<ToolResult> _hostCommand(
+  /// Служебная операция Host: политика, затем выполнение через рантайм. Команды в журнале нет,
+  /// поэтому в журнал и шаг идёт подпись операции [HostOp.label].
+  Future<ToolResult> _hostOp(
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args,
-    String command, {
-    String? displayCommand,
-  }) {
+    HostOp op,
+  ) {
     final decision = ctx.policy.decide(call.name, args);
     if (decision == PolicyDecision.deny) {
       return _denied(ctx, call, args, ctx.policy.reasonFor(call.name, args));
     }
-    return _exec(
-      ctx,
-      call,
-      args,
-      command: command,
-      displayCommand: displayCommand,
-      background: false,
-    );
+    return _exec(ctx, call, args, command: op.label, op: op, background: false);
   }
 
   Future<ToolResult> _runCommand(
@@ -255,6 +241,14 @@ class ToolExecutor {
   ) async {
     final command = _str(args, 'command');
     final background = args['background'] == true;
+    // У виртуального Host нет процессов, которые можно отпустить в фон. Отказ сразу, без запуска и без
+    // подтверждения: модель должна повторить команду в обычном режиме.
+    if (background && ctx.host.kind == HostKind.virtual) {
+      return ToolResult(
+        'background is not supported on a virtual host: run the command in the foreground',
+        isError: true,
+      );
+    }
     final cwdArg = args['cwd'] as String?;
     // Относительный cwd считается от workspace, как и пути остальных инструментов.
     final cwd = cwdArg == null || cwdArg.isEmpty
@@ -315,12 +309,9 @@ class ToolExecutor {
   /// mtime файла на Host или null, если файла нет (или его не удалось получить: тогда запись
   /// безопасно откажет, потому что файл существует, а ожидался отсутствующий).
   Future<String?> _mtimeOrNull(ToolContext ctx, String path) async {
-    final run = await captureRun(
-      ctx.runtime,
-      ShellAdapter(ctx.host.os).statMtime(path),
-    );
-    final value = run.stdout.trim();
-    return run.ok && value.isNotEmpty ? value : null;
+    final run = await captureOp(ctx.runtime, StatOp(path));
+    if (!run.ok) return null;
+    return StatResult.parse(run.stdout)?.mtime;
   }
 
   Future<ToolResult> _editFile(
@@ -334,10 +325,7 @@ class ToolExecutor {
     final replaceAll = args['replace_all'] == true;
     // mtime снимается раньше содержимого: если файл изменится между ними, защита записи это заметит.
     final mtime = await _mtimeOrNull(ctx, path);
-    final read = await captureRun(
-      ctx.runtime,
-      ShellAdapter(ctx.host.os).readFileOrEmpty(path),
-    );
+    final read = await captureOp(ctx.runtime, ReadRawOp(path));
     if (mtime == null || !read.ok) {
       return ToolResult(
         'cannot read $path (file missing or unreadable)',
@@ -410,18 +398,17 @@ class ToolExecutor {
       );
       if (!approved) return _rejected(path);
     }
-    final command = ShellAdapter(ctx.host.os).writeFile(
-      path,
-      backupPath: '$path.pw-bak-$runId',
-      expectedMtime: expectedMtime,
-    );
     return _exec(
       ctx,
       call,
       args,
-      command: command,
+      command: 'write $path',
+      op: WriteFileOp(
+        path,
+        backupPath: '$path.pw-bak-$runId',
+        expectedMtime: expectedMtime,
+      ),
       background: false,
-      displayCommand: 'write $path',
       presetRunId: runId,
       stdin: Uint8List.fromList(utf8.encode(after)),
     );
@@ -530,7 +517,7 @@ class ToolExecutor {
           ].join('\n'),
         );
       case ToolNames.listSkills:
-        final snapshot = await _workspace.load(chat, ctx.runtime, ctx.host.os);
+        final snapshot = await _workspace.load(chat, ctx.runtime);
         final skills = BuiltinSkills.catalog(
           snapshot.needsTrust ? const [] : snapshot.skills,
         );
@@ -545,16 +532,12 @@ class ToolExecutor {
         final name = _str(args, 'name');
         final builtin = BuiltinSkills.byName(name);
         if (builtin != null) return ToolResult(builtin.body);
-        final snapshot = await _workspace.load(chat, ctx.runtime, ctx.host.os);
+        final snapshot = await _workspace.load(chat, ctx.runtime);
         final skill = snapshot.skills.where((s) => s.name == name).firstOrNull;
         if (skill == null) {
           return ToolResult('skill not found: $name', isError: true);
         }
-        final body = await _workspace.loadSkillBody(
-          ctx.runtime,
-          skill,
-          ctx.host.os,
-        );
+        final body = await _workspace.loadSkillBody(ctx.runtime, skill);
         return body == null
             ? ToolResult('cannot read skill $name', isError: true)
             : ToolResult(body);
@@ -650,10 +633,10 @@ class ToolExecutor {
     required String command,
     required bool background,
     String? cwd,
-    String? displayCommand,
     String? presetRunId,
     bool inTerminal = false,
     Uint8List? stdin,
+    HostOp? op,
   }) async {
     final runId = presetRunId ?? _uuid.v4();
     var run = _newRun(
@@ -662,7 +645,7 @@ class ToolExecutor {
       call,
       args,
       ToolRunStatus.running,
-      command: displayCommand ?? command,
+      command: command,
       background: background,
     );
     await _saveRun(run);
@@ -678,6 +661,7 @@ class ToolExecutor {
       background: background,
       inTerminal: inTerminal,
       stdin: stdin,
+      op: op,
     );
     run = run.copyWith(logPath: handle.logPath);
     await _saveRun(run);
@@ -827,10 +811,7 @@ class ToolExecutor {
   }
 
   Future<String> _readOrEmpty(ToolContext ctx, String path) async {
-    final read = await captureRun(
-      ctx.runtime,
-      ShellAdapter(ctx.host.os).readFileOrEmpty(path),
-    );
+    final read = await captureOp(ctx.runtime, ReadRawOp(path));
     return read.ok ? read.stdout : '';
   }
 

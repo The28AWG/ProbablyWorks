@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
@@ -118,15 +119,16 @@ class OnboardingCubit extends Cubit<OnboardingState> {
     if (index > 0) emit(state.copyWith(step: steps[index - 1]));
   }
 
-  /// На iOS первый чат возможен только на SSH-хосте: без него кнопка завершения недоступна.
+  /// На iOS первый чат возможен только на удалённом хосте (SSH или виртуальный): без него кнопка завершения
+  /// недоступна.
   Future<void> _refreshCanCreate() async {
-    final ready = platform.hasLocalHost || await _firstSshHostId() != null;
+    final ready = platform.hasLocalHost || await _firstRemoteHostId() != null;
     emit(state.copyWith(canCreate: ready));
   }
 
-  Future<String?> _firstSshHostId() async {
+  Future<String?> _firstRemoteHostId() async {
     final hosts = await _hosts.all();
-    return hosts.where((h) => !h.isLocal).firstOrNull?.id;
+    return preferredRemoteHost(hosts)?.id;
   }
 
   /// Ключ сохраняется, только если им действительно можно загрузить список моделей.
@@ -179,7 +181,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
   Future<void> createFirstChat() async {
     final hostId = platform.hasLocalHost
         ? await _ensureLocal()
-        : await _firstSshHostId();
+        : await _firstRemoteHostId();
     if (hostId == null) return;
     final chat = await _hub.newChat(hostId: hostId);
     emit(state.copyWith(created: chat.id));

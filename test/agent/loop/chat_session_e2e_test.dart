@@ -28,6 +28,7 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
@@ -133,7 +134,11 @@ void main() {
     final builder = ContextBuilder();
     llm = _FakeLlm();
     final modelCatalog = ModelCatalogService(SavedModelRepository(db), llm);
-    final runtimes = HostRuntimeFactory(pool, const PipePtyLauncher());
+    final runtimes = HostRuntimeFactory(
+      pool,
+      const PipePtyLauncher(),
+      VirtualHostProvisioner(db),
+    );
     final self = SelfToolHandler(
       hosts,
       settings,
@@ -932,5 +937,82 @@ void main() {
     // Перенос сохраняется в БД сразу; новый чат в БД не появился.
     expect((await hub.chats.chat(first))!.draft.isEmpty, isTrue);
     expect(await hub.chats.chat(fresh), isNull);
+  });
+
+  /// Виртуальный Host с его ФС и чатом на нём. Политика yolo: подтверждения не мешают проверке.
+  Future<String> createVirtualChat() async {
+    final now = DateTime.now();
+    final sandbox = Host(
+      id: 'sandbox',
+      name: 'Sandbox',
+      kind: HostKind.virtual,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await HostRepository(db).save(sandbox);
+    await VirtualHostProvisioner(db).provision(sandbox);
+    await hub.chats.saveChat(
+      Chat(
+        id: 'sandbox-chat',
+        hostId: sandbox.id,
+        title: 'sandbox',
+        createdAt: now,
+        updatedAt: now,
+        policyMode: PolicyMode.yolo,
+        model: 'fake/model',
+      ),
+    );
+    return 'sandbox-chat';
+  }
+
+  test(
+    'run_command on a virtual host writes and reads its own file system',
+    () async {
+      final chatId = await createVirtualChat();
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'c1',
+                'run_command',
+                '{"command":"echo hi > note.txt && cat note.txt"}',
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'write a note');
+
+      final tool = (await hub.chats.messages(chatId))
+          .firstWhere((m) => m.role == MessageRole.tool);
+      expect(tool.text, contains('status: done'));
+      expect(tool.text, contains('hi'));
+    },
+  );
+
+  test('background run_command on a virtual host is refused and the model is told why', () async {
+    final chatId = await createVirtualChat();
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'c1',
+              'run_command',
+              '{"command":"sleep 5","background":true}',
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'wait in background');
+
+    final tool = (await hub.chats.messages(chatId))
+        .firstWhere((m) => m.role == MessageRole.tool);
+    expect(tool.text, contains('background is not supported'));
+    expect(await hub.chats.toolRunsForChat(chatId), isEmpty);
   });
 }

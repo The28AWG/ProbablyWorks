@@ -184,4 +184,97 @@ void main() {
     );
     expect(scroll.width, closeTo(dialog.width, 0.5));
   });
+
+  testWidgets('a new host offers the SSH and virtual kinds', (tester) async {
+    final l10n = await _open(tester);
+
+    expect(find.byType(AppChoiceGroup<HostKind>), findsOneWidget);
+    expect(find.text(l10n.hostKindSsh), findsOneWidget);
+    expect(find.text(l10n.hostKindVirtual), findsOneWidget);
+  });
+
+  testWidgets('an existing host has no kind choice: its kind is fixed', (
+    tester,
+  ) async {
+    await _open(tester, existing: _virtual);
+
+    expect(find.byType(AppChoiceGroup<HostKind>), findsNothing);
+  });
+
+  testWidgets('a virtual host hides the SSH-only fields', (tester) async {
+    final l10n = await _open(tester);
+
+    await tester.tap(find.text(l10n.hostKindVirtual));
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.hostAddressLabel), findsNothing);
+    expect(find.text(l10n.hostPortLabel), findsNothing);
+    expect(find.text(l10n.hostUserLabel), findsNothing);
+    expect(find.text(l10n.hostOsLabel), findsNothing);
+    expect(find.text(l10n.hostFormSectionAuth), findsNothing);
+    expect(find.text(l10n.hostShellLabel), findsNothing);
+    expect(find.text(l10n.hostTimeoutLabel), findsNothing);
+    expect(find.text(l10n.hostNameLabel), findsOneWidget);
+    expect(find.text(l10n.hostNotesLabel), findsOneWidget);
+  });
+
+  testWidgets('a virtual host is saved with the default name and no SSH data', (
+    tester,
+  ) async {
+    final saved = <Host>[];
+    await tester.pumpWidget(_Host(saved: saved));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(AlertDialog)));
+
+    await tester.tap(find.text(l10n.hostKindVirtual));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.commonSave));
+    await tester.pumpAndSettle();
+
+    expect(saved, hasLength(1));
+    final host = saved.single;
+    expect(host.kind, HostKind.virtual);
+    expect(host.name, l10n.hostVirtualDefaultName);
+    expect(host.address, isNull);
+    expect(host.username, isNull);
+    expect(host.shellOverride, isNull);
+    expect(host.connectTimeoutSeconds, isNull);
+    expect(host.os, HostOs.posix);
+    expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('a virtual host ignores an address typed before switching', (
+    tester,
+  ) async {
+    final saved = <Host>[];
+    await tester.pumpWidget(_Host(saved: saved));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(AlertDialog)));
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == l10n.hostAddressHint,
+      ),
+      'example.com',
+    );
+    await tester.tap(find.text(l10n.hostKindVirtual));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.commonSave));
+    await tester.pumpAndSettle();
+
+    expect(saved.single.kind, HostKind.virtual);
+    expect(saved.single.address, isNull);
+  });
 }
+
+final _virtual = Host(
+  id: 'sandbox',
+  name: 'Sandbox',
+  kind: HostKind.virtual,
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+);

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
@@ -29,6 +30,7 @@ void main() {
     final runtimes = HostRuntimeFactory(
       SshConnectionPool(hosts, secrets, settings, HostKeyConfirmations()),
       const PipePtyLauncher(),
+      VirtualHostProvisioner(db),
     );
     diagnostics = HostDiagnostics(hosts, secrets, settings, runtimes);
   });
@@ -128,5 +130,34 @@ void main() {
     final credentials = steps.singleWhere((s) => s.name == 'credentials');
     expect(credentials.status, DiagnosticStatus.fail);
     expect(credentials.message, contains('/definitely/not/here/id_ed25519'));
+  });
+
+  test('diagnose() пропускает сеть виртуального Host, но проверяет его через host_info', () async {
+    final host = Host(
+      id: 'sandbox',
+      name: 'Sandbox',
+      kind: HostKind.virtual,
+      createdAt: DateTime(2026, 11, 4),
+      updatedAt: DateTime(2026, 11, 4),
+    );
+    await hosts.save(host);
+
+    final steps = await diagnostics.diagnose(host);
+
+    expect(
+      steps.singleWhere((s) => s.name == 'reachability').status,
+      DiagnosticStatus.skip,
+    );
+    expect(
+      steps.singleWhere((s) => s.name == 'credentials').status,
+      DiagnosticStatus.skip,
+    );
+    expect(
+      steps.singleWhere((s) => s.name == 'host key').status,
+      DiagnosticStatus.skip,
+    );
+    final saved = await hosts.byId('sandbox');
+    expect(saved?.lastCheckAt, isNotNull);
+    expect(saved?.lastCheckError, isNull);
   });
 }

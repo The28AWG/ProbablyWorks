@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -13,3 +14,18 @@ IconData localHostIcon({AppPlatform? platform}) =>
     (platform ?? AppPlatform.current).isMobile
     ? Icons.smartphone_outlined
     : Icons.computer_outlined;
+
+/// Название Host для интерфейса: локальный — переводом под платформу, остальные — своё имя.
+String hostDisplayName(
+  Host host,
+  AppLocalizations l10n, {
+  AppPlatform? platform,
+}) => host.isLocal ? localHostTitle(l10n, platform: platform) : host.name;
+
+/// Иконка Host: компьютер или телефон для локального, микросхема для виртуального, сервер для SSH.
+IconData hostDisplayIcon(Host host, {AppPlatform? platform}) =>
+    switch (host.kind) {
+      HostKind.local => localHostIcon(platform: platform),
+      HostKind.ssh => Icons.dns_outlined,
+      HostKind.virtual => Icons.memory_outlined,
+    };

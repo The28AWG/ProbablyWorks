@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
 
 class CapturedRun {
@@ -27,7 +29,18 @@ Future<CapturedRun> captureRun(
   String command, {
   String? cwd,
   Duration timeout = const Duration(seconds: 30),
-}) async {
+}) => _capture(runtime.run(command, cwd: cwd), timeout);
+
+/// То же, что [captureRun], но для типизированной операции [HostOp]: строки команды нет.
+Future<CapturedRun> captureOp(
+  HostRuntime runtime,
+  HostOp op, {
+  String? cwd,
+  Uint8List? stdin,
+  Duration timeout = const Duration(seconds: 30),
+}) => _capture(runtime.perform(op, cwd: cwd, stdin: stdin), timeout);
+
+Future<CapturedRun> _capture(Stream<ExecEvent> events, Duration timeout) async {
   final out = StringBuffer();
   final err = StringBuffer();
   final outDecoder = Utf8ChunkDecoder();
@@ -35,39 +48,34 @@ Future<CapturedRun> captureRun(
   int? exitCode;
   var lost = false;
   final completer = Completer<void>();
-  final sub = runtime
-      .run(command, cwd: cwd)
-      .listen(
-        (event) {
-          switch (event) {
-            case ExecStarted():
-              break;
-            case ExecStdout e:
-              out.write(outDecoder.add(e.bytes));
-            case ExecStderr e:
-              err.write(errDecoder.add(e.bytes));
-            case ExecDone e:
-              exitCode = e.exitCode;
-              lost = e.connectionLost;
-              out.write(outDecoder.close());
-              err.write(errDecoder.close());
-              if (!completer.isCompleted) completer.complete();
-          }
-        },
-        onError: (Object error) {
-          if (!completer.isCompleted) {
-            completer.completeError(
-              HostFailure(
-                error.toString(),
-                kind: HostFailureKind.connectionLost,
-              ),
-            );
-          }
-        },
-        onDone: () {
+  final sub = events.listen(
+    (event) {
+      switch (event) {
+        case ExecStarted():
+          break;
+        case ExecStdout e:
+          out.write(outDecoder.add(e.bytes));
+        case ExecStderr e:
+          err.write(errDecoder.add(e.bytes));
+        case ExecDone e:
+          exitCode = e.exitCode;
+          lost = e.connectionLost;
+          out.write(outDecoder.close());
+          err.write(errDecoder.close());
           if (!completer.isCompleted) completer.complete();
-        },
-      );
+      }
+    },
+    onError: (Object error) {
+      if (!completer.isCompleted) {
+        completer.completeError(
+          HostFailure(error.toString(), kind: HostFailureKind.connectionLost),
+        );
+      }
+    },
+    onDone: () {
+      if (!completer.isCompleted) completer.complete();
+    },
+  );
   try {
     await completer.future.timeout(timeout);
   } on TimeoutException {

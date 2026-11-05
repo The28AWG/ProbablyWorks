@@ -8,6 +8,7 @@ import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/core/domain/host.dart';
@@ -62,7 +63,11 @@ void main() {
         hosts,
         secrets,
         settings,
-        HostRuntimeFactory(pool, const PipePtyLauncher()),
+        HostRuntimeFactory(
+          pool,
+          const PipePtyLauncher(),
+          VirtualHostProvisioner(db),
+        ),
       ),
     );
   });

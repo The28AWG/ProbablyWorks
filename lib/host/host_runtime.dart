@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/process_control.dart';
 
@@ -44,10 +45,19 @@ final class ExecDone extends ExecEvent {
   final String? message;
 }
 
-/// Единственный транспорт исполнения: только запуск команд. Файлы и listing —
-/// это команды, собранные ShellAdapter. Остановка — тоже команда (kill).
+/// Исполнение на Host. Два входа: типизированные операции [perform] (файлы, listing, поиск) и
+/// свободная строка [run] (только `run_command`, которую написала модель). Остановка — команда (kill)
+/// для реальных хостов; у виртуального Host процессов нет.
 abstract interface class HostRuntime {
   HostOs get os;
+
+  /// Есть ли у Host PTY-терминал. Виртуальный Host терминала не имеет: `run_command` идёт в нём через
+  /// [run], а [openTerminal] бросает [HostFailure]. Без этого флага вызывающий код попал бы в тупик.
+  bool get hasTerminal;
+
+  /// Выполняет типизированную операцию и отдаёт события в том же формате, что и [run].
+  /// Реальный Host компилирует операцию в команду, виртуальный выполняет её над своей файловой системой.
+  Stream<ExecEvent> perform(HostOp op, {String? cwd, Uint8List? stdin});
 
   /// Запускает [command] и отдаёт поток событий. Отписка от потока НЕ останавливает процесс.
   /// Для служебных команд: stdout и stderr разделены, TTY нет.

@@ -7,7 +7,8 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
-/// Карточка хоста в списке. У SSH-хоста — адрес, статус проверки и кнопка проверки; у локального —
+/// Карточка хоста в списке. У SSH-хоста — адрес, статус проверки и кнопка проверки; у виртуального — пояснение
+/// вместо адреса, но статус и проверка есть (проверка запускает `host_info` в песочнице); у локального —
 /// только название и система, потому что проверять подключение к этому компьютеру незачем.
 /// Действия (проверка, правка, удаление) отдаются колбэками: карточка не знает о кубите.
 ///
@@ -60,11 +61,15 @@ class HostCard extends StatelessWidget {
         : checked
         ? (AppTone.success, l10n.hostStatusOnline)
         : (AppTone.neutral, l10n.hostStatusUnknown);
-    // У локального хоста нет адреса и проверки: он всегда на этом компьютере, поэтому показываем систему.
-    final address = host.isLocal
-        ? _osLabel(host.os, l10n)
-        : '${host.username ?? ''}@${host.address ?? ''}:${host.port}';
-    final name = host.isLocal ? localHostTitle(l10n) : host.name;
+    // У локального хоста нет адреса: он всегда на этом компьютере, поэтому показываем систему.
+    // У виртуального адреса тоже нет: он живёт в приложении, поэтому показываем пояснение.
+    final address = switch (host.kind) {
+      HostKind.local => _osLabel(host.os, l10n),
+      HostKind.virtual => l10n.hostVirtualSubtitle,
+      HostKind.ssh =>
+        '${host.username ?? ''}@${host.address ?? ''}:${host.port}',
+    };
+    final name = hostDisplayName(host, l10n);
     final notes = host.notes;
 
     final info = Column(
@@ -92,13 +97,14 @@ class HostCard extends StatelessWidget {
           address,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: host.isLocal
-              ? theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                )
-              : TextStyle(
+          // Моноширинный шрифт только у SSH-адреса: у локального и виртуального это не адрес, а пояснение.
+          style: host.kind == HostKind.ssh
+              ? TextStyle(
                   fontFamily: AppTheme.monoFamily,
                   fontSize: 12.5,
+                  color: scheme.onSurfaceVariant,
+                )
+              : theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),
         ),
@@ -208,7 +214,7 @@ class HostCard extends StatelessWidget {
     child: Padding(
       padding: EdgeInsets.all(compact ? AppSpacing.sm : AppSpacing.md),
       child: Icon(
-        host.isLocal ? localHostIcon() : Icons.dns_outlined,
+        hostDisplayIcon(host),
         size: compact ? _compactIconSize : _iconSize,
         color: scheme.onPrimaryContainer,
       ),

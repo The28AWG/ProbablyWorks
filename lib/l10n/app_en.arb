@@ -315,7 +315,7 @@
   "@hostsEmptyTitle": {
     "description": "Заголовок пустого списка хостов."
   },
-  "hostsEmptyMessage": "Add an SSH server so the agent can run commands there.",
+  "hostsEmptyMessage": "Add an SSH server or a virtual host so the agent can run commands.",
   "@hostsEmptyMessage": {
     "description": "Пояснение пустого списка хостов."
   },
@@ -367,7 +367,7 @@
   "@hostsTitle": {
     "description": "Header of the hosts management page."
   },
-  "hostsAdd": "Add SSH host",
+  "hostsAdd": "Add host",
   "@hostsAdd": {
     "description": "Button that opens the form for a new SSH host."
   },
@@ -1374,6 +1374,46 @@
   "hostFormSectionAuth": "Authentication",
   "@hostFormSectionAuth": {
     "description": "Host form section: SSH auth type and secret."
+  },
+  "hostKindLabel": "Host type",
+  "@hostKindLabel": {
+    "description": "Host form section title: choice between an SSH server and a virtual host."
+  },
+  "hostKindDescription": "Where the agent runs commands",
+  "@hostKindDescription": {
+    "description": "Host form section description under the host type choice."
+  },
+  "hostKindSsh": "SSH server",
+  "@hostKindSsh": {
+    "description": "Host type option: a remote computer reached over SSH."
+  },
+  "hostKindSshHint": "A remote computer you connect to",
+  "@hostKindSshHint": {
+    "description": "Subtitle of the SSH server host type option."
+  },
+  "hostKindVirtual": "Virtual host",
+  "@hostKindVirtual": {
+    "description": "Host type option: an isolated sandbox kept inside the app."
+  },
+  "hostKindVirtualHint": "A sandbox inside the app, without access to your system",
+  "@hostKindVirtualHint": {
+    "description": "Subtitle of the virtual host type option."
+  },
+  "hostFormSectionVirtual": "Virtual host",
+  "@hostFormSectionVirtual": {
+    "description": "Host form section title for a virtual host (replaces the connection section)."
+  },
+  "hostVirtualDescription": "Commands run in an isolated file system kept by the app. They have no access to this computer or the network.",
+  "@hostVirtualDescription": {
+    "description": "Host form section description for a virtual host: what it isolates from."
+  },
+  "hostVirtualDefaultName": "Sandbox",
+  "@hostVirtualDefaultName": {
+    "description": "Name given to a virtual host when the user leaves the name empty."
+  },
+  "hostVirtualSubtitle": "Sandbox inside the app",
+  "@hostVirtualSubtitle": {
+    "description": "Host card line under the name of a virtual host, shown instead of an address."
   },
   "hostFormSectionEnvironment": "Environment",
   "@hostFormSectionEnvironment": {

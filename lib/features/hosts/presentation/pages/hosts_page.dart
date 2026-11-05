@@ -5,6 +5,7 @@ import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
@@ -26,6 +27,7 @@ class HostsPage extends StatelessWidget {
         getIt<HostRepository>(),
         getIt<SecretStore>(),
         getIt<HostDiagnostics>(),
+        getIt<VirtualHostProvisioner>(),
       ),
       child: AppScaffold(
         appBar: AppBar(

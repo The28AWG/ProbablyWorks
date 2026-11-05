@@ -9,6 +9,7 @@ import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
 
@@ -73,6 +74,7 @@ class CommandExecutor {
     String? cwd,
     bool inTerminal = false,
     Uint8List? stdin,
+    HostOp? op,
   }) async {
     final release = await _registry.acquireSlot(
       hostId,
@@ -89,9 +91,15 @@ class CommandExecutor {
     );
     _registry.register(exec);
     final logPath = await _logs.open(chatId, toolCallId);
-    final events = inTerminal
-        ? await _terminalEvents(exec, runtime, command, cwd)
-        : runtime.run(command, cwd: cwd, stdin: stdin);
+    final Stream<ExecEvent> events;
+    if (op != null) {
+      events = runtime.perform(op, cwd: cwd, stdin: stdin);
+    } else if (inTerminal && runtime.hasTerminal) {
+      // Без терминала (виртуальный Host) команда идёт обычным run: терминала у неё нет.
+      events = await _terminalEvents(exec, runtime, command, cwd);
+    } else {
+      events = runtime.run(command, cwd: cwd, stdin: stdin);
+    }
 
     final started = Completer<int?>();
     final finished = Completer<ExecOutcome>();

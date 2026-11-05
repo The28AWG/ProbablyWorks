@@ -13,12 +13,13 @@ part 'app_database.g.dart';
     SessionRevisions,
     KvSettings,
     SavedModels,
+    VirtualFsNodes,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 6;
+  static const currentSchemaVersion = 7;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -53,6 +54,11 @@ class AppDatabase extends _$AppDatabase {
       // v6: входные модальности выбранных моделей (вложения-файлы). Таблица из v2–v3 создаётся сразу с колонкой.
       if (from >= 4 && from < 6) {
         await m.addColumn(savedModels, savedModels.inputModalities);
+      }
+      // Версия 7: файлы виртуального Host. Индекс по родителю создаётся отдельно: createTable его не делает.
+      if (from < 7) {
+        await m.createTable(virtualFsNodes);
+        await m.createIndex(virtualFsNodesParent);
       }
     },
   );

@@ -309,12 +309,8 @@ class _ChatTileState extends State<_ChatTile> {
     final scheme = theme.colorScheme;
     final chat = widget.chat;
     final host = widget.host;
-    final hostName = host == null
-        ? null
-        : (host.isLocal ? localHostTitle(l10n) : host.name);
-    final hostIcon = host == null || !host.isLocal
-        ? Icons.dns_outlined
-        : localHostIcon();
+    final hostName = host == null ? null : hostDisplayName(host, l10n);
+    final hostIcon = host == null ? Icons.dns_outlined : hostDisplayIcon(host);
     final showMenu = _hovered || _rowFocused || _menuFocused;
     final active = widget.waiting || widget.running;
     return MouseRegion(

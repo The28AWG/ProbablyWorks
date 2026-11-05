@@ -1,9 +1,22 @@
-enum HostKind { local, ssh }
+/// Тип Host. `virtual` — песочница: файлы в базе приложения, команды интерпретирует сам агент (см. `lib/host/virtual`).
+enum HostKind { local, ssh, virtual }
 
-/// ОС Host определяет shell-команды и kill-процессов.
+/// Семейство shell-диалекта Host: по нему ShellAdapter выбирает команды. Это не конкретная ОС:
+/// `posix` объединяет все POSIX-совместимые системы. Виртуальный Host использует `posix`.
 enum HostOs { posix, macos, windows, unknown }
 
 enum SshAuthType { password, key }
+
+/// Удалённый Host по умолчанию, когда локального нет (iOS): сначала SSH, иначе виртуальный. Виртуальный
+/// доступен всегда, поэтому без SSH он остаётся рабочим вариантом, а не пустым списком. Null — хостов нет.
+Host? preferredRemoteHost(Iterable<Host> hosts) {
+  Host? virtual;
+  for (final host in hosts) {
+    if (host.kind == HostKind.ssh) return host;
+    if (host.kind == HostKind.virtual) virtual ??= host;
+  }
+  return virtual;
+}
 
 /// Машина, на которой работает агент: локальная или удалённая через SSH.
 class Host {

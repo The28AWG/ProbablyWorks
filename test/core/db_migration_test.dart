@@ -78,7 +78,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 6);
+    expect(AppDatabase.currentSchemaVersion, 7);
   });
 
   test(
@@ -95,6 +95,26 @@ void main() {
           .map((row) => row.read<String>('name'))
           .get();
       expect(columns, containsAll(['draft', 'draft_attachments']));
+    },
+  );
+
+  test(
+    'v6 → v7 creates virtual filesystem nodes with a parent index',
+    () async {
+      final db = _openAtVersion(6);
+      addTearDown(db.close);
+
+      final objects = await db
+          .customSelect(
+            'SELECT name FROM sqlite_master WHERE name IN '
+            "('virtual_fs_nodes', 'virtual_fs_nodes_parent')",
+          )
+          .map((row) => row.read<String>('name'))
+          .get();
+      expect(
+        objects,
+        containsAll(['virtual_fs_nodes', 'virtual_fs_nodes_parent']),
+      );
     },
   );
 

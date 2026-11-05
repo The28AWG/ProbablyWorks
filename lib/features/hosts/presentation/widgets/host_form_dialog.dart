@@ -24,7 +24,7 @@ const _linuxIconAsset = 'assets/icons/os_linux.svg';
 const _macosIconAsset = 'assets/icons/os_macos.svg';
 const _windowsIconAsset = 'assets/icons/os_windows.svg';
 
-/// Открывает редактор хоста. [existing] null — новый SSH-хост; для локального хоста
+/// Открывает редактор хоста. [existing] null — новый хост (тип выбирается в форме); для локального хоста
 /// редактируется только окружение. Сохранение идёт через [HostsCubit], который должен быть в контексте.
 Future<void> showHostFormDialog(BuildContext context, {Host? existing}) {
   final cubit = context.read<HostsCubit>();
@@ -34,13 +34,17 @@ Future<void> showHostFormDialog(BuildContext context, {Host? existing}) {
   );
 }
 
-/// Диалог «Хост»: подключение, аутентификация и окружение SSH-хоста. Строки формы — как в настройках:
+/// Диалог «Хост»: тип, подключение, аутентификация и окружение. Строки формы — как в настройках:
 /// название и пояснение слева, поле справа; подписей над полями нет. Ширина до
 /// `AppLayout.formMaxWidth`, на узком экране строки складываются сами.
+///
+/// У виртуального хоста нет адреса, ОС, аутентификации, shell и таймаута: всё это относится к сети и
+/// реальной оболочке, а песочница живёт внутри приложения. Поля, которых нет в режиме, не валидируются и
+/// не попадают в сохраняемую запись.
 class HostFormDialog extends StatefulWidget {
   const HostFormDialog({required this.onSave, this.existing, super.key});
 
-  /// Редактируемый хост. Null — новый SSH-хост.
+  /// Редактируемый хост. Null — новый хост; его тип (SSH или виртуальный) выбирается в форме.
   final Host? existing;
 
   /// Сохраняет хост и секреты (пароль, passphrase, PEM).
@@ -55,7 +59,9 @@ class _HostFormDialogState extends State<HostFormDialog> {
   /// чтобы содержимое не выходило за край на узком экране.
   static const _dialogChrome = 128.0;
 
+  /// Локальный хост редактируется только в части окружения; его тип фиксирован.
   late final _local = widget.existing?.isLocal ?? false;
+  late HostKind _kind = widget.existing?.kind ?? HostKind.ssh;
   late final _name = TextEditingController(text: widget.existing?.name ?? '');
   late final _address = TextEditingController(
     text: widget.existing?.address ?? '',
@@ -92,6 +98,12 @@ class _HostFormDialogState extends State<HostFormDialog> {
   String? _portError;
   String? _timeoutError;
   String? _shellError;
+
+  /// Режим SSH: показываются поля подключения, ОС и аутентификации.
+  bool get _ssh => _kind == HostKind.ssh;
+
+  /// Режим виртуального хоста: только название и рабочая папка.
+  bool get _virtual => _kind == HostKind.virtual;
 
   @override
   void dispose() {
@@ -131,24 +143,26 @@ class _HostFormDialogState extends State<HostFormDialog> {
     });
   }
 
-  /// Проверяет поля; возвращает true, если можно сохранять.
+  /// Проверяет поля текущего режима; возвращает true, если можно сохранять. Поля скрытого режима не проверяем:
+  /// их значения в запись не попадают, и ошибка по ним пользователю была бы непонятна.
   bool _validate(AppLocalizations l10n) {
     final port = int.tryParse(_port.text.trim());
     final timeoutText = _timeout.text.trim();
     final timeout = int.tryParse(timeoutText);
     final shell = _shell.text.trim();
     setState(() {
-      _addressError = !_local && _address.text.trim().isEmpty
+      _addressError = _ssh && _address.text.trim().isEmpty
           ? l10n.hostAddressRequired
           : null;
-      _portError = !_local && (port == null || port < 1 || port > 65535)
+      _portError = _ssh && (port == null || port < 1 || port > 65535)
           ? l10n.hostPortInvalid
           : null;
       _timeoutError =
-          !_local && timeoutText.isNotEmpty && (timeout == null || timeout <= 0)
+          _ssh && timeoutText.isNotEmpty && (timeout == null || timeout <= 0)
           ? l10n.hostTimeoutInvalid
           : null;
-      _shellError = shell.isNotEmpty && !ProcessControl.isValidShell(shell)
+      _shellError =
+          !_virtual && shell.isNotEmpty && !ProcessControl.isValidShell(shell)
           ? l10n.hostShellInvalid
           : null;
     });
@@ -160,11 +174,11 @@ class _HostFormDialogState extends State<HostFormDialog> {
 
   Future<void> _saveHost(AppLocalizations l10n) async {
     if (!_validate(l10n)) return;
-    final host = _build();
+    final host = _build(l10n);
     await widget.onSave(
       host,
-      secret: _local ? null : _secret.text,
-      privateKeyPem: _local || _auth != SshAuthType.key
+      secret: _ssh ? _secret.text : null,
+      privateKeyPem: !_ssh || _auth != SshAuthType.key
           ? null
           : _privateKey.text,
     );
@@ -172,33 +186,33 @@ class _HostFormDialogState extends State<HostFormDialog> {
     Navigator.pop(context);
   }
 
-  Host _build() {
+  Host _build(AppLocalizations l10n) {
     final existing = widget.existing;
     final now = DateTime.now();
     String? orNull(String value) => value.trim().isEmpty ? null : value.trim();
     final name = _name.text.trim().isEmpty
-        ? _address.text.trim()
+        ? (_virtual ? l10n.hostVirtualDefaultName : _address.text.trim())
         : _name.text.trim();
     return Host(
       id: existing?.id ?? const Uuid().v4(),
       name: _local ? existing!.name : name,
-      kind: existing?.kind ?? HostKind.ssh,
-      address: _local ? null : _address.text.trim(),
-      port: _local ? (existing?.port ?? 22) : int.parse(_port.text.trim()),
-      username: _local ? null : orNull(_user.text),
+      kind: _kind,
+      address: _ssh ? _address.text.trim() : null,
+      port: _ssh ? int.parse(_port.text.trim()) : (existing?.port ?? 22),
+      username: _ssh ? orNull(_user.text) : null,
       authType: _auth,
       keyPath:
-          _local ||
+          !_ssh ||
               _auth != SshAuthType.key ||
               !AppPlatform.current.canOpenExternalKeys
           ? null
           : orNull(_keyPath.text),
       hostKeyFingerprint: existing?.hostKeyFingerprint,
-      os: _local ? (existing?.os ?? HostOs.posix) : _os,
+      os: _ssh ? _os : (existing?.os ?? HostOs.posix),
       defaultWorkspace: orNull(_workspace.text),
-      shellOverride: orNull(_shell.text),
+      shellOverride: _virtual ? null : orNull(_shell.text),
       notes: orNull(_notes.text),
-      connectTimeoutSeconds: _local ? null : int.tryParse(_timeout.text.trim()),
+      connectTimeoutSeconds: _ssh ? int.tryParse(_timeout.text.trim()) : null,
       lastCheckAt: existing?.lastCheckAt,
       lastLatencyMs: existing?.lastLatencyMs,
       lastCheckError: existing?.lastCheckError,
@@ -233,136 +247,172 @@ class _HostFormDialogState extends State<HostFormDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Тип выбирается только при создании: переключать SSH и виртуальный у существующего хоста
+              // нельзя, потому что у них разные данные (адрес против файлов песочницы).
+              if (widget.existing == null)
+                AppSection(
+                  title: l10n.hostKindLabel,
+                  description: l10n.hostKindDescription,
+                  children: [
+                    AppChoiceGroup<HostKind>(
+                      options: [
+                        AppChoiceOption(
+                          value: HostKind.ssh,
+                          title: l10n.hostKindSsh,
+                          subtitle: l10n.hostKindSshHint,
+                          icon: const Icon(Icons.dns_outlined),
+                        ),
+                        AppChoiceOption(
+                          value: HostKind.virtual,
+                          title: l10n.hostKindVirtual,
+                          subtitle: l10n.hostKindVirtualHint,
+                          icon: const Icon(Icons.memory_outlined),
+                        ),
+                      ],
+                      selected: _kind,
+                      onChanged: (value) => setState(() => _kind = value),
+                    ),
+                  ],
+                ),
               if (!_local) ...[
                 AppSection(
-                  title: l10n.hostFormSectionConnection,
+                  title: _virtual
+                      ? l10n.hostFormSectionVirtual
+                      : l10n.hostFormSectionConnection,
+                  description: _virtual ? l10n.hostVirtualDescription : null,
                   children: [
                     SettingsFormRow(
                       title: l10n.hostNameLabel,
                       child: AppTextField(
                         controller: _name,
-                        hint: l10n.hostNameHint,
+                        hint: _virtual
+                            ? l10n.hostVirtualDefaultName
+                            : l10n.hostNameHint,
                       ),
                     ),
-                    SettingsFormRow(
-                      title: l10n.hostAddressLabel,
-                      child: AppTextField(
-                        controller: _address,
-                        hint: l10n.hostAddressHint,
-                        error: _addressError,
-                      ),
-                    ),
-                    SettingsFormRow(
-                      title: l10n.hostPortLabel,
-                      child: AppTextField(
-                        controller: _port,
-                        hint: '22',
-                        error: _portError,
-                        keyboardType: TextInputType.number,
-                      ),
-                    ),
-                    SettingsFormRow(
-                      title: l10n.hostUserLabel,
-                      child: AppTextField(
-                        controller: _user,
-                        hint: l10n.hostUserHint,
-                      ),
-                    ),
-                  ],
-                ),
-                AppSection(
-                  title: l10n.hostOsLabel,
-                  description: l10n.hostOsDescription,
-                  children: [
-                    AppChoiceGroup<HostOs>(
-                      iconSize: 40,
-                      iconAboveTitle: true,
-                      options: [
-                        AppChoiceOption(
-                          value: HostOs.posix,
-                          title: l10n.hostOsPosix,
-                          subtitle: l10n.hostOsPosixHint,
-                          icon: const AppSvgIcon(_linuxIconAsset),
-                        ),
-                        AppChoiceOption(
-                          value: HostOs.macos,
-                          title: l10n.hostOsMacos,
-                          subtitle: l10n.hostOsMacosHint,
-                          icon: const AppSvgIcon(_macosIconAsset),
-                        ),
-                        AppChoiceOption(
-                          value: HostOs.windows,
-                          title: l10n.hostOsWindows,
-                          subtitle: l10n.hostOsWindowsHint,
-                          icon: const AppSvgIcon(_windowsIconAsset),
-                        ),
-                      ],
-                      selected: _os,
-                      onChanged: (value) => setState(() => _os = value),
-                    ),
-                  ],
-                ),
-                AppSection(
-                  title: l10n.hostFormSectionAuth,
-                  children: [
-                    AppChoiceGroup<SshAuthType>(
-                      options: [
-                        AppChoiceOption(
-                          value: SshAuthType.key,
-                          title: l10n.hostAuthKey,
-                          subtitle: l10n.hostAuthKeyDescription,
-                          icon: const Icon(Icons.key_outlined),
-                        ),
-                        AppChoiceOption(
-                          value: SshAuthType.password,
-                          title: l10n.hostAuthPassword,
-                          subtitle: l10n.hostAuthPasswordDescription,
-                          icon: const Icon(Icons.password),
-                        ),
-                      ],
-                      selected: _auth,
-                      onChanged: (value) => setState(() => _auth = value),
-                    ),
-                    if (_auth == SshAuthType.key) ...[
-                      // Путь к файлу есть только там, где система его отдаёт; на остальных PEM
-                      // копируется в поле и уходит в secure storage.
-                      if (AppPlatform.current.canOpenExternalKeys)
-                        SettingsFormRow(
-                          title: l10n.hostKeyPathLabel,
-                          child: AppTextField(
-                            controller: _keyPath,
-                            readOnly: true,
-                            hint: l10n.hostKeyFileHint,
-                            mono: true,
-                          ),
-                        ),
+                    if (_ssh) ...[
                       SettingsFormRow(
-                        title: l10n.hostPrivateKeyLabel,
-                        description: l10n.hostPrivateKeyHint,
+                        title: l10n.hostAddressLabel,
                         child: AppTextField(
-                          controller: _privateKey,
-                          hint: '-----BEGIN PRIVATE KEY-----',
-                          mono: true,
-                          minLines: 3,
-                          maxLines: 8,
-                          suffix: IconButton(
-                            tooltip: l10n.hostPickKeyFile,
-                            icon: const Icon(Icons.file_open_outlined),
-                            onPressed: _pickKeyFile,
-                          ),
+                          controller: _address,
+                          hint: l10n.hostAddressHint,
+                          error: _addressError,
+                        ),
+                      ),
+                      SettingsFormRow(
+                        title: l10n.hostPortLabel,
+                        child: AppTextField(
+                          controller: _port,
+                          hint: '22',
+                          error: _portError,
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                      SettingsFormRow(
+                        title: l10n.hostUserLabel,
+                        child: AppTextField(
+                          controller: _user,
+                          hint: l10n.hostUserHint,
                         ),
                       ),
                     ],
-                    SettingsFormRow(
-                      title: l10n.hostSecretLabel,
-                      child: AppTextField(
-                        controller: _secret,
-                        obscure: true,
-                        hint: l10n.hostSecretHint,
-                      ),
-                    ),
                   ],
                 ),
+                if (_ssh) ...[
+                  AppSection(
+                    title: l10n.hostOsLabel,
+                    description: l10n.hostOsDescription,
+                    children: [
+                      AppChoiceGroup<HostOs>(
+                        iconSize: 40,
+                        iconAboveTitle: true,
+                        options: [
+                          AppChoiceOption(
+                            value: HostOs.posix,
+                            title: l10n.hostOsPosix,
+                            subtitle: l10n.hostOsPosixHint,
+                            icon: const AppSvgIcon(_linuxIconAsset),
+                          ),
+                          AppChoiceOption(
+                            value: HostOs.macos,
+                            title: l10n.hostOsMacos,
+                            subtitle: l10n.hostOsMacosHint,
+                            icon: const AppSvgIcon(_macosIconAsset),
+                          ),
+                          AppChoiceOption(
+                            value: HostOs.windows,
+                            title: l10n.hostOsWindows,
+                            subtitle: l10n.hostOsWindowsHint,
+                            icon: const AppSvgIcon(_windowsIconAsset),
+                          ),
+                        ],
+                        selected: _os,
+                        onChanged: (value) => setState(() => _os = value),
+                      ),
+                    ],
+                  ),
+                  AppSection(
+                    title: l10n.hostFormSectionAuth,
+                    children: [
+                      AppChoiceGroup<SshAuthType>(
+                        options: [
+                          AppChoiceOption(
+                            value: SshAuthType.key,
+                            title: l10n.hostAuthKey,
+                            subtitle: l10n.hostAuthKeyDescription,
+                            icon: const Icon(Icons.key_outlined),
+                          ),
+                          AppChoiceOption(
+                            value: SshAuthType.password,
+                            title: l10n.hostAuthPassword,
+                            subtitle: l10n.hostAuthPasswordDescription,
+                            icon: const Icon(Icons.password),
+                          ),
+                        ],
+                        selected: _auth,
+                        onChanged: (value) => setState(() => _auth = value),
+                      ),
+                      if (_auth == SshAuthType.key) ...[
+                        // Путь к файлу есть только там, где система его отдаёт; на остальных PEM
+                        // копируется в поле и уходит в secure storage.
+                        if (AppPlatform.current.canOpenExternalKeys)
+                          SettingsFormRow(
+                            title: l10n.hostKeyPathLabel,
+                            child: AppTextField(
+                              controller: _keyPath,
+                              readOnly: true,
+                              hint: l10n.hostKeyFileHint,
+                              mono: true,
+                            ),
+                          ),
+                        SettingsFormRow(
+                          title: l10n.hostPrivateKeyLabel,
+                          description: l10n.hostPrivateKeyHint,
+                          child: AppTextField(
+                            controller: _privateKey,
+                            hint: '-----BEGIN PRIVATE KEY-----',
+                            mono: true,
+                            minLines: 3,
+                            maxLines: 8,
+                            suffix: IconButton(
+                              tooltip: l10n.hostPickKeyFile,
+                              icon: const Icon(Icons.file_open_outlined),
+                              onPressed: _pickKeyFile,
+                            ),
+                          ),
+                        ),
+                      ],
+                      SettingsFormRow(
+                        title: l10n.hostSecretLabel,
+                        child: AppTextField(
+                          controller: _secret,
+                          obscure: true,
+                          hint: l10n.hostSecretHint,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
               AppSection(
                 title: l10n.hostFormSectionEnvironment,
@@ -384,17 +434,19 @@ class _HostFormDialogState extends State<HostFormDialog> {
                           : null,
                     ),
                   ),
-                  SettingsFormRow(
-                    title: l10n.hostShellLabel,
-                    description: l10n.hostShellHint,
-                    child: AppTextField(
-                      controller: _shell,
-                      mono: true,
-                      hint: 'bash',
-                      error: _shellError,
+                  // Оболочка виртуального хоста фиксирована (`/bin/sh` с набором апплетов), подменять её нечем.
+                  if (!_virtual)
+                    SettingsFormRow(
+                      title: l10n.hostShellLabel,
+                      description: l10n.hostShellHint,
+                      child: AppTextField(
+                        controller: _shell,
+                        mono: true,
+                        hint: 'bash',
+                        error: _shellError,
+                      ),
                     ),
-                  ),
-                  if (!_local)
+                  if (_ssh)
                     SettingsFormRow(
                       title: l10n.hostTimeoutLabel,
                       child: AppTextField(

@@ -315,7 +315,7 @@
   "@hostsEmptyTitle": {
     "description": "Заголовок пустого списка хостов."
   },
-  "hostsEmptyMessage": "Добавьте SSH-сервер, чтобы агент выполнял на нём команды.",
+  "hostsEmptyMessage": "Добавьте SSH-сервер или виртуальный хост, чтобы агент выполнял команды.",
   "@hostsEmptyMessage": {
     "description": "Пояснение пустого списка хостов."
   },
@@ -367,7 +367,7 @@
   "@hostsTitle": {
     "description": "Заголовок страницы управления хостами."
   },
-  "hostsAdd": "Добавить SSH-хост",
+  "hostsAdd": "Добавить хост",
   "@hostsAdd": {
     "description": "Кнопка открытия формы нового SSH-хоста."
   },
@@ -1374,6 +1374,46 @@
   "hostFormSectionAuth": "Аутентификация",
   "@hostFormSectionAuth": {
     "description": "Host form section: SSH auth type and secret."
+  },
+  "hostKindLabel": "Тип хоста",
+  "@hostKindLabel": {
+    "description": "Host form section title: choice between an SSH server and a virtual host."
+  },
+  "hostKindDescription": "Где агент выполняет команды",
+  "@hostKindDescription": {
+    "description": "Host form section description under the host type choice."
+  },
+  "hostKindSsh": "SSH-сервер",
+  "@hostKindSsh": {
+    "description": "Host type option: a remote computer reached over SSH."
+  },
+  "hostKindSshHint": "Удалённый компьютер, к которому подключаемся",
+  "@hostKindSshHint": {
+    "description": "Subtitle of the SSH server host type option."
+  },
+  "hostKindVirtual": "Виртуальный хост",
+  "@hostKindVirtual": {
+    "description": "Host type option: an isolated sandbox kept inside the app."
+  },
+  "hostKindVirtualHint": "Песочница внутри приложения, без доступа к вашей системе",
+  "@hostKindVirtualHint": {
+    "description": "Subtitle of the virtual host type option."
+  },
+  "hostFormSectionVirtual": "Виртуальный хост",
+  "@hostFormSectionVirtual": {
+    "description": "Host form section title for a virtual host (replaces the connection section)."
+  },
+  "hostVirtualDescription": "Команды работают в изолированной файловой системе приложения. Доступа к этому компьютеру и сети у них нет.",
+  "@hostVirtualDescription": {
+    "description": "Host form section description for a virtual host: what it isolates from."
+  },
+  "hostVirtualDefaultName": "Песочница",
+  "@hostVirtualDefaultName": {
+    "description": "Name given to a virtual host when the user leaves the name empty."
+  },
+  "hostVirtualSubtitle": "Песочница внутри приложения",
+  "@hostVirtualSubtitle": {
+    "description": "Host card line under the name of a virtual host, shown instead of an address."
   },
   "hostFormSectionEnvironment": "Окружение",
   "@hostFormSectionEnvironment": {

@@ -11,8 +11,8 @@ import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/home_path.dart';
 import 'package:probably_works/host/host_capture.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
-import 'package:probably_works/host/shell_adapter.dart';
 
 /// Результат проверки подключения. Сохраняется в Host (см. HostRepository.recordCheck).
 class HostCheckResult {
@@ -60,9 +60,9 @@ class HostDiagnostics {
     final clock = Stopwatch()..start();
     var result = const HostCheckResult(error: 'not checked');
     try {
-      final run = await captureRun(
+      final run = await captureOp(
         _runtimes.forHost(host),
-        ShellAdapter(host.os).hostInfo(),
+        const HostInfoOp(),
         timeout: const Duration(seconds: 30),
       );
       clock.stop();
@@ -96,13 +96,14 @@ class HostDiagnostics {
   /// Ключ сервера никогда не принимается автоматически: при смене или первом подключении решает пользователь в UI.
   Future<List<DiagnosticStep>> diagnose(Host host) async {
     final steps = <DiagnosticStep>[
-      host.isLocal
-          ? const DiagnosticStep(
+      // Сеть проверяем только у SSH: локальный и виртуальный Host не ходят по сети.
+      host.kind == HostKind.ssh
+          ? await _reachability(host)
+          : DiagnosticStep(
               'reachability',
               DiagnosticStatus.skip,
-              'local host: no network check',
-            )
-          : await _reachability(host),
+              '${host.kind.name} host: no network check',
+            ),
       await _credentials(host),
       _hostKeyStep(host),
     ];
@@ -153,11 +154,11 @@ class HostDiagnostics {
   }
 
   Future<DiagnosticStep> _credentials(Host host) async {
-    if (host.isLocal) {
-      return const DiagnosticStep(
+    if (host.kind != HostKind.ssh) {
+      return DiagnosticStep(
         'credentials',
         DiagnosticStatus.skip,
-        'local host: no credentials',
+        '${host.kind.name} host: no credentials',
       );
     }
     if (host.authType == SshAuthType.password) {
@@ -236,11 +237,11 @@ class HostDiagnostics {
   }
 
   DiagnosticStep _hostKeyStep(Host host) {
-    if (host.isLocal) {
-      return const DiagnosticStep(
+    if (host.kind != HostKind.ssh) {
+      return DiagnosticStep(
         'host key',
         DiagnosticStatus.skip,
-        'local host: no host key',
+        '${host.kind.name} host: no host key',
       );
     }
     return host.hostKeyFingerprint == null

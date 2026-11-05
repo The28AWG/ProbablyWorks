@@ -827,11 +827,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
   }
 
-  /// Хост по умолчанию для нового чата: локальный, а на iOS (без локального Host) первый SSH-хост.
+  /// Хост по умолчанию для нового чата: локальный, а на iOS (без локального Host) удалённый (см. [preferredRemoteHost]).
   static String _defaultHostId(List<Host> hosts) {
     if (AppPlatform.current.hasLocalHost) return HostRepository.localHostId;
-    return hosts.where((h) => !h.isLocal).firstOrNull?.id ??
-        HostRepository.localHostId;
+    return preferredRemoteHost(hosts)?.id ?? HostRepository.localHostId;
   }
 
   /// Новый чат. Обычно блок уже создан с готовым черновиком (см. [_seedState]), и открывать второй не нужно.

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/virtual_host_provisioner.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/host/host_diagnostics.dart';
@@ -23,7 +24,7 @@ class HostsState extends Equatable {
 }
 
 class HostsCubit extends Cubit<HostsState> {
-  HostsCubit(this._hosts, this._secrets, this._diagnostics)
+  HostsCubit(this._hosts, this._secrets, this._diagnostics, this._virtual)
     : super(const HostsState()) {
     _sub = _hosts.watchAll().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
@@ -33,12 +34,16 @@ class HostsCubit extends Cubit<HostsState> {
   final HostRepository _hosts;
   final SecretStore _secrets;
   final HostDiagnostics _diagnostics;
+  final VirtualHostProvisioner _virtual;
   late final StreamSubscription<List<Host>> _sub;
 
   /// Сохраняет хост. Секреты (пароль, passphrase, PEM приватного ключа) уходят в secure storage, а не в БД.
   /// Пустой секрет при редактировании оставляет прежний.
+  ///
+  /// Виртуальный Host заполняет свою ФС после записи самого хоста: узлы ФС ссылаются на него внешним ключом.
   Future<void> save(Host host, {String? secret, String? privateKeyPem}) async {
     await _hosts.save(host);
+    if (host.kind == HostKind.virtual) await _virtual.provision(host);
     if (secret != null && secret.isNotEmpty) {
       final key = host.authType == SshAuthType.password
           ? hostPasswordKey(host.id)

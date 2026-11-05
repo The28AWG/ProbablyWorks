@@ -52,7 +52,7 @@ void main() {
   test('lowercase agents.md is found, but not loaded before the user trusts the workspace', () async {
     File('${workspace.path}/agents.md').writeAsStringSync('be terse');
 
-    final untrusted = await loader.load(chat(), runtime, HostOs.posix);
+    final untrusted = await loader.load(chat(), runtime);
     expect(untrusted.needsTrust, isTrue);
     expect(untrusted.agentsMd, isNull);
 
@@ -61,7 +61,7 @@ void main() {
       workspace.path,
       trusted: true,
     );
-    final trusted = await loader.load(chat(), runtime, HostOs.posix);
+    final trusted = await loader.load(chat(), runtime);
     expect(trusted.needsTrust, isFalse);
     expect(trusted.agentsMd, contains('be terse'));
   });
@@ -76,7 +76,7 @@ void main() {
       trusted: true,
     );
 
-    final snapshot = await loader.load(chat(), runtime, HostOs.posix);
+    final snapshot = await loader.load(chat(), runtime);
     expect(snapshot.agentsMd, contains('from dot dir'));
   });
 
@@ -88,7 +88,7 @@ void main() {
       trusted: true,
     );
 
-    final snapshot = await loader.load(chat(), runtime, HostOs.posix);
+    final snapshot = await loader.load(chat(), runtime);
 
     expect(snapshot.skills, hasLength(1));
     expect(snapshot.skills.single.name, 'release');
@@ -96,7 +96,7 @@ void main() {
   });
 
   test('a workspace without instructions or skills needs no trust', () async {
-    final snapshot = await loader.load(chat(), runtime, HostOs.posix);
+    final snapshot = await loader.load(chat(), runtime);
     expect(snapshot.needsTrust, isFalse);
     expect(snapshot.agentsMd, isNull);
     expect(snapshot.skills, isEmpty);

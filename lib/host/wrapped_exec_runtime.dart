@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/pid_marker_parser.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/host/process_control.dart';
@@ -33,6 +34,10 @@ abstract base class WrappedExecRuntime implements HostRuntime {
   @override
   final HostOs os;
 
+  /// Local и SSH выполняют команды через оболочку с PTY, поэтому терминал есть всегда.
+  @override
+  bool get hasTerminal => true;
+
   final ProcessControl control;
 
   /// Создаёт канал для уже обёрнутой команды. Бросает [HostFailure] при сбое.
@@ -44,6 +49,11 @@ abstract base class WrappedExecRuntime implements HostRuntime {
     required int columns,
     required int rows,
   });
+
+  /// Компилирует операцию в команду этой ОС и запускает её обычным путём [run].
+  @override
+  Stream<ExecEvent> perform(HostOp op, {String? cwd, Uint8List? stdin}) =>
+      run(ShellAdapter(os).compile(op), cwd: cwd, stdin: stdin);
 
   @override
   Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) {

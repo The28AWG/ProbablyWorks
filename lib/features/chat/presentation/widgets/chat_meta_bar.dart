@@ -13,7 +13,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 String hostLabelOf(List<Host> hosts, String hostId, AppLocalizations l10n) {
   final host = hosts.where((h) => h.id == hostId).firstOrNull;
   if (host == null) return hostId;
-  return host.isLocal ? localHostTitle(l10n) : host.name;
+  return hostDisplayName(host, l10n);
 }
 
 /// Имя последней папки пути рабочей папки; null, если папка не назначена.
@@ -141,7 +141,7 @@ class ChatMetaBar extends StatelessWidget {
                       child: _CheckedRow(
                         checked: host.id == hostId,
                         child: Text(
-                          host.isLocal ? localHostTitle(l10n) : host.name,
+                          hostDisplayName(host, l10n),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -152,9 +152,9 @@ class ChatMetaBar extends StatelessWidget {
                   // Имя хоста может быть длинным: чип ограничивается по ширине, текст обрезается многоточием.
                   constraints: BoxConstraints(maxWidth: capped(180)),
                   child: _MetaChip(
-                    icon: current?.isLocal ?? true
+                    icon: current == null
                         ? localHostIcon()
-                        : Icons.dns_outlined,
+                        : hostDisplayIcon(current),
                     label: iconOnly(_Chip.host) ? null : hostLabel,
                     enabled: !running,
                   ),

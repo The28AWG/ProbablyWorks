@@ -24,8 +24,8 @@ import 'package:probably_works/core/util/cancel_token.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/host/host_capture.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/shell_adapter.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -334,7 +334,7 @@ class ChatSession {
       );
     }
     final runtime = _hub.runtimes.forHost(host);
-    final snapshot = await _hub.workspace.load(chat, runtime, host.os);
+    final snapshot = await _hub.workspace.load(chat, runtime);
     if (snapshot.needsTrust) {
       _emit(AgentTrustNeeded(chatId, snapshot.workspace));
     }
@@ -601,7 +601,7 @@ class ChatSession {
     if (_hostStubHostId == host.id && _hostStubText != null) {
       return _hostStubText;
     }
-    final run = await captureRun(runtime, ShellAdapter(host.os).hostInfo());
+    final run = await captureOp(runtime, const HostInfoOp());
     if (!run.ok) return null;
     _hostStubHostId = host.id;
     _hostStubText = run.stdout.trim();

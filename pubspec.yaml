@@ -8,10 +8,11 @@ environment:
   sdk: ^3.13.7
 
 dependencies:
+  archive: ^4.6.0
   auto_route: ^11.1.0
   bloc: ^9.2.1
   characters: ^1.4.0
-  crypto: ^3.0.7
+  crypto: ^3.0.8
   cupertino_icons: ^1.0.8
   dartssh2: ^4.1.0
   desktop_drop: ^0.8.4

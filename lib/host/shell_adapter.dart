@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/shell_quote.dart';
+import 'package:probably_works/host/host_op.dart';
 
 /// Командные билдеры host-инструментов по ОС. Файловые операции — это команды,
 /// а не методы рантайма.
@@ -11,6 +12,76 @@ class ShellAdapter {
   final HostOs os;
 
   bool get _windows => os == HostOs.windows;
+
+  /// Компилирует операцию в команду этой ОС. Ветки исчерпывающие: без ветки операция не скомпилируется.
+  /// Stdin операции (содержимое для [WriteFileOp]) передаёт рантайм, а не команда.
+  String compile(HostOp op) => switch (op) {
+    HostInfoOp() => hostInfo(),
+    ListDirOp(:final path) => listDir(path),
+    ReadFileOp(
+      :final path,
+      :final offset,
+      :final byteOffset,
+      :final limit,
+      :final chunkBytes,
+      :final lineBytes,
+    ) =>
+      readFile(
+        path,
+        offset: offset,
+        byteOffset: byteOffset,
+        limit: limit,
+        chunkBytes: chunkBytes,
+        lineBytes: lineBytes,
+      ),
+    ReadRawOp(:final path) => readFileOrEmpty(path),
+    ReadHeadOp(:final path, :final maxBytes) => readHead(
+      path,
+      maxBytes: maxBytes,
+    ),
+    ScanSkillsOp(:final dirs, :final maxBytes) => scanSkills(
+      dirs,
+      maxBytes: maxBytes,
+    ),
+    GrepOp(:final pattern, :final path) => grep(pattern, path),
+    WhichOp(:final name) => which(name),
+    StatOp(:final path) => stat(path),
+    FirstFileOp(:final paths) => firstFile(paths),
+    WriteFileOp(:final path, :final backupPath, :final expectedMtime) =>
+      writeFile(path, backupPath: backupPath, expectedMtime: expectedMtime),
+  };
+
+  /// Тип и mtime пути: `file <mtime>` или `dir <mtime>` (см. [StatResult]). Пути нет — ненулевой код.
+  String stat(String path) => _windows
+      ? powershell(
+          '\$i = Get-Item -LiteralPath ${psQuote(path)} -Force -ErrorAction SilentlyContinue; '
+          'if (-not \$i) { exit 1 }; '
+          "\$k = if (\$i.PSIsContainer) { 'dir' } else { 'file' }; "
+          '[Console]::Out.Write(\$k + " " + \$i.LastWriteTimeUtc.Ticks)',
+        )
+      : _posixStat(quotePath(path));
+
+  String _posixStat(String p) =>
+      'if [ -d $p ]; then echo "dir \$(${_posixMtime(p)})"; '
+      'elif [ -e $p ]; then echo "file \$(${_posixMtime(p)})"; '
+      'else false; fi';
+
+  /// Первый существующий файл из списка. Порядок списка — порядок проверки; вывод — путь найденного файла.
+  String firstFile(List<String> paths) {
+    if (_windows) {
+      final list = [for (final p in paths) psQuote(p)].join(',');
+      return powershell(
+        'foreach (\$p in @($list)) { if (Test-Path -LiteralPath \$p -PathType Leaf) { [Console]::Out.Write(\$p); exit 0 } }; exit 1',
+      );
+    }
+    // Вложенные if без exit: первый путь проверяется самым внешним условием.
+    var script = 'false';
+    for (final p in paths.reversed) {
+      final quoted = quotePath(p);
+      script = 'if [ -f $quoted ]; then echo $quoted; else $script; fi';
+    }
+    return script;
+  }
 
   String hostInfo() => _windows
       ? powershell('$_consoleUtf8$_hostInfoPs')

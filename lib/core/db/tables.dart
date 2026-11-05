@@ -143,3 +143,28 @@ class KvSettings extends Table {
   @override
   Set<Column<Object>> get primaryKey => {key};
 }
+
+/// Файлы виртуального Host. Строка — узел с метаданными; содержимое файла лежит в [content].
+/// Путь канонический (см. `VfsPath`), поэтому ключ (hostId, path) не допускает двух имён одной записи.
+/// Индекс по (hostId, parentPath) нужен для листинга каталога.
+@DataClassName('VirtualFsNodeRow')
+@TableIndex(name: 'virtual_fs_nodes_parent', columns: {#hostId, #parentPath})
+class VirtualFsNodes extends Table {
+  TextColumn get hostId =>
+      text().references(Hosts, #id, onDelete: KeyAction.cascade)();
+  TextColumn get path => text()();
+  TextColumn get parentPath => text()();
+
+  /// `file`, `dir` или `symlink` (имя `VfsNodeKind`).
+  TextColumn get kind => text()();
+  IntColumn get mode => integer()();
+
+  /// Секунды Unix, та же единица, что у `stat -c %Y`.
+  IntColumn get mtime => integer()();
+  IntColumn get size => integer()();
+  TextColumn get target => text().nullable()();
+  BlobColumn get content => blob().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {hostId, path};
+}

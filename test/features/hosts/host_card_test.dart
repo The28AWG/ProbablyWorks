@@ -27,6 +27,15 @@ final _ssh = Host(
   updatedAt: DateTime(2026),
 );
 
+final _virtual = Host(
+  id: 'sandbox',
+  name: 'Sandbox',
+  kind: HostKind.virtual,
+  os: HostOs.posix,
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+);
+
 /// Записывает действия карточки в [log]: так видно, какая кнопка что вызвала.
 Future<AppLocalizations> _pump(
   WidgetTester tester,
@@ -100,6 +109,32 @@ void main() {
     expect(find.byTooltip(l10n.hostTest), findsOneWidget);
     expect(find.text(l10n.hostStatusUnknown), findsOneWidget);
     expect(find.text('the28awg@192.168.0.140:22'), findsOneWidget);
+    expect(find.byTooltip(l10n.commonDelete), findsOneWidget);
+
+    await tester.tap(find.byTooltip(l10n.hostTest));
+    expect(log, ['test']);
+  });
+
+  testWidgets('a virtual host shows its sandbox line and the memory icon', (
+    tester,
+  ) async {
+    final log = <String>[];
+    final l10n = await _pump(tester, _virtual, log);
+
+    expect(find.text(l10n.hostVirtualSubtitle), findsOneWidget);
+    expect(find.textContaining('@'), findsNothing);
+    expect(find.byIcon(Icons.memory_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.dns_outlined), findsNothing);
+  });
+
+  testWidgets('a virtual host keeps the check and the delete actions', (
+    tester,
+  ) async {
+    final log = <String>[];
+    final l10n = await _pump(tester, _virtual, log);
+
+    expect(find.byTooltip(l10n.hostTest), findsOneWidget);
+    expect(find.text(l10n.hostStatusUnknown), findsOneWidget);
     expect(find.byTooltip(l10n.commonDelete), findsOneWidget);
 
     await tester.tap(find.byTooltip(l10n.hostTest));
