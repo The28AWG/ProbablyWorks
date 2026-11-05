@@ -39,8 +39,9 @@
    `dart run build_runner build --delete-conflicting-outputs`.
 6. Если приложение запущено через `flutter run`, после правок Dart-кода выполните hot reload или hot restart.
 
-Пакет `packages/virtual_host` этими командами не покрывается. Его проверяют отдельно,
-из каталога пакета: `dart format lib test`, `dart analyze`, `dcm analyze lib test`, `dart test`.
+Пакеты `packages/virtual_host` и `packages/virtual_git` этими командами не покрываются.
+Каждый проверяют отдельно, из каталога пакета: `dart format lib test`, `dart analyze`,
+`dcm analyze lib test`, `dart test`.
 
 Если проверка не проходит из-за вашей правки, исправьте её. Не подавляйте замечания `ignore` без причины
 и не отключайте правила в `analysis_options.yaml` ради прохождения проверки.
@@ -58,6 +59,7 @@
 - Архитектура: feature-first и clean architecture. UI-состояние — BLoC/Cubit, зависимости — `get_it` + `injectable`.
   Новый код размещайте в существующих слоях: `agent/`, `host/`, `core/`, `providers/`, `features/`, `app/`.
   Ядро виртуального хоста — пакет `packages/virtual_host`. Новый апплет стандартного набора кладётся туда.
+  Git — отдельный пакет `packages/virtual_git`: он зависит от `virtual_host` и в стандартный набор не входит.
   Адаптер к Host, базе и политике остаётся в `lib/host/virtual/`.
 
 ## Локализация

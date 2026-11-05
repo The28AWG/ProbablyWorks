@@ -104,6 +104,7 @@ Dart-файлы с переводами генерируются командо�
 
 ```
 packages/
+  virtual_git/   # git для виртуального хоста, поверх его файловой системы
   virtual_host/  # ядро виртуального хоста: файловая система, оболочка, апплеты
 lib/
   app/        # запуск, DI, маршруты, тема, локализация, guards
@@ -142,6 +143,7 @@ lib/
 ```bash
 flutter test
 (cd packages/virtual_host && dart test)
+(cd packages/virtual_git && dart test)
 ```
 
 Юнит-тесты не требуют внешних сервисов. Интеграционные SSH-тесты запускаются на throwaway-сервере

@@ -1,0 +1,16 @@
+name: virtual_git
+description: "Git для виртуального хоста: команды поверх файловой системы virtual_host."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  virtual_host:
+    path: ../virtual_host
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.30.0

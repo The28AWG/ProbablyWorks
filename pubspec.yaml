@@ -8,6 +8,7 @@ environment:
   sdk: ^3.13.7
 
 workspace:
+  - packages/virtual_git
   - packages/virtual_host
 
 dependencies:
