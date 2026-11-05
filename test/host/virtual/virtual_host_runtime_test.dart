@@ -148,5 +148,6 @@ void main() {
     expect(info, contains('user=agent'));
     expect(info, contains('applets='));
     expect(info, contains('cat'));
+    expect(info, contains('ls /bin lists commands'));
   });
 }

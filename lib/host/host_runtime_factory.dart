@@ -6,6 +6,7 @@ import 'package:probably_works/host/local_host_runtime.dart';
 import 'package:probably_works/host/pty_launcher.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/host/ssh_host_runtime.dart';
+import 'package:probably_works/host/virtual/os_snapshot.dart';
 import 'package:probably_works/host/virtual/shell/applets/standard_applets.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
 import 'package:probably_works/host/virtual/virtual_host_runtime.dart';
@@ -28,7 +29,13 @@ class HostRuntimeFactory {
     ),
     HostKind.ssh => SshHostRuntime(host: host, pool: _pool),
     HostKind.virtual => VirtualHostRuntime(
-      fs: _virtual.fsOf(host.id),
+      fs: _virtual.fsOf(
+        host.id,
+        snapshot: OsSnapshot(
+          profile: virtualProfileFor(host),
+          names: standardApplets.names,
+        ),
+      ),
       profile: virtualProfileFor(host),
       applets: standardApplets,
     ),

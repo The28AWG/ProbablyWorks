@@ -62,13 +62,11 @@ void main() {
       fs = VirtualFs(InMemoryVfsStore(), clock: () => 1700000000);
     });
 
-    test('создаёт домашний каталог и /tmp с правами sticky', () async {
+    test('создаёт домашний каталог', () async {
       await seedVirtualHost(fs, profile);
 
       expect((await fs.stat('/home/agent'))?.kind, VfsNodeKind.dir);
-      final tmp = await fs.stat('/tmp');
-      expect(tmp?.kind, VfsNodeKind.dir);
-      expect(tmp?.mode, 1023);
+      expect(await fs.stat('/tmp'), isNull);
     });
 
     test('повторный вызов не трогает файлы пользователя', () async {

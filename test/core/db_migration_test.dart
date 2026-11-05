@@ -15,6 +15,14 @@ const _chatsV4 =
     'current_revision_id TEXT, created_at INTEGER NOT NULL, '
     'updated_at INTEGER NOT NULL)';
 
+/// Таблица файлов виртуального Host в форме схемы v7, без внешнего ключа: в этом тесте нет таблицы hosts.
+const _virtualFsV7 =
+    'CREATE TABLE virtual_fs_nodes ('
+    'host_id TEXT NOT NULL, path TEXT NOT NULL, parent_path TEXT NOT NULL, '
+    'kind TEXT NOT NULL, mode INTEGER NOT NULL, mtime INTEGER NOT NULL, '
+    'size INTEGER NOT NULL, target TEXT, content BLOB, '
+    'PRIMARY KEY (host_id, path))';
+
 /// Таблица saved_models в форме схемы v4 (без входных модальностей).
 const _savedModelsV4 =
     'CREATE TABLE saved_models ('
@@ -25,6 +33,7 @@ const _savedModelsV4 =
 AppDatabase _openAtVersion(
   int version, {
   bool withLlmModels = false,
+  bool withVirtualFs = false,
 }) => AppDatabase(
   NativeDatabase.memory(
     setup: (raw) {
@@ -41,6 +50,17 @@ AppDatabase _openAtVersion(
         ..execute(_chatsV4)
         ..execute('PRAGMA user_version = $version');
       if (version >= 4) raw.execute(_savedModelsV4);
+      if (withVirtualFs) {
+        raw
+          ..execute(_virtualFsV7)
+          ..execute(
+            'INSERT INTO virtual_fs_nodes ('
+            'host_id, path, parent_path, kind, mode, mtime, size) VALUES '
+            "('h', '/tmp', '/', 'dir', 1023, 0, 0), "
+            "('h', '/tmp/a', '/tmp', 'file', 420, 0, 4), "
+            "('h', '/home/agent/n', '/home/agent', 'file', 420, 0, 1)",
+          );
+      }
     },
   ),
 );
@@ -78,7 +98,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 7);
+    expect(AppDatabase.currentSchemaVersion, 8);
   });
 
   test(
@@ -130,5 +150,16 @@ void main() {
         .map((row) => row.read<String>('name'))
         .get();
     expect(columns, ['input_modalities']);
+  });
+
+  test('v7 → v8 removes persisted /tmp and keeps the home file', () async {
+    final db = _openAtVersion(7, withVirtualFs: true);
+    addTearDown(db.close);
+
+    final paths = await db
+        .customSelect('SELECT path FROM virtual_fs_nodes ORDER BY path')
+        .map((row) => row.read<String>('path'))
+        .get();
+    expect(paths, ['/home/agent/n']);
   });
 }

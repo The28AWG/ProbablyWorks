@@ -6,6 +6,7 @@ import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/shell_adapter.dart';
 import 'package:probably_works/host/virtual/posix_regex.dart';
 import 'package:probably_works/host/virtual/read_file_pager.dart';
+import 'package:probably_works/host/virtual/vfs_access.dart';
 import 'package:probably_works/host/virtual/vfs_listing.dart';
 import 'package:probably_works/host/virtual/vfs_path.dart';
 import 'package:probably_works/host/virtual/vfs_store.dart';
@@ -129,6 +130,7 @@ final class VirtualOpExecutor {
       'shell_subset=bash functions, if/while/for/select/case, [[ ]], (( )), arrays, traps, set -e/-u/-o pipefail\n'
       'unsupported=job control, shopt, exec, coproc, extglob, background\n'
       'divergences=\$\$ PPID RANDOM differ from a real process; declare -f is normalized; [[ =~ ]] is a translated ERE; eval nesting is limited\n'
+      'filesystem=ls /bin lists commands; /etc and /proc are readable; /tmp is wiped when the app exits\n'
       '${applets.isEmpty ? '' : 'applets=${applets.join(' ')}\n'}',
     );
   }
@@ -173,7 +175,7 @@ final class VirtualOpExecutor {
         name,
         width: width,
         now: now,
-        owner: _profile.user,
+        owner: vfsAccountName(node.uid, _profile.user),
       );
 
   /// `stat`-подобный вывод: `dir <mtime>` или `file <mtime>`. Пути нет — код 1 без вывода.
@@ -203,10 +205,10 @@ final class VirtualOpExecutor {
 
   // ---- Чтение файлов ----
 
-  /// Владелец читает файл, если у него есть бит чтения (0400). Root-привилегий у агента нет.
-  static bool _readable(VfsNode node) => (node.mode & 0x100) != 0;
+  /// Агент читает файл, если его класс доступа содержит бит чтения. Root-привилегий у агента нет.
+  static bool _readable(VfsNode node) => vfsAllows(node, VfsAccess.read);
 
-  static bool _writable(VfsNode node) => (node.mode & 0x80) != 0;
+  static bool _writable(VfsNode node) => vfsAllows(node, VfsAccess.write);
 
   /// Постраничный вывод. Ошибки и бинарные файлы — код 1 и текст в stderr, как у `ReadFileOp`.
   Future<VirtualOpResult> _readFile(

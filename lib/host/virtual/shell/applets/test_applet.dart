@@ -1,5 +1,6 @@
 import 'package:probably_works/host/virtual/shell/applets/applet.dart';
 import 'package:probably_works/host/virtual/shell/shell_io.dart';
+import 'package:probably_works/host/virtual/vfs_access.dart';
 import 'package:probably_works/host/virtual/vfs_store.dart';
 
 /// Апплеты `test` и `[`: проверки строк, чисел и файлов. Код 0 — истина, 1 — ложь, 2 — ошибка синтаксиса,
@@ -228,10 +229,10 @@ Future<bool> _unary(AppletIo io, String op, String arg) async {
     '-d' => node.kind == VfsNodeKind.dir,
     '-s' => node.kind != VfsNodeKind.dir && node.size > 0,
     '-L' || '-h' => node.kind == VfsNodeKind.symlink,
-    // Права владельца: у единственного пользователя Host проверки совпадают с его битами.
-    '-r' => (node.mode & 0x100) != 0,
-    '-w' => (node.mode & 0x80) != 0,
-    '-x' => (node.mode & 0x40) != 0,
+    // Класс битов зависит от владельца: свой файл — биты владельца, файл root — биты остальных.
+    '-r' => vfsAllows(node, VfsAccess.read),
+    '-w' => vfsAllows(node, VfsAccess.write),
+    '-x' => vfsAllows(node, VfsAccess.execute),
     _ => false,
   };
 }

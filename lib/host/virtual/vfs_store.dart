@@ -5,6 +5,17 @@ import 'package:probably_works/host/virtual/vfs_path.dart';
 /// Тип узла виртуальной файловой системы.
 enum VfsNodeKind { file, dir, symlink }
 
+/// Пользователь и группа агента. Один агент на хост, root ему не выдаётся.
+const vfsAgentUid = 1000;
+const vfsAgentGid = 1000;
+
+/// Владелец узлов снимка и каталога `/tmp`.
+const vfsRootUid = 0;
+const vfsRootGid = 0;
+
+/// Имя учётной записи root в `ls` и `stat`.
+const vfsRootName = 'root';
+
 /// Метаданные узла. Содержимое файла хранится отдельно и читается только по запросу,
 /// чтобы `ls` и `stat` не тянули мегабайты из базы.
 final class VfsNode {
@@ -14,6 +25,8 @@ final class VfsNode {
     required this.mode,
     required this.mtime,
     required this.size,
+    this.uid = vfsAgentUid,
+    this.gid = vfsAgentGid,
     this.target,
   });
 
@@ -26,6 +39,13 @@ final class VfsNode {
 
   /// Время изменения в секундах Unix. Совпадает по единице с `stat -c %Y`.
   final int mtime;
+
+  /// Владелец. Узлы базы — [vfsAgentUid], снимок и `/tmp` — [vfsRootUid]. Колонки в базе нет:
+  /// сохранённые файлы всегда принадлежат агенту, поэтому значение живёт только в памяти узла.
+  final int uid;
+
+  /// Группа. Совпадает с правилом [uid]: агент или root.
+  final int gid;
 
   /// Размер содержимого в байтах; для каталога и симлинка 0 (для симлинка см. [target]).
   final int size;

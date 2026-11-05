@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:probably_works/host/virtual/shell/applets/applet.dart';
 import 'package:probably_works/host/virtual/shell/shell_io.dart';
+import 'package:probably_works/host/virtual/vfs_store.dart';
 import 'package:probably_works/host/virtual/virtual_fs.dart';
 
 /// Результат разбора аргументов апплета. [error] — текст ошибки в формате getopt (`invalid option -- 'x'`),
@@ -183,10 +184,10 @@ RegExp globToRegExp(String pattern, {bool caseInsensitive = false}) {
   return RegExp(out.toString(), caseSensitive: !caseInsensitive, dotAll: true);
 }
 
-/// Номера пользователя и группы виртуального Host. Один пользователь без root, поэтому фиксированные
-/// значения, одинаковые для `id`, `stat` и `ls`.
-const hostUid = 1000;
-const hostGid = 1000;
+/// Номера пользователя и группы агента. Те же значения, что [vfsAgentUid] и [vfsAgentGid]:
+/// `id` показывает агента, а не владельца конкретного файла.
+const hostUid = vfsAgentUid;
+const hostGid = vfsAgentGid;
 
 /// Фрагмент строки по единицам кода UTF-16 от [start] до [end]. Вместо `substring` (его запрещает DCM):
 /// границы здесь всегда на позициях, которые вычислил сам апплет по `codeUnits`, поэтому суррогатные пары

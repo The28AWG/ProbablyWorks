@@ -4,6 +4,7 @@ import 'package:probably_works/host/virtual/shell/shell_ast.dart';
 import 'package:probably_works/host/virtual/shell/shell_expander.dart';
 import 'package:probably_works/host/virtual/shell/shell_state.dart';
 import 'package:probably_works/host/virtual/shell/shell_text.dart';
+import 'package:probably_works/host/virtual/vfs_access.dart';
 import 'package:probably_works/host/virtual/vfs_store.dart';
 import 'package:probably_works/host/virtual/virtual_fs.dart';
 
@@ -133,10 +134,11 @@ abstract final class ShellCond {
       '-d' => node.kind == VfsNodeKind.dir,
       '-s' => node.kind != VfsNodeKind.dir && node.size > 0,
       '-L' || '-h' => node.kind == VfsNodeKind.symlink,
-      '-r' => (node.mode & 0x100) != 0,
-      '-w' => (node.mode & 0x80) != 0,
-      '-x' => (node.mode & 0x40) != 0,
-      '-O' || '-G' => true,
+      '-r' => vfsAllows(node, VfsAccess.read),
+      '-w' => vfsAllows(node, VfsAccess.write),
+      '-x' => vfsAllows(node, VfsAccess.execute),
+      '-O' => node.uid == vfsAgentUid,
+      '-G' => node.gid == vfsAgentGid,
       '-N' => false,
       _ => false,
     };

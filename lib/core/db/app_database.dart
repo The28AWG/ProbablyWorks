@@ -19,7 +19,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 7;
+  static const currentSchemaVersion = 8;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -59,6 +59,13 @@ class AppDatabase extends _$AppDatabase {
       if (from < 7) {
         await m.createTable(virtualFsNodes);
         await m.createIndex(virtualFsNodesParent);
+      }
+      // Версия 8: /tmp больше не хранится. Диапазон по ключу, как листинг: «/tmp/» … «/tmp0».
+      if (from < 8) {
+        await customStatement(
+          "DELETE FROM virtual_fs_nodes WHERE path = '/tmp' "
+          "OR (path >= '/tmp/' AND path < '/tmp0')",
+        );
       }
     },
   );

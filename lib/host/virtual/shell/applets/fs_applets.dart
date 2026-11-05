@@ -4,6 +4,7 @@ import 'package:probably_works/host/virtual/shell/applets/applet.dart';
 import 'package:probably_works/host/virtual/shell/applets/applet_args.dart';
 import 'package:probably_works/host/virtual/shell/shell_errors.dart';
 import 'package:probably_works/host/virtual/shell/shell_io.dart';
+import 'package:probably_works/host/virtual/vfs_access.dart';
 import 'package:probably_works/host/virtual/vfs_listing.dart';
 import 'package:probably_works/host/virtual/vfs_store.dart';
 import 'package:probably_works/host/virtual/virtual_fs.dart';
@@ -160,7 +161,7 @@ final class _Ls implements Applet {
     }
     for (final entry in entries) {
       io.stdout.writeText(
-        '${VfsListing.longLine(entry.node, entry.name, width: width, now: io.fs.now(), owner: io.profile.user)}\n',
+        '${VfsListing.longLine(entry.node, entry.name, width: width, now: io.fs.now(), owner: vfsAccountName(entry.node.uid, io.profile.user))}\n',
       );
     }
   }
@@ -440,7 +441,8 @@ final class _Stat implements Applet {
   }
 
   static String _defaultBlock(AppletIo io, String operand, VfsNode node) {
-    final user = io.profile.user;
+    final user = vfsAccountName(node.uid, io.profile.user);
+    final group = vfsAccountName(node.gid, io.profile.user);
     final mode = node.mode & 0xfff;
     final octal = mode.toRadixString(8).padLeft(4, '0');
     final perms = VfsListing.permissions(node);
@@ -450,7 +452,7 @@ final class _Stat implements Applet {
     return [
       '  File: $operand',
       'Size: $size\tBlocks: $blocks\tIO Block: $ioBlock\t${_typeName(node)}',
-      'Access: ($octal/$perms)  Uid: ($hostUid/$user)   Gid: ($hostGid/$user)',
+      'Access: ($octal/$perms)  Uid: (${node.uid}/$user)   Gid: (${node.gid}/$group)',
       'Access: ${_timestamp(node.mtime)}',
       'Modify: ${_timestamp(node.mtime)}',
       'Change: ${_timestamp(node.mtime)}',
@@ -481,9 +483,10 @@ final class _Stat implements Applet {
         'a' => (node.mode & 0xfff).toRadixString(8),
         'A' => VfsListing.permissions(node),
         'F' => _typeName(node),
-        'u' => hostUid,
-        'g' => hostGid,
-        'U' || 'G' => io.profile.user,
+        'u' => node.uid,
+        'g' => node.gid,
+        'U' => vfsAccountName(node.uid, io.profile.user),
+        'G' => vfsAccountName(node.gid, io.profile.user),
         'Y' || 'X' || 'Z' => node.mtime,
         'y' || 'x' || 'z' => _timestamp(node.mtime),
         'w' => '-',
