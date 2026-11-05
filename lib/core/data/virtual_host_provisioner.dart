@@ -2,11 +2,8 @@ import 'package:injectable/injectable.dart';
 import 'package:probably_works/core/data/virtual_fs_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/virtual/in_memory_vfs_store.dart';
-import 'package:probably_works/host/virtual/os_snapshot.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
-import 'package:probably_works/host/virtual/virtual_host_seeder.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Связывает виртуальные Host с их файловыми системами в базе: отдаёт VFS по id хоста и заполняет её.
 ///

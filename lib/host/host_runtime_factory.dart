@@ -6,10 +6,9 @@ import 'package:probably_works/host/local_host_runtime.dart';
 import 'package:probably_works/host/pty_launcher.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/host/ssh_host_runtime.dart';
-import 'package:probably_works/host/virtual/os_snapshot.dart';
-import 'package:probably_works/host/virtual/shell/applets/standard_applets.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
 import 'package:probably_works/host/virtual/virtual_host_runtime.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Создаёт рантайм под конкретный Host. Один Host — одна логическая точка исполнения.
 /// Выбор по [HostKind] здесь единственный: остальной код работает с [HostRuntime] и не знает о типе хоста.

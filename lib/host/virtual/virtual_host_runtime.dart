@@ -5,11 +5,8 @@ import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/virtual/shell/applets/applet.dart';
-import 'package:probably_works/host/virtual/shell/shell_interpreter.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
 import 'package:probably_works/host/virtual/virtual_op_executor.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Рантайм виртуального Host: и операции, и команды выполняются над [VirtualFs] внутри процесса приложения.
 ///
@@ -50,11 +47,18 @@ final class VirtualHostRuntime implements HostRuntime {
     yield ExecDone(exitCode: result.exitCode);
   }
 
-  /// Выполняет строку команды интерпретатором оболочки; он сам отдаёт [ExecDone] с кодом выхода.
+  /// Выполняет строку команды интерпретатором оболочки и переводит [ShellEvent] в [ExecEvent].
   /// Поток — тот же, что у интерпретатора: отписка отменяет запуск (ловушка INT, код 130).
   @override
   Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
-      _shell.run(command, cwd: _cwd(cwd), stdin: stdin);
+      _shell.run(command, cwd: _cwd(cwd), stdin: stdin).map(_toHostEvent);
+
+  /// У оболочки нет pid и обрыва связи: событие несёт только байты или код выхода.
+  ExecEvent _toHostEvent(ShellEvent event) => switch (event) {
+    ShellStdout(:final bytes) => ExecStdout(bytes),
+    ShellStderr(:final bytes) => ExecStderr(bytes),
+    ShellDone(:final exitCode) => ExecDone(exitCode: exitCode),
+  };
 
   /// Терминала у виртуального Host нет. Ошибка понятна модели: она должна запустить команду без фона.
   @override

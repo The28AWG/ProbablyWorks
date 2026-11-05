@@ -3,12 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/virtual/in_memory_vfs_store.dart';
-import 'package:probably_works/host/virtual/vfs_store.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
-import 'package:probably_works/host/virtual/virtual_host_seeder.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 Host _host(String name) => Host(
   id: 'sandbox',

@@ -1,0 +1,16 @@
+name: virtual_host
+description: "Ядро виртуального хоста: файловая система, оболочка и апплеты."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  archive: ^4.6.0
+  crypto: ^3.0.8
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.30.0

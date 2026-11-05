@@ -7,10 +7,8 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/local_host_runtime.dart';
-import 'package:probably_works/host/virtual/in_memory_vfs_store.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
 import 'package:probably_works/host/virtual/virtual_op_executor.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Паритет виртуального исполнителя с реальным POSIX-скриптом [LocalHostRuntime] на Linux.
 ///

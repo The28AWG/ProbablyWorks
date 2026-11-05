@@ -4,14 +4,8 @@ import 'dart:typed_data';
 
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/shell_adapter.dart';
-import 'package:probably_works/host/virtual/posix_regex.dart';
 import 'package:probably_works/host/virtual/read_file_pager.dart';
-import 'package:probably_works/host/virtual/vfs_access.dart';
-import 'package:probably_works/host/virtual/vfs_listing.dart';
-import 'package:probably_works/host/virtual/vfs_path.dart';
-import 'package:probably_works/host/virtual/vfs_store.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Итог операции: код выхода и два потока. Тот же контракт, что у команды на реальном Host.
 final class VirtualOpResult {

@@ -1,5 +1,5 @@
 import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Имя хоста, если из названия не получилось ни одного допустимого символа.
 const _fallbackHostname = 'probably';

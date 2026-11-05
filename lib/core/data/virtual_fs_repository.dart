@@ -1,7 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/host/virtual/vfs_path.dart';
-import 'package:probably_works/host/virtual/vfs_store.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 /// Хранилище файлов одного виртуального Host в базе приложения. Правила POSIX — в `VirtualFs`.
 ///

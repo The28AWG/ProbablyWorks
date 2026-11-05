@@ -6,12 +6,8 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/virtual/in_memory_vfs_store.dart';
-import 'package:probably_works/host/virtual/shell/applets/standard_applets.dart';
-import 'package:probably_works/host/virtual/virtual_fs.dart';
 import 'package:probably_works/host/virtual/virtual_host_runtime.dart';
-import 'package:probably_works/host/virtual/virtual_host_seeder.dart';
-import 'package:probably_works/host/virtual/virtual_profile.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 const _profile = VirtualProfile(hostname: 'sandbox');
 

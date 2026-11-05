@@ -10,7 +10,7 @@
 
 Сейчас есть третий Host. `VirtualHostRuntime` выполняет и операции, и команды внутри процесса приложения:
 
-- в `lib/host/virtual/` нет `dart:io`, `dart:ffi` и `dart:isolate`;
+- в пакете `packages/virtual_host` нет `dart:io`, `dart:ffi` и `dart:isolate`;
 - процессов и PTY нет (`hasTerminal` = false), фоновый запуск инструмент отвергает;
 - оболочка — подмножество bash в чистом Dart (`docs/shell.md`);
 - файлы — виртуальная ФС (`docs/virtual-fs.md`): постоянный слой в базе, `/tmp` в памяти процесса, снимок ОС в памяти и только для чтения;
@@ -189,7 +189,7 @@ WebVM, v86 и аналоги. Раньше это был единственны�
 ## 10. Источники
 
 - Дата: 5 ноября 2026. Предыдущая редакция: 3 ноября 2026.
-- Код: `lib/host/virtual/` (импортов `dart:io` нет), `lib/host/host_runtime.dart`, `lib/host/host_op.dart`, `lib/host/local_host_runtime.dart`, `lib/host/host_runtime_factory.dart`, `lib/core/data/virtual_host_provisioner.dart`, `lib/core/data/virtual_fs_repository.dart`, `lib/agent/workspace/workspace_context_loader.dart`, `docs/shell.md`, `docs/virtual-fs.md`.
+- Код: `packages/virtual_host` (импортов `dart:io` нет), `lib/host/virtual/` (адаптер к Host и базе), `lib/host/host_runtime.dart`, `lib/host/host_op.dart`, `lib/host/local_host_runtime.dart`, `lib/host/host_runtime_factory.dart`, `lib/core/data/virtual_host_provisioner.dart`, `lib/core/data/virtual_fs_repository.dart`, `lib/agent/workspace/workspace_context_loader.dart`, `docs/shell.md`, `docs/virtual-fs.md`.
 - Вариант G — идея этой редакции. Сервера и вида хоста в репозитории нет.
 - `portable_pty` 0.0.7-beta.2: https://pub.dev/packages/portable_pty
 - `dartssh2` 4.1.0: https://pub.dev/packages/dartssh2

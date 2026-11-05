@@ -103,12 +103,14 @@ Dart-файлы с переводами генерируются командо�
 Состояние UI — BLoC/Cubit, зависимости — `get_it` + `injectable`.
 
 ```
+packages/
+  virtual_host/  # ядро виртуального хоста: файловая система, оболочка, апплеты
 lib/
   app/        # запуск, DI, маршруты, тема, локализация, guards
     ui/       # собственные виджеты (AppCard, ActionCard, ConfirmDialog, ...), см. docs/ui/WIDGET_BOOK.md
   core/       # база (drift), настройки, хосты, секреты, логи, утилиты
   agent/      # ядро агента: цикл, контекст, инструменты, политика, exec, состояние
-  host/       # исполнение команд на хосте: local и SSH, управление процессами
+  host/       # исполнение команд: local, SSH и адаптер виртуального хоста
   providers/  # порт LLM и адаптер OpenRouter
   features/   # экраны и блоки: chat, chats, hosts, settings, onboarding, workspace, models
   l10n/       # ARB и сгенерированные строки
@@ -139,6 +141,7 @@ lib/
 
 ```bash
 flutter test
+(cd packages/virtual_host && dart test)
 ```
 
 Юнит-тесты не требуют внешних сервисов. Интеграционные SSH-тесты запускаются на throwaway-сервере

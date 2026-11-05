@@ -12,8 +12,8 @@ import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart
 import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
-import 'package:probably_works/host/virtual/vfs_store.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:virtual_host/virtual_host.dart';
 
 Host _host(String id, HostKind kind) => Host(
   id: id,
