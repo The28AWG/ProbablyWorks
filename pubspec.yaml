@@ -47,6 +47,8 @@ dependencies:
   portable_pty: 0.0.7-beta.2
   sqlite3: ^3.6.0
   uuid: ^4.5.3
+  virtual_git:
+    path: packages/virtual_git
   virtual_host:
     path: packages/virtual_host
   xterm: ^4.0.0

@@ -204,7 +204,48 @@ final class ShellState {
       ..put('UID', ShellVar(value: '1000', attrs: {VarAttr.readonly}))
       ..put('EUID', ShellVar(value: '1000', attrs: {VarAttr.readonly}))
       ..put('PPID', ShellVar(value: '1', attrs: {VarAttr.readonly}));
+    _exportProfileEnvironment(state, profile.environment);
     return state;
+  }
+
+  /// Имена, которые профиль не может подменить: иначе секрет с ключом `PATH`
+  /// увёл бы команды в другой каталог.
+  static const _reservedEnvironment = {
+    'HOME',
+    'USER',
+    'LOGNAME',
+    'HOSTNAME',
+    'SHELL',
+    'PATH',
+    'PWD',
+    'LANG',
+    'UID',
+    'EUID',
+    'PPID',
+    'OPTIND',
+  };
+
+  static final _environmentName = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+  /// Дописывает карту профиля как экспортируемые переменные. Недопустимое имя
+  /// — ошибка до запуска команд, а не тихий пропуск.
+  static void _exportProfileEnvironment(
+    ShellState state,
+    Map<String, String> environment,
+  ) {
+    for (final key in environment.keys) {
+      if (!_environmentName.hasMatch(key)) {
+        throw ArgumentError.value(
+          key,
+          'environment',
+          'Имя переменной должно совпадать с [A-Za-z_][A-Za-z0-9_]*.',
+        );
+      }
+    }
+    for (final MapEntry(:key, :value) in environment.entries) {
+      if (_reservedEnvironment.contains(key)) continue;
+      state._vars.put(key, ShellVar(value: value, attrs: {VarAttr.export}));
+    }
   }
 
   /// Текущий каталог в каноническом виде ([VfsPath]).

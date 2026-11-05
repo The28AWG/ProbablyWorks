@@ -8,6 +8,7 @@ final class VirtualProfile {
     this.home = '/home/agent',
     this.shell = '/bin/sh',
     this.bootedAt = 0,
+    this.environment = const {},
   });
 
   final String hostname;
@@ -21,6 +22,14 @@ final class VirtualProfile {
 
   /// Момент запуска Host в секундах Unix: от него `uptime` считает время работы. Ноль — неизвестен.
   final int bootedAt;
+
+  /// Переменные, которые оболочка экспортирует после встроенных.
+  ///
+  /// Имя должно совпадать с `[A-Za-z_][A-Za-z0-9_]*`, иначе [ShellState.initial]
+  /// бросает ошибку. `HOME`, `PATH` и остальные встроенные имена из этой карты
+  /// не перезаписываются. `host_info` карту не печатает: секрет не должен попасть
+  /// в контекст модели на каждом ходе. Значения живут только в памяти профиля.
+  final Map<String, String> environment;
 
   /// Вывод `uname -a` для этого профиля.
   String get unameLine =>

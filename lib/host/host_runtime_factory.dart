@@ -8,6 +8,7 @@ import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/host/ssh_host_runtime.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
 import 'package:probably_works/host/virtual/virtual_host_runtime.dart';
+import 'package:virtual_git/virtual_git.dart';
 import 'package:virtual_host/virtual_host.dart';
 
 /// Создаёт рантайм под конкретный Host. Один Host — одна логическая точка исполнения.
@@ -20,6 +21,24 @@ class HostRuntimeFactory {
   final PtyLauncher _pty;
   final VirtualHostProvisioner _virtual;
 
+  /// Стандартные апплеты плюс git. Имя `git` входит и в снимок `/bin`,
+  /// иначе `which git` видит команду, а `test -x /bin/git` — нет.
+  HostRuntime _virtualRuntime(Host host) {
+    final profile = virtualProfileFor(host);
+    final applets = AppletRegistry([
+      for (final name in standardApplets.names) standardApplets.lookup(name)!,
+      const GitApplet(),
+    ]);
+    return VirtualHostRuntime(
+      fs: _virtual.fsOf(
+        host.id,
+        snapshot: OsSnapshot(profile: profile, names: applets.names),
+      ),
+      profile: profile,
+      applets: applets,
+    );
+  }
+
   HostRuntime forHost(Host host) => switch (host.kind) {
     HostKind.local => LocalHostRuntime(
       os: host.os,
@@ -27,16 +46,6 @@ class HostRuntimeFactory {
       pty: _pty,
     ),
     HostKind.ssh => SshHostRuntime(host: host, pool: _pool),
-    HostKind.virtual => VirtualHostRuntime(
-      fs: _virtual.fsOf(
-        host.id,
-        snapshot: OsSnapshot(
-          profile: virtualProfileFor(host),
-          names: standardApplets.names,
-        ),
-      ),
-      profile: virtualProfileFor(host),
-      applets: standardApplets,
-    ),
+    HostKind.virtual => _virtualRuntime(host),
   };
 }

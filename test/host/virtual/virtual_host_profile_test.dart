@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/virtual/virtual_host_profile.dart';
+import 'package:probably_works/host/virtual/virtual_op_executor.dart';
 import 'package:virtual_host/virtual_host.dart';
 
 Host _host(String name) => Host(
@@ -49,6 +51,18 @@ void main() {
       expect(profile.unameLine, contains('work-box'));
     },
   );
+
+  test('host_info не содержит переменные окружения профиля', () async {
+    final executor = VirtualOpExecutor(
+      VirtualFs(InMemoryVfsStore()),
+      const VirtualProfile(environment: {'TOKEN': 'secret-value'}),
+    );
+    final result = await executor.execute(const HostInfoOp());
+    final text = utf8.decode(result.stdout);
+
+    expect(text, isNot(contains('secret-value')));
+    expect(text, isNot(contains('TOKEN')));
+  });
 
   group('seedVirtualHost', () {
     late VirtualFs fs;
