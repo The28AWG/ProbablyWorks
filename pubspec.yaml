@@ -12,6 +12,7 @@ dependencies:
   auto_route: ^11.1.0
   bloc: ^9.2.1
   characters: ^1.4.0
+  command_shield: ^1.4.0
   crypto: ^3.0.8
   cupertino_icons: ^1.0.8
   dartssh2: ^4.1.0

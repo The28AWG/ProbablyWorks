@@ -118,7 +118,9 @@ abstract final class ToolCatalog {
           'State does not survive the call, background=true is refused, and job control, shopt, exec, coproc and extglob fail before any command. '
           'Read-only commands run automatically; others need user approval. '
           'You cannot type input: a command that waits for input blocks until it times out, so use non-interactive flags (for example -y or --no-pager). '
-          'Privilege escalation (sudo, su, doas, pkexec) is forbidden. Set background=true for long-running commands on a local or SSH host; '
+          'Privilege escalation (sudo, su, doas, pkexec, sudoedit) is forbidden. '
+          'Also forbidden: wiping a filesystem root or system directory, writing a block device, and piping a download into a shell. '
+          'Set background=true for long-running commands on a local or SSH host; '
           'you will be notified when they finish.',
       parameters: {
         'type': 'object',

@@ -377,8 +377,9 @@ class ChatSession {
     );
 
     final denylist = await _hub.settings.readDenylist();
+    final profile = await _hub.settings.readSecurityProfile();
     final policy = PolicyEngine(
-      classifier: CommandClassifier(denylist: denylist),
+      classifier: CommandClassifier(denylist: denylist, profile: profile),
       mode: chat.policyMode,
     );
     return _Prepared(

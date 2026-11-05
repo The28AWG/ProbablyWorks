@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/db/app_database.dart';
 
@@ -24,6 +25,7 @@ class SettingsRepository {
   static const keyThemeMode = 'themeMode';
   static const keyDefaultPolicy = 'defaultPolicy';
   static const keyDenylist = 'denylist';
+  static const keySecurityProfile = 'securityProfile';
   static const keyLimits = 'limits';
   static const keyPinnedModels = 'pinnedModels';
   static const keyStepsGroup = 'stepsGroup';
@@ -167,7 +169,19 @@ class SettingsRepository {
   Future<void> saveDenylist(List<String> patterns) =>
       write(keyDenylist, patterns.join('\n'));
 
-  /// Дефолтный denylist: UX-страховка, а не граница безопасности (граница — Ask по умолчанию).
+  /// Уровни команд. Пустая или битая запись читается как встроенный профиль.
+  Future<SecurityProfile> readSecurityProfile() async {
+    final raw = await read(keySecurityProfile);
+    if (raw == null || raw.isEmpty) return const SecurityProfile();
+    return SecurityProfile.decode(raw);
+  }
+
+  /// Сохраняет профиль целиком: отсутствие ключа в JSON значит, что уровень убран.
+  Future<void> saveSecurityProfile(SecurityProfile profile) =>
+      write(keySecurityProfile, profile.encode());
+
+  /// Дефолтный denylist: дополнительный запрет поверх разбора command_shield.
+  /// Критическая команда отклоняется и без совпадения с шаблоном.
   static const defaultDenylist = [
     r'rm\s+-rf\s+/(\s|$)',
     r'\bmkfs(\.|\s)',

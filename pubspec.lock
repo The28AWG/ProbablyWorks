@@ -233,6 +233,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
+  command_shield:
+    dependency: "direct main"
+    description:
+      name: command_shield
+      sha256: c39f699d55df40e64b17feaa8d58ee6746f6d913e4d12f228c61680a6f1223b7
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.0"
   completion:
     dependency: transitive
     description:

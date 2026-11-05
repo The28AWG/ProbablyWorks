@@ -655,7 +655,7 @@
   "@settingsDenylist": {
     "description": "Заголовок раздела: команды, которые отклоняются."
   },
-  "settingsDenylistHint": "Одно регулярное выражение в строке. Команда, подходящая под шаблон, отклоняется без вопроса. Это страховка, а не граница безопасности.",
+  "settingsDenylistHint": "Одно регулярное выражение в строке. Подходящая команда отклоняется без вопроса. Эскалация прав и критические команды блокируются разбором даже если их нет в списке.",
   "@settingsDenylistHint": {
     "description": "Пояснение под заголовком denylist: как работают шаблоны и их границы."
   },
@@ -1439,7 +1439,7 @@
   "@settingsGroupSafety": {
     "description": "Settings group: execution policy and denylist."
   },
-  "settingsGroupSafetyHint": "Политика по умолчанию для новых чатов и команды, которые запрещены всегда.",
+  "settingsGroupSafetyHint": "Политика по умолчанию, уровни риска команд и команды, которые запрещены всегда.",
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
   },
@@ -1663,5 +1663,186 @@
         "example": "done"
       }
     }
-  }
+  },
+  "securityProfileTitle": "Уровни команд",
+  "@securityProfileTitle": {
+    "description": "Settings section: risk levels for command categories, commands, and arguments."
+  },
+  "securityProfileHint": "Категория задаёт уровень своим командам. Команда может заменить категорию, а аргумент — команду. Агент берёт более строгий итог: этот уровень или вывод разбора.",
+  "@securityProfileHint": {
+    "description": "Explanation of how category, command, and argument risk levels combine."
+  },
+  "securityFloorTitle": "Не ослабляется",
+  "@securityFloorTitle": {
+    "description": "Title of the note listing command rules the settings cannot loosen."
+  },
+  "securityFloorMessage": "Эскалация прав и критические команды остаются запрещены. Оборванная команда, пайп, редирект и присваивание в оболочке по-прежнему требуют подтверждения.",
+  "@securityFloorMessage": {
+    "description": "Note that escalation, critical commands, and shell syntax stay at least as strict as before."
+  },
+  "securityPreviewHint": "Проверить команду",
+  "@securityPreviewHint": {
+    "description": "Hint of the field that shows the risk level of a sample command."
+  },
+  "securityPreviewEmpty": "Введите команду, чтобы увидеть уровень, с которым её увидит агент.",
+  "@securityPreviewEmpty": {
+    "description": "Placeholder result before the user types a sample command."
+  },
+  "securitySearchHint": "Найти команду",
+  "@securitySearchHint": {
+    "description": "Hint of the search field in the command level catalog."
+  },
+  "securityFilterAll": "Все",
+  "@securityFilterAll": {
+    "description": "Filter chip that shows every command category."
+  },
+  "securityOwnLevels": "Свой уровень: {count}",
+  "@securityOwnLevels": {
+    "description": "Count of commands in a category whose level is not the category level.",
+    "placeholders": {
+      "count": {"type": "int", "example": "4"}
+    }
+  },
+  "securityCommandCount": "Команд: {count}",
+  "@securityCommandCount": {
+    "description": "How many commands a category contains.",
+    "placeholders": {
+      "count": {"type": "int", "example": "12"}
+    }
+  },
+  "securityRestoreCategory": "Вернуть стандарт",
+  "@securityRestoreCategory": {
+    "description": "Button that returns one category, its commands, and its arguments to the built-in levels."
+  },
+  "securityResetAll": "Сбросить",
+  "@securityResetAll": {
+    "description": "Button that returns every command level to the built-in profile."
+  },
+  "securityResetAllTitle": "Сбросить уровни команд?",
+  "@securityResetAllTitle": {
+    "description": "Title of the confirmation before resetting command levels."
+  },
+  "securityResetAllMessage": "Категории, команды и аргументы вернутся к встроенным уровням.",
+  "@securityResetAllMessage": {
+    "description": "Body of the confirmation before resetting command levels."
+  },
+  "securityAddCommand": "Добавить команду",
+  "@securityAddCommand": {
+    "description": "Button that adds a command the catalog does not know."
+  },
+  "securityAddCommandTitle": "Имя команды",
+  "@securityAddCommandTitle": {
+    "description": "Title of the dialog that asks for a command name."
+  },
+  "securityAddCommandHint": "Имя без пути, например rsync",
+  "@securityAddCommandHint": {
+    "description": "Hint of the command name field."
+  },
+  "securityCommandInvalid": "Имя команды: буквы, цифры и символы . _ + -",
+  "@securityCommandInvalid": {
+    "description": "Error when the command name contains a path or spaces."
+  },
+  "securityCustom": "Свои",
+  "@securityCustom": {
+    "description": "Section of commands the user added and the catalog does not know."
+  },
+  "securityArguments": "Аргументы",
+  "@securityArguments": {
+    "description": "Heading of the argument rules of one command."
+  },
+  "securityAddArgument": "Добавить аргумент",
+  "@securityAddArgument": {
+    "description": "Button that adds a risk level for one argument of a command."
+  },
+  "securityArgumentTitle": "Аргумент {command}",
+  "@securityArgumentTitle": {
+    "description": "Title of the dialog that adds an argument rule. The command name is not translated.",
+    "placeholders": {
+      "command": {"type": "String", "example": "git"}
+    }
+  },
+  "securityArgumentFlag": "Флаг",
+  "@securityArgumentFlag": {
+    "description": "Argument match: a flag such as -o or --force."
+  },
+  "securityArgumentSubcommand": "Подкоманда",
+  "@securityArgumentSubcommand": {
+    "description": "Argument match: the first word that is not a flag, such as git status."
+  },
+  "securityArgumentAny": "Любой аргумент",
+  "@securityArgumentAny": {
+    "description": "Argument match: the command has at least one argument."
+  },
+  "securityArgumentFlagHint": "Совпадает с -o, -oФАЙЛ и --output=значение.",
+  "@securityArgumentFlagHint": {
+    "description": "Explanation of a flag argument rule."
+  },
+  "securityArgumentSubcommandHint": "Совпадает с первым словом без дефиса.",
+  "@securityArgumentSubcommandHint": {
+    "description": "Explanation of a subcommand argument rule."
+  },
+  "securityArgumentAnyHint": "Совпадает, если у команды есть любой аргумент.",
+  "@securityArgumentAnyHint": {
+    "description": "Explanation of a rule that matches any argument."
+  },
+  "securityArgumentToken": "Флаг или подкоманда",
+  "@securityArgumentToken": {
+    "description": "Hint of the field for the flag or subcommand text."
+  },
+  "securityNoMatches": "Нет таких команд",
+  "@securityNoMatches": {
+    "description": "Empty state title when the command search finds nothing."
+  },
+  "securityNoMatchesHint": "Попробуйте другое имя или добавьте команду, которой нет в каталоге.",
+  "@securityNoMatchesHint": {
+    "description": "Empty state explanation when the command search finds nothing."
+  },
+  "securityRiskAuto": "Авто",
+  "@securityRiskAuto": {
+    "description": "Risk level: the command may run without asking."
+  },
+  "securityRiskAsk": "Вопрос",
+  "@securityRiskAsk": {
+    "description": "Risk level: the command needs approval in Ask mode."
+  },
+  "securityRiskDeny": "Запрет",
+  "@securityRiskDeny": {
+    "description": "Risk level: the command is refused."
+  },
+  "securityCatVersionControl": "Версии",
+  "@securityCatVersionControl": {"description": "Command category: git and other version-control tools."},
+  "securityCatFilesystem": "Файлы",
+  "@securityCatFilesystem": {"description": "Command category: filesystem tools such as ls, cp, and rm."},
+  "securityCatArchive": "Архивы",
+  "@securityCatArchive": {"description": "Command category: archive tools such as tar."},
+  "securityCatCompression": "Сжатие",
+  "@securityCatCompression": {"description": "Command category: compressors such as gzip."},
+  "securityCatHash": "Контрольные суммы",
+  "@securityCatHash": {"description": "Command category: checksum tools such as sha256sum."},
+  "securityCatCrypto": "Шифрование",
+  "@securityCatCrypto": {"description": "Command category: encryption and signing tools."},
+  "securityCatDatabase": "Базы данных",
+  "@securityCatDatabase": {"description": "Command category: database clients."},
+  "securityCatEditor": "Редакторы",
+  "@securityCatEditor": {"description": "Command category: text editors."},
+  "securityCatPackageManager": "Пакеты",
+  "@securityCatPackageManager": {"description": "Command category: package managers."},
+  "securityCatContainer": "Контейнеры",
+  "@securityCatContainer": {"description": "Command category: container tools."},
+  "securityCatInfrastructure": "Инфраструктура",
+  "@securityCatInfrastructure": {"description": "Command category: infrastructure tools."},
+  "securityCatNetwork": "Сеть",
+  "@securityCatNetwork": {"description": "Command category: network clients."},
+  "securityCatShell": "Оболочка",
+  "@securityCatShell": {"description": "Command category: shells and wrappers."},
+  "securityCatInterpreter": "Интерпретаторы",
+  "@securityCatInterpreter": {"description": "Command category: language interpreters and build tools."},
+  "securityCatProcess": "Процессы",
+  "@securityCatProcess": {"description": "Command category: process tools such as ps and kill."},
+  "securityCatSystem": "Система",
+  "@securityCatSystem": {"description": "Command category: system configuration tools."},
+  "securityCatEnvironment": "Окружение",
+  "@securityCatEnvironment": {"description": "Command category: environment-variable tools."},
+  "securityCatOther": "Прочее",
+  "@securityCatOther": {"description": "Command category: commands that do not fit another category."}
 }

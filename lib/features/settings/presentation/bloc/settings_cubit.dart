@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -28,6 +29,7 @@ class SettingsState extends Equatable {
     this.themeMode = ThemeMode.system,
     this.defaultPolicy = PolicyMode.ask,
     this.denylist = '',
+    this.securityProfile = const SecurityProfile(),
     this.limitsJson = '',
     this.limitsError = false,
     this.pinnedModels = const [],
@@ -64,6 +66,9 @@ class SettingsState extends Equatable {
   final ThemeMode themeMode;
   final PolicyMode defaultPolicy;
   final String denylist;
+
+  /// Уровни категорий, команд и аргументов. Встроенный профиль, пока настройка не записана.
+  final SecurityProfile securityProfile;
   final String limitsJson;
   final bool limitsError;
 
@@ -90,6 +95,7 @@ class SettingsState extends Equatable {
     ThemeMode? themeMode,
     PolicyMode? defaultPolicy,
     String? denylist,
+    SecurityProfile? securityProfile,
     String? limitsJson,
     bool? limitsError,
     List<String>? pinnedModels,
@@ -112,6 +118,7 @@ class SettingsState extends Equatable {
     themeMode: themeMode ?? this.themeMode,
     defaultPolicy: defaultPolicy ?? this.defaultPolicy,
     denylist: denylist ?? this.denylist,
+    securityProfile: securityProfile ?? this.securityProfile,
     limitsJson: limitsJson ?? this.limitsJson,
     limitsError: limitsError ?? this.limitsError,
     pinnedModels: pinnedModels ?? this.pinnedModels,
@@ -133,6 +140,7 @@ class SettingsState extends Equatable {
     themeMode,
     defaultPolicy,
     denylist,
+    securityProfile,
     limitsJson,
     limitsError,
     pinnedModels,
@@ -184,6 +192,7 @@ class SettingsCubit extends Cubit<SettingsState> {
           await _settings.read(SettingsRepository.keyDefaultPolicy) ?? 'ask',
         ),
         denylist: (await _settings.readDenylist()).join('\n'),
+        securityProfile: await _settings.readSecurityProfile(),
         limitsJson: const JsonEncoder.withIndent('  ').convert(limits.toMap()),
         pinnedModels: await _settings.readPinnedModels(),
         stepsDisplay: await _settings.readStepsDisplay(),
@@ -349,6 +358,12 @@ class SettingsCubit extends Cubit<SettingsState> {
         .toList();
     await _settings.saveDenylist(patterns);
     emit(state.copyWith(denylist: patterns.join('\n'), saved: state.saved + 1));
+  }
+
+  /// Записывает уровни команд и увеличивает счётчик сохранения.
+  Future<void> saveSecurityProfile(SecurityProfile profile) async {
+    await _settings.saveSecurityProfile(profile);
+    emit(state.copyWith(securityProfile: profile, saved: state.saved + 1));
   }
 
   /// Лимиты: JSON проверяется до сохранения. Жёсткие правила (Policy, host key) настройками не отключаются.

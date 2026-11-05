@@ -1,5 +1,8 @@
+import 'package:command_shield/command_shield.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
+import 'package:probably_works/agent/policy/command_risk.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
@@ -153,6 +156,27 @@ void main() {
       (await settings.limits()).toJson(),
     );
   });
+
+  test(
+    'security profile round-trips and a broken value stays baseline',
+    () async {
+      final settings = SettingsRepository(db);
+      expect(
+        (await settings.readSecurityProfile()).commands['ls'],
+        CommandRisk.auto,
+      );
+
+      final changed = const SecurityProfile().withCategory(
+        KnowledgeCategory.network,
+        CommandRisk.deny,
+      );
+      await settings.saveSecurityProfile(changed);
+      expect(await settings.readSecurityProfile(), changed);
+
+      await settings.write(SettingsRepository.keySecurityProfile, '{');
+      expect(await settings.readSecurityProfile(), const SecurityProfile());
+    },
+  );
 
   test('steps display defaults to grouped, all thoughts, all tools', () async {
     final settings = SettingsRepository(db);

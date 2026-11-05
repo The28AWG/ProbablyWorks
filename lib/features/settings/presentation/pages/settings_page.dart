@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
@@ -18,6 +19,7 @@ import 'package:probably_works/features/models/presentation/widgets/model_picker
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
+import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -521,6 +523,22 @@ class _SettingsViewState extends State<_SettingsView> {
     ),
   ];
 
+  Future<void> _resetSecurityProfile(
+    SettingsCubit cubit,
+    AppLocalizations l10n,
+  ) async {
+    final confirmed = await ConfirmDialog.confirm(
+      context,
+      title: l10n.securityResetAllTitle,
+      message: l10n.securityResetAllMessage,
+      cancelLabel: l10n.commonCancel,
+      confirmLabel: l10n.securityResetAll,
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    await cubit.saveSecurityProfile(const SecurityProfile());
+  }
+
   List<Widget> _safetySections(
     SettingsState state,
     SettingsCubit cubit,
@@ -546,6 +564,25 @@ class _SettingsViewState extends State<_SettingsView> {
           ],
           selected: state.defaultPolicy,
           onChanged: cubit.saveDefaultPolicy,
+        ),
+      ],
+    ),
+    AppSection(
+      title: l10n.securityProfileTitle,
+      description: l10n.securityProfileHint,
+      trailing: TextButton(
+        onPressed: () => _resetSecurityProfile(cubit, l10n),
+        child: Text(
+          l10n.securityResetAll,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      children: [
+        SecurityProfileEditor(
+          profile: state.securityProfile,
+          denylist: state.denylist,
+          onChanged: cubit.saveSecurityProfile,
         ),
       ],
     ),

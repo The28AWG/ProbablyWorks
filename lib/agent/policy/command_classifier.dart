@@ -1,163 +1,199 @@
-import 'package:probably_works/core/util/char_substring.dart';
+/// Классификация `run_command` до запуска на хосте.
+///
+/// Сначала строка проходит [CommandShield]: синтаксис bash, возможности,
+/// детекторы и жёсткий пол (эскалация, критическая находка, denylist, пайп,
+/// присваивание, оборванная кавычка). Затем [SecurityProfile] называет уровень
+/// категории, команды или аргумента. Итог — более строгий из двух.
+/// Вложенный текст `eval`, `sh -c` и апплета busybox разбирается отдельно,
+/// чтобы `eval sudo` не проскочил как обычный `eval`.
+library;
 
-enum CommandRisk { auto, ask, deny }
+import 'package:command_shield/command_shield.dart';
+import 'package:probably_works/agent/policy/agent_command_policy.dart';
+import 'package:probably_works/agent/policy/command_catalog.dart';
+import 'package:probably_works/agent/policy/command_risk.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 
-class CommandClassification {
-  const CommandClassification(this.risk, this.reason);
+export 'package:probably_works/agent/policy/command_risk.dart';
 
-  final CommandRisk risk;
-  final String reason;
-}
-
-/// Классификатор `run_command`. Граница безопасности — Ask по умолчанию;
-/// denylist — только UX-страховка (его легко обойти через eval/base64).
+/// Классификатор `run_command`.
+///
+/// Denylist пользователя — дополнительный запрет поверх разбора, а не его
+/// замена. Кавычки и другое написание обходят регулярное выражение, но не
+/// детектор критической команды.
 class CommandClassifier {
-  CommandClassifier({required List<String> denylist})
-    : _denylist = [
-        for (final pattern in denylist)
-          if (pattern.trim().isNotEmpty) RegExp(pattern),
-      ];
+  /// Собирает классификатор. Некорректное выражение denylist бросает
+  /// [FormatException] ещё при создании, а не в момент запуска команды.
+  /// [profile] по умолчанию — встроенные уровни.
+  CommandClassifier({
+    required List<String> denylist,
+    this.profile = const SecurityProfile(),
+  }) : _catalog = CommandCatalog.instance,
+       _shield = buildAgentCommandShield([
+         for (final pattern in denylist)
+           if (pattern.trim().isNotEmpty) RegExp(pattern),
+       ]);
 
-  final List<RegExp> _denylist;
+  /// Уровни категорий, команд и аргументов. Жёсткий пол щита они не опускают.
+  final SecurityProfile profile;
+  final CommandCatalog _catalog;
+  final CommandShield _shield;
+  static final Normalizer _normalizer = Normalizer.standard();
 
-  /// Эскалация привилегий запрещена всегда (см. README-план: «пользователь выбирает Host с нужным доступом»).
-  static const escalationBinaries = {
-    'sudo',
-    'su',
-    'doas',
-    'pkexec',
-    'runas',
-    'sudoedit',
-  };
+  /// Сколько уровней `bash -c` / `eval` разбирать вглубь.
+  ///
+  /// Глубже защита уже не различает новый текст, а рекурсия на копии той же
+  /// строки была бы бесконечной. Восемь совпадает с пределом вложенности
+  /// `eval` виртуальной оболочки.
+  static const _maxInlineDepth = 8;
 
-  /// Read-only бинарники без подстановок: Auto, если нет пайпов/редиректов/`;`/`&&`.
-  static const readOnlyBinaries = {
-    'ls',
-    'cat',
-    'pwd',
-    'which',
-    'uname',
-    'df',
-    'du',
-    'ps',
-    'head',
-    'tail',
-    'wc',
-    'stat',
-    'file',
-    'free',
-    'uptime',
-    'whoami',
-    'id',
-    'date',
-    'hostname',
-    'printenv',
-    'echo',
-    'tree',
-    'nproc',
-    'lscpu',
-    'grep',
-    'rg',
-    'sort',
-    'uniq',
-    'basename',
-    'dirname',
-    'realpath',
-    'readlink',
-    'md5sum',
-    'sha256sum',
-  };
+  static const _shells = {'bash', 'sh', 'zsh', 'dash', 'ksh', 'fish'};
+  static const _applets = {'busybox', 'toybox'};
 
-  static const readOnlyGitSubcommands = {
-    'status',
-    'diff',
-    'log',
-    'show',
-    'branch',
-    'rev-parse',
-    'remote',
-    'ls-files',
-  };
+  /// Классифицирует [command]. Пустая строка запрещена.
+  CommandClassification classify(String command) =>
+      _classify(command, depth: 0);
 
-  /// Кроме пайпов и подстановок команд, Ask получают присваивания в параметрах
-  /// (`${x:=}`, `${x=}`, `${x:?}`) и арифметика `((...))`: они меняют состояние оболочки.
-  static final _unsafeSyntax = RegExp(
-    r'[|;&<>`\n]|\$\(|\$\{[^}]*(:=|=|\?)|\(\(',
-  );
-
-  CommandClassification classify(String command) {
+  CommandClassification _classify(String command, {required int depth}) {
     final trimmed = command.trim();
     if (trimmed.isEmpty) {
       return const CommandClassification(CommandRisk.deny, 'empty command');
     }
-    final tokens = _tokens(trimmed);
-    for (final token in tokens) {
-      if (escalationBinaries.contains(_basename(token))) {
-        return const CommandClassification(
-          CommandRisk.deny,
-          'privilege escalation is not allowed',
-        );
-      }
-    }
-    for (final pattern in _denylist) {
-      if (pattern.hasMatch(trimmed)) {
-        return CommandClassification(
-          CommandRisk.deny,
-          'matches denylist: ${pattern.pattern}',
-        );
-      }
-    }
-    if (_unsafeSyntax.hasMatch(trimmed)) {
-      return const CommandClassification(
-        CommandRisk.ask,
-        'pipes, redirects, separators or substitutions',
-      );
-    }
-    final first = _basename(tokens.first);
-    if (first == 'git') {
-      final sub = tokens.length > 1 ? tokens[1] : '';
-      return readOnlyGitSubcommands.contains(sub)
-          ? const CommandClassification(CommandRisk.auto, 'read-only git')
-          : const CommandClassification(CommandRisk.ask, 'git write operation');
-    }
-    if (readOnlyBinaries.contains(first)) {
-      if (_writesDespiteReadOnly(first, tokens)) {
-        return CommandClassification(
-          CommandRisk.ask,
-          'read-only command with a writing flag: $first',
-        );
-      }
-      return const CommandClassification(CommandRisk.auto, 'read-only command');
-    }
-    return CommandClassification(
-      CommandRisk.ask,
-      'unknown or write command: $first',
+    final analysis = _shield.analyze(trimmed);
+    var result = _stricter(
+      _fromShield(analysis, _shield.validateAnalysis(analysis)),
+      _fromProfile(analysis),
     );
+    if (depth < _maxInlineDepth) {
+      for (final payload in _inlinePayloads(analysis)) {
+        if (payload.trim().isEmpty || payload.trim() == trimmed) continue;
+        final inner = _classify(payload, depth: depth + 1);
+        if (inner.risk.index > result.risk.index) result = inner;
+      }
+    }
+    return result;
   }
 
-  /// Флаги, которые пишут в файл или меняют систему, хотя команда есть в списке чтения.
-  static bool _writesDespiteReadOnly(String command, List<String> tokens) {
-    if (command == 'sort') {
-      return tokens.any((token) => token == '-o' || token.startsWith('-o'));
+  /// Уровень профиля по каждому вызову. Берётся самый строгий.
+  ///
+  /// Вызов без имени не поднимает уровень: пустую команду отсекает разбор выше.
+  CommandClassification _fromProfile(CommandAnalysis analysis) {
+    CommandRisk? strongest;
+    var executable = '';
+    final normalized = analysis.normalizedExecutables;
+    var index = 0;
+    for (final invocation in analysis.invocations) {
+      if (invocation.executable.isEmpty) continue;
+      final name = index < normalized.length
+          ? normalized[index].toLowerCase()
+          : _normalizer.normalize(invocation.executable).toLowerCase();
+      index++;
+      final level = profile.levelFor(
+        executable: name,
+        args: invocation.arguments,
+        category: _catalog.categoryOf(name),
+      );
+      if (strongest == null || level.index > strongest.index) {
+        strongest = level;
+        executable = name;
+      }
     }
-    if (command == 'date') {
-      return tokens.any((token) => token == '-s' || token == '--set');
-    }
-    if (command == 'hostname') return tokens.length > 1;
-    if (command == 'printf') return tokens.contains('-v');
-    return false;
+    final risk = strongest ?? CommandRisk.ask;
+    final reason = switch (risk) {
+      CommandRisk.auto => 'read-only command',
+      CommandRisk.ask => 'command risk requires approval: $executable',
+      CommandRisk.deny => 'command risk is set to deny: $executable',
+    };
+    return CommandClassification(risk, reason);
   }
 
-  static List<String> _tokens(String command) => command
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .map(_unquote)
-      .toList();
+  CommandClassification _stricter(
+    CommandClassification shield,
+    CommandClassification profile,
+  ) => profile.risk.index > shield.risk.index ? profile : shield;
 
-  static String _unquote(String token) => token.replaceAll(RegExp('["\']'), '');
+  CommandClassification _fromShield(
+    CommandAnalysis analysis,
+    CommandResult verdict,
+  ) => CommandClassification(switch (verdict.decision) {
+    CommandDecision.allow => CommandRisk.auto,
+    CommandDecision.review => CommandRisk.ask,
+    CommandDecision.deny => CommandRisk.deny,
+  }, _reason(verdict, analysis));
 
-  static String _basename(String token) {
-    final index = token.lastIndexOf('/');
-    return index == -1 ? token : charFrom(token, index + 1);
+  /// Текст `eval`, `sh -c` и апплета busybox, который надо разобрать отдельно.
+  ///
+  /// Детектор разрушения не смотрит сквозь `busybox`, а `eval` не объявлен
+  /// обёрткой. Без повторного разбора `busybox rm -rf /` и `eval sudo ls`
+  /// были бы лишь «запуском кода» и в режиме авто-подтверждения выполнились.
+  List<String> _inlinePayloads(CommandAnalysis analysis) {
+    final payloads = <String>[];
+    final normalized = analysis.normalizedExecutables;
+    var index = 0;
+    for (final invocation in analysis.invocations) {
+      if (invocation.executable.isEmpty) continue;
+      final executable = index < normalized.length
+          ? normalized[index].toLowerCase()
+          : _normalizer.normalize(invocation.executable).toLowerCase();
+      index++;
+      if (executable == 'eval') {
+        if (invocation.arguments.isNotEmpty) {
+          payloads.add(invocation.arguments.join(' '));
+        }
+      } else if (_shells.contains(executable)) {
+        final script = _argumentAfter(invocation.arguments, const {
+          '-c',
+          '--command',
+        });
+        if (script != null && script.isNotEmpty) payloads.add(script);
+      } else if (_applets.contains(executable) &&
+          invocation.arguments.isNotEmpty) {
+        payloads.add(invocation.arguments.join(' '));
+      }
+    }
+    return payloads;
+  }
+
+  String? _argumentAfter(List<String> arguments, Set<String> flags) {
+    for (var i = 0; i < arguments.length - 1; i++) {
+      if (flags.contains(arguments[i])) return arguments[i + 1];
+    }
+    return null;
+  }
+
+  String _reason(CommandResult verdict, CommandAnalysis analysis) {
+    if (verdict.decision == CommandDecision.allow) return 'read-only command';
+    for (final finding in verdict.findings) {
+      if (finding.code == 'agent-escalation') {
+        return 'privilege escalation is not allowed';
+      }
+    }
+    if (verdict.decision == CommandDecision.deny) {
+      for (final finding in analysis.findings) {
+        if (finding.level == SecurityLevel.critical) return finding.message;
+      }
+      for (final finding in verdict.findings) {
+        if (finding.code == 'denylist') return finding.message;
+      }
+    }
+    for (final finding in verdict.findings) {
+      if (finding.code == 'agent-parse' ||
+          finding.code == 'agent-shell-state' ||
+          finding.code == 'agent-operator') {
+        return finding.message;
+      }
+    }
+    for (final finding in analysis.findings) {
+      if (finding.level.isAtLeast(SecurityLevel.mediumRisk)) {
+        return finding.message;
+      }
+    }
+    for (final finding in verdict.findings) {
+      if (finding.code == 'agent-effect') return finding.message;
+    }
+    if (verdict.findings.isNotEmpty) return verdict.findings.first.message;
+    return verdict.decision == CommandDecision.deny
+        ? 'denied by command policy'
+        : 'needs approval';
   }
 }

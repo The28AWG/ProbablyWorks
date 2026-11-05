@@ -655,7 +655,7 @@
   "@settingsDenylist": {
     "description": "Settings section title: commands that are refused."
   },
-  "settingsDenylistHint": "One regular expression per line. A command that matches is refused without asking. This is a safety net, not a security boundary.",
+  "settingsDenylistHint": "One regular expression per line. A matching command is refused without asking. Privilege escalation and critical commands are blocked by analysis even when they are not listed here.",
   "@settingsDenylistHint": {
     "description": "Hint under the denylist title: how patterns work and their limits."
   },
@@ -1439,7 +1439,7 @@
   "@settingsGroupSafety": {
     "description": "Settings group: execution policy and denylist."
   },
-  "settingsGroupSafetyHint": "Default policy for new chats and commands that are always denied.",
+  "settingsGroupSafetyHint": "Default policy, command risk levels, and commands that are always denied.",
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
   },
@@ -1663,5 +1663,186 @@
         "example": "done"
       }
     }
-  }
+  },
+  "securityProfileTitle": "Command levels",
+  "@securityProfileTitle": {
+    "description": "Settings section: risk levels for command categories, commands, and arguments."
+  },
+  "securityProfileHint": "A category sets the level for its commands. A command can replace the category, and an argument can replace the command. The agent uses the stricter of this level and the analysis.",
+  "@securityProfileHint": {
+    "description": "Explanation of how category, command, and argument risk levels combine."
+  },
+  "securityFloorTitle": "Always enforced",
+  "@securityFloorTitle": {
+    "description": "Title of the note listing command rules the settings cannot loosen."
+  },
+  "securityFloorMessage": "Privilege escalation and critical commands stay denied. A broken command, a pipe, a redirect, or a shell assignment still needs approval.",
+  "@securityFloorMessage": {
+    "description": "Note that escalation, critical commands, and shell syntax stay at least as strict as before."
+  },
+  "securityPreviewHint": "Try a command",
+  "@securityPreviewHint": {
+    "description": "Hint of the field that shows the risk level of a sample command."
+  },
+  "securityPreviewEmpty": "Type a command to see the level the agent will use.",
+  "@securityPreviewEmpty": {
+    "description": "Placeholder result before the user types a sample command."
+  },
+  "securitySearchHint": "Search commands",
+  "@securitySearchHint": {
+    "description": "Hint of the search field in the command level catalog."
+  },
+  "securityFilterAll": "All",
+  "@securityFilterAll": {
+    "description": "Filter chip that shows every command category."
+  },
+  "securityOwnLevels": "{count} with their own level",
+  "@securityOwnLevels": {
+    "description": "Count of commands in a category whose level is not the category level.",
+    "placeholders": {
+      "count": {"type": "int", "example": "4"}
+    }
+  },
+  "securityCommandCount": "{count} commands",
+  "@securityCommandCount": {
+    "description": "How many commands a category contains.",
+    "placeholders": {
+      "count": {"type": "int", "example": "12"}
+    }
+  },
+  "securityRestoreCategory": "Restore defaults",
+  "@securityRestoreCategory": {
+    "description": "Button that returns one category, its commands, and its arguments to the built-in levels."
+  },
+  "securityResetAll": "Reset",
+  "@securityResetAll": {
+    "description": "Button that returns every command level to the built-in profile."
+  },
+  "securityResetAllTitle": "Reset command levels?",
+  "@securityResetAllTitle": {
+    "description": "Title of the confirmation before resetting command levels."
+  },
+  "securityResetAllMessage": "Categories, commands, and arguments return to the built-in levels.",
+  "@securityResetAllMessage": {
+    "description": "Body of the confirmation before resetting command levels."
+  },
+  "securityAddCommand": "Add command",
+  "@securityAddCommand": {
+    "description": "Button that adds a command the catalog does not know."
+  },
+  "securityAddCommandTitle": "Command name",
+  "@securityAddCommandTitle": {
+    "description": "Title of the dialog that asks for a command name."
+  },
+  "securityAddCommandHint": "Name without a path, for example rsync",
+  "@securityAddCommandHint": {
+    "description": "Hint of the command name field."
+  },
+  "securityCommandInvalid": "Use a command name: letters, digits, and . _ + -",
+  "@securityCommandInvalid": {
+    "description": "Error when the command name contains a path or spaces."
+  },
+  "securityCustom": "Custom",
+  "@securityCustom": {
+    "description": "Section of commands the user added and the catalog does not know."
+  },
+  "securityArguments": "Arguments",
+  "@securityArguments": {
+    "description": "Heading of the argument rules of one command."
+  },
+  "securityAddArgument": "Add argument",
+  "@securityAddArgument": {
+    "description": "Button that adds a risk level for one argument of a command."
+  },
+  "securityArgumentTitle": "Argument of {command}",
+  "@securityArgumentTitle": {
+    "description": "Title of the dialog that adds an argument rule. The command name is not translated.",
+    "placeholders": {
+      "command": {"type": "String", "example": "git"}
+    }
+  },
+  "securityArgumentFlag": "Flag",
+  "@securityArgumentFlag": {
+    "description": "Argument match: a flag such as -o or --force."
+  },
+  "securityArgumentSubcommand": "Subcommand",
+  "@securityArgumentSubcommand": {
+    "description": "Argument match: the first word that is not a flag, such as git status."
+  },
+  "securityArgumentAny": "Any argument",
+  "@securityArgumentAny": {
+    "description": "Argument match: the command has at least one argument."
+  },
+  "securityArgumentFlagHint": "Matches -o, -oFILE and --output=value.",
+  "@securityArgumentFlagHint": {
+    "description": "Explanation of a flag argument rule."
+  },
+  "securityArgumentSubcommandHint": "Matches the first word that is not a flag.",
+  "@securityArgumentSubcommandHint": {
+    "description": "Explanation of a subcommand argument rule."
+  },
+  "securityArgumentAnyHint": "Matches when the command has any argument.",
+  "@securityArgumentAnyHint": {
+    "description": "Explanation of a rule that matches any argument."
+  },
+  "securityArgumentToken": "Flag or subcommand",
+  "@securityArgumentToken": {
+    "description": "Hint of the field for the flag or subcommand text."
+  },
+  "securityNoMatches": "No commands match",
+  "@securityNoMatches": {
+    "description": "Empty state title when the command search finds nothing."
+  },
+  "securityNoMatchesHint": "Try another name, or add a command that is not in the catalog.",
+  "@securityNoMatchesHint": {
+    "description": "Empty state explanation when the command search finds nothing."
+  },
+  "securityRiskAuto": "Auto",
+  "@securityRiskAuto": {
+    "description": "Risk level: the command may run without asking."
+  },
+  "securityRiskAsk": "Ask",
+  "@securityRiskAsk": {
+    "description": "Risk level: the command needs approval in Ask mode."
+  },
+  "securityRiskDeny": "Deny",
+  "@securityRiskDeny": {
+    "description": "Risk level: the command is refused."
+  },
+  "securityCatVersionControl": "Version control",
+  "@securityCatVersionControl": {"description": "Command category: git and other version-control tools."},
+  "securityCatFilesystem": "Files",
+  "@securityCatFilesystem": {"description": "Command category: filesystem tools such as ls, cp, and rm."},
+  "securityCatArchive": "Archives",
+  "@securityCatArchive": {"description": "Command category: archive tools such as tar."},
+  "securityCatCompression": "Compression",
+  "@securityCatCompression": {"description": "Command category: compressors such as gzip."},
+  "securityCatHash": "Checksums",
+  "@securityCatHash": {"description": "Command category: checksum tools such as sha256sum."},
+  "securityCatCrypto": "Encryption",
+  "@securityCatCrypto": {"description": "Command category: encryption and signing tools."},
+  "securityCatDatabase": "Databases",
+  "@securityCatDatabase": {"description": "Command category: database clients."},
+  "securityCatEditor": "Editors",
+  "@securityCatEditor": {"description": "Command category: text editors."},
+  "securityCatPackageManager": "Packages",
+  "@securityCatPackageManager": {"description": "Command category: package managers."},
+  "securityCatContainer": "Containers",
+  "@securityCatContainer": {"description": "Command category: container tools."},
+  "securityCatInfrastructure": "Infrastructure",
+  "@securityCatInfrastructure": {"description": "Command category: infrastructure tools."},
+  "securityCatNetwork": "Network",
+  "@securityCatNetwork": {"description": "Command category: network clients."},
+  "securityCatShell": "Shell",
+  "@securityCatShell": {"description": "Command category: shells and wrappers."},
+  "securityCatInterpreter": "Interpreters",
+  "@securityCatInterpreter": {"description": "Command category: language interpreters and build tools."},
+  "securityCatProcess": "Processes",
+  "@securityCatProcess": {"description": "Command category: process tools such as ps and kill."},
+  "securityCatSystem": "System",
+  "@securityCatSystem": {"description": "Command category: system configuration tools."},
+  "securityCatEnvironment": "Environment",
+  "@securityCatEnvironment": {"description": "Command category: environment-variable tools."},
+  "securityCatOther": "Other",
+  "@securityCatOther": {"description": "Command category: commands that do not fit another category."}
 }

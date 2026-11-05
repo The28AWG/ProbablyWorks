@@ -131,6 +131,14 @@ abstract final class AppTheme {
           textStyle: text.labelLarge,
         ),
       ),
+      // Обводка сегментов — outlineVariant, как у остальных неактивных границ.
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          side: WidgetStatePropertyAll(
+            BorderSide(color: scheme.outlineVariant),
+          ),
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(0, 40),
