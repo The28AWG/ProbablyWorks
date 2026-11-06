@@ -7,10 +7,15 @@ import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:probably_works/providers/ai/text_tool_call_parser.dart';
 import 'package:probably_works/providers/ai/think_tag_parser.dart';
 
 /// Адаптер OpenRouter к порту [LlmProvider]. Ключ читается при каждом вызове,
 /// поэтому смена ключа в Settings действует сразу.
+///
+/// Если провайдер модели не разобрал tool call, OpenRouter оставляет разметку
+/// в `content`. Её забирает [TextToolCallParser] и кладёт в [LlmCompleted.toolCalls].
+/// Рассуждения не разбираются: вызов из `<think>` исполнять нельзя.
 class OpenRouterLlmProvider implements LlmProvider {
   OpenRouterLlmProvider({required this._apiKey, this.baseUrl});
 
@@ -37,8 +42,19 @@ class OpenRouterLlmProvider implements LlmProvider {
     final client = await _client();
     final accumulated = <int, _PartialToolCall>{};
     final thinkTags = ThinkTagParser();
+    final textCalls = request.tools.isEmpty
+        ? null
+        : TextToolCallParser(request.tools);
     String? finishReason;
     LlmUsage? usage;
+
+    List<LlmEvent> show(LlmEvent event) {
+      final parser = textCalls;
+      if (parser == null || event is! LlmTextDelta) return [event];
+      // List инвариантен: куски текста нельзя вернуть как List<LlmEvent> напрямую.
+      return [for (final piece in parser.add(event.text)) piece];
+    }
+
     try {
       await for (final response in client.chat.sendStream(
         body: _toRequest(request),
@@ -60,7 +76,9 @@ class OpenRouterLlmProvider implements LlmProvider {
           final text = delta.content;
           if (text != null && text.isNotEmpty) {
             for (final event in thinkTags.add(text)) {
-              yield event;
+              for (final piece in show(event)) {
+                yield piece;
+              }
             }
           }
           for (final call in delta.toolCalls ?? const <ChatStreamToolCall>[]) {
@@ -91,9 +109,16 @@ class OpenRouterLlmProvider implements LlmProvider {
     }
 
     for (final event in thinkTags.flush()) {
-      yield event;
+      for (final piece in show(event)) {
+        yield piece;
+      }
     }
-    final calls = [
+    if (textCalls != null) {
+      for (final piece in textCalls.flush()) {
+        yield piece;
+      }
+    }
+    final structured = [
       for (final index in accumulated.keys.toList()..sort())
         LlmToolCall(
           id: accumulated[index]!.id ?? 'call_$index',
@@ -101,6 +126,7 @@ class OpenRouterLlmProvider implements LlmProvider {
           arguments: accumulated[index]!.arguments.toString(),
         ),
     ];
+    final calls = mergeToolCalls(structured, textCalls?.calls ?? const []);
     yield LlmCompleted(
       finishReason: finishReason,
       toolCalls: calls,

@@ -112,7 +112,7 @@ lib/
   core/       # база (drift), настройки, хосты, секреты, логи, утилиты
   agent/      # ядро агента: цикл, контекст, инструменты, политика, exec, состояние
   host/       # исполнение команд: local, SSH и адаптер виртуального хоста
-  providers/  # порт LLM и адаптер OpenRouter
+  providers/  # порт LLM и адаптер OpenRouter (структурные и текстовые tool call)
   features/   # экраны и блоки: chat, chats, hosts, settings, onboarding, workspace, models
   l10n/       # ARB и сгенерированные строки
 ```
