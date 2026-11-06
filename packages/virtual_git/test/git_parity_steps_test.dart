@@ -58,4 +58,30 @@ void main() {
     await session.both(['-C', 'dst', 'show-ref']);
     expect(session.realRoot.existsSync(), isTrue);
   });
+
+  test('backfill и maintenance run совпадают с git по коду и выводу', () async {
+    final session = GitParitySession();
+    await session.start();
+    addTearDown(session.close);
+
+    await session.both(['init', '-b', 'main']);
+    await session.write('a.txt', 'a\n');
+    await session.both(['add', 'a.txt']);
+    await session.both(['commit', '-m', 'first']);
+    // Нет promisor-частичного клона: обе стороны завершаются без вывода.
+    await session.both(['backfill']);
+    await session.both(['backfill', '--min-batch-size=1']);
+    // Как у git: `--sparse` имеет смысл после `sparse-checkout init`.
+    await session.both(['sparse-checkout', 'init']);
+    await session.both(['backfill', '--sparse']);
+    // Только no-op или локальная работа без планировщика ОС (см. docs/command_notes.md).
+    await session.both([
+      'maintenance',
+      'run',
+      '--task=gc',
+      '--auto',
+      '--quiet',
+    ]);
+    expect(session.realRoot.existsSync(), isTrue);
+  });
 }

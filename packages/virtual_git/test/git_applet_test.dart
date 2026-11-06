@@ -55,6 +55,17 @@ void main() {
     expect(result.stdout, contains('/bin/git'));
     expect(result.stdout, contains('ok'));
   });
+
+  test('backfill, maintenance и scalar разбирают опции git 2.53', () async {
+    final r = await _git(
+      'git init -b main && '
+      'git backfill --min-batch-size=10 --sparse && '
+      'git maintenance run --task=gc --auto --quiet && '
+      'git scalar version',
+    );
+    expect(r.exitCode, 0, reason: r.stderr);
+    expect(r.stdout, contains('scalar 0.1.0'));
+  });
 }
 
 final class _Outcome {

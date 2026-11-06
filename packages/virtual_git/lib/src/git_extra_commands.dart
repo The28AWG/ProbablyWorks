@@ -17,8 +17,73 @@ import 'package:virtual_git/src/git_object.dart';
 import 'package:virtual_git/src/git_object_id.dart';
 import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_reference.dart';
+import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
 import 'package:virtual_host/virtual_host.dart';
+
+/// Разбирает префикс `scalar` до имени подкоманды: только `-C` и `-c`.
+///
+/// Остальные флаги относятся к подкоманде. Возвращает [GitGlobals] с [GitGlobals.args]
+/// — хвост после глобальных опций. Неизвестный `--флаг` даёт код 129 через [GitUsage].
+GitGlobals parseScalarGlobals(
+  List<String> args, {
+  required String cwd,
+  required String Function(String cwd, String path) resolve,
+}) {
+  var current = cwd;
+  final config = <({String key, String value})>[];
+  for (var index = 0; index < args.length; index++) {
+    final arg = args[index];
+    if (arg == '--') {
+      return GitGlobals(
+        cwd: current,
+        bare: false,
+        version: false,
+        help: false,
+        config: config,
+        args: args.sublist(index + 1),
+      );
+    }
+    if (!arg.startsWith('-') || arg == '-') {
+      return GitGlobals(
+        cwd: current,
+        bare: false,
+        version: false,
+        help: false,
+        config: config,
+        args: args.sublist(index),
+      );
+    }
+    if (arg == '-C' || arg.startsWith('-C')) {
+      final inline = arg == '-C' ? null : arg.substring(2);
+      final path = inline ?? args[++index];
+      current = resolve(current, path);
+      continue;
+    }
+    if (arg == '-c' || arg.startsWith('-c')) {
+      final inline = arg == '-c' ? null : arg.substring(2);
+      final raw = inline ?? args[++index];
+      final eq = raw.indexOf('=');
+      if (eq <= 0) {
+        throw GitUsage('error: key does not contain a section: $raw\n');
+      }
+      config.add((key: raw.substring(0, eq), value: raw.substring(eq + 1)));
+      continue;
+    }
+    if (arg.startsWith('--')) {
+      throw GitUsage("error: unknown option `${arg.substring(2)}'\n");
+    }
+    throw GitUsage("error: unknown switch `${arg.substring(1)}'\n");
+  }
+  return GitGlobals(
+    cwd: current,
+    bare: false,
+    version: false,
+    help: false,
+    config: config,
+    args: const [],
+  );
+}
 
 /// Возвращает код команды или null, если это не дополнительная команда.
 Future<int?> gitExtraCommand(
@@ -70,6 +135,9 @@ Future<int?> gitExtraCommand(
   'range-diff' => _rangeDiff(io, args),
   'check-attr' => _checkAttr(io, args),
   'check-mailmap' => _checkMailmap(io, args),
+  'backfill' => _backfill(io, args),
+  'maintenance' => _maintenance(io, args),
+  'scalar' => _scalar(io, args, config),
   _ => Future<int?>.value(),
 };
 
@@ -1308,4 +1376,226 @@ Future<int> _checkMailmap(AppletIo io, List<String> args) async {
   }
   io.stdout.writeText('$contact\n');
   return 0;
+}
+
+String _joinCwd(AppletIo io, String path) => path.startsWith('/')
+    ? VfsPath.normalize(path)
+    : VfsPath.normalize('${io.cwd}/$path');
+
+Map<String, String> _httpExtraHeaders(AppletIo io) {
+  final line = io.env['GIT_HTTP_EXTRA_HEADER'];
+  if (line == null || line.isEmpty) return const {};
+  final separator = line.indexOf(':');
+  if (separator <= 0) return const {};
+  final name = line.substring(0, separator).trim();
+  final value = line.substring(separator + 1).trim();
+  if (name.isEmpty) return const {};
+  return {name: value};
+}
+
+Future<int> _backfill(AppletIo io, List<String> args) async {
+  final parsed = parseGitArgs(args, const [
+    GitOption('min-batch-size', valued: true),
+    GitOption('sparse'),
+  ], usage: 'usage: git backfill');
+  final batchRaw = parsed.value('min-batch-size');
+  final batch = batchRaw == null ? 1 : int.tryParse(batchRaw);
+  if (batchRaw != null && (batch == null || batch < 1)) {
+    throw const GitUsage('fatal: invalid --min-batch-size\n', exitCode: 128);
+  }
+  final repo = await _repo(io);
+  await repo.backfillMissingObjects(
+    minBatchSize: batch ?? 1,
+    restrictToSparseCheckout: parsed.has('sparse'),
+    httpHeaders: _httpExtraHeaders(io),
+  );
+  return 0;
+}
+
+Future<int> _maintenance(AppletIo io, List<String> args) async {
+  if (args.isEmpty) {
+    throw const GitUsage('usage: git maintenance <subcommand>\n');
+  }
+  final action = args.first;
+  final tail = args.sublist(1);
+  await _repo(io);
+  switch (action) {
+    case 'run':
+      parseGitArgs(tail, const [
+        GitOption('auto'),
+        GitOption('detach'),
+        GitOption('schedule', valued: true),
+        GitOption('quiet'),
+        GitOption('task', valued: true),
+      ], usage: 'usage: git maintenance run');
+      return 0;
+    case 'is-needed':
+      parseGitArgs(tail, const [
+        GitOption('auto'),
+        GitOption('task', valued: true),
+      ], usage: 'usage: git maintenance is-needed');
+      return 0;
+    case 'start':
+      parseGitArgs(tail, const [
+        GitOption('scheduler', valued: true),
+      ], usage: 'usage: git maintenance start');
+      return 0;
+    case 'stop':
+      parseGitArgs(tail, const [], usage: 'usage: git maintenance stop');
+      return 0;
+    case 'register':
+      parseGitArgs(tail, const [
+        GitOption('config-file', valued: true),
+      ], usage: 'usage: git maintenance register');
+      return 0;
+    case 'unregister':
+      parseGitArgs(tail, const [
+        GitOption('config-file', valued: true),
+      ], usage: 'usage: git maintenance unregister');
+      return 0;
+    default:
+      throw const GitUsage('usage: git maintenance <subcommand>\n');
+  }
+}
+
+Future<int> _scalar(
+  AppletIo io,
+  List<String> args,
+  List<({String key, String value})> _,
+) async {
+  final global = parseScalarGlobals(
+    args,
+    cwd: io.cwd,
+    resolve: (cwd, path) => path.startsWith('/')
+        ? VfsPath.normalize(path)
+        : VfsPath.normalize('$cwd/$path'),
+  );
+  final commandIo = io.copyWith(cwd: global.cwd);
+  if (global.args.isEmpty) {
+    io.stderr.writeText(
+      'usage: scalar [-C <directory>] [-c <key>=<value>] <command> [<options>]\n',
+    );
+    return 129;
+  }
+  final sub = global.args.first;
+  final rest = global.args.sublist(1);
+  switch (sub) {
+    case 'clone':
+      final parsed = parseGitArgs(rest, const [
+        GitOption('branch', valued: true),
+        GitOption('full-clone'),
+        GitOption('single-branch'),
+        GitOption('src', valued: true),
+        GitOption('tags'),
+        GitOption('maintenance'),
+      ], usage: 'usage: scalar clone');
+      if (parsed.operands.isEmpty || parsed.operands.length > 2) {
+        throw const GitUsage('usage: scalar clone <url> [<dir>]\n');
+      }
+      final url = parsed.operands.first;
+      final rawDir = parsed.operands.length == 2
+          ? parsed.operands[1]
+          : _cloneDirName(url);
+      final path = _joinCwd(commandIo, rawDir);
+      final branch = parsed.value('branch');
+      await GitRepository.clone(
+        url,
+        path,
+        remoteName: 'origin',
+        branchName: branch,
+        depth: null,
+        filter: parsed.has('full-clone') ? null : 'blob:none',
+        httpHeaders: _httpExtraHeaders(commandIo),
+      );
+      if (parsed.has('maintenance')) {
+        final r = await GitRepository.discover(path);
+        if (r != null) await r.runMaintenanceTask('gc');
+      }
+      return 0;
+    case 'register':
+      final parsed = parseGitArgs(rest, const [
+        GitOption('maintenance', valued: true, optional: true),
+      ], usage: 'usage: scalar register');
+      if (parsed.operands.isEmpty) {
+        throw const GitUsage('usage: scalar register <path>\n');
+      }
+      final path = _joinCwd(commandIo, parsed.operands.first);
+      await _initEmptyRepoFs(commandIo.fs, path, branch: 'main');
+      final url = parsed.operands.length > 1
+          ? parsed.operands[1]
+          : 'http://localhost/';
+      final repo = (await GitRepository.discover(path))!;
+      await repo.setRemote(GitRemote(name: 'origin', url: url));
+      return 0;
+    case 'run':
+      final parsed = parseGitArgs(rest, const [
+        GitOption('all'),
+        GitOption('maintenance', valued: true),
+      ], usage: 'usage: scalar run');
+      if (parsed.has('maintenance')) {
+        final enlistment = parsed.operands.isEmpty
+            ? commandIo.cwd
+            : _joinCwd(commandIo, parsed.operands.first);
+        final r = await GitRepository.discover(enlistment);
+        if (r != null) {
+          await r.runMaintenanceTask(parsed.value('maintenance') ?? 'gc');
+        }
+      }
+      return 0;
+    case 'reconfigure':
+      final parsed = parseGitArgs(rest, const [
+        GitOption('all', short: 'a'),
+        GitOption('maintenance', valued: true, optional: true),
+      ], usage: 'usage: scalar reconfigure');
+      if (!parsed.has('all') && parsed.operands.isEmpty) {
+        throw const GitUsage('usage: scalar reconfigure <enlistment>\n');
+      }
+      return 0;
+    case 'list' || 'unregister' || 'delete' || 'diagnose' || 'help':
+      parseGitArgs(rest, const [], usage: 'usage: scalar $sub');
+      return 0;
+    case 'version':
+      parseGitArgs(rest, const [], usage: 'usage: scalar version');
+      io.stdout.writeText('scalar 0.1.0\n');
+      return 0;
+    default:
+      io.stderr.writeText('scalar: unknown command $sub\n');
+      return 129;
+  }
+}
+
+String _cloneDirName(String url) {
+  var trimmed = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+  final slash = trimmed.lastIndexOf('/');
+  final colon = trimmed.lastIndexOf(':');
+  final cut = slash > colon ? slash : colon;
+  final name = cut < 0 ? trimmed : trimmed.substring(cut + 1);
+  return name.endsWith('.git') ? name.substring(0, name.length - 4) : name;
+}
+
+Future<void> _initEmptyRepoFs(
+  VirtualFs fs,
+  String workTreePath, {
+  required String branch,
+}) async {
+  final gitDir = '$workTreePath/.git';
+  await fs.mkdir('$gitDir/objects', recursive: true);
+  await fs.mkdir('$gitDir/refs', recursive: true);
+  await fs.mkdir('$gitDir/info', recursive: true);
+  await fs.writeBytes(
+    '$gitDir/HEAD',
+    Uint8List.fromList(utf8.encode('ref: refs/heads/$branch\n')),
+  );
+  await fs.writeBytes(
+    '$gitDir/config',
+    Uint8List.fromList(
+      utf8.encode(
+        '[core]\n'
+        '\trepositoryformatversion = 0\n'
+        '\tfilemode = true\n'
+        '\tbare = false\n'
+        '\tlogallrefupdates = true\n',
+      ),
+    ),
+  );
 }

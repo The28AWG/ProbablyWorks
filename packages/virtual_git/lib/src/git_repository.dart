@@ -1055,6 +1055,114 @@ final class GitRepository {
     );
   }
 
+  /// Дозагружает недостающие объекты для частичного клона (promisor) с удалённого
+  /// `origin`, батчами по [minBatchSize]. Без маркера `info/promisor-filter` —
+  /// завершает успешно и ничего не запрашивает.
+  ///
+  /// При [restrictToSparseCheckout] обход деревьев ограничен путями из
+  /// `info/sparse-checkout`, как у `git backfill --sparse`.
+  Future<int> backfillMissingObjects({
+    int minBatchSize = 1,
+    bool restrictToSparseCheckout = false,
+    String remoteName = 'origin',
+    Map<String, String> httpHeaders = const {},
+    GitCommitCodec commitCodec = const GitCommitCodec(),
+    GitTreeCodec? treeCodec,
+  }) async {
+    final marker = File(p.join(gitDirectoryPath, 'info', 'promisor-filter'));
+    if (!await marker.exists()) {
+      return 0;
+    }
+    final filterRaw = await marker.readAsString();
+    final filter = filterRaw.split('\n').first.trim();
+    if (filter.isEmpty) return 0;
+
+    final configuredRemote = await remote(remoteName);
+    if (configuredRemote == null) {
+      throw StateError('Remote is not configured: $remoteName.');
+    }
+    final transport = await _openRemoteTransport(
+      configuredRemote.url,
+      basePath: path,
+      operation: 'backfill(...)',
+      httpHeaders: {...configuredRemote.httpHeaders, ...httpHeaders},
+      sshPrivateKeyPath: configuredRemote.sshPrivateKeyPath,
+      sshPrivateKey: configuredRemote.sshPrivateKey,
+      sshPrivateKeyPassphrase: configuredRemote.sshPrivateKeyPassphrase,
+      sshPassword: configuredRemote.sshPassword,
+      sshKnownHostsPath: configuredRemote.sshKnownHostsPath,
+      sshHostKeyFingerprints: configuredRemote.sshHostKeyFingerprints,
+    );
+    final effectiveMin = minBatchSize < 1 ? 1 : minBatchSize;
+    final sparseAllows = restrictToSparseCheckout
+        ? await _loadSparseCheckoutPathMatcher()
+        : null;
+
+    var total = 0;
+    while (true) {
+      final headId = await resolveReferenceObjectId('HEAD');
+      if (headId == null) break;
+      final missing = await _collectMissingReachableObjectIds(
+        headId,
+        sourceObjectReader: transport.readObject,
+        destinationObjectReader: readObject,
+        missingSourceDescription: 'Remote',
+        objectFilter: filter,
+        commitCodec: commitCodec,
+        treeCodec: treeCodec,
+        sparseBlobAllows: sparseAllows,
+      );
+      if (missing.isEmpty) break;
+      final chunk = missing.length <= effectiveMin
+          ? missing
+          : missing.sublist(0, effectiveMin);
+      await _importPackBytes(await transport.exportPackForObjectIds(chunk));
+      total += chunk.length;
+    }
+    return total;
+  }
+
+  /// Запуск задач обслуживания: [gc] — уплотнение через [pruneUnreachable],
+  /// иначе no-op с кодом успеха (остальные задачи требуют внешнего планировщика).
+  Future<void> runMaintenanceTask(String task) async {
+    if (task == 'gc') {
+      await pruneUnreachable();
+    }
+  }
+
+  Future<bool Function(String relativePath)>
+  _loadSparseCheckoutPathMatcher() async {
+    final file = File(p.join(commonDirectoryPath, 'info', 'sparse-checkout'));
+    if (!await file.exists()) {
+      return (_) => true;
+    }
+    final lines = const LineSplitter().convert(await file.readAsString());
+    final patterns = [
+      for (final line in lines)
+        if (line.trim().isNotEmpty &&
+            !line.trim().startsWith('#') &&
+            !line.trim().startsWith('!'))
+          line.trim(),
+    ];
+    if (patterns.isEmpty) {
+      return (_) => true;
+    }
+    bool allows(String relativePath) {
+      for (final pattern in patterns) {
+        if (pattern == '*' || pattern == '/*') return true;
+        final bare = pattern.endsWith('/')
+            ? pattern.substring(0, pattern.length - 1)
+            : pattern;
+        if (relativePath == bare || relativePath.startsWith('$bare/')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    return allows;
+  }
+
   Future<GitPushResult> push(
     String remoteName, {
     Iterable<GitRefSpec>? refSpecs,
@@ -5011,6 +5119,7 @@ final class GitRepository {
       missingSourceDescription: 'Local repository',
       commitCodec: commitCodec,
       treeCodec: treeCodec,
+      sparseBlobAllows: null,
     );
     if (!dryRun && missingObjectIds.isNotEmpty) {
       await destinationRepository.importPackBytes(
@@ -5059,6 +5168,7 @@ final class GitRepository {
       shallowCommits: shallowCommits,
       commitCodec: commitCodec,
       treeCodec: treeCodec,
+      sparseBlobAllows: null,
     );
     if (!dryRun && missingObjectIds.isNotEmpty) {
       await _importPackBytes(
@@ -5078,14 +5188,18 @@ final class GitRepository {
     int? commitDepth,
     String? objectFilter,
     Set<GitObjectId>? shallowCommits,
+    bool Function(String relativePath)? sparseBlobAllows,
   }) async {
-    final queue = <GitObjectId>[rootObjectId];
+    final queue = <({GitObjectId objectId, String treePathPrefix})>[
+      (objectId: rootObjectId, treePathPrefix: ''),
+    ];
     final visited = <GitObjectId>{};
     final missingObjectIds = <GitObjectId>[];
     final generations = <GitObjectId, int>{rootObjectId: 0};
 
     while (queue.isNotEmpty) {
-      final objectId = queue.removeLast();
+      final item = queue.removeLast();
+      final objectId = item.objectId;
       if (!visited.add(objectId)) {
         continue;
       }
@@ -5106,7 +5220,7 @@ final class GitRepository {
           break;
         case GitObjectType.commit:
           final commit = commitCodec.decode(sourceObject.bytes);
-          queue.add(commit.tree);
+          queue.add((objectId: commit.tree, treePathPrefix: ''));
           final generation = generations[objectId] ?? 0;
           final cutParents =
               commitDepth != null &&
@@ -5117,7 +5231,7 @@ final class GitRepository {
           } else {
             for (final parent in commit.parents) {
               generations[parent] = generation + 1;
-              queue.add(parent);
+              queue.add((objectId: parent, treePathPrefix: ''));
             }
           }
         case GitObjectType.tree:
@@ -5126,13 +5240,24 @@ final class GitRepository {
               : GitTreeCodec(algorithm: objectId.algorithm);
           final entries = effectiveTreeCodec.decode(sourceObject.bytes);
           for (final entry in entries) {
+            final childPath = item.treePathPrefix.isEmpty
+                ? entry.utf8Name
+                : '${item.treePathPrefix}/${entry.utf8Name}';
             if (objectFilter == 'blob:none' && _treeModeIsBlob(entry.mode)) {
               continue;
             }
-            queue.add(entry.objectId);
+            if (_treeModeIsBlob(entry.mode) &&
+                sparseBlobAllows != null &&
+                !sparseBlobAllows(childPath)) {
+              continue;
+            }
+            queue.add((objectId: entry.objectId, treePathPrefix: childPath));
           }
         case GitObjectType.tag:
-          queue.add(_readTagTargetObjectId(sourceObject.bytes));
+          queue.add((
+            objectId: _readTagTargetObjectId(sourceObject.bytes),
+            treePathPrefix: '',
+          ));
       }
     }
 
