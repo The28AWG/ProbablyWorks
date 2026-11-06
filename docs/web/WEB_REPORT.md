@@ -56,7 +56,7 @@
 | Вложения | `lib/agent/attachments/attachment_loader.dart` | Читает `File` с диска. На web выбор файла даёт байты, а не путь ОС. |
 | OpenRouter | `lib/providers/ai/openrouter/openrouter_llm_provider.dart` | Библиотека `openrouter` в `lib/` `dart:io` не импортирует. Адаптер импортирует его ради `SocketException`. CORS с другого origin не проверен. |
 | Платформа в UI | `lib/core/platform/app_platform.dart` | Решений про web нет, `kIsWeb` нигде не используется. `defaultTargetPlatform` в браузере — ОС устройства, поэтому desktop-браузер получил бы локальный Host и PTY, телефонный — ветку «мобильный». |
-| Секреты | `flutter_secure_storage` 10.3.4 | На web значения в `localStorage`, ключ AES-GCM по умолчанию тоже там. |
+| Секреты | `flutter_secure_storage` 11.2.0 | На web значения в `localStorage`, ключ AES-GCM по умолчанию тоже там. |
 | Файлы в UI | `file_selector` 1.1.x, `desktop_drop` 0.8.4, импорты в `chat_view.dart` и диалоге хоста | `file_selector` web поддерживает. `desktop_drop` для браузера не проверен, импорт безусловный. |
 | Уведомления | `flutter_local_notifications` 22.3.1 | Есть web-пакет. Нужны разрешение браузера и проверка фоновой вкладки. |
 
@@ -196,5 +196,5 @@ WebVM, v86 и аналоги. Раньше это был единственны�
 - `dartssh2` 4.1.0: https://pub.dev/packages/dartssh2
 - `drift` 2.35.3: https://drift.simonbinder.eu
 - `sqlite3` 3.8.0: https://pub.dev/packages/sqlite3
-- `flutter_secure_storage` 10.3.4, `path_provider` 2.1.6, `desktop_drop` 0.8.4, `flutter_local_notifications` 22.3.1 — версии из `pubspec.lock`.
+- `flutter_secure_storage` 11.2.0, `path_provider` 2.1.6, `desktop_drop` 0.8.4, `flutter_local_notifications` 22.3.1 — версии из `pubspec.lock`.
 - Библиотека `openrouter`: в каталоге `lib/` импортов `dart:io` нет; `dart:io` остаётся в `tool/`, `example/` и тестах пакета.
