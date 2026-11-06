@@ -4,6 +4,8 @@
 
 Сверка с системным git на машине (код выхода и stdout/stderr) для `backfill` и `git maintenance run` — в `test/git_parity_steps_test.dart`. Остальные подкоманды `maintenance` (регистрация в планировщике, lock конфига) или `git scalar` (у дистрибутива часто нет встроенной команды у `git`) с эталоном один в один не гоняются.
 
+Сценарий `format-patch` → `git am` для одного коммита — там же (`git am из format-patch`).
+
 ## Паритет опций и политика
 
 Скрипт `tool/parity_report.dart` проверяет только разбор флагов (нет ли `error: unknown option`), а не совпадение текста с git.

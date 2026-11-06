@@ -1044,11 +1044,20 @@ final class GitApplet implements Applet {
       }
       return 0;
     }
-    await repo.reset(
+    final result = await repo.reset(
       parsed.operands.isEmpty ? 'HEAD' : parsed.operands.single,
       mode: mode,
       reflogActor: _committer(io, config),
     );
+    if (mode == GitResetMode.hard) {
+      final commitObject = await repo.show(result.objectId.hex);
+      if (commitObject != null) {
+        final commit = const GitCommitCodec().decode(commitObject.bytes);
+        io.stdout.writeText(
+          'HEAD is now at ${_abbr(result.objectId.hex)} ${_subject(commit.message)}\n',
+        );
+      }
+    }
     return 0;
   }
 

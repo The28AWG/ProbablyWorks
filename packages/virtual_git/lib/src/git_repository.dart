@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:virtual_git/src/git_apply.dart';
+import 'package:virtual_git/src/git_apply_whitespace.dart';
 import 'package:virtual_git/src/git_branch.dart';
 import 'package:virtual_git/src/git_branch_tracking.dart';
 import 'package:virtual_git/src/git_checkout.dart';
@@ -2058,6 +2059,23 @@ final class GitRepository {
       final rawCount = normalized.substring(numberStart, cursor);
       switch (operator) {
         case '^':
+          if (cursor < normalized.length && normalized[cursor] == '{') {
+            final endBrace = normalized.indexOf('}', cursor);
+            if (endBrace < 0) {
+              throw FormatException(
+                'Unclosed brace in revision suffix',
+                revision,
+              );
+            }
+            final braceName = normalized.substring(cursor + 1, endBrace);
+            cursor = endBrace + 1;
+            objectId = await _revParseBraceSuffix(
+              objectId,
+              braceName,
+              codec: commitCodec,
+            );
+            continue;
+          }
           final parentNumber = rawCount.isEmpty ? 1 : int.parse(rawCount);
           if (parentNumber == 0) {
             objectId = await _peelTagObjectId(objectId);
@@ -2954,6 +2972,7 @@ final class GitRepository {
       await _buildDiffEntriesFromTreeSnapshots(baseEntries, stashEntries),
       threeWay: true,
       recordConflictsInIndex: true,
+      whitespaceMode: GitApplyWhitespaceMode.exact,
     );
     if (!applyResult.success) {
       return GitStashApplyResult(
@@ -3193,6 +3212,12 @@ final class GitRepository {
     bool check = false,
     bool threeWay = false,
     bool recordConflictsInIndex = false,
+    int stripPathSegments = 0,
+    GitApplyWhitespaceMode whitespaceMode = GitApplyWhitespaceMode.exact,
+    Set<String>? includePaths,
+    Set<String>? excludePaths,
+    int applyContextLines = 3,
+    String? applyDirectoryPrefix,
   }) async {
     if (bare) {
       throw StateError('Bare repositories do not have a working tree.');
@@ -3204,8 +3229,15 @@ final class GitRepository {
       );
     }
 
-    final orderedEntries = entries.toList()
+    var orderedEntries = entries.toList()
       ..sort((left, right) => left.path.compareTo(right.path));
+    orderedEntries = _filterApplyEntries(
+      orderedEntries,
+      stripPathSegments: stripPathSegments,
+      includePaths: includePaths,
+      excludePaths: excludePaths,
+      applyDirectoryPrefix: applyDirectoryPrefix,
+    );
     if (orderedEntries.isEmpty) {
       return GitApplyResult(files: const [], check: check);
     }
@@ -3213,7 +3245,12 @@ final class GitRepository {
     final fileResults = <GitApplyFileResult>[];
     final writePlans = <_GitApplyWritePlan>[];
     for (final entry in orderedEntries) {
-      final plan = await _planApplyEntry(entry, threeWay: threeWay);
+      final plan = await _planApplyEntry(
+        entry,
+        threeWay: threeWay,
+        whitespaceMode: whitespaceMode,
+        applyContextLines: applyContextLines,
+      );
       fileResults.add(plan.result);
       if (plan.writePlan case final writePlan?) {
         writePlans.add(writePlan);
@@ -3261,12 +3298,95 @@ final class GitRepository {
     bool threeWay = false,
     bool recordConflictsInIndex = false,
     GitDiffCodec codec = const GitDiffCodec(),
+    int stripPathSegments = 0,
+    GitApplyWhitespaceMode whitespaceMode = GitApplyWhitespaceMode.exact,
+    Set<String>? includePaths,
+    Set<String>? excludePaths,
+    int applyContextLines = 3,
+    String? applyDirectoryPrefix,
   }) => apply(
     codec.decode(patchText),
     check: check,
     threeWay: threeWay,
     recordConflictsInIndex: recordConflictsInIndex,
+    stripPathSegments: stripPathSegments,
+    whitespaceMode: whitespaceMode,
+    includePaths: includePaths,
+    excludePaths: excludePaths,
+    applyContextLines: applyContextLines,
+    applyDirectoryPrefix: applyDirectoryPrefix,
   );
+
+  /// Оставляет в патче только записи с путями после `-p` и фильтров include/exclude.
+  static List<GitDiffEntry> _filterApplyEntries(
+    List<GitDiffEntry> entries, {
+    required int stripPathSegments,
+    Set<String>? includePaths,
+    Set<String>? excludePaths,
+    String? applyDirectoryPrefix,
+  }) {
+    String stripLeading(String path, int count) {
+      var result = path;
+      for (var i = 0; i < count; i++) {
+        final slash = result.indexOf('/');
+        if (slash < 0) return '';
+        result = result.substring(slash + 1);
+      }
+      return result;
+    }
+
+    final out = <GitDiffEntry>[];
+    for (final entry in entries) {
+      final stripped = stripLeading(entry.path, stripPathSegments);
+      if (stripped.isEmpty) continue;
+      final prefixed =
+          applyDirectoryPrefix == null || applyDirectoryPrefix.isEmpty
+          ? stripped
+          : p.join(applyDirectoryPrefix, stripped);
+      final normalizedPath = p.normalize(prefixed);
+      if (includePaths != null &&
+          includePaths.isNotEmpty &&
+          !_pathMatchesApplyFilter(stripped, includePaths)) {
+        continue;
+      }
+      if (excludePaths != null &&
+          excludePaths.isNotEmpty &&
+          _pathMatchesApplyFilter(stripped, excludePaths)) {
+        continue;
+      }
+      if (stripPathSegments == 0 &&
+          includePaths == null &&
+          excludePaths == null &&
+          applyDirectoryPrefix == null) {
+        out.add(entry);
+        continue;
+      }
+      out.add(
+        GitDiffEntry(
+          path: normalizedPath,
+          changeType: entry.changeType,
+          oldMode: entry.oldMode,
+          newMode: entry.newMode,
+          oldObjectId: entry.oldObjectId,
+          newObjectId: entry.newObjectId,
+          oldBytes: entry.oldBytes,
+          newBytes: entry.newBytes,
+          binary: entry.binary,
+          hunks: entry.hunks,
+          conflict: entry.conflict,
+        ),
+      );
+    }
+    return out;
+  }
+
+  static bool _pathMatchesApplyFilter(String path, Set<String> patterns) {
+    for (final pattern in patterns) {
+      if (pattern == path) return true;
+      if (pattern.endsWith('/') && path.startsWith(pattern)) return true;
+    }
+    return false;
+  }
 
   Future<GitApplyAbortResult> applyAbort() async {
     if (bare) {
@@ -4217,6 +4337,33 @@ final class GitRepository {
       return 'refs/stash';
     }
     return trimmed.startsWith('refs/') ? trimmed : 'refs/heads/$trimmed';
+  }
+
+  /// Суффикс `rev^{tree}` / `rev^{commit}` после разыменования тегов.
+  Future<GitObjectId?> _revParseBraceSuffix(
+    GitObjectId objectId,
+    String suffixName, {
+    required GitCommitCodec codec,
+  }) async {
+    final peeled = await _peelTagObjectId(objectId);
+    final object = await readObject(peeled);
+    if (object == null) {
+      return null;
+    }
+    switch (suffixName) {
+      case 'tree':
+        if (object.type == GitObjectType.commit) {
+          return codec.decode(object.bytes).tree;
+        }
+        if (object.type == GitObjectType.tree) {
+          return peeled;
+        }
+        return null;
+      case 'commit':
+        return object.type == GitObjectType.commit ? peeled : null;
+      default:
+        throw FormatException('Unsupported revision suffix: ^{$suffixName}');
+    }
   }
 
   Future<GitObjectId> _peelTagObjectId(
@@ -6053,6 +6200,8 @@ final class GitRepository {
   Future<_GitApplyPlan> _planApplyEntry(
     GitDiffEntry entry, {
     required bool threeWay,
+    required GitApplyWhitespaceMode whitespaceMode,
+    required int applyContextLines,
   }) async {
     if (entry.binary) {
       return _planBinaryApplyEntry(entry);
@@ -6121,7 +6270,12 @@ final class GitRepository {
       );
     }
 
-    final patchedText = _applyDiffHunksToText(currentText, entry.hunks);
+    final patchedText = _applyDiffHunksToText(
+      currentText,
+      entry.hunks,
+      whitespaceMode: whitespaceMode,
+      applyContextLines: applyContextLines,
+    );
     if (patchedText != null) {
       return _GitApplyPlan(
         result: GitApplyFileResult(
@@ -6142,6 +6296,8 @@ final class GitRepository {
       final threeWayPlan = await _planThreeWayApplyEntry(
         entry,
         currentText: currentText,
+        whitespaceMode: whitespaceMode,
+        applyContextLines: applyContextLines,
       );
       if (threeWayPlan != null) {
         return threeWayPlan;
@@ -6295,6 +6451,8 @@ final class GitRepository {
   Future<_GitApplyPlan?> _planThreeWayApplyEntry(
     GitDiffEntry entry, {
     required String currentText,
+    required GitApplyWhitespaceMode whitespaceMode,
+    required int applyContextLines,
   }) async {
     if (entry.changeType != GitDiffChangeType.modified ||
         entry.oldObjectId == null) {
@@ -6313,7 +6471,12 @@ final class GitRepository {
       );
     }
 
-    final incomingText = _applyDiffHunksToText(baseText, entry.hunks);
+    final incomingText = _applyDiffHunksToText(
+      baseText,
+      entry.hunks,
+      whitespaceMode: whitespaceMode,
+      applyContextLines: applyContextLines,
+    );
     if (incomingText == null) {
       return _GitApplyPlan(
         result: GitApplyFileResult(
@@ -6389,8 +6552,10 @@ final class GitRepository {
 
   static String? _applyDiffHunksToText(
     String currentText,
-    List<GitDiffHunk> hunks,
-  ) {
+    List<GitDiffHunk> hunks, {
+    required GitApplyWhitespaceMode whitespaceMode,
+    required int applyContextLines,
+  }) {
     if (hunks.isEmpty) {
       return currentText;
     }
@@ -6411,18 +6576,26 @@ final class GitRepository {
       for (final line in hunk.lines) {
         switch (line.type) {
           case GitDiffLineType.context:
-            if (currentIndex >= currentLines.length ||
-                currentLines[currentIndex] != line.text) {
-              return null;
-            }
-            resultLines.add(currentLines[currentIndex]);
-            currentIndex++;
+            final match = _matchApplyLine(
+              currentLines,
+              currentIndex,
+              line.text,
+              whitespaceMode: whitespaceMode,
+              contextLimit: applyContextLines,
+            );
+            if (match == null) return null;
+            currentIndex = match;
+            resultLines.add(currentLines[currentIndex - 1]);
           case GitDiffLineType.deletion:
-            if (currentIndex >= currentLines.length ||
-                currentLines[currentIndex] != line.text) {
-              return null;
-            }
-            currentIndex++;
+            final match = _matchApplyLine(
+              currentLines,
+              currentIndex,
+              line.text,
+              whitespaceMode: whitespaceMode,
+              contextLimit: applyContextLines,
+            );
+            if (match == null) return null;
+            currentIndex = match;
           case GitDiffLineType.addition:
             resultLines.add(line.text);
         }
@@ -6431,6 +6604,30 @@ final class GitRepository {
 
     resultLines.addAll(currentLines.sublist(currentIndex));
     return resultLines.join();
+  }
+
+  /// Находит строку файла, совпадающую с строкой патча, начиная с [fromIndex].
+  /// Возвращает индекс сразу после совпавшей строки.
+  static int? _matchApplyLine(
+    List<String> lines,
+    int fromIndex,
+    String patchLine, {
+    required GitApplyWhitespaceMode whitespaceMode,
+    required int contextLimit,
+  }) {
+    if (whitespaceMode == GitApplyWhitespaceMode.exact) {
+      if (fromIndex >= lines.length || lines[fromIndex] != patchLine) {
+        return null;
+      }
+      return fromIndex + 1;
+    }
+    final maxScan = fromIndex + contextLimit;
+    for (var i = fromIndex; i < lines.length && i <= maxScan; i++) {
+      if (applyLinesEqual(lines[i], patchLine, whitespaceMode)) {
+        return i + 1;
+      }
+    }
+    return null;
   }
 
   static _GitThreeWayMergeResult _threeWayMergeTexts({
@@ -8311,7 +8508,12 @@ final class GitRepository {
 
     final incomingText = entry.changeType == GitDiffChangeType.deleted
         ? null
-        : _applyDiffHunksToText(baseText, entry.hunks);
+        : _applyDiffHunksToText(
+            baseText,
+            entry.hunks,
+            whitespaceMode: GitApplyWhitespaceMode.exact,
+            applyContextLines: 3,
+          );
     if (incomingText == null) {
       return null;
     }

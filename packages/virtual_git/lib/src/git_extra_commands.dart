@@ -7,18 +7,24 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:virtual_git/src/git_am.dart';
+import 'package:virtual_git/src/git_apply_whitespace.dart';
 import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
+import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
 import 'package:virtual_git/src/git_hash_algorithm.dart';
-import 'package:virtual_git/src/git_host_io.dart';
+import 'package:virtual_git/src/git_host_io.dart' show Directory, File;
 import 'package:virtual_git/src/git_index.dart';
+import 'package:virtual_git/src/git_log.dart';
 import 'package:virtual_git/src/git_object.dart';
 import 'package:virtual_git/src/git_object_id.dart';
 import 'package:virtual_git/src/git_object_type.dart';
+import 'package:virtual_git/src/git_path.dart' as p;
 import 'package:virtual_git/src/git_reference.dart';
 import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
+import 'package:virtual_git/src/git_reset.dart';
 import 'package:virtual_host/virtual_host.dart';
 
 /// Разбирает префикс `scalar` до имени подкоманды: только `-C` и `-c`.
@@ -176,6 +182,53 @@ GitCommitSignature _signature(
       configured('user.email') ??
       '$name@${io.profile.hostname}';
   final raw = env('GIT_AUTHOR_DATE') ?? env('GIT_COMMITTER_DATE');
+  if (raw != null) {
+    final parts = raw.split(' ');
+    final seconds = int.tryParse(parts.first);
+    if (seconds != null) {
+      return GitCommitSignature(
+        name: name,
+        email: email,
+        timestampSeconds: seconds,
+        timezoneOffset: parts.length > 1 ? parts[1] : '+0000',
+      );
+    }
+  }
+  return GitCommitSignature.fromDateTime(
+    name: name,
+    email: email,
+    timestamp: DateTime.now(),
+  );
+}
+
+GitCommitSignature _committer(
+  AppletIo io,
+  List<({String key, String value})> config,
+) {
+  String? env(String key) {
+    final value = io.env[key];
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  String? configured(String key) {
+    for (final item in config) {
+      if (item.key == key) return item.value;
+    }
+    return null;
+  }
+
+  final name =
+      env('GIT_COMMITTER_NAME') ??
+      env('GIT_AUTHOR_NAME') ??
+      configured('user.name') ??
+      io.profile.user;
+  final email =
+      env('GIT_COMMITTER_EMAIL') ??
+      env('GIT_AUTHOR_EMAIL') ??
+      configured('user.email') ??
+      '$name@${io.profile.hostname}';
+  final raw = env('GIT_COMMITTER_DATE') ?? env('GIT_AUTHOR_DATE');
   if (raw != null) {
     final parts = raw.split(' ');
     final seconds = int.tryParse(parts.first);
@@ -853,34 +906,75 @@ int _indexOf(List<int> bytes, List<int> needle) {
 }
 
 Future<int> _formatPatch(AppletIo io, List<String> args) async {
-  final parsed = parseGitArgs(args, const [
+  var maxCount = 1;
+  final filtered = <String>[];
+  for (final arg in args) {
+    final digit = RegExp(r'^-(\d+)$').firstMatch(arg);
+    if (digit != null) {
+      maxCount = int.parse(digit.group(1)!);
+      continue;
+    }
+    filtered.add(arg);
+  }
+  final parsed = parseGitArgs(filtered, const [
     GitOption('stdout'),
-  ], usage: 'usage: git format-patch <revision>');
+    GitOption('output-directory', short: 'o', valued: true),
+  ], usage: 'usage: git format-patch [<options>] [<since> | <revision-range>]');
   final repo = await _repo(io);
   final revision = parsed.operands.isEmpty ? 'HEAD' : parsed.operands.first;
-  final history = await repo.log(revision, maxCount: 1);
+  if (maxCount == 0) {
+    return 0;
+  }
+  final history = await repo.log(revision, maxCount: maxCount);
   if (history.isEmpty) return 128;
-  final entry = history.first;
-  final parent = entry.commit.parents.isEmpty
-      ? null
-      : entry.commit.parents.first.hex;
-  final patch = parent == null
-      ? ''
-      : const GitDiffCodec().encode(
-          await repo.diffRevisions(parent, entry.objectId.hex),
-        );
-  final text =
-      'From ${entry.objectId.hex} Mon Sep 17 00:00:00 2001\n'
-      'From: ${entry.commit.author.name} <${entry.commit.author.email}>\n'
-      'Subject: [PATCH] ${_subject(entry.commit.message)}\n\n'
-      '${entry.commit.message}\n$patch';
+  final commits = history.reversed.toList();
+
+  Future<String> mboxFor(GitLogEntry entry) async {
+    final parent = entry.commit.parents.isEmpty
+        ? null
+        : entry.commit.parents.first.hex;
+    final patch = parent == null
+        ? ''
+        : const GitDiffCodec().encode(
+            await repo.diffRevisions(parent, entry.objectId.hex),
+          );
+    return 'From ${entry.objectId.hex} Mon Sep 17 00:00:00 2001\n'
+        'From: ${entry.commit.author.name} <${entry.commit.author.email}>\n'
+        'Subject: [PATCH] ${_subject(entry.commit.message)}\n\n'
+        '${entry.commit.message}\n$patch';
+  }
+
   if (parsed.has('stdout')) {
-    io.stdout.writeText(text);
-  } else {
-    await io.fs.writeBytes(
-      '${io.cwd}/0001-${_subject(entry.commit.message)}.patch',
-      Uint8List.fromList(utf8.encode(text)),
+    final buffer = StringBuffer();
+    for (var index = 0; index < commits.length; index++) {
+      if (index > 0) {
+        buffer.writeln();
+      }
+      buffer.write(await mboxFor(commits[index]));
+    }
+    io.stdout.writeText(buffer.toString());
+    return 0;
+  }
+
+  final outDir = parsed.value('output-directory');
+  if (outDir != null) {
+    await io.fs.mkdir(
+      outDir.startsWith('/') ? outDir : p.join(io.cwd, outDir),
+      recursive: true,
     );
+  }
+  for (var index = 0; index < commits.length; index++) {
+    final entry = commits[index];
+    final n = index + 1;
+    final stem = _subject(entry.commit.message);
+    final fileName = '${n.toString().padLeft(4, '0')}-$stem.patch';
+    final text = await mboxFor(entry);
+    final fullPath = outDir == null
+        ? p.join(io.cwd, fileName)
+        : p.join(io.cwd, outDir, fileName);
+    await io.fs.writeBytes(fullPath, Uint8List.fromList(utf8.encode(text)));
+    final listed = outDir == null ? fileName : p.join(outDir, fileName);
+    io.stdout.writeText('$listed\n');
   }
   return 0;
 }
@@ -890,35 +984,867 @@ Future<int> _am(
   List<String> args,
   List<({String key, String value})> config,
 ) async {
-  final parsed = parseGitArgs(args, const [], usage: 'usage: git am <mbox>');
-  if (parsed.operands.length != 1) {
-    throw const GitUsage('usage: git am <mbox>\n');
-  }
+  const usage =
+      'usage: git am [<options>] [(<mbox> | <Maildir>)...]\n'
+      '   or: git am [<options>] (--continue | --skip | --abort)\n';
+  final parsed = parseGitArgs(args, const [
+    GitOption('interactive', short: 'i'),
+    GitOption('no-verify', short: 'n'),
+    GitOption('verify'),
+    GitOption('3way', short: '3'),
+    GitOption('quiet', short: 'q'),
+    GitOption('signoff', short: 's'),
+    GitOption('utf8', short: 'u'),
+    GitOption('keep', short: 'k'),
+    GitOption('keep-non-patch'),
+    GitOption('message-id'),
+    GitOption('keep-cr'),
+    GitOption('scissors', short: 'c'),
+    GitOption('quoted-cr', valued: true),
+    GitOption('whitespace', valued: true),
+    GitOption('ignore-space-change'),
+    GitOption('ignore-whitespace'),
+    GitOption('directory', valued: true),
+    GitOption('exclude', valued: true),
+    GitOption('include', valued: true),
+    GitOption('C', short: 'C', valued: true),
+    GitOption('p', short: 'p', valued: true),
+    GitOption('patch-format', valued: true),
+    GitOption('reject'),
+    GitOption('resolvemsg', valued: true),
+    GitOption('continue'),
+    GitOption('resolved', short: 'r'),
+    GitOption('skip'),
+    GitOption('abort'),
+    GitOption('quit'),
+    GitOption('show-current-patch', valued: true, optional: true),
+    GitOption('retry'),
+    GitOption('allow-empty'),
+    GitOption('committer-date-is-author-date'),
+    GitOption('ignore-date'),
+    GitOption('rerere-autoupdate'),
+    GitOption('gpg-sign', short: 'S', valued: true, optional: true),
+    GitOption('empty', valued: true),
+  ], usage: usage);
   final repo = await _repo(io);
-  final path = parsed.operands.single.startsWith('/')
-      ? parsed.operands.single
-      : '${io.cwd}/${parsed.operands.single}';
-  final text = utf8.decode(await io.fs.readBytes(path), allowMalformed: true);
-  final subject = RegExp(
-    r'^Subject: \[PATCH\] (.+)$',
-    multiLine: true,
-  ).firstMatch(text);
-  final diffStart = text.indexOf('diff --git');
-  if (diffStart >= 0) {
-    await repo.applyPatch(text.substring(diffStart));
-    final files = RegExp(r'^diff --git a/(.+?) b/', multiLine: true);
-    final paths = [for (final match in files.allMatches(text)) match.group(1)!];
-    if (paths.isNotEmpty) await repo.add(paths);
+
+  if (parsed.has('interactive')) {
+    throw GitUsage(
+      'fatal: interactive mode is not supported in virtual git\n',
+      exitCode: 128,
+    );
   }
-  final id = await repo.commit(
-    author: _signature(io, config),
-    committer: _signature(io, config),
-    message: '${subject?.group(1) ?? 'am'}\n',
-    allowEmpty: true,
-  );
-  io.stdout.writeText('Applying: ${subject?.group(1) ?? 'am'}\n');
-  io.stdout.writeText('[${_abbr(id.hex)}] ${subject?.group(1) ?? 'am'}\n');
+  if (parsed.has('gpg-sign')) {
+    throw GitUsage(
+      'fatal: gpg signing is not supported in virtual git\n',
+      exitCode: 128,
+    );
+  }
+  if (parsed.has('rerere-autoupdate')) {
+    throw GitUsage(
+      'fatal: rerere is not supported in virtual git\n',
+      exitCode: 128,
+    );
+  }
+  if (parsed.has('reject')) {
+    throw GitUsage(
+      'fatal: reject files are not supported in virtual git\n',
+      exitCode: 128,
+    );
+  }
+
+  final patchFormat = parsed.value('patch-format');
+  if (patchFormat != null && patchFormat != 'mbox') {
+    throw GitUsage(
+      "fatal: unsupported patch format: '$patchFormat'\n",
+      exitCode: 128,
+    );
+  }
+
+  final emptyMode = parsed.value('empty') ?? 'stop';
+  if (emptyMode != 'stop' && emptyMode != 'drop' && emptyMode != 'keep') {
+    throw GitUsage(
+      "fatal: invalid mode '$emptyMode' for --empty\n",
+      exitCode: 128,
+    );
+  }
+
+  if (parsed.has('continue') || parsed.has('resolved')) {
+    return _amContinue(io, repo, config, parsed);
+  }
+  if (parsed.has('skip')) {
+    return _amSkip(io, repo);
+  }
+  if (parsed.has('abort')) {
+    return _amAbort(io, repo);
+  }
+  if (parsed.has('quit')) {
+    return _amQuit(io, repo);
+  }
+  if (parsed.has('retry')) {
+    return _amRetry(io, repo, config, parsed);
+  }
+  final showPatch = parsed.value('show-current-patch');
+  if (parsed.has('show-current-patch')) {
+    return _amShowCurrentPatch(
+      io,
+      repo,
+      diff: showPatch == 'diff' || showPatch == '',
+    );
+  }
+
+  if (parsed.operands.isEmpty) {
+    throw GitUsage('$usage\n');
+  }
+  if (await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText(
+      'fatal: previous rebase directory .git/rebase-apply still exists but mbox given.\n',
+    );
+    return 128;
+  }
+
+  for (final operand in parsed.operands) {
+    final path = operand.startsWith('/') ? operand : '${io.cwd}/$operand';
+    final bytes = await io.fs.readBytes(path);
+    var text = utf8.decode(bytes, allowMalformed: true);
+    if (!parsed.has('keep-cr')) {
+      text = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    }
+    final messages = splitMboxMessages(text);
+    for (final message in messages) {
+      final code = await _amApplyOneMailboxMessage(
+        io,
+        repo,
+        config,
+        parsed,
+        message,
+        emptyMode: emptyMode,
+      );
+      if (code != 0) return code;
+    }
+  }
   return 0;
+}
+
+String _amRebaseApplyDir(GitRepository repo) =>
+    p.join(repo.gitDirectoryPath, 'rebase-apply');
+
+Future<bool> _amRebaseApplyExists(GitRepository repo) async =>
+    await Directory(_amRebaseApplyDir(repo)).exists();
+
+Future<void> _amClearRebaseApply(GitRepository repo) async {
+  final dir = Directory(_amRebaseApplyDir(repo));
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
+}
+
+Future<void> _amWriteRebaseApplyFile(
+  GitRepository repo,
+  String name,
+  String content,
+) async {
+  final file = File(p.join(_amRebaseApplyDir(repo), name));
+  await file.parent.create(recursive: true);
+  await file.writeAsString(content.endsWith('\n') ? content : '$content\n');
+}
+
+Future<String?> _amReadRebaseApplyFile(GitRepository repo, String name) async {
+  final file = File(p.join(_amRebaseApplyDir(repo), name));
+  if (!await file.exists()) return null;
+  return file.readAsString();
+}
+
+Future<int> _amAbort(AppletIo io, GitRepository repo) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText('fatal: No patch am in progress\n');
+    return 128;
+  }
+  final abortSafety = await _amReadRebaseApplyFile(repo, 'abort-safety');
+  final headId =
+      await repo.revParse('HEAD') ??
+      (abortSafety == null ? null : GitObjectId.fromHex(abortSafety.trim()));
+  if (headId != null) {
+    await repo.reset(headId.hex, mode: GitResetMode.hard, reflogActor: null);
+  }
+  await _amClearRebaseApply(repo);
+  final orig = File(repo.origHeadFilePath);
+  if (await orig.exists()) await orig.delete();
+  return 0;
+}
+
+Future<int> _amQuit(AppletIo io, GitRepository repo) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText('fatal: No patch am in progress\n');
+    return 128;
+  }
+  await _amClearRebaseApply(repo);
+  final orig = File(repo.origHeadFilePath);
+  if (await orig.exists()) await orig.delete();
+  return 0;
+}
+
+Future<int> _amShowCurrentPatch(
+  AppletIo io,
+  GitRepository repo, {
+  required bool diff,
+}) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    return 128;
+  }
+  final patchText = await _amReadRebaseApplyFile(repo, 'patch');
+  if (patchText == null) {
+    return 128;
+  }
+  if (diff) {
+    final start = patchText.indexOf('diff --git ');
+    final body = start >= 0 ? patchText.substring(start) : patchText;
+    io.stdout.writeText(body);
+    if (!body.endsWith('\n')) io.stdout.writeText('\n');
+    return 0;
+  }
+  io.stdout.writeText(patchText);
+  if (!patchText.endsWith('\n')) io.stdout.writeText('\n');
+  return 0;
+}
+
+Future<int> _amRetry(
+  AppletIo io,
+  GitRepository repo,
+  List<({String key, String value})> config,
+  GitInvocation parsed,
+) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText('fatal: No patch am in progress\n');
+    return 128;
+  }
+  final patchText = await _amReadRebaseApplyFile(repo, 'patch');
+  if (patchText == null) {
+    await _amClearRebaseApply(repo);
+    io.stderr.writeText('fatal: patch state corrupted\n');
+    return 128;
+  }
+  final message = await _amReadRebaseApplyFile(repo, '0001');
+  if (message == null) {
+    await _amClearRebaseApply(repo);
+    io.stderr.writeText('fatal: patch state corrupted\n');
+    return 128;
+  }
+  return _amApplyParsedMessage(
+    io,
+    repo,
+    config,
+    parsed,
+    message,
+    patchText,
+    resumeAfterConflict: true,
+  );
+}
+
+Future<int> _amSkip(AppletIo io, GitRepository repo) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText('fatal: No patch am in progress\n');
+    return 128;
+  }
+  await _amClearRebaseApply(repo);
+  final orig = File(repo.origHeadFilePath);
+  if (await orig.exists()) await orig.delete();
+  return 0;
+}
+
+Future<int> _amContinue(
+  AppletIo io,
+  GitRepository repo,
+  List<({String key, String value})> config,
+  GitInvocation parsed,
+) async {
+  if (!await _amRebaseApplyExists(repo)) {
+    io.stderr.writeText('fatal: No patch am in progress\n');
+    return 128;
+  }
+  final patchText = await _amReadRebaseApplyFile(repo, 'patch');
+  final message = await _amReadRebaseApplyFile(repo, '0001');
+  if (patchText == null || message == null) {
+    await _amClearRebaseApply(repo);
+    io.stderr.writeText('fatal: patch state corrupted\n');
+    return 128;
+  }
+  final diffStart = patchText.indexOf('diff --git ');
+  final patchBody = diffStart >= 0 ? patchText.substring(diffStart) : patchText;
+  if (!_amPatchHasApplicableHunks(patchBody)) {
+    final subjectLine =
+        await _amReadRebaseApplyFile(repo, 'final-commit') ??
+        _amExtractSubjectFromMbox(message);
+    io.stderr.writeText(
+      'hint: When you have resolved this problem, run "git am --continue".\n',
+    );
+    io.stderr.writeText(
+      'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
+    );
+    io.stderr.writeText(
+      'hint: To restore the original branch and stop patching, run "git am --abort".\n',
+    );
+    io.stderr.writeText(
+      'hint: Disable this message with "git config set advice.mergeConflict false"\n',
+    );
+    io.stderr.writeText('Applying: $subjectLine\n');
+    io.stderr.writeText("No changes - did you forget to use 'git add'?\n");
+    io.stderr.writeText(
+      'If there is nothing left to stage, chances are that something else\n',
+    );
+    io.stderr.writeText(
+      'already introduced the same changes; you might want to skip this patch.\n',
+    );
+    return 128;
+  }
+  final apply = await repo.applyPatch(
+    patchBody,
+    threeWay: parsed.has('3way'),
+    stripPathSegments: int.tryParse(parsed.value('p') ?? '0') ?? 0,
+    whitespaceMode: _amWhitespaceMode(parsed),
+    includePaths: _amPathSet(parsed, 'include'),
+    excludePaths: _amPathSet(parsed, 'exclude'),
+    applyContextLines: int.tryParse(parsed.value('C') ?? '3') ?? 3,
+    applyDirectoryPrefix: parsed.value('directory'),
+  );
+  if (!apply.success) {
+    io.stderr.writeText(
+      'error: patch failed: ${apply.files.firstWhere((f) => f.conflict).path}\n',
+    );
+    io.stderr.writeText('error: unresolved conflicts\n');
+    return 128;
+  }
+  final paths = _amPathsFromPatch(patchBody);
+  if (paths.isNotEmpty) await repo.add(paths);
+
+  final subjectLine =
+      await _amReadRebaseApplyFile(repo, 'final-commit') ??
+      _amExtractSubjectFromMbox(message);
+  var bodyText = _amMessageBodyAfterSubject(message, subjectLine);
+  bodyText = applyScissorsToBody(bodyText, scissors: parsed.has('scissors'));
+  bodyText = _stripAmDiffFooter(bodyText);
+  if (parsed.has('signoff')) {
+    final signer = _signature(io, config);
+    bodyText = _amAppendSignoff(bodyText, signer);
+  }
+  final msg = '$subjectLine\n\n$bodyText'.trim();
+  final author = await _amAuthorFromScript(repo) ?? _signature(io, config);
+  final committer = _amCommitterFromOptions(
+    io,
+    config,
+    parsed,
+    authorFallback: author,
+  );
+  await repo.commit(
+    author: author,
+    committer: committer,
+    message: msg.endsWith('\n') ? msg : '$msg\n',
+    allowEmpty: false,
+  );
+  if (!parsed.has('quiet')) {
+    io.stdout.writeText('Applying: $subjectLine\n');
+  }
+  await _amClearRebaseApply(repo);
+  final orig = File(repo.origHeadFilePath);
+  if (await orig.exists()) await orig.delete();
+  return 0;
+}
+
+Set<String>? _amPathSet(GitInvocation parsed, String name) {
+  final values = parsed.valuesOf(name);
+  if (values.isEmpty) return null;
+  return values.toSet();
+}
+
+GitApplyWhitespaceMode _amWhitespaceMode(GitInvocation parsed) {
+  if (parsed.has('ignore-whitespace')) {
+    return GitApplyWhitespaceMode.ignoreAllWhitespace;
+  }
+  if (parsed.has('ignore-space-change')) {
+    return GitApplyWhitespaceMode.ignoreSpaceChange;
+  }
+  return GitApplyWhitespaceMode.exact;
+}
+
+List<String> _amPathsFromPatch(String patchBody) {
+  final paths = <String>[];
+  final seen = <String>{};
+  for (final match in RegExp(
+    r'^diff --git a/(.+?) b/(.+?)$',
+    multiLine: true,
+  ).allMatches(patchBody)) {
+    final path = match.group(2)!;
+    if (seen.add(path)) paths.add(path);
+  }
+  return paths;
+}
+
+/// Патч пригоден для `git apply`: есть блоки `@@` или нулевой размер при
+/// добавлении файла (как у системного git: «пустой» новый файл без `@@` — ок).
+bool _amPatchHasApplicableHunks(String patchBody) {
+  if (patchBody.trim().isEmpty) return false;
+  final List<GitDiffEntry> entries;
+  try {
+    entries = const GitDiffCodec().decode(patchBody);
+  } on FormatException {
+    return false;
+  }
+  if (entries.isEmpty) return false;
+  for (final entry in entries) {
+    if (entry.hunks.isNotEmpty) return true;
+    if (entry.changeType == GitDiffChangeType.added) return true;
+  }
+  return false;
+}
+
+Future<GitCommitSignature?> _amAuthorFromScript(GitRepository repo) async {
+  final script = await _amReadRebaseApplyFile(repo, 'author-script');
+  if (script == null) return null;
+  String? name;
+  String? email;
+  String? dateRaw;
+  for (final line in script.split('\n')) {
+    if (line.startsWith("GIT_AUTHOR_NAME='")) {
+      name = line.substring("GIT_AUTHOR_NAME='".length, line.length - 1);
+    } else if (line.startsWith("GIT_AUTHOR_EMAIL='")) {
+      email = line.substring("GIT_AUTHOR_EMAIL='".length, line.length - 1);
+    } else if (line.startsWith("GIT_AUTHOR_DATE='")) {
+      dateRaw = line.substring("GIT_AUTHOR_DATE='".length, line.length - 1);
+    }
+  }
+  if (name == null || email == null) return null;
+  if (dateRaw != null) {
+    final parts = dateRaw.split(' ');
+    final seconds = int.tryParse(parts.first);
+    if (seconds != null) {
+      return GitCommitSignature(
+        name: name,
+        email: email,
+        timestampSeconds: seconds,
+        timezoneOffset: parts.length > 1 ? parts[1] : '+0000',
+      );
+    }
+  }
+  return GitCommitSignature(
+    name: name,
+    email: email,
+    timestampSeconds: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    timezoneOffset: '+0000',
+  );
+}
+
+GitCommitSignature _amCommitterFromOptions(
+  AppletIo io,
+  List<({String key, String value})> config,
+  GitInvocation parsed, {
+  required GitCommitSignature authorFallback,
+}) {
+  if (parsed.has('committer-date-is-author-date')) {
+    final base = _committer(io, config);
+    return GitCommitSignature(
+      name: base.name,
+      email: base.email,
+      timestampSeconds: authorFallback.timestampSeconds,
+      timezoneOffset: authorFallback.timezoneOffset,
+    );
+  }
+  if (parsed.has('ignore-date')) {
+    return _committer(io, config);
+  }
+  return _committer(io, config);
+}
+
+String _amAppendSignoff(String body, GitCommitSignature signer) {
+  final trailer = 'Signed-off-by: ${signer.name} <${signer.email}>\n';
+  if (body.trim().isEmpty) return trailer;
+  if (!body.endsWith('\n')) return '$body\n\n$trailer';
+  return '$body\n$trailer';
+}
+
+String _stripAmDiffFooter(String body) {
+  const marker = '\ndiff --git ';
+  final index = body.indexOf(marker);
+  if (index < 0) return body;
+  return body.substring(0, index).trimRight();
+}
+
+String _amMessageBodyAfterSubject(String message, String subjectLine) {
+  final lines = message.split('\n');
+  var i = 0;
+  while (i < lines.length && lines[i].trim().isNotEmpty) {
+    if (lines[i].toLowerCase().startsWith('subject:')) {
+      final rest = lines[i].substring(lines[i].indexOf(':') + 1).trim();
+      final stripped = rest.startsWith('[PATCH]')
+          ? rest.substring('[PATCH]'.length).trim()
+          : rest;
+      if (stripped == subjectLine) {
+        i++;
+        while (i < lines.length && lines[i].trim().isNotEmpty) {
+          i++;
+        }
+        if (i < lines.length && lines[i].trim().isEmpty) i++;
+        return lines.sublist(i).join('\n');
+      }
+    }
+    i++;
+  }
+  final hdrEnd = message.indexOf('\n\n');
+  return hdrEnd < 0 ? message : message.substring(hdrEnd + 2);
+}
+
+Future<int> _amApplyOneMailboxMessage(
+  AppletIo io,
+  GitRepository repo,
+  List<({String key, String value})> config,
+  GitInvocation parsed,
+  String rawMessage, {
+  required String emptyMode,
+}) async {
+  var message = rawMessage;
+  if (parsed.has('keep')) {
+    message = stripMboxGreaterThanBody(message);
+  }
+  message = normalizeMboxNewlines(message, keepCr: parsed.has('keep-cr'));
+  final headers = parseMailHeaders(message);
+  var body = mailBodyAfterHeaders(message);
+  body = applyScissorsToBody(body, scissors: parsed.has('scissors'));
+
+  final quotedAction = parsed.value('quoted-cr');
+  if (quotedAction != null && quotedAction != 'nowarn') {
+    throw GitUsage(
+      'fatal: --quoted-cr=$quotedAction is not supported\n',
+      exitCode: 128,
+    );
+  }
+
+  final patchStart = body.indexOf('diff --git ');
+  final preamble = patchStart < 0 ? body : body.substring(0, patchStart);
+  final patchText = patchStart < 0 ? '' : body.substring(patchStart);
+
+  if (patchText.isEmpty) {
+    if (emptyMode == 'drop') {
+      return 0;
+    }
+    if (emptyMode == 'keep') {
+      final subjectLine = _amSubjectFromHeaders(headers, message);
+      var bodyText = preamble.trim();
+      bodyText = _stripAmDiffFooter(bodyText);
+      if (parsed.has('signoff')) {
+        bodyText = _amAppendSignoff(bodyText, _signature(io, config));
+      }
+      final msg = '$subjectLine\n\n$bodyText'.trim();
+      await repo.commit(
+        author: _amAuthorFromMailHeaders(headers) ?? _signature(io, config),
+        committer: _amCommitterFromOptions(
+          io,
+          config,
+          parsed,
+          authorFallback:
+              _amAuthorFromMailHeaders(headers) ?? _signature(io, config),
+        ),
+        message: msg.endsWith('\n') ? msg : '$msg\n',
+        allowEmpty: true,
+      );
+      if (!parsed.has('quiet')) {
+        io.stdout.writeText('Applying: $subjectLine\n');
+      }
+      return 0;
+    }
+    io.stderr.writeText('Patch is empty.\n');
+    return 128;
+  }
+
+  return _amApplyParsedMessage(
+    io,
+    repo,
+    config,
+    parsed,
+    message,
+    patchText,
+    resumeAfterConflict: false,
+  );
+}
+
+String _amExtractSubjectFromMbox(String message) =>
+    _amSubjectFromHeaders(parseMailHeaders(message), message);
+
+String _amSubjectFromHeaders(Map<String, String> headers, String message) {
+  final subjectHeader = headers['subject'];
+  if (subjectHeader != null) {
+    var s = subjectHeader.trim();
+    if (s.toLowerCase().startsWith('[patch]')) {
+      s = s.substring('[patch]'.length).trim();
+    }
+    return s;
+  }
+  final match = RegExp(
+    r'^Subject:\s*(?:\[PATCH\]\s*)?(.+)$',
+    multiLine: true,
+  ).firstMatch(message);
+  return match?.group(1)?.trim() ?? 'am';
+}
+
+GitCommitSignature? _amAuthorFromMailHeaders(Map<String, String> headers) {
+  final from = headers['from'];
+  if (from == null) return null;
+  final parsedFrom = parseFromHeader(from);
+  final date = parseDateHeader(headers['date']);
+  if (date != null) {
+    return GitCommitSignature(
+      name: parsedFrom.name,
+      email: parsedFrom.email,
+      timestampSeconds: date.seconds,
+      timezoneOffset: date.tz,
+    );
+  }
+  return GitCommitSignature(
+    name: parsedFrom.name,
+    email: parsedFrom.email,
+    timestampSeconds: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    timezoneOffset: '+0000',
+  );
+}
+
+Future<int> _amApplyParsedMessage(
+  AppletIo io,
+  GitRepository repo,
+  List<({String key, String value})> config,
+  GitInvocation parsed,
+  String fullMessage,
+  String patchBody, {
+  required bool resumeAfterConflict,
+}) async {
+  final subjectLine = _amExtractSubjectFromMbox(fullMessage);
+  final whitespace = parsed.value('whitespace');
+  if (whitespace != null && whitespace != 'nowarn') {
+    throw GitUsage(
+      'fatal: --whitespace=$whitespace detection is not implemented\n',
+      exitCode: 128,
+    );
+  }
+
+  if (!resumeAfterConflict) {
+    final head = await repo.revParse('HEAD');
+    if (head != null) {
+      await File(repo.origHeadFilePath).writeAsString('${head.hex}\n');
+    }
+  }
+
+  final diffStart = patchBody.indexOf('diff --git ');
+  final applyBody = diffStart >= 0 ? patchBody.substring(diffStart) : '';
+  if (!_amPatchHasApplicableHunks(applyBody)) {
+    if (!parsed.has('quiet')) {
+      io.stderr.writeText(
+        'error: No valid patches in input (allow with "--allow-empty")\n',
+      );
+      io.stderr.writeText(
+        "hint: Use 'git am --show-current-patch=diff' to see the failed patch\n",
+      );
+      io.stderr.writeText(
+        'hint: When you have resolved this problem, run "git am --continue".\n',
+      );
+      io.stderr.writeText(
+        'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
+      );
+      io.stderr.writeText(
+        'hint: To restore the original branch and stop patching, run "git am --abort".\n',
+      );
+      io.stderr.writeText(
+        'hint: Disable this message with "git config set advice.mergeConflict false"\n',
+      );
+      io.stderr.writeText('Applying: $subjectLine\n');
+      io.stderr.writeText(
+        '${parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine'}\n',
+      );
+    }
+    await Directory(_amRebaseApplyDir(repo)).create(recursive: true);
+    final headNow = await repo.revParse('HEAD');
+    if (headNow != null) {
+      await _amWriteRebaseApplyFile(repo, 'abort-safety', headNow.hex);
+    }
+    await _amWriteRebaseApplyFile(repo, 'patch', fullMessage);
+    await _amWriteRebaseApplyFile(repo, '0001', fullMessage);
+    await _amWriteRebaseApplyFile(repo, 'final-commit', subjectLine);
+    final author =
+        _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
+        _signature(io, config);
+    await _amWriteAuthorScript(repo, author);
+    await _amWriteRebaseApplyFile(repo, 'last', '1\n');
+    await _amWriteRebaseApplyFile(repo, 'next', '1\n');
+    await _amWriteRebaseApplyFile(
+      repo,
+      'quiet',
+      parsed.has('quiet') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'sign',
+      parsed.has('signoff') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'utf8',
+      parsed.has('utf8') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'threeway',
+      parsed.has('3way') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'scissors',
+      parsed.has('scissors') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'keep',
+      parsed.has('keep') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'messageid',
+      parsed.has('message-id') ? 't\n' : 'f\n',
+    );
+    return 128;
+  }
+
+  final apply = await repo.applyPatch(
+    patchBody,
+    threeWay: parsed.has('3way'),
+    stripPathSegments: int.tryParse(parsed.value('p') ?? '0') ?? 0,
+    whitespaceMode: _amWhitespaceMode(parsed),
+    includePaths: _amPathSet(parsed, 'include'),
+    excludePaths: _amPathSet(parsed, 'exclude'),
+    applyContextLines: int.tryParse(parsed.value('C') ?? '3') ?? 3,
+    applyDirectoryPrefix: parsed.value('directory'),
+  );
+
+  if (!apply.success) {
+    final conflictPath = apply.files
+        .firstWhere((f) => f.conflict, orElse: () => apply.files.first)
+        .path;
+    final resolveMsg =
+        parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine';
+    if (!parsed.has('quiet')) {
+      io.stderr.writeText('error: patch failed: $conflictPath\n');
+      io.stderr.writeText('error: $conflictPath: patch does not apply\n');
+      io.stderr.writeText(
+        "hint: Use 'git am --show-current-patch=diff' to see the failed patch\n",
+      );
+      io.stderr.writeText(
+        'hint: When you have resolved this problem, run "git am --continue".\n',
+      );
+      io.stderr.writeText(
+        'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
+      );
+      io.stderr.writeText(
+        'hint: To restore the original branch and stop patching, run "git am --abort".\n',
+      );
+      io.stderr.writeText('Applying: $subjectLine\n');
+      io.stderr.writeText('$resolveMsg\n');
+    }
+    await Directory(_amRebaseApplyDir(repo)).create(recursive: true);
+    final headNow = await repo.revParse('HEAD');
+    if (headNow != null) {
+      await _amWriteRebaseApplyFile(repo, 'abort-safety', headNow.hex);
+    }
+    await _amWriteRebaseApplyFile(repo, 'patch', fullMessage);
+    await _amWriteRebaseApplyFile(repo, '0001', fullMessage);
+    await _amWriteRebaseApplyFile(repo, 'final-commit', subjectLine);
+    final author =
+        _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
+        _signature(io, config);
+    await _amWriteAuthorScript(repo, author);
+    await _amWriteRebaseApplyFile(repo, 'last', '1\n');
+    await _amWriteRebaseApplyFile(repo, 'next', '1\n');
+    await _amWriteRebaseApplyFile(
+      repo,
+      'quiet',
+      parsed.has('quiet') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'sign',
+      parsed.has('signoff') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'utf8',
+      parsed.has('utf8') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'threeway',
+      parsed.has('3way') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'scissors',
+      parsed.has('scissors') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'keep',
+      parsed.has('keep') ? 't\n' : 'f\n',
+    );
+    await _amWriteRebaseApplyFile(
+      repo,
+      'messageid',
+      parsed.has('message-id') ? 't\n' : 'f\n',
+    );
+    return 128;
+  }
+
+  final paths = _amPathsFromPatch(patchBody);
+  if (paths.isNotEmpty) await repo.add(paths);
+
+  var bodyText = _amMessageBodyAfterSubject(fullMessage, subjectLine);
+  bodyText = applyScissorsToBody(bodyText, scissors: parsed.has('scissors'));
+  bodyText = _stripAmDiffFooter(bodyText);
+  if (parsed.has('signoff')) {
+    bodyText = _amAppendSignoff(bodyText, _signature(io, config));
+  }
+  final msg = '$subjectLine\n\n$bodyText'.trim();
+
+  final author =
+      _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
+      _signature(io, config);
+  final committer = _amCommitterFromOptions(
+    io,
+    config,
+    parsed,
+    authorFallback: author,
+  );
+  await repo.commit(
+    author: author,
+    committer: committer,
+    message: msg.endsWith('\n') ? msg : '$msg\n',
+    allowEmpty: parsed.has('allow-empty'),
+  );
+
+  if (!parsed.has('quiet')) {
+    io.stdout.writeText('Applying: $subjectLine\n');
+  }
+
+  await _amClearRebaseApply(repo);
+  final orig = File(repo.origHeadFilePath);
+  if (await orig.exists()) await orig.delete();
+  return 0;
+}
+
+Future<void> _amWriteAuthorScript(
+  GitRepository repo,
+  GitCommitSignature author,
+) async {
+  final date = '${author.timestampSeconds} ${author.timezoneOffset}';
+  await _amWriteRebaseApplyFile(
+    repo,
+    'author-script',
+    "GIT_AUTHOR_NAME='${author.name}'\n"
+        "GIT_AUTHOR_EMAIL='${author.email}'\n"
+        "GIT_AUTHOR_DATE='$date'\n",
+  );
 }
 
 Future<int> _fsck(AppletIo io) async {
