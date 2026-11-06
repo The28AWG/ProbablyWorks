@@ -46,6 +46,13 @@ final events = await interpreter.run('git init', cwd: '/work').toList();
 `rev-parse`, `ls-files`, `branch`, `tag`, `checkout`, `switch`, `restore`,
 `reset`, `merge`, `stash`, `apply`, `remote`, `clone`, `fetch`, `pull`, `push`.
 
+Опции разбираются как у git: `--name`, `--name=value`, `-s`, `-svalue`, `--`.
+До команды действуют `-C`, `-c key=value`, `--bare`, `--version` и `--help`.
+Неизвестная опция — код 129 и `error: unknown option`. Ветка по умолчанию у
+`init` — `main` (`-b` её меняет). Сетевой `clone --depth` завершается ошибкой:
+shallow-протокол не реализован. Локальный путь с `--depth` предупреждает и
+клонирует целиком, как сам git.
+
 ## Автор и заголовок
 
 Апплет читает окружение оболочки, а не `.git/config`:

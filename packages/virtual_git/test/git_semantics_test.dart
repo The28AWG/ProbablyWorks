@@ -3256,8 +3256,11 @@ void main() {
 
       expect(stashResult.created, isTrue);
       expect(stashResult.referenceName, 'refs/stash');
-      expect(stashResult.message, 'WIP on main: Initial commit');
-      expect(stashReflog.first.message, 'stash: WIP on main: Initial commit');
+      expect(stashResult.message, 'WIP on main: 25b8733 Initial commit');
+      expect(
+        stashReflog.first.message,
+        'stash: WIP on main: 25b8733 Initial commit',
+      );
       expect(await readme.readAsString(), 'base\n');
       expect(await notes.exists(), isFalse);
       expect(statusAfterStash.isClean, isTrue);
@@ -3397,16 +3400,16 @@ void main() {
 
         expect(entries, hasLength(2));
         expect(entries[0].revision, 'stash@{0}');
-        expect(entries[0].message, 'WIP on main: second stash');
+        expect(entries[0].message, 'On main: second stash');
         expect(entries[1].revision, 'stash@{1}');
-        expect(entries[1].message, 'WIP on main: first stash');
+        expect(entries[1].message, 'On main: first stash');
         expect(applyOlderResult.applied, isTrue);
         expect(await notes.readAsString(), 'first stash\n');
         expect(dropped.revision, 'stash@{1}');
         expect(dropped.remainingCount, 1);
         expect(remainingEntries, hasLength(1));
         expect(remainingEntries.single.revision, 'stash@{0}');
-        expect(remainingEntries.single.message, 'WIP on main: second stash');
+        expect(remainingEntries.single.message, 'On main: second stash');
       },
     );
 

@@ -2496,13 +2496,17 @@ final class GitRepository {
 
     final baseCommit = await _readCommit(baseObjectId, codec: commitCodec);
     final branchName = await _currentBranchDisplayName();
+    final headSummary = _stashHeadSummary(
+      baseObjectId.hex,
+      _summarizeReflogMessage(baseCommit.message),
+    );
     final stashMessage = _buildStashMessage(
       branchName: branchName,
       message: message,
-      defaultSummary: _summarizeReflogMessage(baseCommit.message),
+      defaultSummary: headSummary,
     );
-    final indexMessage =
-        'index on $branchName: ${_summarizeReflogMessage(stashMessage)}';
+    // Индексный коммит всегда описывает HEAD, а не текст -m.
+    final indexMessage = 'index on $branchName: $headSummary';
     final indexEntries = _treeEntriesFromIndex(currentIndex);
     final trackedWorkTreeEntries = await _treeEntriesFromTrackedWorkTree(
       currentIndex,
@@ -7167,15 +7171,22 @@ final class GitRepository {
         : 'detached HEAD at ${objectId.hex}';
   }
 
+  /// `09784ed subject` — git ставит короткий хеш HEAD в текст stash и index.
+  static String _stashHeadSummary(String hex, String subject) {
+    final short = hex.length > 7 ? hex.substring(0, 7) : hex;
+    return '$short $subject';
+  }
+
   static String _buildStashMessage({
     required String branchName,
     required String? message,
     required String defaultSummary,
   }) {
-    final summary = message == null || message.trim().isEmpty
-        ? defaultSummary
-        : message.trim();
-    return 'WIP on $branchName: $summary';
+    // Без -m git пишет «WIP on branch: subject». С -m — «On branch: message».
+    if (message == null || message.trim().isEmpty) {
+      return 'WIP on $branchName: $defaultSummary';
+    }
+    return 'On $branchName: ${message.trim()}';
   }
 
   static GitDiffChangeType? _treeSnapshotDiffChangeType(
