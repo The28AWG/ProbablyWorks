@@ -19,6 +19,8 @@ void main() {
     await session.both(['check-ignore', '-v', 'ignored.txt']);
     await session.both(['branch', 'topic']);
     await session.both(['branch', '-m', 'topic', 'renamed']);
+    await session.both(['branch', '-a']);
+    await session.both(['branch', '-a', 'nope']);
     await session.both(['show-ref', '--heads']);
     await session.both(['commit', '--amend', '-m', 'amended']);
     await session.write('b.txt', 'b\n');
@@ -36,6 +38,24 @@ void main() {
     await session.both(['mv', 'c.txt', 'd.txt']);
     await session.both(['status', '--porcelain=v1']);
     await session.expectSameTree();
+    expect(session.realRoot.existsSync(), isTrue);
+  });
+
+  test('clone, remote -v, branch -a и log совпадают с git', () async {
+    final session = GitParitySession();
+    await session.start();
+    addTearDown(session.close);
+
+    await session.both(['init', '-b', 'main']);
+    await session.write('a.txt', 'a\n');
+    await session.both(['add', 'a.txt']);
+    await session.both(['commit', '-m', 'first']);
+    await session.both(['branch', 'topic']);
+    await session.both(['clone', '{root}', 'dst']);
+    await session.both(['-C', 'dst', 'remote', '-v']);
+    await session.both(['-C', 'dst', 'branch', '-a']);
+    await session.both(['-C', 'dst', 'log', '--oneline', '-10']);
+    await session.both(['-C', 'dst', 'show-ref']);
     expect(session.realRoot.existsSync(), isTrue);
   });
 }

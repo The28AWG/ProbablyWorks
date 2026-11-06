@@ -75,28 +75,11 @@ void main() {
       );
     }
 
-    Future<void> both(
-      List<String> args, {
-      bool summary = false,
-      String? stdoutHas,
-    }) async {
+    Future<void> both(List<String> args) async {
       final left = await virtual.run(args);
       final right = await real(args);
       expect(left.code, right.code, reason: '${args.join(' ')}\n${left.err}');
       expect(left.err, right.err, reason: args.join(' '));
-      if (stdoutHas != null) {
-        expect(left.out, contains(stdoutHas), reason: args.join(' '));
-        expect(right.out, contains(stdoutHas), reason: args.join(' '));
-        return;
-      }
-      if (summary) {
-        expect(
-          left.out.split('\n').first,
-          right.out.split('\n').first,
-          reason: args.join(' '),
-        );
-        return;
-      }
       expect(left.out, right.out, reason: args.join(' '));
     }
 
@@ -106,7 +89,7 @@ void main() {
     await File('${realRoot.path}/a.txt').writeAsString('a\n');
     await both(['add', 'a.txt']);
     await both(['commit', '-m']);
-    await both(['commit', '-m', 'first'], summary: true);
+    await both(['commit', '-m', 'first']);
     await both(['rev-parse', 'HEAD']);
     await both(['ls-files', '-s']);
     await both(['status', '--porcelain=v1']);
@@ -116,7 +99,7 @@ void main() {
     await File('${realRoot.path}/a.txt').writeAsString('a\nb\n');
     await both(['diff']);
     await both(['status', '--porcelain']);
-    await both(['commit', '-am', 'second'], summary: true);
+    await both(['commit', '-am', 'second']);
     await both(['rev-parse', 'HEAD']);
     await both(['log', '--oneline', '-2']);
     await both(['branch', 'topic']);
@@ -129,7 +112,7 @@ void main() {
     await both(['tag']);
     await both(['branch', '-d', 'other']);
     await both(['branch', '--show-current']);
-    await both(['show', '--oneline', 'HEAD'], summary: true);
+    await both(['show', '--oneline', 'HEAD']);
     await both(['log', '-1', '--oneline']);
 
     await virtual.write('a.txt', 'a\nb\nc\n');
@@ -145,9 +128,9 @@ void main() {
     await both(['switch', 'side']);
     await virtual.write('a.txt', 'side\n');
     await File('${realRoot.path}/a.txt').writeAsString('side\n');
-    await both(['commit', '-am', 'side'], summary: true);
+    await both(['commit', '-am', 'side']);
     await both(['switch', 'main']);
-    await both(['merge', 'side'], stdoutHas: 'Fast-forward\n');
+    await both(['merge', 'side']);
     await both(['rev-parse', 'HEAD']);
 
     await virtual.write('a.txt', 'stashed\n');
@@ -156,7 +139,7 @@ void main() {
     await both(['stash', 'push', '-m', 'wip']);
     await both(['stash', 'list']);
     await both(['status', '--porcelain']);
-    await both(['stash', 'pop'], stdoutHas: 'Dropped refs/stash@{0} (');
+    await both(['stash', 'pop']);
     await both(['diff']);
 
     await both(['remote', 'add', 'origin', '/tmp/origin.git']);

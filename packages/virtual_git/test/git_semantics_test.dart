@@ -3797,6 +3797,7 @@ void main() {
       expect(
         trackedReferences.map((reference) => reference.referenceName),
         orderedEquals([
+          'refs/remotes/origin/HEAD',
           'refs/remotes/origin/feature',
           'refs/remotes/origin/main',
         ]),

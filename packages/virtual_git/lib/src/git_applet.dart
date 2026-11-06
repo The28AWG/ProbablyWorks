@@ -557,17 +557,16 @@ final class GitApplet implements Applet {
       final id = await repo.revParse(revision);
       if (parsed.has('oneline')) {
         io.stdout.writeText('${_abbr(id!.hex)} ${_subject(commit.message)}\n');
-        return 0;
+      } else {
+        _writeCommitHeader(io, id!.hex, commit);
       }
-      _writeCommitHeader(io, id!.hex, commit);
       if (commit.parents.isNotEmpty) {
         final patch = await repo.diffRevisions(
           commit.parents.first.hex,
           id.hex,
         );
-        io.stdout.writeText(
-          '\n${_shortenDiff(const GitDiffCodec().encode(patch))}',
-        );
+        final diff = _shortenDiff(const GitDiffCodec().encode(patch));
+        io.stdout.writeText(parsed.has('oneline') ? diff : '\n$diff');
       }
       return 0;
     }
@@ -668,6 +667,7 @@ final class GitApplet implements Applet {
       GitOption('force', short: 'f'),
       GitOption('move', short: 'm'),
       GitOption('force-move', short: 'M'),
+      GitOption('all', short: 'a'),
       GitOption('show-current'),
     ], usage: usage);
     final repo = await _repo(io);
@@ -762,11 +762,31 @@ final class GitApplet implements Applet {
       }
       return 0;
     }
+    if (parsed.has('all') && parsed.operands.isNotEmpty) {
+      throw const GitUsage(
+        'fatal: the -a, and -r, options to \'git branch\' do not take a branch name.\n'
+        'Did you mean to use: -a|-r --list <pattern>?\n',
+        exitCode: 128,
+      );
+    }
     if (parsed.operands.isEmpty) {
       final branches = await repo.branches();
       for (final branch in branches) {
         final mark = branch.current ? '* ' : '  ';
         io.stdout.writeText('$mark${branch.name}\n');
+      }
+      if (parsed.has('all')) {
+        final remotes = await repo.references(prefix: 'refs/remotes');
+        for (final ref in remotes) {
+          final stored = await repo.readReference(ref.referenceName);
+          final target = stored?.targetReferenceName;
+          if (target != null && target.startsWith('refs/remotes/')) {
+            final short = _piece(target, 'refs/remotes/'.length, target.length);
+            io.stdout.writeText('  remotes/${ref.name} -> $short\n');
+          } else {
+            io.stdout.writeText('  remotes/${ref.name}\n');
+          }
+        }
       }
       return 0;
     }
@@ -1081,6 +1101,21 @@ final class GitApplet implements Applet {
       committer: _committer(io, config),
       message: parsed.value('message'),
     );
+    if (result.status == GitMergeStatus.fastForward &&
+        result.currentObjectId != null &&
+        result.resultObjectId != null) {
+      final entries = await repo.diffRevisions(
+        result.currentObjectId!.hex,
+        result.resultObjectId!.hex,
+      );
+      io.stdout.writeText(
+        'Updating ${_abbr(result.currentObjectId!.hex)}..'
+        '${_abbr(result.resultObjectId!.hex)}\n'
+        'Fast-forward\n'
+        '${_diffStat(entries)}',
+      );
+      return 0;
+    }
     io.stdout.writeText('${_mergeText(result.status)}\n');
     return result.status == GitMergeStatus.conflict ? 1 : 0;
   }
@@ -1286,11 +1321,12 @@ final class GitApplet implements Applet {
         );
       }
     }
+    final localPath = !_networkUrl(url) && !url.startsWith('file://');
     if (!parsed.has('quiet')) {
-      io.stdout.writeText("Cloning into '$directory'...\n");
+      io.stderr.writeText("Cloning into '$directory'...\n");
     }
     final shallow = depth == null ? null : int.parse(depth);
-    if (shallow != null && !_networkUrl(url) && !url.startsWith('file://')) {
+    if (shallow != null && localPath) {
       io.stderr.writeText(
         'warning: --depth is ignored in local clones; use file:// instead.\n',
       );
@@ -1306,7 +1342,7 @@ final class GitApplet implements Applet {
       filter: parsed.value('filter'),
       httpHeaders: _extraHeaders(io),
     );
-    if (!parsed.has('quiet')) io.stdout.writeText('done.\n');
+    if (!parsed.has('quiet') && localPath) io.stderr.writeText('done.\n');
     return 0;
   }
 
@@ -1967,7 +2003,46 @@ final class GitApplet implements Applet {
     return _shortenDiff(const GitDiffCodec().encode(entries));
   }
 
-  /// Короткая статистика `git commit` и `git diff --stat`.
+  /// Строки `git diff --stat`: график по файлам и сводка.
+  ///
+  /// Для небольшого diff один `+` или `-` равен одной строке. Ширина числа
+  /// берётся по самому длинному счётчику, как у git.
+  String _diffStat(List<GitDiffEntry> entries) {
+    if (entries.isEmpty) return '';
+    final rows = <({String path, int additions, int deletions})>[];
+    var pathWidth = 0;
+    var countWidth = 1;
+    for (final entry in entries) {
+      var additions = 0;
+      var deletions = 0;
+      for (final hunk in entry.hunks) {
+        for (final line in hunk.lines) {
+          switch (line.type) {
+            case GitDiffLineType.addition:
+              additions++;
+            case GitDiffLineType.deletion:
+              deletions++;
+            case GitDiffLineType.context:
+              break;
+          }
+        }
+      }
+      final count = '${additions + deletions}'.length;
+      if (entry.path.length > pathWidth) pathWidth = entry.path.length;
+      if (count > countWidth) countWidth = count;
+      rows.add((path: entry.path, additions: additions, deletions: deletions));
+    }
+    final buffer = StringBuffer();
+    for (final row in rows) {
+      final graph = '${'+' * row.additions}${'-' * row.deletions}';
+      final count = '${row.additions + row.deletions}'.padLeft(countWidth);
+      buffer.writeln(' ${row.path.padRight(pathWidth)} | $count $graph');
+    }
+    buffer.write(_shortstat(entries));
+    return buffer.toString();
+  }
+
+  /// Сводка `git commit`: число строк и create/delete mode.
   String _shortstat(List<GitDiffEntry> entries) {
     if (entries.isEmpty) return '';
     var insertions = 0;

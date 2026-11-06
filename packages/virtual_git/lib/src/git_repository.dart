@@ -1043,6 +1043,9 @@ final class GitRepository {
       await marker.parent.create(recursive: true);
       await marker.writeAsString('$filter\n');
     }
+    if (!dryRun) {
+      await _writeRemoteHeadSymref(remoteTransport, normalizedRemoteName);
+    }
 
     return GitFetchResult(
       remoteName: normalizedRemoteName,
@@ -2557,7 +2560,9 @@ final class GitRepository {
       defaultSummary: headSummary,
     );
     // Индексный коммит всегда описывает HEAD, а не текст -m.
-    final indexMessage = 'index on $branchName: $headSummary';
+    // У git у этого сообщения есть завершающий перевод строки, а у самого
+    // stash-коммита его нет: хеш `Dropped refs/stash@{0}` зависит от этой разницы.
+    final indexMessage = 'index on $branchName: $headSummary\n';
     final indexEntries = _treeEntriesFromIndex(currentIndex);
     final trackedWorkTreeEntries = await _treeEntriesFromTrackedWorkTree(
       currentIndex,
@@ -2587,7 +2592,7 @@ final class GitRepository {
           committer: effectiveCommitter,
           message:
               'untracked files on $branchName: '
-              '${_summarizeReflogMessage(stashMessage)}',
+              '${_summarizeReflogMessage(stashMessage)}\n',
           parents: [baseObjectId],
           algorithm: baseObjectId.algorithm,
           treeCodec: treeCodec,
@@ -7011,6 +7016,28 @@ final class GitRepository {
         ? trimmed
         : 'refs/tags/$trimmed';
     return GitReference.symbolic('HEAD', referenceName).targetReferenceName!;
+  }
+
+  /// Пишет `refs/remotes/<remote>/HEAD` на ветку удалённого HEAD.
+  ///
+  /// Так `git branch -a` печатает `remotes/origin/HEAD -> origin/main`.
+  /// Clone тоже получает эту ссылку: он копирует историю через fetch.
+  Future<void> _writeRemoteHeadSymref(
+    _GitRemoteTransport remoteTransport,
+    String remoteName,
+  ) async {
+    final head = await remoteTransport.readReference('HEAD');
+    final target = head?.targetReferenceName;
+    if (target == null || !target.startsWith('refs/heads/')) {
+      return;
+    }
+    final short = _branchShortName(target);
+    await writeReference(
+      GitReference.symbolic(
+        'refs/remotes/$remoteName/HEAD',
+        'refs/remotes/$remoteName/$short',
+      ),
+    );
   }
 
   static String _branchShortName(String referenceName) =>

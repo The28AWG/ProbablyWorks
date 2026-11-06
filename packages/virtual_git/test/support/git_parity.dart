@@ -68,6 +68,10 @@ final class GitParitySession {
   }
 
   /// Одна и та же команда на обеих сторонах. [waivers] пропускает сверку.
+  ///
+  /// `{root}` в аргументе — каталог этой стороны: `/work` у апплета и
+  /// временный каталог у настоящего git. Так `clone {root} dst` клонирует
+  /// свой источник, а пути в выводе после замены всё равно совпадают.
   Future<void> both(
     List<String> args, {
     List<GitParityWaiver> waivers = const [],
@@ -77,8 +81,8 @@ final class GitParitySession {
     for (final item in waivers) {
       if (item.command == command) waiver = item;
     }
-    final left = await _virtual.run(args);
-    final right = await _real(args);
+    final left = await _virtual.run(_rootArgs(args, '/work'));
+    final right = await _real(_rootArgs(args, realRoot.path));
     if (waiver != null) {
       expect(waiver.reason, isNotEmpty, reason: command);
       return;
@@ -125,6 +129,10 @@ final class GitParitySession {
       await dumped.delete(recursive: true);
     }
   }
+
+  List<String> _rootArgs(List<String> args, String root) => [
+    for (final arg in args) arg.replaceAll('{root}', root),
+  ];
 
   Future<ProcessResult> _real(List<String> args) =>
       _git(['-C', realRoot.path, ...args]);
