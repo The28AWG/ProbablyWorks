@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' as legacy;
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:material_ui/material_ui.dart';
@@ -10,6 +11,12 @@ import 'package:probably_works/app/theme/app_tokens.dart';
 /// Единственный способ показать Markdown в приложении. `MarkdownBlock` без конфига
 /// рисует светлую палитру пакета (чёрный текст, светлые блоки кода, синие ссылки),
 /// поэтому в тёмной теме текст становится нечитаемым.
+///
+/// `markdown_widget` собран на `package:flutter/material.dart`. Его `InkWell`
+/// (ссылка вокруг виджета, картинка) ищет `Material` того же пакета, а `Scaffold`
+/// приложения даёт `Material` из `material_ui` — для чернил это другой тип.
+/// `MaterialUiCompatibilityBridge` переносит тему, прозрачный `Material` — предок
+/// для чернил. Мост временный: его уберут, когда пакет перейдёт на `material_ui`.
 class AppMarkdown extends StatelessWidget {
   const AppMarkdown({required this.data, super.key});
 
@@ -18,14 +25,20 @@ class AppMarkdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return DefaultTextStyle.merge(
-      // Базовый текст идёт через DefaultTextStyle, а не через стиль абзаца: стиль абзаца
-      // родительский для ссылок, и его шрифт перебивал бы их оформление.
-      style: _bodyStyle(theme),
-      child: MarkdownBlock(
-        data: data,
-        config: _markdownConfig(context),
-        generator: _markdownGenerator(theme),
+    // ignore: deprecated_member_use, markdown_widget ещё импортирует package:flutter/material.dart
+    return MaterialUiCompatibilityBridge(
+      child: legacy.Material(
+        type: legacy.MaterialType.transparency,
+        child: DefaultTextStyle.merge(
+          // Базовый текст идёт через DefaultTextStyle, а не через стиль абзаца: стиль абзаца
+          // родительский для ссылок, и его шрифт перебивал бы их оформление.
+          style: _bodyStyle(theme),
+          child: MarkdownBlock(
+            data: data,
+            config: _markdownConfig(context),
+            generator: _markdownGenerator(theme),
+          ),
+        ),
       ),
     );
   }

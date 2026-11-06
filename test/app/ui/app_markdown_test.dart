@@ -103,6 +103,32 @@ void main() {
       expect(span.style?.color, theme.colorScheme.primary);
     });
 
+    testWidgets(
+      'AppMarkdown link around a widget does not need Scaffold Material ($name)',
+      (tester) async {
+        // Inline-код — WidgetSpan. Пакет оборачивает его в InkWell из
+        // package:flutter/material.dart, которому нужен Material того же пакета.
+        await tester.pumpWidget(
+          _TestHost(
+            const AppMarkdown(data: 'see [`docs`](https://example.com)'),
+            theme,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+        expect(find.text('docs'), findsOneWidget);
+      },
+    );
+
+    testWidgets('AppMarkdown image does not need Scaffold Material ($name)', (
+      tester,
+    ) async {
+      // Картинка вне ссылки тоже InkWell из package:flutter/material.dart.
+      await tester.pumpWidget(
+        _TestHost(const AppMarkdown(data: '![alt](missing.png)'), theme),
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('AppMarkdown inline code is a rounded chip ($name)', (
       tester,
     ) async {

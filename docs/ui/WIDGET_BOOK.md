@@ -335,6 +335,9 @@ AppMarkdown(data: message.text)
 
 Не менять `MarkdownConfig` в экранах. Новые правила оформления Markdown добавляются в
 `lib/app/ui/app_markdown.dart`, чтобы все места ленты выглядели одинаково.
+`markdown_widget` всё ещё на `package:flutter/material.dart`: компонент оборачивает блок
+в `MaterialUiCompatibilityBridge` и прозрачный `Material` того пакета, иначе `InkWell`
+ссылки или картинки не находит предка (`Scaffold` приложения — это `Material` из `material_ui`).
 
 **`AppSvgIcon`**: SVG из `assets/` для значка, которого нет в Material или который в Material не узнаётся
 (логотипы систем). Размер и цвет берутся из `IconTheme`, как у `Icon`, поэтому значок реагирует на выбор и тему.
