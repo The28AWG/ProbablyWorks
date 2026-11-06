@@ -66,6 +66,37 @@ void main() {
     expect(r.exitCode, 0, reason: r.stderr);
     expect(r.stdout, contains('scalar 0.1.0'));
   });
+
+  test(
+    'git am: --whitespace=error отклоняет патч с trailing whitespace',
+    () async {
+      final r = await _git(
+        'git init -b main && '
+        'printf "base\\n" > a.txt && git add a.txt && git commit -m first && '
+        r'{ printf "%s\n" '
+        r'"From dev@test Mon Jan 1 00:00:00 2024" "" "Subject: patch" "" '
+        r'"diff --git a/a.txt b/a.txt" "--- a/a.txt" "+++ b/a.txt" '
+        r'"@@ -1 +1 @@" "-base" "+patched "; } > p.mbox && '
+        'git am --whitespace=error p.mbox',
+      );
+      expect(r.exitCode, 128);
+      expect(r.stderr, contains('trailing whitespace'));
+    },
+  );
+
+  test('git am: неверное значение --whitespace даёт fatal', () async {
+    final r = await _git(
+      'git init -b main && '
+      'printf "x\\n" > a.txt && git add a.txt && git commit -m first && '
+      r'{ printf "%s\n" '
+      r'"From dev@test Mon Jan 1 00:00:00 2024" "" "Subject: p" "" '
+      r'"diff --git a/a.txt b/a.txt" "--- a/a.txt" "+++ b/a.txt" '
+      r'"@@ -1 +1 @@" "-x" "+y"; } > p.mbox && '
+      'git am --whitespace=nope p.mbox',
+    );
+    expect(r.exitCode, 128);
+    expect(r.stderr, contains('Invalid whitespace'));
+  });
 }
 
 final class _Outcome {

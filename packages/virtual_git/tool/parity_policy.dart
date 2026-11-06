@@ -302,15 +302,6 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
     (pattern: '--no-verify', reason: 'хуки applypatch-msg не вызываются'),
     (pattern: '-n', reason: 'см. --no-verify'),
     (pattern: '--verify', reason: 'см. --no-verify'),
-    (
-      pattern: '--quoted-cr',
-      reason: 'разбор quoted-cr кроме nowarn не реализован',
-    ),
-    (
-      pattern: '--whitespace',
-      reason: 'для значений кроме nowarn детекция пробелов как у git apply не реализована',
-    ),
-    (pattern: '--reject', reason: 'файлы *.rej не создаются'),
     (pattern: '--rerere-autoupdate', reason: 'rerere в virtual_git нет'),
     (pattern: '--gpg-sign', reason: 'подпись коммитов GPG не поддерживается'),
     (pattern: '-S', reason: 'см. --gpg-sign'),
@@ -319,7 +310,6 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
       reason: 'перекодирование в UTF-8 как у git-mailinfo не выполняется',
     ),
     (pattern: '-u', reason: 'см. --utf8'),
-    (pattern: '--keep-non-patch', reason: 'флаг mailinfo -b не пробрасывается'),
   ],
   'archive': [
     (pattern: '*', reason: 'локальный tar по дереву без remote/exec/add-file'),

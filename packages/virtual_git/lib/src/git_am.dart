@@ -143,17 +143,100 @@ String mailBodyAfterHeaders(String message) {
   return body;
 }
 
-/// Режим `--whitespace` для `git apply` (подмножество).
-GitApplyWhitespaceMode? parseWhitespaceAction(String? raw) {
+/// Действие `--whitespace` для `git apply` / `git am`.
+GitApplyWhitespacePolicy? parseWhitespacePolicy(String? raw) {
   if (raw == null || raw.isEmpty) return null;
   switch (raw) {
     case 'nowarn':
+      return GitApplyWhitespacePolicy.nowarn;
     case 'warn':
+      return GitApplyWhitespacePolicy.warn;
     case 'error':
+      return GitApplyWhitespacePolicy.error;
     case 'error-all':
+      return GitApplyWhitespacePolicy.errorAll;
     case 'fix':
-      return GitApplyWhitespaceMode.exact;
+      return GitApplyWhitespacePolicy.fix;
     default:
       return null;
   }
 }
+
+/// Строка темы как у `git mailinfo` (без `-k`).
+String mailinfoSubjectLine(
+  String rawSubject, {
+  required bool keepSubject,
+  required bool keepNonPatchBrackets,
+}) {
+  var s = rawSubject.trim();
+  if (keepSubject) {
+    return s;
+  }
+  if (keepNonPatchBrackets) {
+    while (true) {
+      final match = RegExp(r'^\s*\[([^\]]*)\]\s*').firstMatch(s);
+      if (match == null) break;
+      final inner = match.group(1)!;
+      if (!inner.toLowerCase().contains('patch')) break;
+      s = s.substring(match.end).trimLeft();
+    }
+  } else {
+    while (true) {
+      final match = RegExp(r'^\s*\[([^\]]*)\]\s*').firstMatch(s);
+      if (match == null) break;
+      s = s.substring(match.end).trimLeft();
+    }
+  }
+  s = _stripLeadingRePrefix(s);
+  if (s.startsWith(':')) {
+    s = s.substring(1).trimLeft();
+  }
+  return s.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String _stripLeadingRePrefix(String value) {
+  var s = value.trimLeft();
+  while (true) {
+    final match = RegExp(
+      r'^(re|aw|sv|fw)\s*:\s*',
+      caseSensitive: false,
+    ).firstMatch(s);
+    if (match == null) break;
+    s = s.substring(match.end).trimLeft();
+  }
+  return s;
+}
+
+/// `--quoted-cr`: предупреждение или замена `\r` в конце строк тела до патча.
+({String body, int warnCount}) applyQuotedCrToBody(
+  String body, {
+  required String? action,
+}) {
+  final mode = action ?? 'warn';
+  if (mode == 'nowarn') {
+    return (body: body, warnCount: 0);
+  }
+  final lines = body.split('\n');
+  var warns = 0;
+  final out = <String>[];
+  for (final line in lines) {
+    if (line.endsWith('\r')) {
+      warns++;
+      out.add(mode == 'strip' ? line.substring(0, line.length - 1) : line);
+    } else {
+      out.add(line);
+    }
+  }
+  return (body: out.join('\n'), warnCount: warns);
+}
+
+/// Строка `Message-ID:` для хвоста коммита (как у `git am -m`).
+String? messageIdTrailer(Map<String, String> headers) {
+  final id = headers['message-id'];
+  if (id == null || id.trim().isEmpty) return null;
+  return 'Message-ID: ${id.trim()}\n';
+}
+
+/// Псевдо `-u` / `--utf8`: mbox в virtual_git уже читается как UTF-8 (`utf8.decode`);
+/// отдельное перекодирование метаданных не требуется, поведение совместимо с git при валидном UTF-8.
+String recodeMailinfoMetadata(String message) => message;

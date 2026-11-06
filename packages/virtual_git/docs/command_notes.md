@@ -6,6 +6,8 @@
 
 Сценарий `format-patch` → `git am` для одного коммита — там же (`git am из format-patch`).
 
+`git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
+
 ## Паритет опций и политика
 
 Скрипт `tool/parity_report.dart` проверяет только разбор флагов (нет ли `error: unknown option`), а не совпадение текста с git.

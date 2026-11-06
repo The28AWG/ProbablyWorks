@@ -40,12 +40,31 @@ final class GitApplyFileResult {
 }
 
 final class GitApplyResult {
-  const GitApplyResult({this.files = const [], this.check = false});
+  const GitApplyResult({
+    this.files = const [],
+    this.check = false,
+    this.stderrLines = const [],
+    this.whitespaceErrorLineCount = 0,
+    this.whitespaceFixedLineCount = 0,
+    this.whitespaceBlocked = false,
+  });
 
   final List<GitApplyFileResult> files;
   final bool check;
 
-  bool get success => files.every((file) => file.applied);
+  /// Предупреждения и сообщения в стиле `git apply` (номера строк — в исходном тексте патча).
+  final List<String> stderrLines;
+
+  /// Сколько строк с `+` в патче содержали trailing whitespace до обработки.
+  final int whitespaceErrorLineCount;
+
+  /// Сколько строк было исправлено политикой [GitApplyWhitespacePolicy.fix].
+  final int whitespaceFixedLineCount;
+
+  /// Политика `error`/`error-all`: патч не применялся из‑за пробелов в добавляемых строках.
+  final bool whitespaceBlocked;
+
+  bool get success => !whitespaceBlocked && files.every((file) => file.applied);
 
   bool get hasConflicts => files.any((file) => file.conflict);
 

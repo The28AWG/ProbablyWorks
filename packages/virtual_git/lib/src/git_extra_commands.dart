@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:virtual_git/src/git_am.dart';
+import 'package:virtual_git/src/git_apply.dart';
 import 'package:virtual_git/src/git_apply_whitespace.dart';
 import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
@@ -1046,12 +1047,6 @@ Future<int> _am(
       exitCode: 128,
     );
   }
-  if (parsed.has('reject')) {
-    throw GitUsage(
-      'fatal: reject files are not supported in virtual git\n',
-      exitCode: 128,
-    );
-  }
 
   final patchFormat = parsed.value('patch-format');
   if (patchFormat != null && patchFormat != 'mbox') {
@@ -1262,6 +1257,26 @@ Future<int> _amContinue(
     io.stderr.writeText('fatal: No patch am in progress\n');
     return 128;
   }
+  final resume = await _AmResumeState.load(repo);
+  if (resume == null) {
+    await _amClearRebaseApply(repo);
+    io.stderr.writeText('fatal: patch state corrupted\n');
+    return 128;
+  }
+  final opts = _AmEffectiveOptions(parsed: parsed, resume: resume);
+  final invalidQuotedContinue = _amValidateQuotedCr(opts.quotedCrEffective);
+  if (invalidQuotedContinue != null) {
+    io.stderr.writeText(invalidQuotedContinue);
+    return 128;
+  }
+  final wsRawContinue = opts.wsPolicyRaw;
+  if (wsRawContinue != null && wsRawContinue.trim().isNotEmpty) {
+    if (parseWhitespacePolicy(wsRawContinue.trim()) == null) {
+      io.stderr.writeText('fatal: Invalid whitespace option: $wsRawContinue\n');
+      return 128;
+    }
+  }
+
   final patchText = await _amReadRebaseApplyFile(repo, 'patch');
   final message = await _amReadRebaseApplyFile(repo, '0001');
   if (patchText == null || message == null) {
@@ -1299,19 +1314,62 @@ Future<int> _amContinue(
   }
   final apply = await repo.applyPatch(
     patchBody,
-    threeWay: parsed.has('3way'),
-    stripPathSegments: int.tryParse(parsed.value('p') ?? '0') ?? 0,
-    whitespaceMode: _amWhitespaceMode(parsed),
+    threeWay: opts.threeway,
+    reject: opts.reject,
+    stripPathSegments: opts.stripPathSegments,
+    whitespaceMode: opts.applyWhitespaceMode,
+    whitespacePolicy: opts.applyWhitespacePolicy,
     includePaths: _amPathSet(parsed, 'include'),
     excludePaths: _amPathSet(parsed, 'exclude'),
-    applyContextLines: int.tryParse(parsed.value('C') ?? '3') ?? 3,
-    applyDirectoryPrefix: parsed.value('directory'),
+    applyContextLines: opts.applyContextLines,
+    applyDirectoryPrefix: opts.applyDirectoryPrefix,
+    patchFileLabel: _amPatchFileLabel(),
   );
+  _amEmitApplyStderr(io, apply, quiet: opts.quiet);
   if (!apply.success) {
-    io.stderr.writeText(
-      'error: patch failed: ${apply.files.firstWhere((f) => f.conflict).path}\n',
-    );
-    io.stderr.writeText('error: unresolved conflicts\n');
+    if (apply.whitespaceBlocked) {
+      await _amPersistRebaseApplyForFailure(
+        io,
+        repo,
+        config,
+        fullMessage: message,
+        subjectLine:
+            await _amReadRebaseApplyFile(repo, 'final-commit') ??
+            _amExtractSubjectFromMbox(message),
+        opts: opts,
+      );
+      _amPrintStandardAmHints(io);
+      final subjectLine =
+          await _amReadRebaseApplyFile(repo, 'final-commit') ??
+          _amExtractSubjectFromMbox(message);
+      if (!opts.quiet) {
+        io.stderr.writeText('Applying: $subjectLine\n');
+        io.stderr.writeText(
+          "${parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine'}\n",
+        );
+      }
+      return 128;
+    }
+    if (apply.hasConflicts) {
+      final conflictPath = apply.files
+          .firstWhere((f) => f.conflict, orElse: () => apply.files.first)
+          .path;
+      if (!opts.quiet) {
+        io.stderr.writeText('error: patch failed: $conflictPath\n');
+        io.stderr.writeText('error: $conflictPath: patch does not apply\n');
+      }
+      _amPrintStandardAmHints(io);
+      final subjectLine =
+          await _amReadRebaseApplyFile(repo, 'final-commit') ??
+          _amExtractSubjectFromMbox(message);
+      if (!opts.quiet) {
+        io.stderr.writeText('Applying: $subjectLine\n');
+        io.stderr.writeText(
+          "${parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine'}\n",
+        );
+      }
+      return 128;
+    }
     return 128;
   }
   final paths = _amPathsFromPatch(patchBody);
@@ -1321,27 +1379,33 @@ Future<int> _amContinue(
       await _amReadRebaseApplyFile(repo, 'final-commit') ??
       _amExtractSubjectFromMbox(message);
   var bodyText = _amMessageBodyAfterSubject(message, subjectLine);
-  bodyText = applyScissorsToBody(bodyText, scissors: parsed.has('scissors'));
+  bodyText = applyScissorsToBody(bodyText, scissors: opts.scissors);
   bodyText = _stripAmDiffFooter(bodyText);
-  if (parsed.has('signoff')) {
+  if (opts.signoff) {
     final signer = _signature(io, config);
     bodyText = _amAppendSignoff(bodyText, signer);
   }
-  final msg = '$subjectLine\n\n$bodyText'.trim();
+  final headers = parseMailHeaders(message);
+  final msg = _amBuildCommitMessage(
+    subjectLine: subjectLine,
+    bodyText: bodyText,
+    headers: headers,
+    opts: opts,
+  );
   final author = await _amAuthorFromScript(repo) ?? _signature(io, config);
-  final committer = _amCommitterFromOptions(
+  final committer = _amCommitterFromEffectiveOptions(
     io,
     config,
-    parsed,
+    opts,
     authorFallback: author,
   );
   await repo.commit(
     author: author,
     committer: committer,
-    message: msg.endsWith('\n') ? msg : '$msg\n',
+    message: msg,
     allowEmpty: false,
   );
-  if (!parsed.has('quiet')) {
+  if (!opts.quiet) {
     io.stdout.writeText('Applying: $subjectLine\n');
   }
   await _amClearRebaseApply(repo);
@@ -1356,16 +1420,6 @@ Set<String>? _amPathSet(GitInvocation parsed, String name) {
   return values.toSet();
 }
 
-GitApplyWhitespaceMode _amWhitespaceMode(GitInvocation parsed) {
-  if (parsed.has('ignore-whitespace')) {
-    return GitApplyWhitespaceMode.ignoreAllWhitespace;
-  }
-  if (parsed.has('ignore-space-change')) {
-    return GitApplyWhitespaceMode.ignoreSpaceChange;
-  }
-  return GitApplyWhitespaceMode.exact;
-}
-
 List<String> _amPathsFromPatch(String patchBody) {
   final paths = <String>[];
   final seen = <String>{};
@@ -1377,6 +1431,211 @@ List<String> _amPathsFromPatch(String patchBody) {
     if (seen.add(path)) paths.add(path);
   }
   return paths;
+}
+
+/// Каталог патча в состоянии `am` — как у git в сообщениях про пробелы.
+String _amPatchFileLabel() => '.git/rebase-apply/patch';
+
+GitApplyWhitespaceMode _amWhitespaceModeForFlags({
+  required bool ignoreSpaceChange,
+  required bool ignoreWhitespace,
+}) {
+  if (ignoreWhitespace) {
+    return GitApplyWhitespaceMode.ignoreAllWhitespace;
+  }
+  if (ignoreSpaceChange) {
+    return GitApplyWhitespaceMode.ignoreSpaceChange;
+  }
+  return GitApplyWhitespaceMode.exact;
+}
+
+void _amEmitApplyStderr(
+  AppletIo io,
+  GitApplyResult apply, {
+  required bool quiet,
+}) {
+  if (quiet || apply.stderrLines.isEmpty) return;
+  for (final line in apply.stderrLines) {
+    io.stderr.writeText('$line\n');
+  }
+}
+
+/// Флаги `git am`, сохранённые в `.git/rebase-apply` для `--continue` / `--retry`.
+final class _AmResumeState {
+  const _AmResumeState({
+    required this.quiet,
+    required this.signoff,
+    required this.utf8,
+    required this.threeway,
+    required this.scissors,
+    required this.keep,
+    required this.messageId,
+    required this.keepNonPatch,
+    required this.allowEmpty,
+    required this.committerDateIsAuthorDate,
+    required this.ignoreDate,
+    required this.ignoreSpaceChange,
+    required this.ignoreWhitespace,
+    required this.wsPolicyRaw,
+    required this.reject,
+    required this.quotedCr,
+  });
+
+  final bool quiet;
+  final bool signoff;
+  final bool utf8;
+  final bool threeway;
+  final bool scissors;
+  final bool keep;
+  final bool messageId;
+  final bool keepNonPatch;
+  final bool allowEmpty;
+  final bool committerDateIsAuthorDate;
+  final bool ignoreDate;
+  final bool ignoreSpaceChange;
+  final bool ignoreWhitespace;
+  final String wsPolicyRaw;
+  final bool reject;
+  final String quotedCr;
+
+  static Future<_AmResumeState?> load(GitRepository repo) async {
+    final quiet = await _amReadRebaseApplyFile(repo, 'quiet');
+    if (quiet == null) return null;
+    Future<bool> flag(String name) async =>
+        (await _amReadRebaseApplyFile(repo, name))?.trim() == 't';
+    return _AmResumeState(
+      quiet: quiet.trim() == 't',
+      signoff: await flag('sign'),
+      utf8: await flag('utf8'),
+      threeway: await flag('threeway'),
+      scissors: await flag('scissors'),
+      keep: await flag('keep'),
+      messageId: await flag('messageid'),
+      keepNonPatch: await flag('keep-non-patch'),
+      allowEmpty: await flag('allow-empty'),
+      committerDateIsAuthorDate: await flag('cda'),
+      ignoreDate: await flag('idate'),
+      ignoreSpaceChange: await flag('isc'),
+      ignoreWhitespace: await flag('iw'),
+      wsPolicyRaw:
+          (await _amReadRebaseApplyFile(repo, 'ws-policy'))?.trim() ?? 'warn',
+      reject: await flag('reject'),
+      quotedCr: (await _amReadRebaseApplyFile(repo, 'qc'))?.trim() ?? 'warn',
+    );
+  }
+}
+
+/// Эффективные опции: CLI при `am` заново, иначе значения из [resume] (как у git).
+final class _AmEffectiveOptions {
+  _AmEffectiveOptions({required GitInvocation parsed, _AmResumeState? resume})
+    : _p = parsed,
+      _r = resume;
+
+  final GitInvocation _p;
+  final _AmResumeState? _r;
+
+  bool get quiet => _p.has('quiet') || (_r?.quiet ?? false);
+
+  bool get signoff => _p.has('signoff') || (_r?.signoff ?? false);
+
+  bool get utf8 => _p.has('utf8') || (_r?.utf8 ?? false);
+
+  bool get threeway => _p.has('3way') || (_r?.threeway ?? false);
+
+  bool get scissors => _p.has('scissors') || (_r?.scissors ?? false);
+
+  bool get keep => _p.has('keep') || (_r?.keep ?? false);
+
+  bool get messageId => _p.has('message-id') || (_r?.messageId ?? false);
+
+  bool get keepNonPatch =>
+      _p.has('keep-non-patch') || (_r?.keepNonPatch ?? false);
+
+  bool get allowEmpty => _p.has('allow-empty') || (_r?.allowEmpty ?? false);
+
+  bool get committerDateIsAuthorDate =>
+      _p.has('committer-date-is-author-date') ||
+      (_r?.committerDateIsAuthorDate ?? false);
+
+  bool get ignoreDate => _p.has('ignore-date') || (_r?.ignoreDate ?? false);
+
+  bool get ignoreSpaceChange =>
+      _p.has('ignore-space-change') || (_r?.ignoreSpaceChange ?? false);
+
+  bool get ignoreWhitespace =>
+      _p.has('ignore-whitespace') || (_r?.ignoreWhitespace ?? false);
+
+  String? get wsPolicyRaw => _p.value('whitespace') ?? _r?.wsPolicyRaw;
+
+  bool get reject => _p.has('reject') || (_r?.reject ?? false);
+
+  String? get quotedCr => _p.value('quoted-cr') ?? _r?.quotedCr;
+
+  /// Эффективное значение `--quoted-cr` (git по умолчанию предупреждает).
+  String get quotedCrEffective {
+    final raw = quotedCr;
+    if (raw == null || raw.trim().isEmpty) return 'warn';
+    return raw.trim();
+  }
+
+  int get stripPathSegments => int.tryParse(_p.value('p') ?? '0') ?? 0;
+
+  int get applyContextLines => int.tryParse(_p.value('C') ?? '3') ?? 3;
+
+  String? get applyDirectoryPrefix => _p.value('directory');
+
+  GitApplyWhitespaceMode get applyWhitespaceMode => _amWhitespaceModeForFlags(
+    ignoreSpaceChange: ignoreSpaceChange,
+    ignoreWhitespace: ignoreWhitespace,
+  );
+
+  GitApplyWhitespacePolicy get applyWhitespacePolicy {
+    final raw = wsPolicyRaw;
+    return parseWhitespacePolicy(raw) ?? GitApplyWhitespacePolicy.warn;
+  }
+}
+
+/// Сохраняет флаги в `.git/rebase-apply` по эффективным опциям (CLI ∪ resume).
+Future<void> _amWriteRebaseApplyAmFlags(
+  GitRepository repo,
+  _AmEffectiveOptions o,
+) async {
+  await _amWriteRebaseApplyFile(repo, 'quiet', o.quiet ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'sign', o.signoff ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'utf8', o.utf8 ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'threeway', o.threeway ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'scissors', o.scissors ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'keep', o.keep ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'messageid', o.messageId ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(
+    repo,
+    'keep-non-patch',
+    o.keepNonPatch ? 't\n' : 'f\n',
+  );
+  await _amWriteRebaseApplyFile(
+    repo,
+    'allow-empty',
+    o.allowEmpty ? 't\n' : 'f\n',
+  );
+  await _amWriteRebaseApplyFile(
+    repo,
+    'cda',
+    o.committerDateIsAuthorDate ? 't\n' : 'f\n',
+  );
+  await _amWriteRebaseApplyFile(repo, 'idate', o.ignoreDate ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(
+    repo,
+    'isc',
+    o.ignoreSpaceChange ? 't\n' : 'f\n',
+  );
+  await _amWriteRebaseApplyFile(repo, 'iw', o.ignoreWhitespace ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(
+    repo,
+    'ws-policy',
+    '${o.wsPolicyRaw ?? 'warn'}\n',
+  );
+  await _amWriteRebaseApplyFile(repo, 'reject', o.reject ? 't\n' : 'f\n');
+  await _amWriteRebaseApplyFile(repo, 'qc', '${o.quotedCrEffective}\n');
 }
 
 /// Патч пригоден для `git apply`: есть блоки `@@` или нулевой размер при
@@ -1433,13 +1692,13 @@ Future<GitCommitSignature?> _amAuthorFromScript(GitRepository repo) async {
   );
 }
 
-GitCommitSignature _amCommitterFromOptions(
+GitCommitSignature _amCommitterFromEffectiveOptions(
   AppletIo io,
   List<({String key, String value})> config,
-  GitInvocation parsed, {
+  _AmEffectiveOptions opts, {
   required GitCommitSignature authorFallback,
 }) {
-  if (parsed.has('committer-date-is-author-date')) {
+  if (opts.committerDateIsAuthorDate) {
     final base = _committer(io, config);
     return GitCommitSignature(
       name: base.name,
@@ -1448,7 +1707,7 @@ GitCommitSignature _amCommitterFromOptions(
       timezoneOffset: authorFallback.timezoneOffset,
     );
   }
-  if (parsed.has('ignore-date')) {
+  if (opts.ignoreDate) {
     return _committer(io, config);
   }
   return _committer(io, config);
@@ -1466,6 +1725,13 @@ String _stripAmDiffFooter(String body) {
   final index = body.indexOf(marker);
   if (index < 0) return body;
   return body.substring(0, index).trimRight();
+}
+
+/// Префикс до тела письма (заголовки и пустая строка), как после первого `\n\n`.
+String _amMailHeadersPrefix(String message) {
+  final idx = message.indexOf('\n\n');
+  if (idx < 0) return '';
+  return message.substring(0, idx + 2);
 }
 
 String _amMessageBodyAfterSubject(String message, String subjectLine) {
@@ -1500,52 +1766,86 @@ Future<int> _amApplyOneMailboxMessage(
   String rawMessage, {
   required String emptyMode,
 }) async {
+  final opts = _AmEffectiveOptions(parsed: parsed);
+  final invalidQuoted = _amValidateQuotedCr(opts.quotedCrEffective);
+  if (invalidQuoted != null) {
+    io.stderr.writeText(invalidQuoted);
+    return 128;
+  }
+  final wsRaw = opts.wsPolicyRaw;
+  if (wsRaw != null && wsRaw.trim().isNotEmpty) {
+    if (parseWhitespacePolicy(wsRaw.trim()) == null) {
+      io.stderr.writeText('fatal: Invalid whitespace option: $wsRaw\n');
+      return 128;
+    }
+  }
+
   var message = rawMessage;
-  if (parsed.has('keep')) {
+  if (opts.keep) {
     message = stripMboxGreaterThanBody(message);
   }
   message = normalizeMboxNewlines(message, keepCr: parsed.has('keep-cr'));
   final headers = parseMailHeaders(message);
   var body = mailBodyAfterHeaders(message);
-  body = applyScissorsToBody(body, scissors: parsed.has('scissors'));
-
-  final quotedAction = parsed.value('quoted-cr');
-  if (quotedAction != null && quotedAction != 'nowarn') {
-    throw GitUsage(
-      'fatal: --quoted-cr=$quotedAction is not supported\n',
-      exitCode: 128,
-    );
-  }
+  body = applyScissorsToBody(body, scissors: opts.scissors);
 
   final patchStart = body.indexOf('diff --git ');
-  final preamble = patchStart < 0 ? body : body.substring(0, patchStart);
-  final patchText = patchStart < 0 ? '' : body.substring(patchStart);
+  var preamble = patchStart < 0 ? body : body.substring(0, patchStart);
+  final patchTail = patchStart < 0 ? '' : body.substring(patchStart);
+  final quotedCr = applyQuotedCrToBody(
+    preamble,
+    action: opts.quotedCrEffective,
+  );
+  preamble = quotedCr.body;
+  if (quotedCr.warnCount > 0 &&
+      opts.quotedCrEffective == 'warn' &&
+      !opts.quiet) {
+    io.stderr.writeText(
+      'warning: quoted-printable CRLF in body; see git-mailinfo(1)\n',
+    );
+  }
+  body = patchTail.isEmpty ? preamble : '$preamble$patchTail';
+
+  final patchStartAfterQuoted = body.indexOf('diff --git ');
+  final patchText = patchStartAfterQuoted < 0
+      ? ''
+      : body.substring(patchStartAfterQuoted);
 
   if (patchText.isEmpty) {
     if (emptyMode == 'drop') {
       return 0;
     }
     if (emptyMode == 'keep') {
-      final subjectLine = _amSubjectFromHeaders(headers, message);
+      final rawSubject = headers['subject'] ?? '';
+      final subjectLine = mailinfoSubjectLine(
+        rawSubject,
+        keepSubject: opts.keep,
+        keepNonPatchBrackets: opts.keepNonPatch,
+      );
       var bodyText = preamble.trim();
       bodyText = _stripAmDiffFooter(bodyText);
-      if (parsed.has('signoff')) {
+      if (opts.signoff) {
         bodyText = _amAppendSignoff(bodyText, _signature(io, config));
       }
-      final msg = '$subjectLine\n\n$bodyText'.trim();
+      final msg = _amBuildCommitMessage(
+        subjectLine: subjectLine,
+        bodyText: bodyText,
+        headers: headers,
+        opts: opts,
+      );
       await repo.commit(
         author: _amAuthorFromMailHeaders(headers) ?? _signature(io, config),
-        committer: _amCommitterFromOptions(
+        committer: _amCommitterFromEffectiveOptions(
           io,
           config,
-          parsed,
+          opts,
           authorFallback:
               _amAuthorFromMailHeaders(headers) ?? _signature(io, config),
         ),
-        message: msg.endsWith('\n') ? msg : '$msg\n',
+        message: msg,
         allowEmpty: true,
       );
-      if (!parsed.has('quiet')) {
+      if (!opts.quiet) {
         io.stdout.writeText('Applying: $subjectLine\n');
       }
       return 0;
@@ -1554,12 +1854,15 @@ Future<int> _amApplyOneMailboxMessage(
     return 128;
   }
 
+  final prefix = _amMailHeadersPrefix(message);
+  final fullMessageForAm = prefix.isEmpty ? patchText : '$prefix$body';
+
   return _amApplyParsedMessage(
     io,
     repo,
     config,
     parsed,
-    message,
+    fullMessageForAm,
     patchText,
     resumeAfterConflict: false,
   );
@@ -1605,6 +1908,95 @@ GitCommitSignature? _amAuthorFromMailHeaders(Map<String, String> headers) {
   );
 }
 
+String? _amValidateQuotedCr(String action) {
+  switch (action) {
+    case 'nowarn':
+    case 'warn':
+    case 'strip':
+      return null;
+    default:
+      return 'fatal: invalid quoted-cr action: $action\n';
+  }
+}
+
+void _amPrintStandardAmHints(AppletIo io) {
+  io.stderr.writeText(
+    "hint: Use 'git am --show-current-patch=diff' to see the failed patch\n",
+  );
+  io.stderr.writeText(
+    'hint: When you have resolved this problem, run "git am --continue".\n',
+  );
+  io.stderr.writeText(
+    'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
+  );
+  io.stderr.writeText(
+    'hint: To restore the original branch and stop patching, run "git am --abort".\n',
+  );
+  io.stderr.writeText(
+    'hint: Disable this message with "git config set advice.mergeConflict false"\n',
+  );
+}
+
+String _amMailinfoSubjectFromHeaders(
+  Map<String, String> headers,
+  _AmEffectiveOptions opts,
+) {
+  final raw = headers['subject'];
+  if (raw == null || raw.trim().isEmpty) return 'am';
+  return mailinfoSubjectLine(
+    raw,
+    keepSubject: opts.keep,
+    keepNonPatchBrackets: opts.keepNonPatch,
+  );
+}
+
+String _amBuildCommitMessage({
+  required String subjectLine,
+  required String bodyText,
+  required Map<String, String> headers,
+  required _AmEffectiveOptions opts,
+}) {
+  var body = bodyText;
+  if (opts.messageId) {
+    final trailer = messageIdTrailer(headers);
+    if (trailer != null) {
+      if (body.trim().isEmpty) {
+        body = trailer;
+      } else {
+        if (!body.endsWith('\n')) body = '$body\n';
+        body = '$body\n$trailer';
+      }
+    }
+  }
+  final combined = '$subjectLine\n\n$body'.trim();
+  return combined.endsWith('\n') ? combined : '$combined\n';
+}
+
+Future<void> _amPersistRebaseApplyForFailure(
+  AppletIo io,
+  GitRepository repo,
+  List<({String key, String value})> config, {
+  required String fullMessage,
+  required String subjectLine,
+  required _AmEffectiveOptions opts,
+}) async {
+  await Directory(_amRebaseApplyDir(repo)).create(recursive: true);
+  final headNow = await repo.revParse('HEAD');
+  if (headNow != null) {
+    await _amWriteRebaseApplyFile(repo, 'abort-safety', headNow.hex);
+  }
+  await _amWriteRebaseApplyFile(repo, 'patch', fullMessage);
+  await _amWriteRebaseApplyFile(repo, '0001', fullMessage);
+  await _amWriteRebaseApplyFile(repo, 'final-commit', subjectLine);
+  final author =
+      _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
+      _signature(io, config);
+  await _amWriteAuthorScript(repo, author);
+  await _amWriteRebaseApplyFile(repo, 'last', '1\n');
+  await _amWriteRebaseApplyFile(repo, 'next', '1\n');
+  await _amWriteRebaseApplyAmFlags(repo, opts);
+}
+
 Future<int> _amApplyParsedMessage(
   AppletIo io,
   GitRepository repo,
@@ -1614,14 +2006,25 @@ Future<int> _amApplyParsedMessage(
   String patchBody, {
   required bool resumeAfterConflict,
 }) async {
-  final subjectLine = _amExtractSubjectFromMbox(fullMessage);
-  final whitespace = parsed.value('whitespace');
-  if (whitespace != null && whitespace != 'nowarn') {
-    throw GitUsage(
-      'fatal: --whitespace=$whitespace detection is not implemented\n',
-      exitCode: 128,
-    );
+  final resume = resumeAfterConflict ? await _AmResumeState.load(repo) : null;
+  final opts = _AmEffectiveOptions(parsed: parsed, resume: resume);
+
+  final invalidQuoted = _amValidateQuotedCr(opts.quotedCrEffective);
+  if (invalidQuoted != null) {
+    io.stderr.writeText(invalidQuoted);
+    return 128;
   }
+
+  final wsRaw = opts.wsPolicyRaw;
+  if (wsRaw != null && wsRaw.trim().isNotEmpty) {
+    if (parseWhitespacePolicy(wsRaw.trim()) == null) {
+      io.stderr.writeText('fatal: Invalid whitespace option: $wsRaw\n');
+      return 128;
+    }
+  }
+
+  final headers = parseMailHeaders(fullMessage);
+  final subjectLine = _amMailinfoSubjectFromHeaders(headers, opts);
 
   if (!resumeAfterConflict) {
     final head = await repo.revParse('HEAD');
@@ -1633,197 +2036,99 @@ Future<int> _amApplyParsedMessage(
   final diffStart = patchBody.indexOf('diff --git ');
   final applyBody = diffStart >= 0 ? patchBody.substring(diffStart) : '';
   if (!_amPatchHasApplicableHunks(applyBody)) {
-    if (!parsed.has('quiet')) {
+    if (!opts.quiet) {
       io.stderr.writeText(
         'error: No valid patches in input (allow with "--allow-empty")\n',
       );
-      io.stderr.writeText(
-        "hint: Use 'git am --show-current-patch=diff' to see the failed patch\n",
-      );
-      io.stderr.writeText(
-        'hint: When you have resolved this problem, run "git am --continue".\n',
-      );
-      io.stderr.writeText(
-        'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
-      );
-      io.stderr.writeText(
-        'hint: To restore the original branch and stop patching, run "git am --abort".\n',
-      );
-      io.stderr.writeText(
-        'hint: Disable this message with "git config set advice.mergeConflict false"\n',
-      );
+      _amPrintStandardAmHints(io);
       io.stderr.writeText('Applying: $subjectLine\n');
       io.stderr.writeText(
         '${parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine'}\n',
       );
     }
-    await Directory(_amRebaseApplyDir(repo)).create(recursive: true);
-    final headNow = await repo.revParse('HEAD');
-    if (headNow != null) {
-      await _amWriteRebaseApplyFile(repo, 'abort-safety', headNow.hex);
-    }
-    await _amWriteRebaseApplyFile(repo, 'patch', fullMessage);
-    await _amWriteRebaseApplyFile(repo, '0001', fullMessage);
-    await _amWriteRebaseApplyFile(repo, 'final-commit', subjectLine);
-    final author =
-        _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
-        _signature(io, config);
-    await _amWriteAuthorScript(repo, author);
-    await _amWriteRebaseApplyFile(repo, 'last', '1\n');
-    await _amWriteRebaseApplyFile(repo, 'next', '1\n');
-    await _amWriteRebaseApplyFile(
+    await _amPersistRebaseApplyForFailure(
+      io,
       repo,
-      'quiet',
-      parsed.has('quiet') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'sign',
-      parsed.has('signoff') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'utf8',
-      parsed.has('utf8') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'threeway',
-      parsed.has('3way') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'scissors',
-      parsed.has('scissors') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'keep',
-      parsed.has('keep') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'messageid',
-      parsed.has('message-id') ? 't\n' : 'f\n',
+      config,
+      fullMessage: fullMessage,
+      subjectLine: subjectLine,
+      opts: opts,
     );
     return 128;
   }
 
   final apply = await repo.applyPatch(
-    patchBody,
-    threeWay: parsed.has('3way'),
-    stripPathSegments: int.tryParse(parsed.value('p') ?? '0') ?? 0,
-    whitespaceMode: _amWhitespaceMode(parsed),
+    applyBody,
+    threeWay: opts.threeway,
+    reject: opts.reject,
+    stripPathSegments: opts.stripPathSegments,
+    whitespaceMode: opts.applyWhitespaceMode,
+    whitespacePolicy: opts.applyWhitespacePolicy,
     includePaths: _amPathSet(parsed, 'include'),
     excludePaths: _amPathSet(parsed, 'exclude'),
-    applyContextLines: int.tryParse(parsed.value('C') ?? '3') ?? 3,
-    applyDirectoryPrefix: parsed.value('directory'),
+    applyContextLines: opts.applyContextLines,
+    applyDirectoryPrefix: opts.applyDirectoryPrefix,
+    patchFileLabel: _amPatchFileLabel(),
   );
+  _amEmitApplyStderr(io, apply, quiet: opts.quiet);
 
   if (!apply.success) {
-    final conflictPath = apply.files
-        .firstWhere((f) => f.conflict, orElse: () => apply.files.first)
-        .path;
     final resolveMsg =
         parsed.value('resolvemsg') ?? 'Patch failed at 0001 $subjectLine';
-    if (!parsed.has('quiet')) {
-      io.stderr.writeText('error: patch failed: $conflictPath\n');
-      io.stderr.writeText('error: $conflictPath: patch does not apply\n');
-      io.stderr.writeText(
-        "hint: Use 'git am --show-current-patch=diff' to see the failed patch\n",
-      );
-      io.stderr.writeText(
-        'hint: When you have resolved this problem, run "git am --continue".\n',
-      );
-      io.stderr.writeText(
-        'hint: If you prefer to skip this patch, run "git am --skip" instead.\n',
-      );
-      io.stderr.writeText(
-        'hint: To restore the original branch and stop patching, run "git am --abort".\n',
-      );
+    if (!opts.quiet) {
+      if (!apply.whitespaceBlocked && apply.hasConflicts) {
+        final conflictPath = apply.files
+            .firstWhere((f) => f.conflict, orElse: () => apply.files.first)
+            .path;
+        io.stderr.writeText('error: patch failed: $conflictPath\n');
+        io.stderr.writeText('error: $conflictPath: patch does not apply\n');
+        _amPrintStandardAmHints(io);
+      }
       io.stderr.writeText('Applying: $subjectLine\n');
       io.stderr.writeText('$resolveMsg\n');
     }
-    await Directory(_amRebaseApplyDir(repo)).create(recursive: true);
-    final headNow = await repo.revParse('HEAD');
-    if (headNow != null) {
-      await _amWriteRebaseApplyFile(repo, 'abort-safety', headNow.hex);
-    }
-    await _amWriteRebaseApplyFile(repo, 'patch', fullMessage);
-    await _amWriteRebaseApplyFile(repo, '0001', fullMessage);
-    await _amWriteRebaseApplyFile(repo, 'final-commit', subjectLine);
-    final author =
-        _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
-        _signature(io, config);
-    await _amWriteAuthorScript(repo, author);
-    await _amWriteRebaseApplyFile(repo, 'last', '1\n');
-    await _amWriteRebaseApplyFile(repo, 'next', '1\n');
-    await _amWriteRebaseApplyFile(
+    await _amPersistRebaseApplyForFailure(
+      io,
       repo,
-      'quiet',
-      parsed.has('quiet') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'sign',
-      parsed.has('signoff') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'utf8',
-      parsed.has('utf8') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'threeway',
-      parsed.has('3way') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'scissors',
-      parsed.has('scissors') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'keep',
-      parsed.has('keep') ? 't\n' : 'f\n',
-    );
-    await _amWriteRebaseApplyFile(
-      repo,
-      'messageid',
-      parsed.has('message-id') ? 't\n' : 'f\n',
+      config,
+      fullMessage: fullMessage,
+      subjectLine: subjectLine,
+      opts: opts,
     );
     return 128;
   }
 
-  final paths = _amPathsFromPatch(patchBody);
+  final paths = _amPathsFromPatch(applyBody);
   if (paths.isNotEmpty) await repo.add(paths);
 
   var bodyText = _amMessageBodyAfterSubject(fullMessage, subjectLine);
-  bodyText = applyScissorsToBody(bodyText, scissors: parsed.has('scissors'));
+  bodyText = applyScissorsToBody(bodyText, scissors: opts.scissors);
   bodyText = _stripAmDiffFooter(bodyText);
-  if (parsed.has('signoff')) {
+  if (opts.signoff) {
     bodyText = _amAppendSignoff(bodyText, _signature(io, config));
   }
-  final msg = '$subjectLine\n\n$bodyText'.trim();
+  final msg = _amBuildCommitMessage(
+    subjectLine: subjectLine,
+    bodyText: bodyText,
+    headers: headers,
+    opts: opts,
+  );
 
-  final author =
-      _amAuthorFromMailHeaders(parseMailHeaders(fullMessage)) ??
-      _signature(io, config);
-  final committer = _amCommitterFromOptions(
+  final author = _amAuthorFromMailHeaders(headers) ?? _signature(io, config);
+  final committer = _amCommitterFromEffectiveOptions(
     io,
     config,
-    parsed,
+    opts,
     authorFallback: author,
   );
   await repo.commit(
     author: author,
     committer: committer,
-    message: msg.endsWith('\n') ? msg : '$msg\n',
-    allowEmpty: parsed.has('allow-empty'),
+    message: msg,
+    allowEmpty: opts.allowEmpty,
   );
 
-  if (!parsed.has('quiet')) {
+  if (!opts.quiet) {
     io.stdout.writeText('Applying: $subjectLine\n');
   }
 

@@ -3212,12 +3212,18 @@ final class GitRepository {
     bool check = false,
     bool threeWay = false,
     bool recordConflictsInIndex = false,
+    bool reject = false,
     int stripPathSegments = 0,
     GitApplyWhitespaceMode whitespaceMode = GitApplyWhitespaceMode.exact,
+    GitApplyWhitespacePolicy whitespacePolicy = GitApplyWhitespacePolicy.warn,
     Set<String>? includePaths,
     Set<String>? excludePaths,
     int applyContextLines = 3,
     String? applyDirectoryPrefix,
+    List<String>? patchWhitespaceStderr,
+    bool whitespaceBlocked = false,
+    int whitespaceFixedLineCount = 0,
+    int whitespaceErrorLineCount = 0,
   }) async {
     if (bare) {
       throw StateError('Bare repositories do not have a working tree.');
@@ -3239,7 +3245,14 @@ final class GitRepository {
       applyDirectoryPrefix: applyDirectoryPrefix,
     );
     if (orderedEntries.isEmpty) {
-      return GitApplyResult(files: const [], check: check);
+      return GitApplyResult(
+        files: const [],
+        check: check,
+        stderrLines: patchWhitespaceStderr ?? const [],
+        whitespaceBlocked: whitespaceBlocked,
+        whitespaceFixedLineCount: whitespaceFixedLineCount,
+        whitespaceErrorLineCount: whitespaceErrorLineCount,
+      );
     }
 
     final fileResults = <GitApplyFileResult>[];
@@ -3257,7 +3270,23 @@ final class GitRepository {
       }
     }
 
-    final result = GitApplyResult(files: fileResults, check: check);
+    final stderrCombined = <String>[...?patchWhitespaceStderr];
+    if (whitespacePolicy == GitApplyWhitespacePolicy.fix &&
+        (patchWhitespaceStderr?.isNotEmpty ?? false) &&
+        whitespaceFixedLineCount > 0) {
+      stderrCombined.add(
+        'warning: $whitespaceFixedLineCount line applied after fixing whitespace errors.',
+      );
+    }
+
+    final result = GitApplyResult(
+      files: fileResults,
+      check: check,
+      stderrLines: stderrCombined,
+      whitespaceErrorLineCount: whitespaceErrorLineCount,
+      whitespaceFixedLineCount: whitespaceFixedLineCount,
+      whitespaceBlocked: whitespaceBlocked,
+    );
     if (!result.success || check) {
       if (!check && recordConflictsInIndex && result.hasConflicts) {
         final originalIndexBytes = await _readIndexFileBytesOrNull();
@@ -3282,6 +3311,9 @@ final class GitRepository {
           rethrow;
         }
       }
+      if (reject && result.hasConflicts) {
+        await _writeApplyRejectFiles(orderedEntries, fileResults);
+      }
       return result;
     }
 
@@ -3297,25 +3329,78 @@ final class GitRepository {
     bool check = false,
     bool threeWay = false,
     bool recordConflictsInIndex = false,
+    bool reject = false,
     GitDiffCodec codec = const GitDiffCodec(),
     int stripPathSegments = 0,
     GitApplyWhitespaceMode whitespaceMode = GitApplyWhitespaceMode.exact,
+    GitApplyWhitespacePolicy whitespacePolicy = GitApplyWhitespacePolicy.warn,
     Set<String>? includePaths,
     Set<String>? excludePaths,
     int applyContextLines = 3,
     String? applyDirectoryPrefix,
-  }) => apply(
-    codec.decode(patchText),
-    check: check,
-    threeWay: threeWay,
-    recordConflictsInIndex: recordConflictsInIndex,
-    stripPathSegments: stripPathSegments,
-    whitespaceMode: whitespaceMode,
-    includePaths: includePaths,
-    excludePaths: excludePaths,
-    applyContextLines: applyContextLines,
-    applyDirectoryPrefix: applyDirectoryPrefix,
-  );
+    String patchFileLabel = 'p.patch',
+  }) async {
+    var text = patchText;
+    var fixedCount = 0;
+    List<String>? wsStderr;
+    var wsBlocked = false;
+    var errorCount = 0;
+    if (whitespacePolicy != GitApplyWhitespacePolicy.nowarn) {
+      final scan = _scanPatchTrailingWhitespace(
+        patchText,
+        patchFileLabel: patchFileLabel,
+      );
+      wsStderr = [...scan.messages];
+      errorCount = scan.errorLineCount;
+      if (whitespacePolicy == GitApplyWhitespacePolicy.warn &&
+          scan.errorLineCount > 0) {
+        final n = scan.errorLineCount;
+        final plural = n == 1 ? '' : 's';
+        wsStderr.add('warning: $n line$plural adds whitespace errors.');
+      }
+      if (whitespacePolicy == GitApplyWhitespacePolicy.fix &&
+          scan.errorLineCount > 0) {
+        final fixed = _fixPatchTrailingWhitespace(patchText);
+        fixedCount = scan.errorLineCount;
+        text = fixed;
+      } else if ((whitespacePolicy == GitApplyWhitespacePolicy.error ||
+              whitespacePolicy == GitApplyWhitespacePolicy.errorAll) &&
+          scan.errorLineCount > 0) {
+        final plural = scan.errorLineCount == 1 ? '' : 's';
+        wsStderr = [
+          ...scan.messages,
+          'error: ${scan.errorLineCount} line$plural add${scan.errorLineCount == 1 ? 's' : ''} whitespace errors.',
+        ];
+        wsBlocked = true;
+        return GitApplyResult(
+          files: const [],
+          check: check,
+          stderrLines: wsStderr,
+          whitespaceErrorLineCount: scan.errorLineCount,
+          whitespaceBlocked: true,
+        );
+      }
+    }
+
+    return apply(
+      codec.decode(text),
+      check: check,
+      threeWay: threeWay,
+      recordConflictsInIndex: recordConflictsInIndex,
+      reject: reject,
+      stripPathSegments: stripPathSegments,
+      whitespaceMode: whitespaceMode,
+      whitespacePolicy: whitespacePolicy,
+      includePaths: includePaths,
+      excludePaths: excludePaths,
+      applyContextLines: applyContextLines,
+      applyDirectoryPrefix: applyDirectoryPrefix,
+      patchWhitespaceStderr: wsStderr,
+      whitespaceBlocked: wsBlocked,
+      whitespaceFixedLineCount: fixedCount,
+      whitespaceErrorLineCount: errorCount,
+    );
+  }
 
   /// Оставляет в патче только записи с путями после `-p` и фильтров include/exclude.
   static List<GitDiffEntry> _filterApplyEntries(
@@ -6813,6 +6898,93 @@ final class GitRepository {
       return oldStartComparison;
     }
     return left.newStart - right.newStart;
+  }
+
+  /// Один проход по тексту патча: хвостовые пробелы в строках `+` (как `git apply --whitespace`).
+  static ({int errorLineCount, List<String> messages})
+  _scanPatchTrailingWhitespace(
+    String patchText, {
+    String patchFileLabel = 'p.patch',
+  }) {
+    final lines = const LineSplitter().convert(patchText);
+    final messages = <String>[];
+    var count = 0;
+    for (
+      var patchLineNumber = 0;
+      patchLineNumber < lines.length;
+      patchLineNumber++
+    ) {
+      final raw = lines[patchLineNumber];
+      if (raw.isEmpty || raw[0] != '+') {
+        continue;
+      }
+      var payload = raw.substring(1);
+      if (payload.endsWith('\r')) {
+        payload = payload.substring(0, payload.length - 1);
+      }
+      if (payload == r'\ No newline at end of file') {
+        continue;
+      }
+      if (_patchLineHasTrailingWs(payload)) {
+        count++;
+        messages.add(
+          '$patchFileLabel:${patchLineNumber + 1}: trailing whitespace.',
+        );
+      }
+    }
+    return (errorLineCount: count, messages: messages);
+  }
+
+  static bool _patchLineHasTrailingWs(String text) =>
+      RegExp(r'[ \t]+$').hasMatch(text);
+
+  static String _fixPatchTrailingWhitespace(String patchText) {
+    final lines = const LineSplitter().convert(patchText);
+    final out = StringBuffer();
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line.isNotEmpty && line[0] == '+') {
+        var payload = line.substring(1);
+        final hadCr = payload.endsWith('\r');
+        if (hadCr) {
+          payload = payload.substring(0, payload.length - 1);
+        }
+        if (payload != r'\ No newline at end of file') {
+          payload = payload.replaceAll(RegExp(r'[ \t]+$'), '');
+        }
+        line = '+$payload${hadCr ? '\r' : ''}';
+      }
+      out.writeln(line);
+    }
+    var result = out.toString();
+    if (!patchText.endsWith('\n') && result.endsWith('\n')) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
+  }
+
+  Future<void> _writeApplyRejectFiles(
+    List<GitDiffEntry> entries,
+    List<GitApplyFileResult> results,
+  ) async {
+    for (
+      var index = 0;
+      index < entries.length && index < results.length;
+      index++
+    ) {
+      if (results[index].status != GitApplyStatus.conflict) {
+        continue;
+      }
+      final entry = entries[index];
+      final patchText = const GitDiffCodec().encode([entry]);
+      final rejPath = '${resolveWorkTreePath(entry.path)}.rej';
+      final file = File(rejPath);
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        patchText.endsWith('\n') ? patchText : '$patchText\n',
+        flush: true,
+      );
+    }
   }
 
   Future<void> _executeApplyWritePlan(_GitApplyWritePlan writePlan) async {

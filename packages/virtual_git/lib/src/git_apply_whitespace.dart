@@ -10,6 +10,24 @@ enum GitApplyWhitespaceMode {
   ignoreAllWhitespace,
 }
 
+/// Политика trailing whitespace в добавляемых строках патча (`git apply --whitespace=…`).
+enum GitApplyWhitespacePolicy {
+  /// Не проверять и не сообщать (как `nowarn`).
+  nowarn,
+
+  /// Предупреждения в stderr, применение не блокируется.
+  warn,
+
+  /// Отклонить весь патч при любой ошибке пробелов в добавленных строках.
+  error,
+
+  /// Как [error]: при нескольких файлах в одном патче git тоже отклоняет целиком.
+  errorAll,
+
+  /// Убрать хвостовые пробелы в добавляемых строках и применить; предупреждение, если были исправления.
+  fix,
+}
+
 /// Нормализует строку для режима [GitApplyWhitespaceMode.ignoreSpaceChange].
 String normalizeApplyLineIgnoreSpaceChange(String line) {
   final trimmed = line.trimRight();
