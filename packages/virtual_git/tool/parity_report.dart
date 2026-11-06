@@ -7,6 +7,7 @@
 /// Запуск из каталога пакета:
 /// `dart run tool/parity_report.dart`
 /// `dart run tool/parity_report.dart add status`
+/// `dart run tool/parity_report.dart --policy`
 library;
 
 import 'dart:convert';
@@ -16,14 +17,37 @@ import 'dart:typed_data';
 import 'package:virtual_git/virtual_git.dart';
 import 'package:virtual_host/virtual_host.dart';
 
-/// Печатает долю принятых опций и список тех, которых у апплета нет.
-Future<void> main(List<String> args) async {
+import 'parity_policy.dart' as policy;
+
+/// Один сценарий: имя команды для `git` и хвост до проверяемых опций
+/// (например `maintenance` + `[run]` → проверяем флаги `git maintenance run`).
+typedef _Scenario = ({String command, List<String> tail, String displayName});
+
+Future<void> main(List<String> rawArgs) async {
+  final policyMode = rawArgs.contains('--policy');
+  final args = [
+    for (final a in rawArgs)
+      if (a != '--policy') a,
+  ];
+
   final version = await _gitVersion();
   final explicit = args.isNotEmpty;
-  final commands = explicit ? args : await _helpCommands();
+  final scenarios = policyMode && !explicit
+      ? _readmePolicyScenarios()
+      : explicit
+      ? [
+          for (final name in args)
+            (command: name, tail: <String>[], displayName: name),
+        ]
+      : null;
+  final commands = scenarios == null
+      ? await _helpCommands()
+      : [for (final s in scenarios) s.displayName];
+
   final host = await _ProbeHost.open();
   final presentAccepted = <int>[];
   final presentTotal = <int>[];
+  final presentPolicyExpected = <int>[];
   final absent = <String>[];
 
   stdout
@@ -39,29 +63,88 @@ Future<void> main(List<String> args) async {
       'Опции, которые git не печатает ни там, ни там, в знаменатель не входят. '
       'У `log` так скрыт `--oneline`.',
     );
+  if (policyMode) {
+    stdout.writeln(
+      'Режим --policy: команды из README («Основные команды»); неожиданные '
+      'пробелы см. в parity_policy.dart (supportedOptionLabels / expectedOptionGaps).',
+    );
+  }
 
-  for (final command in commands) {
-    final options = await _helpOptions(command);
+  for (var index = 0; index < commands.length; index++) {
+    final displayName = commands[index];
+    final scenario = scenarios == null
+        ? (command: displayName, tail: <String>[], displayName: displayName)
+        : scenarios[index];
+    final command = scenario.command;
+    final tail = scenario.tail;
+
+    final options = await _helpOptions(command, tail);
     if (options == null) {
-      stdout.writeln('$command  справка git эту команду не описывает');
+      stdout.writeln('$displayName  справка git эту команду не описывает');
       continue;
     }
     final known = await host.acceptsCommand(command);
     if (!known) {
-      absent.add(command);
+      absent.add(displayName);
       if (explicit) {
-        _writeCommand(command, options, options, commandMissing: true);
+        _writeCommand(
+          displayName,
+          options,
+          options,
+          options,
+          commandMissing: true,
+          policyMode: policyMode,
+          argvTail: tail,
+        );
       }
       continue;
     }
     final missing = <_HelpOption>[];
+    var policyExpectedCount = 0;
     for (final option in options) {
-      final recognized = await host.recognizes(command, option);
-      if (!recognized) missing.add(option);
+      final recognized = await host.recognizes(command, tail, option);
+      if (recognized) continue;
+      missing.add(option);
+      final prefix = policy.policyPrefix(command, tail);
+      if (policyMode && policy.isExpectedGap(prefix, option.label)) {
+        policyExpectedCount++;
+      }
     }
+    final unexpected = policyMode
+        ? missing
+              .where(
+                (o) => !policy.isExpectedGap(
+                  policy.policyPrefix(command, tail),
+                  o.label,
+                ),
+              )
+              .toList()
+        : missing;
+    final expectedOnly = policyMode
+        ? missing
+              .where(
+                (o) => policy.isExpectedGap(
+                  policy.policyPrefix(command, tail),
+                  o.label,
+                ),
+              )
+              .toList()
+        : const <_HelpOption>[];
+
     presentAccepted.add(options.length - missing.length);
     presentTotal.add(options.length);
-    _writeCommand(command, options, missing, commandMissing: false);
+    presentPolicyExpected.add(policyExpectedCount);
+
+    _writeCommand(
+      displayName,
+      options,
+      missing,
+      unexpected,
+      commandMissing: false,
+      policyMode: policyMode,
+      argvTail: tail,
+      expectedOnly: expectedOnly,
+    );
   }
 
   if (!explicit) {
@@ -73,57 +156,170 @@ Future<void> main(List<String> args) async {
       ..writeln(
         'Команды пакета: $percent% опций ($accepted из $total) '
         'в ${presentTotal.length} командах.',
-      )
-      ..writeln('Нет в пакете: ${absent.length} команд.');
+      );
+    if (policyMode) {
+      final expectedSum = presentPolicyExpected.fold<int>(0, (a, b) => a + b);
+      final target = total - expectedSum;
+      final policyPercent = target <= 0
+          ? 100
+          : ((accepted * 100 / target).round()).clamp(0, 100);
+      stdout.writeln(
+        'По политике README: $policyPercent% ($accepted из $target '
+        'без учёта ожидаемых пробелов; помечено ожидаемых $expectedSum).',
+      );
+    }
+    stdout.writeln('Нет в пакете: ${absent.length} команд.');
     if (absent.isNotEmpty) stdout.writeln(absent.join(' '));
   }
 }
 
 void _writeCommand(
-  String command,
+  String displayName,
   List<_HelpOption> options,
-  List<_HelpOption> missing, {
+  List<_HelpOption> allMissing,
+  List<_HelpOption> unexpectedMissing, {
   required bool commandMissing,
+  required bool policyMode,
+  required List<String> argvTail,
+  List<_HelpOption> expectedOnly = const [],
 }) {
   if (commandMissing) {
     stdout.writeln(
-      '${command.padRight(24)} 0%  команды нет в пакете, '
+      '${displayName.padRight(24)} 0%  команды нет в пакете, '
       'в справке ${options.length} опций',
     );
-    _writeNames(missing);
+    _writeNames(allMissing);
     return;
   }
   if (options.isEmpty) {
-    stdout.writeln('${command.padRight(24)} в справке нет опций');
+    stdout.writeln('${displayName.padRight(24)} в справке нет опций');
     return;
   }
-  final accepted = options.length - missing.length;
-  final percent = (accepted * 100 / options.length).round();
-  stdout.writeln(
-    '${command.padRight(24)} ${'$percent%'.padLeft(4)}  $accepted из ${options.length}',
+  final accepted = options.length - allMissing.length;
+  final unexpectedCount = unexpectedMissing.length;
+  final percentDenominator = policyMode
+      ? options.length - expectedOnly.length
+      : options.length;
+  final percentNumer = policyMode
+      ? options.length - allMissing.length
+      : accepted;
+  final percent = percentDenominator <= 0
+      ? 100
+      : (percentNumer * 100 / percentDenominator).round();
+  final line = StringBuffer()
+    ..write('${displayName.padRight(24)} ${'$percent%'.padLeft(4)}  ')
+    ..write('$accepted из ${options.length}');
+  if (policyMode && expectedOnly.isNotEmpty) {
+    line.write(
+      ' (неожиданно нет: $unexpectedCount, ожидаемо: ${expectedOnly.length})',
+    );
+  }
+  stdout.writeln(line);
+  _writeNames(
+    policyMode ? unexpectedMissing : allMissing,
+    prefix: policyMode ? 'нет (неожиданно):' : 'нет:',
   );
-  _writeNames(missing);
+  if (policyMode && expectedOnly.isNotEmpty) {
+    _writeExpectedExpected(displayName, argvTail, expectedOnly);
+  }
 }
 
-void _writeNames(List<_HelpOption> missing) {
+void _writeExpectedExpected(
+  String displayName,
+  List<String> argvTail,
+  List<_HelpOption> expected,
+) {
+  final command = displayName.split(' ').first;
+  final names = expected.map((o) => o.label).toList()..sort();
+  for (final name in names) {
+    final prefix = policy.policyPrefix(command, argvTail);
+    final reason =
+        policy.expectedGapReason(prefix, name) ?? '(см. parity_policy)';
+    stdout.writeln('  ожидаемо не парсим: $name — $reason');
+  }
+}
+
+void _writeNames(List<_HelpOption> missing, {String prefix = 'нет:'}) {
   if (missing.isEmpty) return;
   final names = missing.map((option) => option.label).toList()..sort();
-  final line = StringBuffer('  нет:');
+  final line = StringBuffer('  $prefix');
   for (final name in names) {
     final piece = ' $name';
     if (line.length + piece.length > 78) {
       stdout.writeln(line);
       line
         ..clear()
-        ..write('  нет:');
+        ..write('  $prefix');
     }
     line.write(piece);
   }
   stdout.writeln(line);
 }
 
+List<_Scenario> _readmePolicyScenarios() {
+  final out = <_Scenario>[];
+  for (final name in policy.readmeMainCommands) {
+    if (name == 'maintenance') {
+      out.addAll([
+        (command: 'maintenance', tail: ['run'], displayName: 'maintenance run'),
+        (
+          command: 'maintenance',
+          tail: ['is-needed'],
+          displayName: 'maintenance is-needed',
+        ),
+        (
+          command: 'maintenance',
+          tail: ['start'],
+          displayName: 'maintenance start',
+        ),
+        (
+          command: 'maintenance',
+          tail: ['stop'],
+          displayName: 'maintenance stop',
+        ),
+        (
+          command: 'maintenance',
+          tail: ['register'],
+          displayName: 'maintenance register',
+        ),
+        (
+          command: 'maintenance',
+          tail: ['unregister'],
+          displayName: 'maintenance unregister',
+        ),
+      ]);
+      continue;
+    }
+    if (name == 'scalar') {
+      out.addAll([
+        (command: 'scalar', tail: ['clone'], displayName: 'scalar clone'),
+        (command: 'scalar', tail: ['register'], displayName: 'scalar register'),
+        (command: 'scalar', tail: ['run'], displayName: 'scalar run'),
+        (
+          command: 'scalar',
+          tail: ['reconfigure'],
+          displayName: 'scalar reconfigure',
+        ),
+        (command: 'scalar', tail: ['list'], displayName: 'scalar list'),
+        (
+          command: 'scalar',
+          tail: ['unregister'],
+          displayName: 'scalar unregister',
+        ),
+        (command: 'scalar', tail: ['delete'], displayName: 'scalar delete'),
+        (command: 'scalar', tail: ['diagnose'], displayName: 'scalar diagnose'),
+        (command: 'scalar', tail: ['help'], displayName: 'scalar help'),
+        (command: 'scalar', tail: ['version'], displayName: 'scalar version'),
+      ]);
+      continue;
+    }
+    out.add((command: name, tail: const [], displayName: name));
+  }
+  return out;
+}
+
 Future<String> _gitVersion() async {
-  final result = await _git(['--version']);
+  final result = await _gitExecutable('git', ['--version']);
   final text = (result.stdout as String).trim();
   if (result.exitCode != 0 || text.isEmpty) {
     stderr.writeln('git --version завершился с кодом ${result.exitCode}');
@@ -134,7 +330,7 @@ Future<String> _gitVersion() async {
 
 /// Имена из `git help -a` до страниц `attributes` и `format-*`: это уже не команды.
 Future<List<String>> _helpCommands() async {
-  final result = await _git(['help', '-a']);
+  final result = await _gitExecutable('git', ['help', '-a']);
   final names = <String>[];
   final seen = <String>{};
   var skip = false;
@@ -157,9 +353,12 @@ Future<List<String>> _helpCommands() async {
 }
 
 /// Опции команды или null, если git не отдал ни usage, ни список для completion.
-Future<List<_HelpOption>?> _helpOptions(String command) async {
-  final fromHelper = await _completionOptions(command);
-  final fromHelp = await _shortHelpOptions(command);
+Future<List<_HelpOption>?> _helpOptions(
+  String command,
+  List<String> tail,
+) async {
+  final fromHelper = await _completionOptions(command, tail);
+  final fromHelp = await _shortHelpOptions(command, tail);
   if (fromHelper == null && fromHelp == null) return null;
   final options = <_HelpOption>[];
   final seen = <String>{};
@@ -170,8 +369,17 @@ Future<List<_HelpOption>?> _helpOptions(String command) async {
 }
 
 /// Машинный список флагов. null — команда не понимает этот запрос.
-Future<List<_HelpOption>?> _completionOptions(String command) async {
-  final result = await _git([command, '--git-completion-helper']);
+Future<List<_HelpOption>?> _completionOptions(
+  String command,
+  List<String> tail,
+) async {
+  final result = command == 'scalar'
+      ? await _gitExecutable('scalar', [...tail, '--git-completion-helper'])
+      : await _gitExecutable('git', [
+          command,
+          ...tail,
+          '--git-completion-helper',
+        ]);
   if (result.exitCode != 0) return null;
   final options = <_HelpOption>[];
   final positives = <String>{};
@@ -198,9 +406,14 @@ Future<List<_HelpOption>?> _completionOptions(String command) async {
   return options;
 }
 
-/// Колонка опций из `git <command> -h`. null — в выводе нет строки usage.
-Future<List<_HelpOption>?> _shortHelpOptions(String command) async {
-  final result = await _git([command, '-h']);
+/// Колонка опций из `git <command> [<tail>] -h`. null — в выводе нет строки usage.
+Future<List<_HelpOption>?> _shortHelpOptions(
+  String command,
+  List<String> tail,
+) async {
+  final result = command == 'scalar'
+      ? await _gitExecutable('scalar', [...tail, '-h'])
+      : await _gitExecutable('git', [command, ...tail, '-h']);
   final text = '${result.stdout}${result.stderr}';
   if (!text.contains('usage:')) return null;
   final options = <_HelpOption>[];
@@ -215,16 +428,17 @@ Future<List<_HelpOption>?> _shortHelpOptions(String command) async {
   return options;
 }
 
-Future<ProcessResult> _git(List<String> args) => Process.run(
-  'git',
-  args,
-  environment: const {
-    'LC_ALL': 'C',
-    'GIT_CONFIG_NOSYSTEM': '1',
-    'GIT_CONFIG_GLOBAL': '/dev/null',
-    'GIT_CONFIG_COUNT': '0',
-  },
-);
+Future<ProcessResult> _gitExecutable(String executable, List<String> args) =>
+    Process.run(
+      executable,
+      args,
+      environment: const {
+        'LC_ALL': 'C',
+        'GIT_CONFIG_NOSYSTEM': '1',
+        'GIT_CONFIG_GLOBAL': '/dev/null',
+        'GIT_CONFIG_COUNT': '0',
+      },
+    );
 
 /// Флаг из колонки опций `git -h`.
 final class _HelpOption {
@@ -309,12 +523,19 @@ final class _ProbeHost {
   }
 
   Future<bool> acceptsCommand(String command) async {
-    final result = await _run([command, '--parity-missing']);
+    final probe = command == 'scalar'
+        ? [command, 'version', '--parity-missing']
+        : [command, '--parity-missing'];
+    final result = await _run(probe);
     return !result.err.contains('is not a git command');
   }
 
-  Future<bool> recognizes(String command, _HelpOption option) async {
-    final result = await _run([command, ...option.probeArgs]);
+  Future<bool> recognizes(
+    String command,
+    List<String> tail,
+    _HelpOption option,
+  ) async {
+    final result = await _run([command, ...tail, ...option.probeArgs]);
     final token = option.longName ?? option.shortName!;
     final kind = option.longName == null ? 'switch' : 'option';
     return !result.err.contains("error: unknown $kind `$token'");

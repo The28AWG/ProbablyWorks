@@ -369,9 +369,12 @@ dcm analyze lib test
 dart test
 ```
 
-Сводка по опциям, без проверки поведения. Берёт флаги из `git <команда> --git-completion-helper` и `git <команда> -h` и считает, сколько из них апплет вообще разбирает:
+Сводка по опциям, без проверки поведения. Берёт флаги из `git <команда> --git-completion-helper` и `git <команда> -h` (для `scalar` — у внешнего бинаря `scalar`, как у дистрибутива) и считает, сколько из них апплет вообще разбирает.
+
+Ожидаемые пробелы по отношению к полному git (по командам из раздела «Основные команды») задаются в `tool/parity_policy.dart` и учитываются при запуске с `--policy` — см. [docs/command_notes.md](docs/command_notes.md).
 
 ```bash
 dart run tool/parity_report.dart
 dart run tool/parity_report.dart add status
+dart run tool/parity_report.dart --policy
 ```
