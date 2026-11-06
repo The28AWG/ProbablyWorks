@@ -365,3 +365,10 @@ dart analyze
 dcm analyze lib test
 dart test
 ```
+
+Сводка по опциям, без проверки поведения. Берёт флаги из `git <команда> --git-completion-helper` и `git <команда> -h` и считает, сколько из них апплет вообще разбирает:
+
+```bash
+dart run tool/parity_report.dart
+dart run tool/parity_report.dart add status
+```
