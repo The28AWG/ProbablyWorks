@@ -5220,6 +5220,10 @@ final class GitRepository {
   static bool _treeModeIsBlob(String mode) =>
       mode == '100644' || mode == '100755' || mode == '120000';
 
+  /// Каталог в дереве. Git пишет `40000`, этот пакет при записи — `040000`.
+  static bool _treeModeIsDirectory(String mode) =>
+      mode == '40000' || mode == '040000';
+
   static GitHashAlgorithm _detectPackChecksumAlgorithm(List<int> packBytes) {
     if (packBytes.length < GitHashAlgorithm.sha1.digestLength + 12) {
       throw const FormatException('Pack file is too short.');
@@ -8248,7 +8252,7 @@ final class GitRepository {
       final entryPath = prefix.isEmpty
           ? entry.utf8Name
           : '$prefix/${entry.utf8Name}';
-      if (entry.mode == '040000') {
+      if (_treeModeIsDirectory(entry.mode)) {
         snapshots.addAll(
           await _readTreeEntries(
             entry.objectId,
@@ -8433,8 +8437,14 @@ final class GitRepository {
   }
 
   static int _compareTreeEntries(GitTreeEntry left, GitTreeEntry right) {
-    final leftBytes = [...left.nameBytes, if (left.mode == '040000') 0x2f];
-    final rightBytes = [...right.nameBytes, if (right.mode == '040000') 0x2f];
+    final leftBytes = [
+      ...left.nameBytes,
+      if (_treeModeIsDirectory(left.mode)) 0x2f,
+    ];
+    final rightBytes = [
+      ...right.nameBytes,
+      if (_treeModeIsDirectory(right.mode)) 0x2f,
+    ];
     final prefixLength = leftBytes.length < rightBytes.length
         ? leftBytes.length
         : rightBytes.length;
@@ -9080,6 +9090,8 @@ final class _GitRemoteTransport {
   _GitSmartHttpAdvertisement? _httpReceivePackAdvertisementCache;
   bool _didProbeHttpUploadPackAdvertisement = false;
   bool _didProbeHttpReceivePackAdvertisement = false;
+  bool _didPopulateHttpReachableObjectCache = false;
+  final Set<GitObjectId> _httpSmartFetchInFlight = {};
   List<int>? _pendingHttpReceivePackBytes;
   final Map<GitObjectId, GitObject> _sshSmartObjectCache = {};
   _GitSmartHttpAdvertisement? _sshUploadPackAdvertisementCache;
@@ -9312,7 +9324,7 @@ final class _GitRemoteTransport {
       return const <int>[];
     }
 
-    if (httpBaseUri != null) {
+    if (httpBaseUri != null && !_httpSmartCacheCovers(objectIds)) {
       final smartPackBytes = await _fetchSmartHttpPackBytes(objectIds);
       if (smartPackBytes != null) {
         return smartPackBytes;
@@ -9421,6 +9433,44 @@ final class _GitRemoteTransport {
     return packNames;
   }
 
+  /// Проверяет, что каждый запрошенный объект уже лежит в кэше smart HTTP.
+  bool _httpSmartCacheCovers(List<GitObjectId> objectIds) {
+    for (final objectId in objectIds) {
+      if (!_httpSmartObjectCache.containsKey(objectId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Забирает один pack через git-upload-pack, если сервер его объявляет.
+  ///
+  /// GitHub на GET objects/ab/хеш отвечает 403 и тем самым обрывает clone,
+  /// fetch и pull. Пока объявление есть, отдельные объекты по dumb HTTP не
+  /// запрашиваются. Без объявления остаётся чтение loose-объектов и pack-файлов.
+  Future<void> _ensureHttpReachableObjectCacheLoaded() async {
+    if (_didPopulateHttpReachableObjectCache) {
+      return;
+    }
+    _didPopulateHttpReachableObjectCache = true;
+    final advertisement = await _loadHttpSmartUploadPackAdvertisement();
+    if (advertisement == null) {
+      return;
+    }
+    final wantObjectIds = advertisement.references.values.toSet().toList();
+    if (wantObjectIds.isEmpty) {
+      return;
+    }
+    final packBytes = await _fetchSmartHttpPackBytes(wantObjectIds);
+    if (packBytes == null) {
+      return;
+    }
+    await _cacheSmartHttpPack(
+      packBytes,
+      algorithm: wantObjectIds.first.algorithm,
+    );
+  }
+
   Future<GitObject?> _readHttpObject(
     GitObjectId objectId, {
     required Set<String> activePackNames,
@@ -9428,6 +9478,32 @@ final class _GitRemoteTransport {
     final cachedObject = _httpSmartObjectCache[objectId];
     if (cachedObject != null) {
       return cachedObject;
+    }
+
+    await _ensureHttpReachableObjectCacheLoaded();
+    final populated = _httpSmartObjectCache[objectId];
+    if (populated != null) {
+      return populated;
+    }
+
+    final advertisement = _httpUploadPackAdvertisementCache;
+    if (advertisement != null) {
+      if (_httpSmartFetchInFlight.contains(objectId)) {
+        return null;
+      }
+      _httpSmartFetchInFlight.add(objectId);
+      try {
+        final smartPackBytes = await _fetchSmartHttpPackBytes([objectId]);
+        if (smartPackBytes != null) {
+          await _cacheSmartHttpPack(
+            smartPackBytes,
+            algorithm: objectId.algorithm,
+          );
+        }
+      } finally {
+        _httpSmartFetchInFlight.remove(objectId);
+      }
+      return _httpSmartObjectCache[objectId];
     }
 
     final looseObjectBytes = await _fetchHttpBytes(
@@ -9484,12 +9560,6 @@ final class _GitRemoteTransport {
           }
         }
       }
-    }
-
-    final smartPackBytes = await _fetchSmartHttpPackBytes([objectId]);
-    if (smartPackBytes != null) {
-      await _cacheSmartHttpPack(smartPackBytes, algorithm: objectId.algorithm);
-      return _httpSmartObjectCache[objectId];
     }
 
     return null;
@@ -10053,6 +10123,8 @@ final class _GitRemoteTransport {
     _httpReceivePackAdvertisementCache = null;
     _didProbeHttpUploadPackAdvertisement = false;
     _didProbeHttpReceivePackAdvertisement = false;
+    _didPopulateHttpReachableObjectCache = false;
+    _httpSmartFetchInFlight.clear();
   }
 
   Future<List<int>?> _fetchCachedHttpPackIndexBytes(String packName) async {

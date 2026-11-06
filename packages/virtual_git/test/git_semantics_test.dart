@@ -1334,6 +1334,50 @@ void main() {
       expect(nestedEntries.single.mode, '100644');
     });
 
+    test('checks out a directory stored with git mode 40000', () async {
+      final fixture = await _createWorkTreeRepository();
+      addTearDown(() => fixture.workTree.delete(recursive: true));
+
+      final repository = fixture.repository;
+      final blob = await repository.writeLooseObject(
+        GitObject.blob(utf8.encode('nested\n')),
+      );
+      final child = await repository.writeLooseObject(
+        GitObject.tree(
+          const GitTreeCodec().encode([
+            GitTreeEntry.utf8(
+              mode: '100644',
+              name: 'nested.txt',
+              objectId: blob,
+            ),
+          ]),
+        ),
+      );
+      final root = await repository.writeLooseObject(
+        GitObject.tree(
+          const GitTreeCodec().encode([
+            GitTreeEntry.utf8(mode: '40000', name: 'dir', objectId: child),
+          ]),
+        ),
+      );
+      final commit = await repository.writeCommitFromTree(
+        root,
+        author: _signature(1700000000),
+        message: 'nested\n',
+      );
+      await repository.writeReference(
+        GitReference.direct('refs/heads/main', commit),
+      );
+
+      await repository.checkout('main', force: true);
+
+      expect(
+        await File(p.join(fixture.workTree.path, 'dir', 'nested.txt'))
+            .readAsString(),
+        'nested\n',
+      );
+    });
+
     test(
       'reports conflicted paths before writing a tree from the index',
       () async {
@@ -5225,6 +5269,51 @@ void main() {
       );
     });
 
+    test(
+      'clones when the smart HTTP server rejects dumb object URLs',
+      () async {
+        final sourceFixture = await _createWorkTreeRepository();
+        final cloneRoot = await Directory.systemTemp.createTemp(
+          'git_core_smart_http_no_dumb_fixture_',
+        );
+        addTearDown(() => sourceFixture.workTree.delete(recursive: true));
+        addTearDown(() => cloneRoot.delete(recursive: true));
+
+        final sourceRepository = sourceFixture.repository;
+        final sourceReadme = File(
+          p.join(sourceFixture.workTree.path, 'README.md'),
+        );
+        await sourceReadme.writeAsString('no dumb http\n');
+        final sourceIndex = await sourceRepository.add(['README.md']);
+        final commitId = await sourceRepository.commitIndex(
+          sourceIndex,
+          author: _signature(1700000000),
+          message: 'Initial commit\n',
+        );
+        final requestedPaths = <String>[];
+        final serverInfo = await _serveSmartHttpRepository(
+          sourceRepository,
+          dumbStatusCode: HttpStatus.forbidden,
+          requestedPaths: requestedPaths,
+        );
+        addTearDown(() => serverInfo.server.close(force: true));
+
+        final clonePath = p.join(cloneRoot.path, 'clone');
+        final result = await GitRepository.clone(serverInfo.baseUrl, clonePath);
+
+        expect(result.referenceName, 'refs/heads/main');
+        expect(result.objectId, commitId);
+        expect(
+          await File(p.join(clonePath, 'README.md')).readAsString(),
+          'no dumb http\n',
+        );
+        expect(
+          requestedPaths.where((path) => path.startsWith('/objects/')),
+          isEmpty,
+        );
+      },
+    );
+
     test('rejects cloning into a non-empty target directory', () async {
       final sourceFixture = await _createWorkTreeRepository();
       final remoteFixture = await _createBareRepository();
@@ -6021,6 +6110,8 @@ Future<({_QuietServer server, String baseUrl})> _serveSmartHttpRepository(
   GitRepository repository, {
   Map<String, String> requiredHeaders = const {},
   bool allowPush = false,
+  int dumbStatusCode = HttpStatus.notFound,
+  List<String>? requestedPaths,
 }) async {
   late final String baseUrl;
   baseUrl = _mountGitRoute((uri, method, headers, body) async {
@@ -6031,6 +6122,7 @@ Future<({_QuietServer server, String baseUrl})> _serveSmartHttpRepository(
       );
     }
     final path = _mountedPath(baseUrl, uri);
+    requestedPaths?.add(path);
     if (path == '/info/refs' &&
         uri.queryParameters['service'] == 'git-upload-pack') {
       final bytes = await _buildSmartHttpAdvertisement(
@@ -6087,7 +6179,12 @@ Future<({_QuietServer server, String baseUrl})> _serveSmartHttpRepository(
         ],
       );
     }
-    return const GitHttpResponse(statusCode: HttpStatus.notFound, body: []);
+    return GitHttpResponse(
+      statusCode: dumbStatusCode,
+      body: dumbStatusCode == HttpStatus.notFound
+          ? const <int>[]
+          : utf8.encode('dumb http disabled'),
+    );
   });
   return (server: _QuietServer(baseUrl), baseUrl: baseUrl);
 }

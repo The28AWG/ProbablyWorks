@@ -62,8 +62,10 @@ final events = await interpreter.run('git init', cwd: '/work').toList();
 use file:// instead.` относится только к обычному пути каталога: git сам
 игнорирует глубину при локальном клоне и предлагает `file://`. Это не отказ
 в shallow-копировании. `--filter=blob:none`
-не копирует blob и оставляет promisor-метку. Pack, который помещается в лимит
-файла, пишется в `.git/objects/pack` рядом с loose-объектами. SSH, хуки,
+не копирует blob и оставляет promisor-метку. Если сервер объявляет
+`git-upload-pack`, объекты читаются одним pack через него: путь
+`objects/ab/хеш` остаётся только для dumb HTTP. Pack, который помещается в
+лимит файла, пишется в `.git/objects/pack` рядом с loose-объектами. SSH, хуки,
 credential helper, gpg, mergetool, pager и редактор по-прежнему недоступны:
 в `lib/` нет процессов и сокетов.
 
