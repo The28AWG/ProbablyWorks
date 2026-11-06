@@ -76,7 +76,9 @@ String _absolute(String path) {
 final zlib = _GitZlib();
 
 final class _GitZlib {
-  List<int> encode(List<int> bytes) => const ZLibEncoder().encode(bytes);
+  // Уровень 1 даёт заголовок zlib 78 01, как loose-объекты git.
+  List<int> encode(List<int> bytes) =>
+      const ZLibEncoder().encode(bytes, level: 1);
 
   List<int> decode(List<int> bytes) => const ZLibDecoder().decodeBytes(bytes);
 }

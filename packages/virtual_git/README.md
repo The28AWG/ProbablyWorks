@@ -44,14 +44,28 @@ final events = await interpreter.run('git init', cwd: '/work').toList();
 
 Подкоманды: `init`, `status`, `add`, `commit`, `log`, `diff`, `show`,
 `rev-parse`, `ls-files`, `branch`, `tag`, `checkout`, `switch`, `restore`,
-`reset`, `merge`, `stash`, `apply`, `remote`, `clone`, `fetch`, `pull`, `push`.
+`reset`, `merge`, `stash`, `apply`, `remote`, `clone`, `fetch`, `pull`, `push`,
+`reflog`, `check-ignore`, `merge-base`, `show-ref`, `worktree`, `rm`, `mv`,
+`clean`, `cherry-pick`, `revert`, `rebase`, `ls-tree`, `cat-file`, `config`,
+`notes`, `replace`, `blame`, `grep`, `describe`, `bisect`, `archive`, `bundle`,
+`format-patch`, `am`, `fsck`, `prune`, `gc`, `submodule`, `sparse-checkout`,
+`lfs`, `rev-list`, `hash-object`, `update-ref`, `symbolic-ref`, `commit-tree`,
+`write-tree`, `merge-file`, `merge-tree`, `shortlog`, `name-rev`, `range-diff`,
+`check-attr`, `check-mailmap`.
 
 Опции разбираются как у git: `--name`, `--name=value`, `-s`, `-svalue`, `--`.
 До команды действуют `-C`, `-c key=value`, `--bare`, `--version` и `--help`.
 Неизвестная опция — код 129 и `error: unknown option`. Ветка по умолчанию у
-`init` — `main` (`-b` её меняет). Сетевой `clone --depth` завершается ошибкой:
-shallow-протокол не реализован. Локальный путь с `--depth` предупреждает и
-клонирует целиком, как сам git.
+`init` — `main` (`-b` её меняет, `--object-format=sha256` пишет маркер
+формата). `--depth` для `file://` и HTTP обрезает историю и пишет
+`.git/shallow`. Предупреждение `warning: --depth is ignored in local clones;
+use file:// instead.` относится только к обычному пути каталога: git сам
+игнорирует глубину при локальном клоне и предлагает `file://`. Это не отказ
+в shallow-копировании. `--filter=blob:none`
+не копирует blob и оставляет promisor-метку. Pack, который помещается в лимит
+файла, пишется в `.git/objects/pack` рядом с loose-объектами. SSH, хуки,
+credential helper, gpg, mergetool, pager и редактор по-прежнему недоступны:
+в `lib/` нет процессов и сокетов.
 
 ## Автор и заголовок
 
@@ -87,12 +101,11 @@ try {
 
 ## Чего нет
 
-- SSH, `ssh://`, `git@host` и `file://`.
+- SSH, `ssh://` и `git@host`.
 - Запись на диск машины, процессы и сокеты. Сторож `test/guard_no_io_test.dart`
   пускает в `lib/` только `package:http`.
-- Целый pack в виртуальной файловой системе. Пакет с сети разбирается в памяти
-  и пишется loose-объектами. Объект или pack больше лимита файла — ошибка git,
-  а не обрезка.
+- Pack больше лимита одного файла. Он не записывается и не обрезается:
+  операция завершается ошибкой.
 - Credential helper, который запускает процесс, и linked worktree с `gitdir`
   вне этой `VirtualFs`.
 

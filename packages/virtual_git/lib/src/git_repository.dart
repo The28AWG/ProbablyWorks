@@ -5,6 +5,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:virtual_git/src/git_apply.dart';
 import 'package:virtual_git/src/git_branch.dart';
@@ -31,6 +32,7 @@ import 'package:virtual_git/src/git_object_id.dart';
 import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_pack.dart';
 import 'package:virtual_git/src/git_pack_codec.dart';
+import 'package:virtual_git/src/git_pack_index.dart';
 import 'package:virtual_git/src/git_pack_index_codec.dart';
 import 'package:virtual_git/src/git_pack_resolver.dart';
 import 'package:virtual_git/src/git_path.dart' as p;
@@ -55,12 +57,15 @@ import 'package:virtual_git/src/git_tree_codec.dart';
 import 'package:virtual_git/src/git_worktree.dart';
 import 'package:virtual_git/src/git_write_tree.dart';
 
+part 'git_repository_surface.dart';
+
 final class GitRepository {
   GitRepository._({
     required this.path,
     required this.gitDirectoryPath,
     required this.commonDirectoryPath,
     required this.bare,
+    this.hashAlgorithm = GitHashAlgorithm.sha1,
   });
 
   factory GitRepository.workTree(String path) {
@@ -87,6 +92,9 @@ final class GitRepository {
   final String gitDirectoryPath;
   final String commonDirectoryPath;
   final bool bare;
+
+  /// Алгоритм объектов репозитория. Меняется `init --object-format`.
+  final GitHashAlgorithm hashAlgorithm;
 
   String get headFilePath => p.join(gitDirectoryPath, 'HEAD');
 
@@ -173,6 +181,8 @@ final class GitRepository {
     String path, {
     String remoteName = 'origin',
     String? branchName,
+    int? depth,
+    String? filter,
     Map<String, String> httpHeaders = const {},
     String? sshPrivateKeyPath,
     String? sshPrivateKey,
@@ -229,6 +239,8 @@ final class GitRepository {
     );
     final fetchResult = await repository.fetch(
       normalizedRemoteName,
+      depth: depth,
+      filter: filter,
       commitCodec: commitCodec,
       treeCodec: treeCodec,
     );
@@ -293,14 +305,25 @@ final class GitRepository {
     GitPackCodec? packCodec,
     GitPackIndexCodec? packIndexCodec,
     GitPackResolver? packResolver,
-  }) => _readObjectInternal(
-    objectId,
-    looseCodec: looseCodec,
-    packCodec: packCodec,
-    packIndexCodec: packIndexCodec,
-    packResolver: packResolver,
-    activePackPaths: const <String>{},
-  );
+  }) async {
+    final resolved = await _replacedObjectId(objectId);
+    return _readObjectInternal(
+      resolved,
+      looseCodec: looseCodec,
+      packCodec: packCodec,
+      packIndexCodec: packIndexCodec,
+      packResolver: packResolver,
+      activePackPaths: const <String>{},
+    );
+  }
+
+  /// `refs/replace` подменяет объект при чтении, как git без `--no-replace-objects`.
+  Future<GitObjectId> _replacedObjectId(GitObjectId objectId) async {
+    final reference = await readReference('refs/replace/${objectId.hex}');
+    final target = reference?.objectId;
+    if (target == null || target == objectId) return objectId;
+    return target;
+  }
 
   Future<List<int>> exportPack(Iterable<GitObjectId> objectIds) =>
       _exportPackForObjectIds(objectIds.toList(), objectReader: readObject);
@@ -339,10 +362,11 @@ final class GitRepository {
 
   Future<GitObjectId> writeLooseObject(
     GitObject object, {
-    GitHashAlgorithm algorithm = GitHashAlgorithm.sha1,
+    GitHashAlgorithm? algorithm,
     GitLooseObjectCodec codec = const GitLooseObjectCodec(),
   }) async {
-    final objectId = object.id(algorithm: algorithm);
+    final effective = algorithm ?? hashAlgorithm;
+    final objectId = object.id(algorithm: effective);
     final objectFile = File(resolveLooseObjectPath(objectId));
     if (await objectFile.exists()) {
       return objectId;
@@ -918,6 +942,8 @@ final class GitRepository {
     String remoteName, {
     Iterable<GitRefSpec>? refSpecs,
     bool dryRun = false,
+    int? depth,
+    String? filter,
     Map<String, String> httpHeaders = const {},
     GitCommitCodec commitCodec = const GitCommitCodec(),
     GitTreeCodec? treeCodec,
@@ -946,12 +972,18 @@ final class GitRepository {
     );
     final commitCache = <GitObjectId, GitCommit>{};
     final fetchedReferences = <GitFetchedReference>[];
+    final shallowCommits = <GitObjectId>{};
+    if (depth != null) remoteTransport.uploadPackDepth = depth;
+    if (filter != null) remoteTransport.uploadPackFilter = filter;
 
     for (final mapping in mappings) {
       final objectsFetched = await _copyReachableObjectsFromRepository(
         remoteTransport,
         mapping.objectId,
         dryRun: dryRun,
+        commitDepth: depth,
+        objectFilter: filter,
+        shallowCommits: shallowCommits,
         commitCodec: commitCodec,
         treeCodec: treeCodec,
       );
@@ -1001,6 +1033,15 @@ final class GitRepository {
           objectsFetched: objectsFetched,
         ),
       );
+    }
+
+    if (!dryRun && shallowCommits.isNotEmpty) {
+      await _writeShallowCommits(shallowCommits);
+    }
+    if (!dryRun && filter != null) {
+      final marker = File(p.join(gitDirectoryPath, 'info', 'promisor-filter'));
+      await marker.parent.create(recursive: true);
+      await marker.writeAsString('$filter\n');
     }
 
     return GitFetchResult(
@@ -1434,10 +1475,11 @@ final class GitRepository {
 
     switch (entityType) {
       case FileSystemEntityType.file:
-        final fileBytes = await File(absolutePath).readAsBytes();
+        final rawBytes = await File(absolutePath).readAsBytes();
+        final fileBytes = await _cleanWorkTreeBytes(relativePath, rawBytes);
         object = GitObject.blob(fileBytes);
         mode = _fileModeFromStat(stat);
-        fileSize = stat.size;
+        fileSize = fileBytes.length;
       case FileSystemEntityType.link:
         final targetPath = await Link(absolutePath).target();
         final targetBytes = targetPath.codeUnits;
@@ -1637,6 +1679,7 @@ final class GitRepository {
     String referenceName = 'HEAD',
     List<GitObjectId>? parents,
     List<GitCommitHeader> extraHeaders = const [],
+    String reflogAction = 'commit',
     GitTreeCodec? treeCodec,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
@@ -1656,10 +1699,13 @@ final class GitRepository {
     final writableReferenceName = await _resolveWritableReferenceName(
       referenceName,
     );
+    final action = reflogAction == 'commit' && resolvedParents.isEmpty
+        ? 'commit (initial)'
+        : reflogAction;
     await _writeReferenceWithReflog(
       GitReference.direct(writableReferenceName, commitId),
       actor: committer ?? author,
-      message: 'commit: ${_summarizeReflogMessage(message)}',
+      message: '$action: ${_summarizeReflogMessage(message)}',
     );
     return commitId;
   }
@@ -1673,6 +1719,7 @@ final class GitRepository {
     GitIndex? index,
     List<GitObjectId>? parents,
     List<GitCommitHeader> extraHeaders = const [],
+    String reflogAction = 'commit',
     GitTreeCodec? treeCodec,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
@@ -1700,6 +1747,7 @@ final class GitRepository {
       referenceName: referenceName,
       parents: parents,
       extraHeaders: extraHeaders,
+      reflogAction: reflogAction,
       treeCodec: treeCodec,
       commitCodec: commitCodec,
     );
@@ -2113,14 +2161,17 @@ final class GitRepository {
     }
 
     final reference = GitReference.direct(referenceName, objectId);
+    final headReference = await readReference('HEAD');
+    final startLabel = startPoint.trim() == 'HEAD'
+        ? _branchShortName(headReference?.targetReferenceName ?? 'HEAD')
+        : startPoint.trim();
     await _writeReferenceWithReflog(
       reference,
       actor: _resolveReflogActor(reflogActor),
       message: force && existing != null
-          ? 'branch: Reset to ${startPoint.trim()}'
-          : 'branch: Created from ${startPoint.trim()}',
+          ? 'branch: Reset to $startLabel'
+          : 'branch: Created from $startLabel',
     );
-    final headReference = await readReference('HEAD');
     return GitBranch(
       name: _branchShortName(referenceName),
       referenceName: referenceName,
@@ -4145,9 +4196,6 @@ final class GitRepository {
     final lines = <String>[...document.preamble];
 
     for (final section in document.sections) {
-      if (lines.isNotEmpty && lines.last.trim().isNotEmpty) {
-        lines.add('');
-      }
       lines.add(section.headerLine);
       lines.addAll(section.bodyLines);
     }
@@ -4369,8 +4417,9 @@ final class GitRepository {
   }
 
   static Future<void> _initializeRepositoryLayout(
-    String gitDirectoryPath,
-  ) async {
+    String gitDirectoryPath, {
+    GitHashAlgorithm hashAlgorithm = GitHashAlgorithm.sha1,
+  }) async {
     final gitDirectory = Directory(gitDirectoryPath);
     await Directory(p.join(gitDirectory.path, 'objects'))
         .create(recursive: true);
@@ -4378,6 +4427,23 @@ final class GitRepository {
     await Directory(p.join(gitDirectory.path, 'info')).create(recursive: true);
     await File(p.join(gitDirectory.path, 'HEAD'))
         .writeAsString('ref: refs/heads/main\n', flush: true);
+    if (hashAlgorithm != GitHashAlgorithm.sha1) {
+      await File(p.join(gitDirectory.path, 'object-format'))
+          .writeAsString('${hashAlgorithm.wireName}\n', flush: true);
+    }
+  }
+
+  /// Читает `.git/object-format`. Нет файла — SHA-1.
+  static Future<GitHashAlgorithm> _objectFormatOf(
+    String gitDirectoryPath,
+  ) async {
+    final file = File(p.join(gitDirectoryPath, 'object-format'));
+    if (!await file.exists()) return GitHashAlgorithm.sha1;
+    final text = (await file.readAsString()).trim();
+    for (final algorithm in GitHashAlgorithm.values) {
+      if (algorithm.wireName == text) return algorithm;
+    }
+    return GitHashAlgorithm.sha1;
   }
 
   static Future<_GitRemoteTransport> _openRemoteTransport(
@@ -4738,11 +4804,10 @@ final class GitRepository {
       if (entity is! File) {
         continue;
       }
-      referenceNames.add(
-        p.posix.joinAll(
-          p.split(p.relative(entity.path, from: commonDirectoryPath)),
-        ),
+      final listedName = p.posix.joinAll(
+        p.split(p.relative(entity.path, from: commonDirectoryPath)),
       );
+      referenceNames.add(listedName);
     }
     referenceNames.sort();
     return referenceNames;
@@ -4758,9 +4823,7 @@ final class GitRepository {
       );
     }
 
-    final normalized = trimmed == 'HEAD'
-        ? 'HEAD'
-        : trimmed.startsWith('refs/')
+    final normalized = trimmed == 'HEAD' || trimmed.startsWith('refs')
         ? trimmed
         : 'refs/$trimmed';
     final exactFile = File(resolveReferencePath(normalized));
@@ -4975,6 +5038,9 @@ final class GitRepository {
     _GitRemoteTransport remoteRepository,
     GitObjectId rootObjectId, {
     bool dryRun = false,
+    int? commitDepth,
+    String? objectFilter,
+    Set<GitObjectId>? shallowCommits,
     required GitCommitCodec commitCodec,
     GitTreeCodec? treeCodec,
   }) async {
@@ -4983,6 +5049,9 @@ final class GitRepository {
       sourceObjectReader: remoteRepository.readObject,
       destinationObjectReader: readObject,
       missingSourceDescription: 'Remote',
+      commitDepth: commitDepth,
+      objectFilter: objectFilter,
+      shallowCommits: shallowCommits,
       commitCodec: commitCodec,
       treeCodec: treeCodec,
     );
@@ -5001,10 +5070,14 @@ final class GitRepository {
     required String missingSourceDescription,
     required GitCommitCodec commitCodec,
     GitTreeCodec? treeCodec,
+    int? commitDepth,
+    String? objectFilter,
+    Set<GitObjectId>? shallowCommits,
   }) async {
     final queue = <GitObjectId>[rootObjectId];
     final visited = <GitObjectId>{};
     final missingObjectIds = <GitObjectId>[];
+    final generations = <GitObjectId, int>{rootObjectId: 0};
 
     while (queue.isNotEmpty) {
       final objectId = queue.removeLast();
@@ -5029,13 +5102,30 @@ final class GitRepository {
         case GitObjectType.commit:
           final commit = commitCodec.decode(sourceObject.bytes);
           queue.add(commit.tree);
-          queue.addAll(commit.parents);
+          final generation = generations[objectId] ?? 0;
+          final cutParents =
+              commitDepth != null &&
+              generation + 1 >= commitDepth &&
+              commit.parents.isNotEmpty;
+          if (cutParents) {
+            shallowCommits?.add(objectId);
+          } else {
+            for (final parent in commit.parents) {
+              generations[parent] = generation + 1;
+              queue.add(parent);
+            }
+          }
         case GitObjectType.tree:
           final effectiveTreeCodec = treeCodec?.algorithm == objectId.algorithm
               ? treeCodec!
               : GitTreeCodec(algorithm: objectId.algorithm);
           final entries = effectiveTreeCodec.decode(sourceObject.bytes);
-          queue.addAll(entries.map((entry) => entry.objectId));
+          for (final entry in entries) {
+            if (objectFilter == 'blob:none' && _treeModeIsBlob(entry.mode)) {
+              continue;
+            }
+            queue.add(entry.objectId);
+          }
         case GitObjectType.tag:
           queue.add(_readTagTargetObjectId(sourceObject.bytes));
       }
@@ -5087,11 +5177,48 @@ final class GitRepository {
     if (packBytes.length > gitFs.limits.maxFileBytes) {
       throw StateError('Pack is larger than the virtual host file limit.');
     }
+    await _storePackFile(packBytes, resolvedEntries, algorithm);
     for (final entry in resolvedEntries) {
       await writeLooseObject(entry.object, algorithm: algorithm);
     }
     return resolvedEntries.length;
   }
+
+  /// Кладёт pack и idx в `.git/objects/pack`, если файл уже прошёл лимит.
+  Future<void> _storePackFile(
+    List<int> packBytes,
+    List<GitPackResolvedEntry> resolvedEntries,
+    GitHashAlgorithm algorithm,
+  ) async {
+    final checksum = GitObjectId.fromBytes(
+      packBytes.sublist(packBytes.length - algorithm.digestLength),
+    );
+    final directory = Directory(p.join(objectDirectoryPath, 'pack'));
+    await directory.create(recursive: true);
+    final base = p.join(directory.path, 'pack-${checksum.hex}');
+    await File('$base.pack').writeAsBytes(packBytes, flush: true);
+    final indexEntries = <GitPackIndexEntry>[
+      for (final entry in resolvedEntries)
+        if (entry.packEntry.offset != null)
+          GitPackIndexEntry(
+            objectId: entry.objectId,
+            offset: entry.packEntry.offset!,
+            crc32: 0,
+          ),
+    ]..sort((left, right) => left.objectId.hex.compareTo(right.objectId.hex));
+    final index = GitPackIndex(
+      checksumAlgorithm: algorithm,
+      entries: indexEntries,
+      packChecksum: checksum,
+    );
+    await File('$base.idx').writeAsBytes(
+      GitPackIndexCodec(checksumAlgorithm: algorithm).encode(index),
+      flush: true,
+    );
+  }
+
+  static bool _treeModeIsBlob(String mode) =>
+      mode == '100644' || mode == '100755' || mode == '120000';
 
   static GitHashAlgorithm _detectPackChecksumAlgorithm(List<int> packBytes) {
     if (packBytes.length < GitHashAlgorithm.sha1.digestLength + 12) {
@@ -5212,11 +5339,13 @@ final class GitRepository {
   static Future<GitRepository?> _discoverWorkTree(String workTreePath) async {
     final gitDirectory = Directory(p.join(workTreePath, '.git'));
     if (await gitDirectory.exists()) {
+      final gitDirectoryPath = p.normalize(p.absolute(gitDirectory.path));
       final repository = GitRepository._(
         path: workTreePath,
-        gitDirectoryPath: p.normalize(p.absolute(gitDirectory.path)),
-        commonDirectoryPath: p.normalize(p.absolute(gitDirectory.path)),
+        gitDirectoryPath: gitDirectoryPath,
+        commonDirectoryPath: gitDirectoryPath,
         bare: false,
+        hashAlgorithm: await _objectFormatOf(gitDirectoryPath),
       );
       if (await repository.isValid()) {
         return repository;
@@ -5235,6 +5364,7 @@ final class GitRepository {
           gitDirectoryPath: resolvedGitDirectoryPath,
           commonDirectoryPath: resolvedCommonDirectoryPath,
           bare: false,
+          hashAlgorithm: await _objectFormatOf(resolvedCommonDirectoryPath),
         );
         if (await repository.isValid()) {
           return repository;
@@ -5740,6 +5870,31 @@ final class GitRepository {
     return RegExp(buffer.toString());
   }
 
+  /// Граница shallow: эти коммиты читаются без родителей.
+  Future<bool> _isShallowCommit(GitObjectId commitId) async {
+    final file = File(p.join(gitDirectoryPath, 'shallow'));
+    if (!await file.exists()) return false;
+    final lines = const LineSplitter().convert(await file.readAsString());
+    for (final line in lines) {
+      if (line.trim() == commitId.hex) return true;
+    }
+    return false;
+  }
+
+  Future<void> _writeShallowCommits(Set<GitObjectId> commits) async {
+    final file = File(p.join(gitDirectoryPath, 'shallow'));
+    final existing = await file.exists()
+        ? const LineSplitter().convert(await file.readAsString())
+        : const <String>[];
+    final ids = <String>{
+      for (final line in existing)
+        if (line.trim().isNotEmpty) line.trim(),
+      for (final commit in commits) commit.hex,
+    }.toList()..sort();
+    await file.parent.create(recursive: true);
+    await file.writeAsString('${ids.join('\n')}\n');
+  }
+
   Future<GitCommit> _readCommit(
     GitObjectId commitId, {
     required GitCommitCodec codec,
@@ -5748,7 +5903,17 @@ final class GitRepository {
     if (commitObject == null || commitObject.type != GitObjectType.commit) {
       throw StateError('Missing commit object for $commitId.');
     }
-    return codec.decode(commitObject.bytes);
+    final commit = codec.decode(commitObject.bytes);
+    if (!await _isShallowCommit(commitId) || commit.parents.isEmpty) {
+      return commit;
+    }
+    return GitCommit(
+      tree: commit.tree,
+      author: commit.author,
+      committer: commit.committer,
+      message: commit.message,
+      extraHeaders: commit.extraHeaders,
+    );
   }
 
   Future<_GitApplyPlan> _planApplyEntry(
@@ -7524,6 +7689,7 @@ final class GitRepository {
     String relativePath,
     _GitTreeSnapshotEntry entry,
   ) async {
+    if (!await _sparseCheckoutAllows(relativePath)) return;
     final absolutePath = resolveWorkTreePath(relativePath);
     final entityType = await FileSystemEntity.type(
       absolutePath,
@@ -7543,7 +7709,158 @@ final class GitRepository {
       await Link(absolutePath).create(String.fromCharCodes(bytes));
       return;
     }
-    await File(absolutePath).writeAsBytes(bytes, flush: true);
+    final cleaned = await _smudgeWorkTreeBytes(
+      relativePath,
+      Uint8List.fromList(bytes),
+    );
+    await File(absolutePath).writeAsBytes(cleaned, flush: true);
+  }
+
+  /// `text`, `eol` и `ident` из `.gitattributes`, плюс clean-фильтр LFS.
+  Future<Uint8List> _cleanWorkTreeBytes(
+    String relativePath,
+    Uint8List bytes,
+  ) async {
+    final rules = await _attributeRules();
+    var next = bytes;
+    if (_attributeMatches(rules, relativePath, 'text') ||
+        _attributeValue(rules, relativePath, 'eol') == 'lf') {
+      next = Uint8List.fromList(
+        utf8.encode(
+          utf8.decode(next, allowMalformed: true).replaceAll('\r\n', '\n'),
+        ),
+      );
+    }
+    if (_attributeValue(rules, relativePath, 'ident') == '' ||
+        _attributeMatches(rules, relativePath, 'ident')) {
+      final text = utf8
+          .decode(next, allowMalformed: true)
+          .replaceAll(RegExp(r'\$Id(:[^$]*)?\$'), r'$Id$');
+      next = Uint8List.fromList(utf8.encode(text));
+    }
+    if (_attributeValue(rules, relativePath, 'filter') == 'lfs') {
+      return _storeLfsPointer(next);
+    }
+    return next;
+  }
+
+  /// Smudge LFS: указатель заменяется байтами из локального хранилища, если они есть.
+  Future<Uint8List> _smudgeWorkTreeBytes(
+    String relativePath,
+    Uint8List bytes,
+  ) async {
+    final rules = await _attributeRules();
+    if (_attributeValue(rules, relativePath, 'filter') != 'lfs') return bytes;
+    final text = utf8.decode(bytes, allowMalformed: true);
+    final oid = RegExp(r'oid sha256:([0-9a-f]{64})').firstMatch(text);
+    if (oid == null) return bytes;
+    final hex = oid.group(1)!;
+    final file = File(
+      p.join(
+        p.join(commonDirectoryPath, 'lfs', 'objects'),
+        p.join(hex.substring(0, 2), hex.substring(2)),
+      ),
+    );
+    if (!await file.exists()) return bytes;
+    return file.readAsBytes();
+  }
+
+  Future<Uint8List> _storeLfsPointer(Uint8List bytes) async {
+    final hex = GitObjectId.compute(
+      bytes,
+      algorithm: GitHashAlgorithm.sha256,
+    ).hex;
+    final file = File(
+      p.join(
+        p.join(commonDirectoryPath, 'lfs', 'objects'),
+        p.join(hex.substring(0, 2), hex.substring(2)),
+      ),
+    );
+    await file.parent.create(recursive: true);
+    if (!await file.exists()) await file.writeAsBytes(bytes, flush: true);
+    final pointer =
+        'version https://git-lfs.github.com/spec/v1\noid sha256:$hex\nsize ${bytes.length}\n';
+    return Uint8List.fromList(utf8.encode(pointer));
+  }
+
+  Future<List<({String pattern, Map<String, String> values})>>
+  _attributeRules() async {
+    final file = File(resolveWorkTreePath('.gitattributes'));
+    if (!await file.exists()) return const [];
+    final rules = <({String pattern, Map<String, String> values})>[];
+    for (final line in const LineSplitter().convert(
+      await file.readAsString(),
+    )) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+      final parts = trimmed.split(RegExp(r'\s+'));
+      if (parts.length < 2) continue;
+      final values = <String, String>{};
+      for (var index = 1; index < parts.length; index++) {
+        final token = parts[index];
+        final eq = token.indexOf('=');
+        if (eq < 0) {
+          values[token] = '';
+        } else {
+          values[token.substring(0, eq)] = token.substring(eq + 1);
+        }
+      }
+      rules.add((pattern: parts.first, values: values));
+    }
+    return rules;
+  }
+
+  bool _attributeMatches(
+    List<({String pattern, Map<String, String> values})> rules,
+    String path,
+    String key,
+  ) => _attributeValue(rules, path, key) != null;
+
+  String? _attributeValue(
+    List<({String pattern, Map<String, String> values})> rules,
+    String path,
+    String key,
+  ) {
+    String? value;
+    for (final rule in rules) {
+      if (!_attributePatternMatches(rule.pattern, path)) continue;
+      if (!rule.values.containsKey(key)) continue;
+      value = rule.values[key];
+    }
+    return value;
+  }
+
+  bool _attributePatternMatches(String pattern, String path) {
+    if (pattern == path) return true;
+    if (pattern.startsWith('*.')) {
+      return path.endsWith(pattern.substring(1));
+    }
+    if (pattern.endsWith('/')) return path.startsWith(pattern);
+    return false;
+  }
+
+  Future<bool> _sparseCheckoutAllows(String relativePath) async {
+    final file = File(p.join(commonDirectoryPath, 'info', 'sparse-checkout'));
+    if (!await file.exists()) return true;
+    final lines = const LineSplitter().convert(await file.readAsString());
+    final patterns = [
+      for (final line in lines)
+        if (line.trim().isNotEmpty &&
+            !line.trim().startsWith('#') &&
+            !line.trim().startsWith('!'))
+          line.trim(),
+    ];
+    if (patterns.isEmpty) return true;
+    for (final pattern in patterns) {
+      if (pattern == '*' || pattern == '/*') return true;
+      final bare = pattern.endsWith('/')
+          ? pattern.substring(0, pattern.length - 1)
+          : pattern;
+      if (relativePath == bare || relativePath.startsWith('$bare/')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> _ensureWorkTreeParentDirectories(String relativePath) async {
@@ -8625,9 +8942,8 @@ final class _GitRemoteTransport {
     }
 
     if (trimmedUrl.startsWith('file://')) {
-      throw UnsupportedError(
-        'Unsupported remote transport for $operation: $trimmedUrl.',
-      );
+      final fileUri = Uri.parse(trimmedUrl);
+      return _openFilesystem(trimmedUrl, fileUri.toFilePath());
     }
 
     final parsedUri = Uri.tryParse(trimmedUrl);
@@ -8741,6 +9057,12 @@ final class _GitRemoteTransport {
         : '${sanitized.path}/';
     return sanitized.replace(path: normalizedPath);
   }
+
+  /// Глубина upload-pack. null — полная история.
+  int? uploadPackDepth;
+
+  /// Фильтр partial clone, например `blob:none`. Уходит строкой `filter`.
+  String? uploadPackFilter;
 
   final String remoteUrl;
   final GitRepository? repository;
@@ -9612,6 +9934,14 @@ final class _GitRemoteTransport {
         );
       }
       requestBytes.addAll(_GitPktLine.encodeText('want ${objectId.hex}\n'));
+    }
+    final depth = uploadPackDepth;
+    if (depth != null) {
+      requestBytes.addAll(_GitPktLine.encodeText('deepen $depth\n'));
+    }
+    final filter = uploadPackFilter;
+    if (filter != null) {
+      requestBytes.addAll(_GitPktLine.encodeText('filter $filter\n'));
     }
     requestBytes.addAll(_GitPktLine.flushBytes);
     for (final objectId in haveObjectIds) {

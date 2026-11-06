@@ -1,15 +1,21 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:virtual_git/src/git_branch_tracking.dart';
 import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_commit_codec.dart';
+import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
+import 'package:virtual_git/src/git_extra_commands.dart';
+import 'package:virtual_git/src/git_fetch.dart';
 import 'package:virtual_git/src/git_host_io.dart';
 import 'package:virtual_git/src/git_index.dart';
+import 'package:virtual_git/src/git_log.dart';
 import 'package:virtual_git/src/git_merge.dart';
 import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_pull.dart';
+import 'package:virtual_git/src/git_reference.dart';
 import 'package:virtual_git/src/git_refspec.dart';
 import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
@@ -22,8 +28,9 @@ import 'package:virtual_host/virtual_host.dart';
 /// Аргументы разбираются как у git 2.53 (`LC_ALL=C`): длинные и короткие опции,
 /// `--name=value`, `--` и глобальные `-C`/`-c`. Неизвестная опция завершается
 /// кодом 129. Автор берётся из окружения, затем из `-c user.*`.
-/// Сетевой `--depth` не выполняется: протокол shallow в библиотеке нет,
-/// локальный путь предупреждает и клонирует целиком, как сам git.
+/// `--depth` на `file://` и HTTP обрезает историю и пишет `.git/shallow`.
+/// Обычный путь каталога предупреждает и копирует целиком: так же делает git,
+/// и в тексте предупреждения он сам предлагает `file://`.
 final class GitApplet implements Applet {
   const GitApplet({this.http});
 
@@ -66,9 +73,11 @@ final class GitApplet implements Applet {
     }
   }
 
-  Future<int> _dispatch(AppletIo io, GitGlobals global) {
+  Future<int> _dispatch(AppletIo io, GitGlobals global) async {
     final command = global.args.first;
     final rest = global.args.sublist(1);
+    final extra = await gitExtraCommand(io, command, rest, global.config);
+    if (extra != null) return extra;
     return switch (command) {
       'init' => _init(io, rest, bare: global.bare),
       'clone' => _clone(io, rest),
@@ -114,6 +123,7 @@ final class GitApplet implements Applet {
       GitOption('quiet', short: 'q'),
       GitOption('bare'),
       GitOption('initial-branch', short: 'b', valued: true),
+      GitOption('object-format', valued: true),
     ], usage: usage);
     if (parsed.operands.length > 1) {
       throw const GitUsage('usage: git init [<options>] [<directory>]\n');
@@ -140,6 +150,37 @@ final class GitApplet implements Applet {
       await io.fs.writeBytes(
         headPath,
         Uint8List.fromList(utf8.encode('ref: refs/heads/$branch\n')),
+      );
+    }
+    final format = parsed.value('object-format');
+    if (format != null && format != 'sha1') {
+      if (format != 'sha256') {
+        throw GitUsage(
+          "fatal: unknown object format '$format'\n",
+          exitCode: 128,
+        );
+      }
+      await io.fs.writeBytes(
+        '$gitDir/object-format',
+        Uint8List.fromList(utf8.encode('sha256\n')),
+      );
+    }
+    final configPath = '$gitDir/config';
+    try {
+      await io.fs.readBytes(configPath);
+    } on VfsException {
+      final bareRepo = bare || parsed.has('bare');
+      await io.fs.writeBytes(
+        configPath,
+        Uint8List.fromList(
+          utf8.encode(
+            '[core]\n'
+            '\trepositoryformatversion = 0\n'
+            '\tfilemode = true\n'
+            '\tbare = ${bareRepo ? 'true' : 'false'}\n'
+            '\tlogallrefupdates = true\n',
+          ),
+        ),
       );
     }
     if (!parsed.has('quiet')) {
@@ -232,6 +273,7 @@ final class GitApplet implements Applet {
       GitOption('file', short: 'F', valued: true),
       GitOption('allow-empty'),
       GitOption('all', short: 'a'),
+      GitOption('amend'),
       GitOption('author', valued: true),
     ], usage: usage);
     final messages = [...parsed.valuesOf('message')];
@@ -239,23 +281,36 @@ final class GitApplet implements Applet {
     if (file != null) {
       messages.add(utf8.decode(await io.fs.readBytes(_join(io.cwd, file))));
     }
-    if (messages.isEmpty) {
+    final repo = await _repo(io);
+    GitCommit? amended;
+    if (parsed.has('amend')) {
+      final head = await repo.revParse('HEAD');
+      if (head == null) {
+        throw const GitUsage(
+          'fatal: --amend on an empty repository\n',
+          exitCode: 128,
+        );
+      }
+      amended = const GitCommitCodec().decode(
+        (await repo.show(head.hex))!.bytes,
+      );
+    }
+    if (messages.isEmpty && amended == null) {
       io.stderr.writeText('Aborting commit due to empty commit message.\n');
       return 1;
     }
-    final repo = await _repo(io);
     if (parsed.has('all')) {
       final paths = await _trackedChanges(repo, const ['.']);
       if (paths.isNotEmpty) await repo.add(paths);
     }
-    if (!parsed.has('allow-empty')) {
+    if (!parsed.has('allow-empty') && !parsed.has('amend')) {
       final preview = await repo.status();
       if (!preview.hasStagedChanges) {
         await _status(io, const []);
         return 1;
       }
     }
-    var message = messages.join('\n\n');
+    var message = messages.isEmpty ? amended!.message : messages.join('\n\n');
     if (!message.endsWith('\n')) message = '$message\n';
     final baseAuthor = _author(io, config);
     final override = _authorLine(parsed.value('author'));
@@ -268,21 +323,102 @@ final class GitApplet implements Applet {
             timezoneOffset: baseAuthor.timezoneOffset,
           );
     final id = await repo.commit(
-      author: author,
+      author: amended == null ? author : amended.author,
       committer: _committer(io, config),
       message: message,
-      allowEmpty: parsed.has('allow-empty'),
+      allowEmpty: parsed.has('allow-empty') || parsed.has('amend'),
+      parents: amended?.parents,
+      reflogAction: parsed.has('amend') ? 'commit (amend)' : 'commit',
     );
     final head = await repo.readReference('HEAD');
     final branch = _branchOf(head?.targetReferenceName) ?? 'detached HEAD';
     final stored = const GitCommitCodec().decode(
       (await repo.show(id.hex))!.bytes,
     );
-    final root = stored.parents.isEmpty ? ' (root-commit)' : '';
+    final root = !parsed.has('amend') && stored.parents.isEmpty
+        ? ' (root-commit)'
+        : '';
     io.stdout.writeText(
       '[$branch$root ${_abbr(id.hex)}] ${_subject(message)}\n',
     );
+    if (parsed.has('amend')) io.stdout.writeText(_commitDate(stored.author));
+    await io.fs.writeBytes(
+      '${repo.gitDirectoryPath}/COMMIT_EDITMSG',
+      Uint8List.fromList(utf8.encode(message)),
+    );
+    io.stdout.writeText(await _commitStat(repo, stored, id.hex));
     return 0;
+  }
+
+  /// Дата автора в строке `commit --amend`.
+  String _commitDate(GitCommitSignature author) {
+    final date = DateTime.fromMillisecondsSinceEpoch(
+      author.timestampSeconds * 1000,
+      isUtc: true,
+    );
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final day = date.day.toString().padLeft(2, ' ');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    final second = date.second.toString().padLeft(2, '0');
+    return ' Date: ${weekdays[date.weekday - 1]} ${months[date.month - 1]} '
+        '$day $hour:$minute:$second ${date.year} ${author.timezoneOffset}\n';
+  }
+
+  /// Статистика коммита относительно родителя, а для корня — относительно пустого дерева.
+  Future<String> _commitStat(
+    GitRepository repo,
+    GitCommit commit,
+    String hex,
+  ) async {
+    if (commit.parents.isNotEmpty) {
+      return _shortstat(
+        await repo.diffRevisions(commit.parents.first.hex, hex),
+      );
+    }
+    final rows = await repo.listTree(hex, recursive: true);
+    final entries = <GitDiffEntry>[];
+    for (final row in rows) {
+      final object = await repo.readObject(row.entry.objectId);
+      if (object == null) continue;
+      final lines = const LineSplitter().convert(
+        utf8.decode(object.bytes, allowMalformed: true),
+      );
+      entries.add(
+        GitDiffEntry(
+          path: row.path,
+          changeType: GitDiffChangeType.added,
+          newMode: row.entry.mode,
+          hunks: [
+            GitDiffHunk(
+              oldStart: 0,
+              oldLineCount: 0,
+              newStart: 1,
+              newLineCount: lines.length,
+              lines: [
+                for (final line in lines)
+                  GitDiffLine(type: GitDiffLineType.addition, text: line),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    return _shortstat(entries);
   }
 
   Future<int> _log(AppletIo io, List<String> args) async {
@@ -300,6 +436,10 @@ final class GitApplet implements Applet {
       GitOption('max-count', short: 'n', valued: true),
       GitOption('oneline'),
       GitOption('first-parent'),
+      GitOption('all'),
+      GitOption('patch', short: 'p'),
+      GitOption('author', valued: true),
+      GitOption('grep', valued: true),
     ], usage: usage);
     if (parsed.operands.length > 1) {
       throw const GitUsage(
@@ -313,12 +453,29 @@ final class GitApplet implements Applet {
       throw const GitUsage('fatal: invalid --max-count\n', exitCode: 128);
     }
     final repo = await _repo(io);
-    final entries = await repo.log(
-      parsed.operands.isEmpty ? 'HEAD' : parsed.operands.single,
-      maxCount: maxCount,
-      firstParent: parsed.has('first-parent'),
-    );
+    final tips = parsed.has('all')
+        ? [for (final branch in await repo.branches()) branch.name]
+        : [parsed.operands.isEmpty ? 'HEAD' : parsed.operands.single];
+    final entries = <GitLogEntry>[];
+    final seen = <String>{};
+    for (final tip in tips) {
+      final page = await repo.log(
+        tip,
+        maxCount: maxCount,
+        firstParent: parsed.has('first-parent'),
+      );
+      for (final entry in page) {
+        if (seen.add(entry.objectId.hex)) entries.add(entry);
+      }
+    }
+    final authorFilter = parsed.value('author');
+    final grep = parsed.value('grep');
     for (final entry in entries) {
+      if (authorFilter != null &&
+          !entry.commit.author.name.contains(authorFilter)) {
+        continue;
+      }
+      if (grep != null && !entry.commit.message.contains(grep)) continue;
       if (parsed.has('oneline')) {
         io.stdout.writeText(
           '${_abbr(entry.objectId.hex)} ${_subject(entry.commit.message)}\n',
@@ -326,6 +483,13 @@ final class GitApplet implements Applet {
         continue;
       }
       _writeCommitHeader(io, entry.objectId.hex, entry.commit);
+      if (parsed.has('patch') && entry.commit.parents.isNotEmpty) {
+        final patch = await repo.diffRevisions(
+          entry.commit.parents.first.hex,
+          entry.objectId.hex,
+        );
+        io.stdout.writeText(_shortenDiff(const GitDiffCodec().encode(patch)));
+      }
     }
     return 0;
   }
@@ -335,13 +499,27 @@ final class GitApplet implements Applet {
     final parsed = parseGitArgs(args, const [
       GitOption('staged'),
       GitOption('cached'),
+      GitOption('stat'),
+      GitOption('name-only'),
     ], usage: usage);
     final repo = await _repo(io);
+    if (parsed.operands.isNotEmpty &&
+        !parsed.has('staged') &&
+        !parsed.has('cached') &&
+        await repo.revParse(parsed.operands.first) != null &&
+        (parsed.operands.length == 1 ||
+            await repo.revParse(parsed.operands[1]) != null)) {
+      final entries = parsed.operands.length == 1
+          ? await repo.diffRevisions('HEAD', parsed.operands.first)
+          : await repo.diffRevisions(parsed.operands.first, parsed.operands[1]);
+      io.stdout.writeText(_renderDiff(parsed, entries));
+      return 0;
+    }
     final entries = await repo.diff(
       staged: parsed.has('staged') || parsed.has('cached'),
       pathspecs: parsed.operands.isEmpty ? null : parsed.operands,
     );
-    io.stdout.writeText(_shortenDiff(const GitDiffCodec().encode(entries)));
+    io.stdout.writeText(_renderDiff(parsed, entries));
     return 0;
   }
 
@@ -353,6 +531,20 @@ final class GitApplet implements Applet {
     if (parsed.operands.length > 1) throw const GitUsage('$usage\n');
     final repo = await _repo(io);
     final revision = parsed.operands.isEmpty ? 'HEAD' : parsed.operands.single;
+    final colon = revision.indexOf(':');
+    if (colon > 0) {
+      final rev = _piece(revision, 0, colon);
+      final path = _piece(revision, colon + 1, revision.length);
+      final entry = await repo.treeEntry(rev, path);
+      if (entry == null) {
+        io.stderr.writeText("fatal: path '$path' does not exist in '$rev'\n");
+        return 128;
+      }
+      final blob = await repo.show(entry.objectId.hex);
+      if (blob == null) return 128;
+      io.stdout.writeText(utf8.decode(blob.bytes, allowMalformed: true));
+      return 0;
+    }
     final object = await repo.show(revision);
     if (object == null) {
       io.stderr.writeText(
@@ -368,6 +560,15 @@ final class GitApplet implements Applet {
         return 0;
       }
       _writeCommitHeader(io, id!.hex, commit);
+      if (commit.parents.isNotEmpty) {
+        final patch = await repo.diffRevisions(
+          commit.parents.first.hex,
+          id.hex,
+        );
+        io.stdout.writeText(
+          '\n${_shortenDiff(const GitDiffCodec().encode(patch))}',
+        );
+      }
       return 0;
     }
     io.stdout.writeText(utf8.decode(object.bytes, allowMalformed: true));
@@ -465,6 +666,8 @@ final class GitApplet implements Applet {
       GitOption('delete', short: 'd'),
       GitOption('force-delete', short: 'D'),
       GitOption('force', short: 'f'),
+      GitOption('move', short: 'm'),
+      GitOption('force-move', short: 'M'),
       GitOption('show-current'),
     ], usage: usage);
     final repo = await _repo(io);
@@ -486,6 +689,76 @@ final class GitApplet implements Applet {
           force: parsed.has('force-delete'),
         );
         if (code != 0) return code;
+      }
+      return 0;
+    }
+    if (parsed.has('move') || parsed.has('force-move')) {
+      if (parsed.operands.isEmpty || parsed.operands.length > 2) {
+        throw const GitUsage('$usage\n');
+      }
+      final current = _branchOf(
+        (await repo.readReference('HEAD'))?.targetReferenceName,
+      );
+      final from = parsed.operands.length == 2
+          ? parsed.operands.first
+          : current;
+      final to = parsed.operands.length == 2
+          ? parsed.operands[1]
+          : parsed.operands.first;
+      if (from == null) {
+        throw const GitUsage('fatal: no branch named\n', exitCode: 128);
+      }
+      final id = await repo.resolveReferenceObjectId('refs/heads/$from');
+      if (id == null) {
+        io.stderr.writeText("fatal: no branch named '$from'\n");
+        return 128;
+      }
+      if (await repo.readReference('refs/heads/$to') != null &&
+          !parsed.has('force-move')) {
+        io.stderr.writeText("fatal: a branch named '$to' already exists\n");
+        return 128;
+      }
+      await repo.writeReference(GitReference.direct('refs/heads/$to', id));
+      if (current == from) {
+        await repo.writeReference(
+          GitReference.symbolic('HEAD', 'refs/heads/$to'),
+        );
+      }
+      await repo.deleteReference('refs/heads/$from');
+      final oldLog = File(repo.resolveReflogPath('refs/heads/$from'));
+      if (await oldLog.exists()) {
+        final newLog = File(repo.resolveReflogPath('refs/heads/$to'));
+        await newLog.parent.create(recursive: true);
+        final text = await oldLog.readAsString();
+        final lines = const LineSplitter().convert(text);
+        final last = lines.isEmpty ? '' : lines.last;
+        final tab = last.indexOf('\t');
+        final header = tab < 0 ? '' : _piece(last, 0, tab);
+        final secondSpace = header.indexOf(' ');
+        final actor = secondSpace < 0
+            ? ''
+            : _piece(
+                header,
+                header.indexOf(' ', secondSpace + 1) + 1,
+                header.length,
+              );
+        final body = text.endsWith('\n') ? text : '$text\n';
+        await newLog.writeAsString(
+          '$body${id.hex} ${id.hex} $actor\tBranch: renamed refs/heads/$from to refs/heads/$to\n',
+        );
+        await oldLog.delete();
+      }
+      final tracking = await repo.branchTracking(from);
+      if (tracking != null) {
+        await repo.setBranchTracking(
+          GitBranchTracking(
+            branchName: to,
+            referenceName: 'refs/heads/$to',
+            remoteName: tracking.remoteName,
+            mergeReferenceName: tracking.mergeReferenceName,
+          ),
+        );
+        await repo.deleteBranchTracking(from);
       }
       return 0;
     }
@@ -987,6 +1260,7 @@ final class GitApplet implements Applet {
       GitOption('branch', short: 'b', valued: true),
       GitOption('origin', short: 'o', valued: true),
       GitOption('depth', valued: true),
+      GitOption('filter', valued: true),
       GitOption('bare'),
     ], usage: usage);
     if (parsed.operands.isEmpty || parsed.operands.length > 2) {
@@ -1015,13 +1289,8 @@ final class GitApplet implements Applet {
     if (!parsed.has('quiet')) {
       io.stdout.writeText("Cloning into '$directory'...\n");
     }
-    if (depth != null && _networkUrl(url)) {
-      throw const GitUsage(
-        'fatal: shallow clone is not supported\n',
-        exitCode: 128,
-      );
-    }
-    if (depth != null) {
+    final shallow = depth == null ? null : int.parse(depth);
+    if (shallow != null && !_networkUrl(url) && !url.startsWith('file://')) {
       io.stderr.writeText(
         'warning: --depth is ignored in local clones; use file:// instead.\n',
       );
@@ -1031,6 +1300,10 @@ final class GitApplet implements Applet {
       _join(io.cwd, directory),
       remoteName: parsed.value('origin') ?? 'origin',
       branchName: parsed.value('branch'),
+      depth: shallow != null && (_networkUrl(url) || url.startsWith('file://'))
+          ? shallow
+          : null,
+      filter: parsed.value('filter'),
       httpHeaders: _extraHeaders(io),
     );
     if (!parsed.has('quiet')) io.stdout.writeText('done.\n');
@@ -1043,23 +1316,48 @@ final class GitApplet implements Applet {
       GitOption('dry-run'),
       GitOption('quiet', short: 'q'),
       GitOption('depth', valued: true),
+      GitOption('filter', valued: true),
+      GitOption('prune'),
+      GitOption('tags'),
     ], usage: usage);
-    if (parsed.has('depth')) {
-      throw const GitUsage('fatal: --depth is not supported\n', exitCode: 128);
+    final depth = int.tryParse(parsed.value('depth') ?? '');
+    if (parsed.has('depth') && (depth == null || depth < 1)) {
+      throw GitUsage(
+        'fatal: depth ${parsed.value('depth')} is not a positive number\n',
+        exitCode: 128,
+      );
     }
     final network = _network(parsed, fallback: 'origin');
     final repo = await _repo(io);
+    final specs = [
+      ...?network.refSpecs,
+      if (parsed.has('tags')) GitRefSpec.parse('refs/tags/*:refs/tags/*'),
+    ];
     final result = await repo.fetch(
       network.remote,
       dryRun: parsed.has('dry-run'),
-      refSpecs: network.refSpecs,
+      depth: depth,
+      filter: parsed.value('filter'),
+      refSpecs: specs.isEmpty ? null : specs,
       httpHeaders: _extraHeaders(io),
     );
+    if (parsed.has('prune') && !parsed.has('dry-run')) {
+      final prefix = 'refs/remotes/${network.remote}/';
+      final kept = {
+        for (final reference in result.references)
+          reference.destinationReferenceName,
+      };
+      for (final reference in await repo.references(prefix: prefix)) {
+        if (kept.contains(reference.referenceName)) continue;
+        await repo.deleteReference(reference.referenceName);
+      }
+    }
     if (parsed.has('quiet')) return 0;
+    if (result.references.isNotEmpty) {
+      io.stdout.writeText('From ${result.remoteUrl}\n');
+    }
     for (final reference in result.references) {
-      io.stdout.writeText(
-        '${reference.status.name} ${reference.destinationReferenceName}\n',
-      );
+      io.stdout.writeText(_fetchLine(reference));
     }
     return 0;
   }
@@ -1323,22 +1621,31 @@ final class GitApplet implements Applet {
     GitStatus report, {
     required bool showUntracked,
   }) {
+    final changes = <GitStatusEntry>[];
+    final untracked = <GitStatusEntry>[];
+    final ignored = <GitStatusEntry>[];
     for (final entry in report.entries) {
       if (entry.isUntracked) {
-        if (showUntracked) io.stdout.writeText('?? ${entry.path}\n');
-        continue;
+        untracked.add(entry);
+      } else if (entry.isIgnored) {
+        ignored.add(entry);
+      } else if (entry.indexStatus != GitFileStatus.unchanged ||
+          entry.workTreeStatus != GitFileStatus.unchanged) {
+        changes.add(entry);
       }
-      if (entry.isIgnored) {
-        io.stdout.writeText('!! ${entry.path}\n');
-        continue;
-      }
-      if (entry.indexStatus == GitFileStatus.unchanged &&
-          entry.workTreeStatus == GitFileStatus.unchanged) {
-        continue;
-      }
+    }
+    for (final entry in changes) {
       io.stdout.writeText(
         '${_letter(entry.indexStatus)}${_letter(entry.workTreeStatus)} ${entry.path}\n',
       );
+    }
+    if (showUntracked) {
+      for (final entry in untracked) {
+        io.stdout.writeText('?? ${entry.path}\n');
+      }
+    }
+    for (final entry in ignored) {
+      io.stdout.writeText('!! ${entry.path}\n');
     }
   }
 
@@ -1610,6 +1917,18 @@ final class GitApplet implements Applet {
     GitFileStatus.ignored => '!',
   };
 
+  String _fetchLine(GitFetchedReference reference) {
+    final destination = reference.destinationReferenceName;
+    final source = reference.sourceReferenceName;
+    if (reference.previousObjectId == null) {
+      return ' * [new branch]      $source -> $destination\n';
+    }
+    if (reference.status == GitFetchReferenceStatus.upToDate) return '';
+    final previous = _abbr(reference.previousObjectId!.hex);
+    final next = _abbr(reference.objectId.hex);
+    return '   $previous..$next  $source -> $destination\n';
+  }
+
   String _mergeText(GitMergeStatus status) => switch (status) {
     GitMergeStatus.alreadyUpToDate => 'Already up to date.',
     GitMergeStatus.fastForward => 'Fast-forward',
@@ -1638,6 +1957,54 @@ final class GitApplet implements Applet {
         : _piece(body, dots + 2, space);
     final suffix = space < 0 ? '' : _piece(body, space, body.length);
     return 'index ${_abbr(oldHex)}..${_abbr(newHex)}$suffix';
+  }
+
+  String _renderDiff(GitInvocation parsed, List<GitDiffEntry> entries) {
+    if (parsed.has('name-only')) {
+      return [for (final entry in entries) '${entry.path}\n'].join();
+    }
+    if (parsed.has('stat')) return _shortstat(entries);
+    return _shortenDiff(const GitDiffCodec().encode(entries));
+  }
+
+  /// Короткая статистика `git commit` и `git diff --stat`.
+  String _shortstat(List<GitDiffEntry> entries) {
+    if (entries.isEmpty) return '';
+    var insertions = 0;
+    var deletions = 0;
+    final modes = StringBuffer();
+    for (final entry in entries) {
+      for (final hunk in entry.hunks) {
+        for (final line in hunk.lines) {
+          switch (line.type) {
+            case GitDiffLineType.addition:
+              insertions++;
+            case GitDiffLineType.deletion:
+              deletions++;
+            case GitDiffLineType.context:
+              break;
+          }
+        }
+      }
+      if (entry.changeType == GitDiffChangeType.added) {
+        modes.write(
+          ' create mode ${entry.newMode ?? '100644'} ${entry.path}\n',
+        );
+      } else if (entry.changeType == GitDiffChangeType.deleted) {
+        modes.write(
+          ' delete mode ${entry.oldMode ?? '100644'} ${entry.path}\n',
+        );
+      }
+    }
+    final files = entries.length == 1 ? '1 file' : '${entries.length} files';
+    final parts = <String>['$files changed'];
+    if (insertions > 0) {
+      parts.add('$insertions insertion${insertions == 1 ? '' : 's'}(+)');
+    }
+    if (deletions > 0) {
+      parts.add('$deletions deletion${deletions == 1 ? '' : 's'}(-)');
+    }
+    return ' ${parts.join(', ')}\n$modes';
   }
 
   String _fatalText(Object error) {

@@ -423,7 +423,7 @@ void main() {
             timestampSeconds: 1700000000,
             timezoneOffset: '+0900',
           ),
-          message: 'commit: Initial commit',
+          message: 'commit (initial): Initial commit',
         ),
         GitReflogEntry(
           previousObjectId: GitObjectId.fromHex(
@@ -449,7 +449,7 @@ void main() {
       expect(decoded.first.previousObjectId, isNull);
       expect(decoded.first.newObjectId, entries.first.newObjectId);
       expect(decoded.first.actor.name, 'Alice Example');
-      expect(decoded.first.message, 'commit: Initial commit');
+      expect(decoded.first.message, 'commit (initial): Initial commit');
       expect(decoded.last.previousObjectId, entries.last.previousObjectId);
       expect(decoded.last.newObjectId, entries.last.newObjectId);
       expect(decoded.last.actor.email, 'bob@example.com');
@@ -2891,15 +2891,15 @@ void main() {
         'reset: moving to HEAD^',
         'commit: Feature commit',
         'checkout: moving from main to feature',
-        'commit: Initial commit',
+        'commit (initial): Initial commit',
       ]);
       expect(featureEntries.map((entry) => entry.message), [
         'reset: moving to HEAD^',
         'commit: Feature commit',
-        'branch: Created from HEAD',
+        'branch: Created from main',
       ]);
       expect(mainEntries.map((entry) => entry.message), [
-        'commit: Initial commit',
+        'commit (initial): Initial commit',
       ]);
       expect(headEntries.first.previousObjectId, featureCommitId);
       expect(headEntries.first.newObjectId, initialCommitId);
