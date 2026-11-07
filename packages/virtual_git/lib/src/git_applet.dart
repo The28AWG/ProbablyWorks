@@ -222,12 +222,15 @@ final class GitApplet implements Applet {
       writeGitShortStatus(io, report, showUntracked: untracked != 'no');
       return 0;
     }
+    final hint = await _sequencerHint(repo);
     writeGitLongStatus(
       io,
       branch: branch,
       committed: committed,
       report: report,
       showUntracked: untracked != 'no',
+      sequencerAction: hint?.action,
+      sequencerAbbr: hint?.abbr,
     );
     return 0;
   }
@@ -279,7 +282,8 @@ final class GitApplet implements Applet {
   }
 
   Future<int> _log(AppletIo io, List<String> args) async {
-    const usage = 'usage: git log [<options>] [<revision>]';
+    const usage =
+        'usage: git log [<options>] [<revision-range>] [[--] <path>...]';
     final plain = <String>[];
     int? dashedCount;
     for (final arg in args) {
@@ -298,54 +302,98 @@ final class GitApplet implements Applet {
       GitOption('author', valued: true),
       GitOption('grep', valued: true),
     ], usage: usage);
-    if (parsed.operands.length > 1) {
-      throw const GitUsage(
-        'fatal: log path limits are not supported\n',
-        exitCode: 128,
-      );
-    }
     final rawCount = parsed.value('max-count');
     final maxCount = rawCount == null ? dashedCount : int.tryParse(rawCount);
     if (rawCount != null && maxCount == null) {
       throw const GitUsage('fatal: invalid --max-count\n', exitCode: 128);
     }
     final repo = await _repo(io);
-    final tips = parsed.has('all')
-        ? [for (final branch in await repo.branches()) branch.name]
-        : [parsed.operands.isEmpty ? 'HEAD' : parsed.operands.single];
+    // `--` parseGitArgs из операндов выкидывает, поэтому границу путей
+    // приходится искать в исходном argv, пропуская значения флагов.
+    final selection = _splitLogArgs(args);
+    final tips = <String>[];
+    final paths = <String>[];
+    if (selection.separated) {
+      for (final revision in selection.revisions) {
+        if (await repo.revParse(revision) == null) {
+          throw GitUsage("fatal: bad revision '$revision'\n", exitCode: 128);
+        }
+        tips.add(revision);
+      }
+      paths.addAll(selection.paths);
+    } else {
+      var seenPath = false;
+      for (final token in selection.revisions) {
+        if (seenPath || await repo.revParse(token) == null) {
+          if (!seenPath && !await _logPathExists(repo, token)) {
+            throw GitUsage(
+              "fatal: ambiguous argument '$token': "
+              'unknown revision or path not in the working tree.\n'
+              "Use '--' to separate paths from revisions, like this:\n"
+              "'git <command> [<revision>...] -- [<file>...]'\n",
+              exitCode: 128,
+            );
+          }
+          seenPath = true;
+          paths.add(token);
+          continue;
+        }
+        tips.add(token);
+      }
+    }
+    if (parsed.has('all')) {
+      for (final branch in await repo.branches()) {
+        tips.add(branch.name);
+      }
+    }
+    if (tips.isEmpty) tips.add('HEAD');
     final entries = <GitLogEntry>[];
     final seen = <String>{};
     for (final tip in tips) {
-      final page = await repo.log(
-        tip,
-        maxCount: maxCount,
-        firstParent: parsed.has('first-parent'),
-      );
+      final page = await repo.log(tip, firstParent: parsed.has('first-parent'));
       for (final entry in page) {
         if (seen.add(entry.objectId.hex)) entries.add(entry);
       }
     }
     final authorFilter = parsed.value('author');
     final grep = parsed.value('grep');
+    var shown = 0;
+    // Пустая строка между коммитами, но не после последнего — как у git log.
+    var separated = false;
     for (final entry in entries) {
       if (authorFilter != null &&
           !entry.commit.author.name.contains(authorFilter)) {
         continue;
       }
       if (grep != null && !entry.commit.message.contains(grep)) continue;
+      if (paths.isNotEmpty &&
+          !await repo.historyTouches(
+            entry.commit,
+            entry.objectId.hex,
+            pathspecs: paths,
+          )) {
+        continue;
+      }
+      if (maxCount != null && shown >= maxCount) break;
+      shown++;
       if (parsed.has('oneline')) {
         io.stdout.writeText(
           '${_abbr(entry.objectId.hex)} ${_subject(entry.commit.message)}\n',
         );
         continue;
       }
+      if (separated) io.stdout.writeText('\n');
+      separated = true;
       _writeCommitHeader(io, entry.objectId.hex, entry.commit);
       if (parsed.has('patch') && entry.commit.parents.isNotEmpty) {
         final patch = await repo.diffRevisions(
           entry.commit.parents.first.hex,
           entry.objectId.hex,
+          pathspecs: paths.isEmpty ? null : paths,
         );
-        io.stdout.writeText(_shortenDiff(const GitDiffCodec().encode(patch)));
+        io.stdout.writeText(
+          '\n${_shortenDiff(const GitDiffCodec().encode(patch))}',
+        );
       }
     }
     return 0;
@@ -1336,7 +1384,6 @@ final class GitApplet implements Applet {
     for (final line in const LineSplitter().convert(commit.message)) {
       io.stdout.writeText('    $line\n');
     }
-    io.stdout.writeText('\n');
   }
 
   String _untrackedMode(GitInvocation parsed) {
@@ -1509,6 +1556,16 @@ final class GitApplet implements Applet {
       return 'refs/heads/$target';
     }
     return target;
+  }
+
+  Future<({String action, String abbr})?> _sequencerHint(
+    GitRepository repo,
+  ) async {
+    final state = await repo.readSequencer();
+    if (state == null) return null;
+    if (state.action != 'cherry-pick' && state.action != 'revert') return null;
+    if (state.revisions.isEmpty) return null;
+    return (action: state.action, abbr: _abbr(state.revisions.first));
   }
 
   String? _branchOf(String? reference) {
@@ -1811,3 +1868,58 @@ final class _Network {
 
 String _piece(String text, int start, int end) =>
     String.fromCharCodes(text.codeUnits.getRange(start, end));
+
+/// Ревизии и пути `git log`. `--` в операндах разбора нет, поэтому смотрим argv.
+///
+/// Значения `--max-count`, `--author`, `--grep` и `-n` пропускаются, иначе
+/// число или образец стали бы ревизией. `-5` — это лимит, не путь.
+({List<String> revisions, List<String> paths, bool separated}) _splitLogArgs(
+  List<String> args,
+) {
+  const valuedLong = {'max-count', 'author', 'grep'};
+  final revisions = <String>[];
+  final paths = <String>[];
+  var separated = false;
+  for (var index = 0; index < args.length; index++) {
+    final arg = args[index];
+    if (separated || arg == '-' || !arg.startsWith('-')) {
+      if (separated) {
+        paths.add(arg);
+      } else {
+        revisions.add(arg);
+      }
+      continue;
+    }
+    if (arg == '--') {
+      separated = true;
+      continue;
+    }
+    if (RegExp(r'^-\d+$').hasMatch(arg)) continue;
+    if (arg.startsWith('--')) {
+      final body = _piece(arg, 2, arg.length);
+      final eq = body.indexOf('=');
+      final name = eq < 0 ? body : _piece(body, 0, eq);
+      if (eq < 0 && valuedLong.contains(name)) index++;
+      continue;
+    }
+    final body = _piece(arg, 1, arg.length);
+    for (var cursor = 0; cursor < body.length; cursor++) {
+      if (body[cursor] != 'n') continue;
+      if (cursor + 1 >= body.length) index++;
+      break;
+    }
+  }
+  return (revisions: revisions, paths: paths, separated: separated);
+}
+
+Future<bool> _logPathExists(GitRepository repo, String path) async {
+  try {
+    final absolute = repo.resolveWorkTreePath(path);
+    if (await File(absolute).exists()) return true;
+    return await Directory(absolute).exists();
+  } on ArgumentError {
+    return false;
+  } on StateError {
+    return false;
+  }
+}

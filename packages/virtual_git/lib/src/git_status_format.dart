@@ -10,6 +10,11 @@ import 'package:virtual_host/virtual_host.dart';
 /// Длинный статус. [mentionHiddenUntracked] добавляет строку `commit -uno`,
 /// если неотслеживаемые есть, но список скрыт. [unbornHeading] — `No commits yet`
 /// у `git status` и `Initial commit` у `git commit`.
+///
+/// [sequencerAction] (`cherry-pick` или `revert`) и [sequencerAbbr] печатают
+/// блок «you are currently …», как git, пока операция не завершена. Текст
+/// «all conflicts fixed» совпадает с пустым патчем; конфликтный rebase этот
+/// блок не включает.
 void writeGitLongStatus(
   AppletIo io, {
   required String? branch,
@@ -18,10 +23,15 @@ void writeGitLongStatus(
   required bool showUntracked,
   bool mentionHiddenUntracked = false,
   String unbornHeading = 'No commits yet',
+  String? sequencerAction,
+  String? sequencerAbbr,
 }) {
   io.stdout.writeText(
     branch == null ? 'HEAD detached\n' : 'On branch $branch\n',
   );
+  if (sequencerAction != null && sequencerAbbr != null) {
+    _writeSequencerHint(io, sequencerAction, sequencerAbbr);
+  }
   final staged = [
     for (final entry in report.entries)
       if (entry.isStaged) entry,
@@ -105,6 +115,17 @@ void writeGitLongStatus(
       (staged.isNotEmpty || unstaged.isNotEmpty || untracked.isNotEmpty)) {
     io.stdout.writeText('\n');
   }
+}
+
+void _writeSequencerHint(AppletIo io, String action, String abbr) {
+  final verb = action == 'revert' ? 'reverting' : 'cherry-picking';
+  io.stdout.writeText(
+    'You are currently $verb commit $abbr.\n'
+    '  (all conflicts fixed: run "git $action --continue")\n'
+    '  (use "git $action --skip" to skip this patch)\n'
+    '  (use "git $action --abort" to cancel the $action operation)\n'
+    '\n',
+  );
 }
 
 void _hiddenUntrackedHint(AppletIo io, bool show) {

@@ -194,19 +194,29 @@ extension GitRepositorySurface on GitRepository {
     return paths;
   }
 
-  /// Повторяет один коммит поверх HEAD. Автор коммита сохраняется.
-  Future<GitObjectId> cherryPick(
+  /// Повторяет один коммит поверх HEAD. Автор исходного коммита сохраняется.
+  ///
+  /// [parentIndex] — родитель merge с нуля (`-m` у git минус один). У обычного
+  /// коммита это первый родитель, у корня индекс не используется: diff строится
+  /// от пустого дерева. [allowEmpty] оставляет пустой коммит, как rebase, когда
+  /// патч уже есть в HEAD. Иначе метод возвращает null и HEAD не двигает:
+  /// команда печатает текст «cherry-pick is now empty».
+  Future<GitObjectId?> cherryPick(
     String revision, {
     required GitCommitSignature committer,
+    int parentIndex = 0,
+    bool allowEmpty = false,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
     final commit = await _commitOf(revision, commitCodec);
-    await _applyCommitDifference(
+    final changed = await _applyCommitDifference(
       revision,
       commit,
       reverse: false,
+      parentIndex: parentIndex,
       commitCodec: commitCodec,
     );
+    if (!changed && !allowEmpty) return null;
     return this.commit(
       author: commit.author,
       committer: committer,
@@ -218,25 +228,32 @@ extension GitRepositorySurface on GitRepository {
   }
 
   /// Создаёт коммит, обратный [revision].
-  Future<GitObjectId> revert(
+  ///
+  /// Сообщение — `Revert "<тема>"` или `Reapply "<тема>"`, если сам коммит уже
+  /// был revert. Пустой обратный патч без [allowEmpty] не коммитится: null.
+  /// [parentIndex] тот же, что у [cherryPick].
+  Future<GitObjectId?> revert(
     String revision, {
     required GitCommitSignature author,
     required GitCommitSignature committer,
+    int parentIndex = 0,
+    bool allowEmpty = false,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
     final commit = await _commitOf(revision, commitCodec);
     final reverted = await commitIdOf(revision, commitCodec);
-    await _applyCommitDifference(
+    final changed = await _applyCommitDifference(
       revision,
       commit,
       reverse: true,
+      parentIndex: parentIndex,
       commitCodec: commitCodec,
     );
-    final subject = _surfaceSubject(commit.message);
+    if (!changed && !allowEmpty) return null;
     return this.commit(
       author: author,
       committer: committer,
-      message: 'Revert "$subject"\n\nThis reverts commit $reverted.\n',
+      message: _revertMessage(commit, reverted),
       allowEmpty: true,
       reflogAction: 'revert',
       commitCodec: commitCodec,
@@ -244,10 +261,15 @@ extension GitRepositorySurface on GitRepository {
   }
 
   /// Переносит коммиты `upstream..HEAD` на [onto].
-  Future<void> rebase(
+  ///
+  /// Пустой `upstream..HEAD` и случай «ветка уже потомок upstream, onto тот же»
+  /// не двигают HEAD: команда пишет «up to date». Иначе [onStep] зовётся перед
+  /// каждым коммитом (с единицы). Возвращает число перенесённых коммитов.
+  Future<int> rebase(
     String upstream, {
     String? onto,
     required GitCommitSignature committer,
+    void Function(int index, int total)? onStep,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
     final head = await revParse('HEAD', commitCodec: commitCodec);
@@ -259,20 +281,36 @@ extension GitRepositorySurface on GitRepository {
         ? base
         : await revParse(onto, commitCodec: commitCodec);
     if (ontoId == null) throw StateError('rebase could not resolve onto.');
-    final history = await log('HEAD', commitCodec: commitCodec);
-    final replay = <GitLogEntry>[];
-    for (final entry in history) {
-      if (entry.objectId == base) break;
-      replay.add(entry);
+    final replay = await revListAncestryPath(
+      base: upstream,
+      tip: 'HEAD',
+      excludeMerges: false,
+      commitCodec: commitCodec,
+    );
+    // Уже потомок upstream и цель та же: git не переписывает коммиты,
+    // даже если upstream..HEAD не пуст. Иначе `rebase main` на линейной
+    // ветке печатал бы Rebasing вместо «up to date».
+    final sameBase = ontoId == base;
+    var ancestor = head == base;
+    if (sameBase && !ancestor) {
+      final history = await log('HEAD', commitCodec: commitCodec);
+      for (final entry in history) {
+        if (entry.objectId != base) continue;
+        ancestor = true;
+        break;
+      }
     }
+    if (replay.isEmpty || ancestor) return 0;
     await reset(ontoId.hex, mode: GitResetMode.hard, reflogActor: committer);
-    final pending = [for (final entry in replay.reversed) entry.objectId.hex];
+    final pending = [for (final entry in replay) entry.objectId.hex];
     await _writeSequencer('rebase', pending);
     for (var index = 0; index < pending.length; index++) {
+      onStep?.call(index + 1, pending.length);
       try {
         await cherryPick(
           pending[index],
           committer: committer,
+          allowEmpty: true,
           commitCodec: commitCodec,
         );
       } on StateError {
@@ -281,6 +319,7 @@ extension GitRepositorySurface on GitRepository {
       }
     }
     await _clearSequencer();
+    return pending.length;
   }
 
   /// Оставшиеся ревизии sequencer. Нет файла — null.
@@ -307,6 +346,7 @@ extension GitRepositorySurface on GitRepository {
         await cherryPick(
           state.revisions[index],
           committer: committer,
+          allowEmpty: true,
           commitCodec: commitCodec,
         );
       } on StateError {
@@ -315,6 +355,41 @@ extension GitRepositorySurface on GitRepository {
       }
     }
     await _clearSequencer();
+  }
+
+  /// Запоминает незавершённый cherry-pick или revert.
+  ///
+  /// `git status` печатает блок операции, пока [sequencerAbort] не сотрёт файл.
+  /// В список кладётся полный хеш: сокращение в статусе совпадает с git.
+  Future<void> rememberSequencer(String action, List<String> revisions) =>
+      _writeSequencer(action, revisions);
+
+  /// Снимает sequencer, не трогая HEAD. Так делает `cherry-pick --skip`,
+  /// когда пропускаемый коммит был последним.
+  Future<void> clearSequencer() => _clearSequencer();
+
+  /// Коммит попадает в `git log -- path`: diff с первым родителем пересекает
+  /// [pathspecs]. У корня родителя нет — смотрим само дерево.
+  Future<bool> historyTouches(
+    GitCommit commit,
+    String revision, {
+    required List<String> pathspecs,
+  }) async {
+    if (commit.parents.isEmpty) {
+      final rows = await listTree(revision, recursive: true);
+      for (final row in rows) {
+        if (GitRepository._pathMatchesAnyPathspec(row.path, pathspecs)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    final patch = await diffRevisions(
+      commit.parents.first.hex,
+      revision,
+      pathspecs: pathspecs,
+    );
+    return patch.isNotEmpty;
   }
 
   /// Сбрасывает sequencer и возвращает HEAD на ORIG_HEAD, если она есть.
@@ -597,23 +672,79 @@ extension GitRepositorySurface on GitRepository {
     return id.hex;
   }
 
-  Future<void> _applyCommitDifference(
+  /// true, если дерево HEAD изменилось. false — патч пустой или уже применён.
+  ///
+  /// Корень сравнивается с пустым деревом: иначе cherry-pick первого коммита
+  /// молча создавал пустой коммит. Если после применения дерево совпало с HEAD,
+  /// индекс возвращается назад, чтобы пустой pick не оставлял staged-статус.
+  Future<bool> _applyCommitDifference(
     String revision,
     GitCommit commit, {
     required bool reverse,
+    required int parentIndex,
     required GitCommitCodec commitCodec,
   }) async {
-    if (commit.parents.isEmpty) return;
-    final parent = commit.parents.first.hex;
-    final patch = reverse
-        ? await diffRevisions(revision, parent, commitCodec: commitCodec)
-        : await diffRevisions(parent, revision, commitCodec: commitCodec);
-    if (patch.isEmpty) return;
+    final headId = await revParse('HEAD', commitCodec: commitCodec);
+    final headTree = headId == null
+        ? null
+        : (await _readCommit(headId, codec: commitCodec)).tree;
+    if (!reverse && headTree != null && commit.tree == headTree) return false;
+    if (reverse &&
+        headTree != null &&
+        parentIndex >= 0 &&
+        parentIndex < commit.parents.length) {
+      final parentTree = (await _readCommit(
+        commit.parents[parentIndex],
+        codec: commitCodec,
+      )).tree;
+      if (parentTree == headTree) return false;
+    }
+    final patch = await _surfacePatch(
+      revision,
+      commit,
+      reverse: reverse,
+      parentIndex: parentIndex,
+      commitCodec: commitCodec,
+    );
+    if (patch.isEmpty) return false;
+    final indexBefore = await readIndex();
     final applied = await applyPatch(const GitDiffCodec().encode(patch));
     if (!applied.success) {
       throw StateError('patch did not apply cleanly');
     }
     await add([for (final entry in patch) entry.path]);
+    if (headTree == null) return true;
+    final after = await writeTreeFromIndex(
+      await readIndex() ?? const GitIndex(),
+    );
+    if (after != headTree) return true;
+    if (indexBefore != null) await writeIndex(indexBefore);
+    return false;
+  }
+
+  Future<List<GitDiffEntry>> _surfacePatch(
+    String revision,
+    GitCommit commit, {
+    required bool reverse,
+    required int parentIndex,
+    required GitCommitCodec commitCodec,
+  }) async {
+    if (commit.parents.isEmpty) {
+      final tree = await _readRevisionTreeEntries(
+        revision,
+        commitCodec: commitCodec,
+      );
+      return reverse
+          ? _buildDiffEntriesFromTreeSnapshots(tree.entries, const {})
+          : _buildDiffEntriesFromTreeSnapshots(const {}, tree.entries);
+    }
+    if (parentIndex < 0 || parentIndex >= commit.parents.length) {
+      throw StateError('commit does not have parent ${parentIndex + 1}');
+    }
+    final parent = commit.parents[parentIndex].hex;
+    return reverse
+        ? diffRevisions(revision, parent, commitCodec: commitCodec)
+        : diffRevisions(parent, revision, commitCodec: commitCodec);
   }
 
   Future<void> _markReachable(
@@ -684,6 +815,19 @@ String? _configLineValue(String line, String name) {
 String _surfaceSubject(String message) {
   final end = message.indexOf('\n');
   return end < 0 ? message : _surfaceSlice(message, 0, end);
+}
+
+/// `Revert` повторного revert git называет `Reapply`: тема уже в кавычках.
+String _revertMessage(GitCommit commit, String reverted) {
+  final subject = _surfaceSubject(commit.message);
+  const prefix = 'Revert "';
+  final line =
+      subject.startsWith(prefix) &&
+          subject.endsWith('"') &&
+          subject.length > prefix.length
+      ? 'Reapply "${_surfaceSlice(subject, prefix.length, subject.length - 1)}"'
+      : 'Revert "$subject"';
+  return '$line\n\nThis reverts commit $reverted.\n';
 }
 
 String _surfaceSlice(String text, int start, int end) =>

@@ -160,7 +160,15 @@ const supportedOptionLabels = <String, Set<String>>{
   },
   'bundle': <String>{},
   'checkout': {'--branch', '-b', '--force-branch', '-B', '--force', '-f'},
-  'cherry-pick': {'--continue', '--abort'},
+  'cherry-pick': {
+    '--continue',
+    '--abort',
+    '--edit',
+    '--no-edit',
+    '--skip',
+    '--mainline',
+    '-m',
+  },
   'clean': {
     '--force',
     '-f',
@@ -411,7 +419,7 @@ const supportedOptionLabels = <String, Set<String>>{
   'rebase': {'--onto', '--continue', '--abort'},
   'reset': {'--soft', '--mixed', '--hard'},
   'restore': {'--staged', '--worktree', '--source', '-s'},
-  'revert': <String>{},
+  'revert': {'--edit', '--no-edit', '--skip', '--mainline', '-m'},
   'rm': {'--cached', '--recursive', '-r'},
   'scalar clone': {
     '--branch',
@@ -506,7 +514,10 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
     (pattern: '*', reason: 'переключение ветки без pathspec/merge/track'),
   ],
   'cherry-pick': [
-    (pattern: '*', reason: 'один коммит и sequencer без стратегий и подписи'),
+    (
+      pattern: '*',
+      reason: 'серия, диапазон и -m; стратегии и подпись — не парсим',
+    ),
   ],
   'clean': [(pattern: '*', reason: 'без интерактива и масок exclude')],
   'clone': [
@@ -554,7 +565,10 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
   ],
   'init': [(pattern: '*', reason: 'init без shared/template/separate-git-dir')],
   'log': [
-    (pattern: '*', reason: 'журнал без decorate/mailmap и ограничений -L'),
+    (
+      pattern: '*',
+      reason: 'журнал с путями, без decorate/mailmap и ограничений -L',
+    ),
   ],
   'maintenance run': [
     (
@@ -591,7 +605,12 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
   ],
   'reset': [(pattern: '*', reason: 'режимы и пути без merge и keep')],
   'restore': [(pattern: '*', reason: 'restore без merge и batch path')],
-  'revert': [(pattern: '*', reason: 'один revert без -m')],
+  'revert': [
+    (
+      pattern: '*',
+      reason: 'серия и -m; стратегии, gpg и edit-сообщения — не парсим',
+    ),
+  ],
   'rm': [(pattern: '*', reason: 'rm без force из git')],
   'scalar clone': [
     (

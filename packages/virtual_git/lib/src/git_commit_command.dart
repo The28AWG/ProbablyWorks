@@ -1175,6 +1175,31 @@ GitCommitSignature _authorSignature(
   );
 }
 
+/// Печатает сводку нового коммита так же, как `git commit`, `cherry-pick` и `revert`.
+///
+/// [showDate] у cherry-pick и revert всегда включён: строка `Date:` есть,
+/// даже когда имя автора совпадает с коммитером. [initialCommit] добавляет
+/// `(root-commit)` только первому коммиту ветки.
+Future<void> writeGitCommitSummary(
+  AppletIo io,
+  GitRepository repo, {
+  required GitObjectId id,
+  required String message,
+  required GitCommitSignature author,
+  required GitCommitSignature committer,
+  required bool showDate,
+  required bool initialCommit,
+}) => _printSummary(
+  io,
+  repo,
+  id: id,
+  message: message,
+  author: author,
+  committer: committer,
+  showDate: showDate,
+  initialCommit: initialCommit,
+);
+
 Future<void> _printSummary(
   AppletIo io,
   GitRepository repo, {
