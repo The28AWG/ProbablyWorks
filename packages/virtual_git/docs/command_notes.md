@@ -8,6 +8,31 @@
 
 `git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
 
+## `grep`
+
+Ищет в отслеживаемых файлах рабочего дерева, а не в `HEAD`: правка
+в файле видна сразу, удалённый из дерева файл без `--cached` не ищется.
+`--cached` читает blob индекса, аргумент-ревизия — дерево, `--untracked`
+добавляет неотслеживаемые (игнорируемые — только с
+`--no-exclude-standard`), `--no-index` обходит каталог как `grep -r`.
+Образец по умолчанию — POSIX BRE, `-E` — ERE, `-F` — буквальная строка.
+Несколько образцов соединяются `--and` / `--or` / `--not` и скобками;
+`--all-match` оставляет файлы, где нашёлся каждый образец. Первый
+не-флаг закрывает разбор опций: `-e` уже даёт образец, и следующее слово
+— ревизия или путь. Флаг после образца — `fatal: option '…' must come
+before non-option arguments`.
+
+Вывод: номера строк (`-n`), колонка (`--column`), контекст (`-A`/`-B`/`-C`),
+`-o`, `-c`, `-l`/`-L`, `--heading`, `--break`, `-z`, двоичные файлы (`-a`,
+`-I`). `-l` перекрывает `-c`. Пустой образец совпадает со всеми строками,
+но `-o` нулевые куски не печатает. Сверка с системным git —
+`test/git_grep_parity_test.dart`.
+
+Неразобранные флаги (`-P`, `--color`, `--threads`, `--textconv`, pager,
+function-context, submodule) дают `error: unknown option` и код 129.
+Обратные ссылки `\1` в шаблоне — `fatal` с текстом, что они не поддерживаются:
+движок их не имитирует молча.
+
 ## `diff`
 
 Разбирается только подмножество флагов из `gitDiffParseOptions` (см. `lib/src/git_diff_options.dart` и `supportedOptionLabels` в `tool/parity_policy.dart`). Реализованы: сравнение ревизий (включая `A...B` через [mergeBase], `--merge-base A B`, `-R`), индекс/рабочее дерево с `--cached`/`--staged`, `--`, pathspec; форматы вывода — unified patch (по умолчанию), `--stat` (и комбинация с `--patch-with-stat`), `--shortstat`, `--numstat`, `--name-only`, `--name-status`, `--quiet`, `--exit-code`; при `--full-index` в строках `index` печатаются полные хеши blob (без сокращения).

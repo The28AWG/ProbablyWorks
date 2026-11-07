@@ -98,6 +98,33 @@ final class GitParitySession {
     expect(left.out, realOut, reason: command);
   }
 
+  /// Только код выхода. Текст `commit` содержит короткий хеш, а дерево
+  /// с каталогами пакет пишет с режимом `040000`, git — `40000`.
+  Future<void> bothExit(List<String> args) async {
+    final command = args.join(' ');
+    final left = await _virtual.run(_rootArgs(args, '/work'));
+    final right = await _real(_rootArgs(args, realRoot.path));
+    expect(
+      left.code,
+      right.exitCode,
+      reason: '$command\n${left.err}\n${right.stderr}',
+    );
+  }
+
+  /// Код и первая строка stderr. Дальше git печатает страницу справки,
+  /// апплет — одну строку `usage`.
+  Future<void> bothFirstLine(List<String> args) async {
+    final command = args.join(' ');
+    final left = await _virtual.run(_rootArgs(args, '/work'));
+    final right = await _real(_rootArgs(args, realRoot.path));
+    expect(left.code, right.exitCode, reason: '$command\n${left.err}');
+    expect(
+      left.err.split('\n').first,
+      '${right.stderr}'.split('\n').first,
+      reason: command,
+    );
+  }
+
   Future<void> expectSameTree() async {
     final dumped = await Directory.systemTemp.createTemp('git_parity_vfs_');
     try {
@@ -210,8 +237,10 @@ final class _ParityVirtual {
       applets: applets,
       profile: VirtualProfile(home: '/work', environment: environment),
     );
+    // Кавычки: argv с `$`, `*`, скобками не должен разбирать shell.
+    // Настоящий git в сессии получает те же аргументы списком, без кавычек.
     final events = await interpreter
-        .run('git ${args.join(' ')}', cwd: '/work')
+        .run('git ${args.map(_shellQuote).join(' ')}', cwd: '/work')
         .toList();
     final stdout = BytesBuilder();
     final stderr = BytesBuilder();
@@ -251,3 +280,6 @@ final class _ParityVirtual {
     }
   }
 }
+
+/// Одинарные кавычки shell, чтобы `$`, `*` и скобки дошли до git как есть.
+String _shellQuote(String arg) => "'${arg.replaceAll("'", "'\\''")}'";

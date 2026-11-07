@@ -14,13 +14,13 @@ import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
+import 'package:virtual_git/src/git_grep.dart';
 import 'package:virtual_git/src/git_hash_algorithm.dart';
 import 'package:virtual_git/src/git_host_io.dart' show Directory, File;
 import 'package:virtual_git/src/git_index.dart';
 import 'package:virtual_git/src/git_log.dart';
 import 'package:virtual_git/src/git_object.dart';
 import 'package:virtual_git/src/git_object_id.dart';
-import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_path.dart' as p;
 import 'package:virtual_git/src/git_range_diff.dart';
 import 'package:virtual_git/src/git_reference.dart';
@@ -708,33 +708,7 @@ Future<int> _blame(AppletIo io, List<String> args) async {
   return 0;
 }
 
-Future<int> _grep(AppletIo io, List<String> args) async {
-  final parsed = parseGitArgs(
-    args,
-    const [],
-    usage: 'usage: git grep <pattern>',
-  );
-  if (parsed.operands.isEmpty) {
-    throw const GitUsage('usage: git grep <pattern>\n');
-  }
-  final repo = await _repo(io);
-  final pattern = parsed.operands.first;
-  final rows = await repo.listTree('HEAD', recursive: true);
-  var found = false;
-  for (final row in rows) {
-    final object = await repo.readObject(row.entry.objectId);
-    if (object == null || object.type != GitObjectType.blob) continue;
-    final lines = const LineSplitter().convert(
-      utf8.decode(object.bytes, allowMalformed: true),
-    );
-    for (var index = 0; index < lines.length; index++) {
-      if (!lines[index].contains(pattern)) continue;
-      found = true;
-      io.stdout.writeText('${row.path}:${index + 1}:${lines[index]}\n');
-    }
-  }
-  return found ? 0 : 1;
-}
+Future<int> _grep(AppletIo io, List<String> args) => gitGrep(io, args);
 
 Future<int> _describe(AppletIo io, List<String> args) async {
   final parsed = parseGitArgs(args, const [
