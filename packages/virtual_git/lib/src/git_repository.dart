@@ -3590,6 +3590,73 @@ final class GitRepository {
     return entries;
   }
 
+  /// Коммиты, достижимые из [tip], но не из [base] (как `git rev-list ^base tip`),
+  /// в порядке от старых к новым (как `git log --reverse base..tip`).
+  ///
+  /// При [excludeMerges] merge-коммиты отбрасываются (как `git log --no-merges`
+  /// у `git range-diff` по умолчанию); при `false` они остаются в списке, обход
+  /// идёт по всем родителям — упрощение относительно git `--diff-merges`.
+  Future<List<GitLogEntry>> revListAncestryPath({
+    required String base,
+    required String tip,
+    bool excludeMerges = true,
+    GitCommitCodec commitCodec = const GitCommitCodec(),
+  }) async {
+    final baseId = await revParse(base, commitCodec: commitCodec);
+    final tipId = await revParse(tip, commitCodec: commitCodec);
+    if (baseId == null || tipId == null) {
+      return const [];
+    }
+
+    final cache = <GitObjectId, GitCommit>{};
+    final baseReachable = await _collectAncestorDepths(
+      baseId,
+      codec: commitCodec,
+      cache: cache,
+    );
+    final baseSet = baseReachable.keys.toSet();
+
+    final order = <GitObjectId>[];
+    final done = <GitObjectId>{};
+
+    Future<void> dfsPost(GitObjectId id) async {
+      if (baseSet.contains(id) || done.contains(id)) {
+        return;
+      }
+      final commit = await _readCommitCached(
+        id,
+        codec: commitCodec,
+        cache: cache,
+      );
+      final parents = excludeMerges && commit.parents.length > 1
+          ? <GitObjectId>[commit.parents.first]
+          : commit.parents;
+      for (final parent in parents) {
+        if (!baseSet.contains(parent)) {
+          await dfsPost(parent);
+        }
+      }
+      done.add(id);
+      order.add(id);
+    }
+
+    await dfsPost(tipId);
+
+    final out = <GitLogEntry>[];
+    for (final id in order) {
+      final commit = await _readCommitCached(
+        id,
+        codec: commitCodec,
+        cache: cache,
+      );
+      if (excludeMerges && commit.parents.length > 1) {
+        continue;
+      }
+      out.add(GitLogEntry(objectId: id, commit: commit));
+    }
+    return out;
+  }
+
   Future<GitObjectId?> mergeBase(
     String leftRevision,
     String rightRevision, {

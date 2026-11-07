@@ -16,6 +16,10 @@ final class GitOption {
     this.optional = false,
     this.missing,
     this.missingExit = 129,
+
+    /// Если задано, в [GitInvocation] попадает этот ключ вместо [name]
+    /// (несколько синонимов `-p`/`-u` → одна логическая опция).
+    this.recordAs,
   });
 
   /// Длинное имя без `--`.
@@ -25,6 +29,9 @@ final class GitOption {
   final String? short;
 
   final bool valued;
+
+  /// См. [GitInvocation.enabled] / [GitInvocation.values].
+  final String? recordAs;
 
   /// Голый `--name` остаётся флагом, значение приходит только приклеенным.
   final bool optional;
@@ -178,6 +185,8 @@ GitInvocation parseGitArgs(
   List<GitOption> options, {
   required String usage,
 }) {
+  String recordKey(GitOption option) => option.recordAs ?? option.name;
+
   final byLong = <String, GitOption>{
     for (final option in options) option.name: option,
   };
@@ -220,7 +229,7 @@ GitInvocation parseGitArgs(
         if (inline != null) {
           throw GitUsage("error: unknown option `$name'\n$usage\n");
         }
-        enabled.add(option.name);
+        enabled.add(recordKey(option));
         continue;
       }
       final value =
@@ -229,7 +238,7 @@ GitInvocation parseGitArgs(
               ? ''
               : _missingOrNext(args, index, option, long: true));
       if (inline == null && !option.optional) index++;
-      _addValue(enabled, values, option.name, value);
+      _addValue(enabled, values, recordKey(option), value);
       continue;
     }
     final body = _slice(arg, 1, arg.length);
@@ -240,7 +249,7 @@ GitInvocation parseGitArgs(
         throw GitUsage("error: unknown switch `$letter'\n$usage\n");
       }
       if (!option.valued) {
-        enabled.add(option.name);
+        enabled.add(recordKey(option));
         continue;
       }
       final rest = _slice(body, cursor + 1, body.length);
@@ -250,7 +259,7 @@ GitInvocation parseGitArgs(
                 ? ''
                 : _missingOrNext(args, index, option, long: false));
       if (rest.isEmpty && !option.optional) index++;
-      _addValue(enabled, values, option.name, value);
+      _addValue(enabled, values, recordKey(option), value);
       break;
     }
   }

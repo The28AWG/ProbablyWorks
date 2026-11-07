@@ -161,7 +161,25 @@ const supportedOptionLabels = <String, Set<String>>{
     '--author',
   },
   'describe': {'--tags'},
-  'diff': {'--staged', '--cached', '--stat', '--name-only'},
+  'diff': {
+    '--cached',
+    '--staged',
+    '--merge-base',
+    '--exit-code',
+    '--quiet',
+    '--full-index',
+    '--name-only',
+    '--name-status',
+    '--numstat',
+    '--no-patch',
+    '--patch',
+    '--patch-with-stat',
+    '--shortstat',
+    '--stat',
+    '-p',
+    '-u',
+    '-R',
+  },
   'fetch': {
     '--dry-run',
     '--quiet',
@@ -212,7 +230,20 @@ const supportedOptionLabels = <String, Set<String>>{
     '--set-upstream',
     '-u',
   },
-  'range-diff': <String>{},
+  'range-diff': {
+    '--creation-factor',
+    '--left-only',
+    '--right-only',
+    '--exit-code',
+    '--quiet',
+    '--no-patch',
+    '--patch',
+    '--unified',
+    '-p',
+    '-u',
+    '-s',
+    '-U',
+  },
   'rebase': {'--onto', '--continue', '--abort'},
   'reset': {'--soft', '--mixed', '--hard'},
   'restore': {'--staged', '--worktree', '--source', '-s'},
@@ -347,7 +378,10 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
   ],
   'describe': [(pattern: '*', reason: 'упрощённый describe только с --tags')],
   'diff': [
-    (pattern: '*', reason: 'ограниченный вывод без полного движка diff git'),
+    (
+      pattern: '*',
+      reason: 'подмножество движка diff: rename/color/word-diff/raw и прочее — не парсим',
+    ),
   ],
   'fetch': [
     (
@@ -394,7 +428,10 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
   ],
   'push': [(pattern: '*', reason: 'HTTP(S) push без зеркал и опций сервера')],
   'range-diff': [
-    (pattern: '*', reason: 'упрощённое сравнение списков коммитов'),
+    (
+      pattern: '*',
+      reason: 'сопоставление диапазонов без notes/diff-merges и без полного набора diff-format',
+    ),
   ],
   'rebase': [
     (pattern: '*', reason: 'rebase с --onto и sequencer без интерактива'),

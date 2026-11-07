@@ -22,6 +22,7 @@ import 'package:virtual_git/src/git_object.dart';
 import 'package:virtual_git/src/git_object_id.dart';
 import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_path.dart' as p;
+import 'package:virtual_git/src/git_range_diff.dart';
 import 'package:virtual_git/src/git_reference.dart';
 import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
@@ -2535,26 +2536,8 @@ Future<int> _nameRev(AppletIo io, List<String> args) async {
   return 0;
 }
 
-Future<int> _rangeDiff(AppletIo io, List<String> args) async {
-  final parsed = parseGitArgs(
-    args,
-    const [],
-    usage: 'usage: git range-diff <A> <B> <C> <D>',
-  );
-  if (parsed.operands.length != 2 && parsed.operands.length != 4) {
-    throw const GitUsage('usage: git range-diff <range1> <range2>\n');
-  }
-  final repo = await _repo(io);
-  final left = await repo.log(parsed.operands.first);
-  final right = await repo.log(parsed.operands.last);
-  final count = left.length > right.length ? left.length : right.length;
-  for (var index = 0; index < count; index++) {
-    final a = index < left.length ? _abbr(left[index].objectId.hex) : '-';
-    final b = index < right.length ? _abbr(right[index].objectId.hex) : '-';
-    io.stdout.writeText('$a -> $b\n');
-  }
-  return 0;
-}
+Future<int> _rangeDiff(AppletIo io, List<String> args) =>
+    runRangeDiff(io, args);
 
 Future<int> _checkAttr(AppletIo io, List<String> args) async {
   final parsed = parseGitArgs(

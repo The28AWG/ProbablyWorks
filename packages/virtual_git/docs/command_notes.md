@@ -8,6 +8,18 @@
 
 `git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
 
+## `diff`
+
+Разбирается только подмножество флагов из `gitDiffParseOptions` (см. `lib/src/git_diff_options.dart` и `supportedOptionLabels` в `tool/parity_policy.dart`). Реализованы: сравнение ревизий (включая `A...B` через [mergeBase], `--merge-base A B`, `-R`), индекс/рабочее дерево с `--cached`/`--staged`, `--`, pathspec; форматы вывода — unified patch (по умолчанию), `--stat` (и комбинация с `--patch-with-stat`), `--shortstat`, `--numstat`, `--name-only`, `--name-status`, `--quiet`, `--exit-code`; при `--full-index` в строках `index` печатаются полные хеши blob (без сокращения).
+
+Остальные флаги из справки git (`--color`, rename/copy, word-diff, внешний diff и т.д.) **не** разбираются: `error: unknown option`, код 129 — как у остальных команд апплета.
+
+## `range-diff`
+
+Формы операндов: два диапазона `base..tip`, тройная точка `old...new`, три и четыре отдельные ревизии. Списки коммитов — [revListAncestryPath]; merge-коммиты из сравнения исключаются (как у git без `--diff-merges`; сам флаг не парсится). Сопоставление — венгерский алгоритм по «стоимости» редакционного расстояния синтетического текста (author + сообщение + unified diff к родителю или пустому дереву `4b825dc6…`), вес несовпадений — `--creation-factor`. Вывод пар и «только левая/правая» сторона; `--left-only` / `--right-only`; при `--patch` — [gitUnifiedTextDiff] между синтетическими текстами; `-U` / `--unified` — контекст патча; `--quiet`, `--exit-code`, `-s` / `--no-patch`.
+
+Флаги вроде `--notes`, `--diff-merges`, `--stat`, `--color` и прочий полный набор diff-format из справки git **не** входят в `gitRangeDiffParseOptions`: отказ с кодом 129.
+
 ## Паритет опций и политика
 
 Скрипт `tool/parity_report.dart` проверяет только разбор флагов (нет ли `error: unknown option`), а не совпадение текста с git.

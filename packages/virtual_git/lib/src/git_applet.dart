@@ -7,6 +7,7 @@ import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_commit_codec.dart';
 import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
+import 'package:virtual_git/src/git_diff_options.dart';
 import 'package:virtual_git/src/git_extra_commands.dart';
 import 'package:virtual_git/src/git_fetch.dart';
 import 'package:virtual_git/src/git_host_io.dart';
@@ -496,31 +497,89 @@ final class GitApplet implements Applet {
 
   Future<int> _diff(AppletIo io, List<String> args) async {
     const usage = 'usage: git diff [<options>] [--] [<path>...]';
-    final parsed = parseGitArgs(args, const [
-      GitOption('staged'),
-      GitOption('cached'),
-      GitOption('stat'),
-      GitOption('name-only'),
-    ], usage: usage);
+    final parsed = parseGitArgs(args, gitDiffParseOptions, usage: usage);
     final repo = await _repo(io);
-    if (parsed.operands.isNotEmpty &&
-        !parsed.has('staged') &&
-        !parsed.has('cached') &&
-        await repo.revParse(parsed.operands.first) != null &&
-        (parsed.operands.length == 1 ||
-            await repo.revParse(parsed.operands[1]) != null)) {
-      final entries = parsed.operands.length == 1
-          ? await repo.diffRevisions('HEAD', parsed.operands.first)
-          : await repo.diffRevisions(parsed.operands.first, parsed.operands[1]);
-      io.stdout.writeText(_renderDiff(parsed, entries));
-      return 0;
+    final split = _splitDiffOperands(parsed.operands);
+    final pathspecs = split.pathspecs;
+    final revs = split.revOperands;
+    final staged = parsed.has('staged') || parsed.has('cached');
+
+    List<GitDiffEntry> entries;
+    if (staged) {
+      final ref = revs.isEmpty ? 'HEAD' : revs.first;
+      if (revs.length > 1) {
+        throw const GitUsage('$usage\n');
+      }
+      entries = await repo.diff(
+        staged: true,
+        referenceName: ref,
+        pathspecs: pathspecs.isEmpty ? null : pathspecs,
+      );
+    } else if (revs.isEmpty) {
+      entries = await repo.diff(
+        pathspecs: pathspecs.isEmpty ? null : pathspecs,
+      );
+    } else if (parsed.has('merge-base') &&
+        revs.length == 2 &&
+        !revs.any((r) => r.contains('...'))) {
+      final other = revs.first;
+      final tip = revs.last;
+      final mb = await repo.mergeBase(other, tip);
+      if (mb == null) {
+        throw const GitUsage('fatal: no merge base found\n', exitCode: 128);
+      }
+      entries = await repo.diffRevisions(
+        mb.hex,
+        tip,
+        pathspecs: pathspecs.isEmpty ? null : pathspecs,
+      );
+    } else if (revs.length == 1 && revs.single.contains('...')) {
+      final parts = revs.single.split('...');
+      if (parts.length != 2) throw const GitUsage('$usage\n');
+      final left = parts.first.trim();
+      final right = parts.last.trim();
+      final mb = await repo.mergeBase(left, right);
+      if (mb == null) {
+        throw const GitUsage('fatal: no merge base found\n', exitCode: 128);
+      }
+      entries = await repo.diffRevisions(
+        mb.hex,
+        right,
+        pathspecs: pathspecs.isEmpty ? null : pathspecs,
+      );
+    } else if (revs.isNotEmpty &&
+        await repo.revParse(revs.first) != null &&
+        (revs.length == 1 || await repo.revParse(revs[1]) != null)) {
+      if (revs.length > 2) throw const GitUsage('$usage\n');
+      if (revs.length == 1) {
+        entries = await repo.diffRevisions(
+          'HEAD',
+          revs.first,
+          pathspecs: pathspecs.isEmpty ? null : pathspecs,
+        );
+      } else {
+        var oldRev = revs.first;
+        var newRev = revs[1];
+        if (parsed.has('R')) {
+          final swap = oldRev;
+          oldRev = newRev;
+          newRev = swap;
+        }
+        entries = await repo.diffRevisions(
+          oldRev,
+          newRev,
+          pathspecs: pathspecs.isEmpty ? null : pathspecs,
+        );
+      }
+    } else {
+      throw const GitUsage('$usage\n');
     }
-    final entries = await repo.diff(
-      staged: parsed.has('staged') || parsed.has('cached'),
-      pathspecs: parsed.operands.isEmpty ? null : parsed.operands,
-    );
+
+    if (parsed.has('quiet')) {
+      return _diffExitCode(parsed, entries);
+    }
     io.stdout.writeText(_renderDiff(parsed, entries));
-    return 0;
+    return _diffExitCode(parsed, entries);
   }
 
   Future<int> _show(AppletIo io, List<String> args) async {
@@ -2004,12 +2063,97 @@ final class GitApplet implements Applet {
     return 'index ${_abbr(oldHex)}..${_abbr(newHex)}$suffix';
   }
 
+  ({List<String> revOperands, List<String> pathspecs}) _splitDiffOperands(
+    List<String> operands,
+  ) {
+    final sep = operands.indexOf('--');
+    final revPart = sep < 0 ? operands : operands.sublist(0, sep);
+    final tail = sep < 0 ? const <String>[] : operands.sublist(sep + 1);
+    return (revOperands: revPart, pathspecs: tail);
+  }
+
+  int _diffExitCode(GitInvocation parsed, List<GitDiffEntry> entries) {
+    if (!parsed.has('exit-code')) return 0;
+    return entries.isEmpty ? 0 : 1;
+  }
+
   String _renderDiff(GitInvocation parsed, List<GitDiffEntry> entries) {
-    if (parsed.has('name-only')) {
-      return [for (final entry in entries) '${entry.path}\n'].join();
+    final hasPatch = parsed.has('patch') && !parsed.has('no-patch');
+    final fmtStat = parsed.has('stat') || parsed.has('patch-with-stat');
+    final onlyFormats =
+        parsed.has('stat') ||
+        parsed.has('shortstat') ||
+        parsed.has('numstat') ||
+        parsed.has('name-only') ||
+        parsed.has('name-status');
+    var showPatch =
+        !parsed.has('no-patch') &&
+        (hasPatch || parsed.has('patch-with-stat') || !onlyFormats);
+    if (parsed.has('no-patch')) {
+      showPatch = false;
     }
-    if (parsed.has('stat')) return _shortstat(entries);
-    return _shortenDiff(const GitDiffCodec().encode(entries));
+    final parts = <String>[];
+
+    if (parsed.has('name-only')) {
+      parts.add([for (final entry in entries) '${entry.path}\n'].join());
+    }
+    if (parsed.has('name-status')) {
+      final buf = StringBuffer();
+      for (final entry in entries) {
+        buf.writeln('${_diffNameStatusLetter(entry)}\t${entry.path}');
+      }
+      parts.add(buf.toString());
+    }
+    if (fmtStat) {
+      parts.add(_diffStat(entries));
+    }
+    if (parsed.has('shortstat')) {
+      parts.add(entries.isEmpty ? '' : _shortstat(entries));
+    }
+    if (parsed.has('numstat')) {
+      parts.add(_diffNumstat(entries));
+    }
+    if (showPatch && entries.isNotEmpty) {
+      final patchText = const GitDiffCodec().encode(entries);
+      parts.add(parsed.has('full-index') ? patchText : _shortenDiff(patchText));
+    }
+
+    return parts.join();
+  }
+
+  String _diffNameStatusLetter(GitDiffEntry entry) {
+    if (entry.conflicted) return 'U';
+    return switch (entry.changeType) {
+      GitDiffChangeType.added => 'A',
+      GitDiffChangeType.deleted => 'D',
+      GitDiffChangeType.modified => 'M',
+    };
+  }
+
+  String _diffNumstat(List<GitDiffEntry> entries) {
+    final buf = StringBuffer();
+    for (final entry in entries) {
+      if (entry.binary) {
+        buf.writeln('-\t-\t${entry.path}');
+        continue;
+      }
+      var add = 0;
+      var del = 0;
+      for (final hunk in entry.hunks) {
+        for (final line in hunk.lines) {
+          switch (line.type) {
+            case GitDiffLineType.addition:
+              add++;
+            case GitDiffLineType.deletion:
+              del++;
+            case GitDiffLineType.context:
+              break;
+          }
+        }
+      }
+      buf.writeln('$add\t$del\t${entry.path}');
+    }
+    return buf.toString();
   }
 
   /// Строки `git diff --stat`: график по файлам и сводка.
