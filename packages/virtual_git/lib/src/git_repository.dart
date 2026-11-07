@@ -1886,11 +1886,16 @@ final class GitRepository {
       effectiveIndex.entries,
     );
 
-    final headEntries = await _readReferenceTreeEntries(
-      referenceName,
-      commitCodec: commitCodec,
-      treeCodec: treeCodec,
-    );
+    // Ревизия, не только имя ссылки: `commit --amend --dry-run` сравнивает
+    // индекс с `HEAD^`. Нет объекта — пустое дерево, как у первого коммита.
+    final baselineId = await revParse(referenceName, commitCodec: commitCodec);
+    final headEntries = baselineId == null
+        ? <String, _GitTreeSnapshotEntry>{}
+        : await _readCommitTreeEntries(
+            baselineId,
+            commitCodec: commitCodec,
+            treeCodec: treeCodec,
+          );
     final workTreeEntries = await _readWorkTreeEntries(
       effectiveIndex: effectiveIndex,
     );

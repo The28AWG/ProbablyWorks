@@ -134,6 +134,11 @@ final class GitParitySession {
     );
   }
 
+  /// Только апплет. Для флагов, которые git выполняет, а виртуальный хост
+  /// отклоняет явным `fatal`: сверка stdout была бы ложной.
+  Future<({int code, String out, String err})> virtual(List<String> args) =>
+      _virtual.run(_rootArgs(args, '/work'));
+
   Future<void> expectSameTree() async {
     final dumped = await Directory.systemTemp.createTemp('git_parity_vfs_');
     try {

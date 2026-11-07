@@ -8,6 +8,12 @@
 
 `git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
 
+## `commit`
+
+Сообщение собирается из `-m` / `-F` / `-C` / `--amend` / `--fixup` / `--squash`, затем cleanup (`whitespace`, `strip`, `verbatim`; `scissors` без редактора совпадает с `whitespace`), `--signoff` и `--trailer`. `-a` добавляет в индекс правки отслеживаемых файлов. Пути без `-i` — частичный коммит `--only`: в коммит попадают только они, остальные проиндексированные правки остаются в индексе. `-i` индексирует пути и коммитит весь индекс. `--dry-run`, `--short`, `--porcelain` и `--long` печатают статус и не создают коммит. `--date` и `--author` меняют автора; `--reset-author` — только вместе с `-C`, `-c` или `--amend`.
+
+Редактор не запускается. Если git открыл бы его (`git commit` при наличии индекса, `-e`, `-c`, `--fixup=amend|reword`, `--squash` без `-m`), stderr — те же две строки `EDITOR unset`, код 1. `--gpg-sign`, `--interactive`, `--patch` и флаги хуков (`--verify`, `--no-verify`, `--post-rewrite`, `--no-post-rewrite`) дают `fatal` и код 128: молчаливого успеха нет. Относительные даты (`yesterday`) не разбираются. `--short --branch` показывает ahead/behind, если в конфиге есть upstream и ссылка `refs/remotes/...`. Сверка — `test/git_commit_parity_test.dart`.
+
 ## `format-patch`
 
 Серия писем в mbox: диапазон `A..B` / `A...B`, `since` (коммиты после ревизии, достижимые из `HEAD`) и `-N` (последние N от ревизии, по умолчанию `HEAD`). Без ревизии и без `-N` команда ничего не печатает: upstream не подставлен. Несколько отдельных ревизий без `..` отклоняются с `fatal`.

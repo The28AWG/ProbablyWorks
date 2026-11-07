@@ -5,6 +5,7 @@ import 'package:virtual_git/src/git_branch_tracking.dart';
 import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_commit_codec.dart';
+import 'package:virtual_git/src/git_commit_command.dart';
 import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
 import 'package:virtual_git/src/git_diff_options.dart';
@@ -21,7 +22,7 @@ import 'package:virtual_git/src/git_refspec.dart';
 import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
 import 'package:virtual_git/src/git_reset.dart';
-import 'package:virtual_git/src/git_status.dart';
+import 'package:virtual_git/src/git_status_format.dart';
 import 'package:virtual_host/virtual_host.dart';
 
 /// Команда `git` в оболочке виртуального хоста.
@@ -217,12 +218,12 @@ final class GitApplet implements Applet {
         );
       }
       if (parsed.has('branch')) {
-        _writeBranchHeader(io, branch, committed: committed);
+        writeGitBranchHeader(io, branch, committed: committed);
       }
-      _writeShortStatus(io, report, showUntracked: untracked != 'no');
+      writeGitShortStatus(io, report, showUntracked: untracked != 'no');
       return 0;
     }
-    _writeLongStatus(
+    writeGitLongStatus(
       io,
       branch: branch,
       committed: committed,
@@ -268,158 +269,14 @@ final class GitApplet implements Applet {
     List<String> args,
     List<({String key, String value})> config,
   ) async {
-    const usage = 'usage: git commit [<options>] [--] [<pathspec>...]';
-    final parsed = parseGitArgs(args, const [
-      GitOption('message', short: 'm', valued: true),
-      GitOption('file', short: 'F', valued: true),
-      GitOption('allow-empty'),
-      GitOption('all', short: 'a'),
-      GitOption('amend'),
-      GitOption('author', valued: true),
-    ], usage: usage);
-    final messages = [...parsed.valuesOf('message')];
-    final file = parsed.value('file');
-    if (file != null) {
-      messages.add(utf8.decode(await io.fs.readBytes(_join(io.cwd, file))));
-    }
-    final repo = await _repo(io);
-    GitCommit? amended;
-    if (parsed.has('amend')) {
-      final head = await repo.revParse('HEAD');
-      if (head == null) {
-        throw const GitUsage(
-          'fatal: --amend on an empty repository\n',
-          exitCode: 128,
-        );
-      }
-      amended = const GitCommitCodec().decode(
-        (await repo.show(head.hex))!.bytes,
-      );
-    }
-    if (messages.isEmpty && amended == null) {
-      io.stderr.writeText('Aborting commit due to empty commit message.\n');
-      return 1;
-    }
-    if (parsed.has('all')) {
-      final paths = await _trackedChanges(repo, const ['.']);
-      if (paths.isNotEmpty) await repo.add(paths);
-    }
-    if (!parsed.has('allow-empty') && !parsed.has('amend')) {
-      final preview = await repo.status();
-      if (!preview.hasStagedChanges) {
-        await _status(io, const []);
-        return 1;
-      }
-    }
-    var message = messages.isEmpty ? amended!.message : messages.join('\n\n');
-    if (!message.endsWith('\n')) message = '$message\n';
-    final baseAuthor = _author(io, config);
-    final override = _authorLine(parsed.value('author'));
-    final author = override == null
-        ? baseAuthor
-        : GitCommitSignature(
-            name: override.name,
-            email: override.email,
-            timestampSeconds: baseAuthor.timestampSeconds,
-            timezoneOffset: baseAuthor.timezoneOffset,
-          );
-    final id = await repo.commit(
-      author: amended == null ? author : amended.author,
+    final repository = await _repo(io);
+    return runGitCommit(
+      io,
+      repository,
+      args,
+      author: _author(io, config),
       committer: _committer(io, config),
-      message: message,
-      allowEmpty: parsed.has('allow-empty') || parsed.has('amend'),
-      parents: amended?.parents,
-      reflogAction: parsed.has('amend') ? 'commit (amend)' : 'commit',
     );
-    final head = await repo.readReference('HEAD');
-    final branch = _branchOf(head?.targetReferenceName) ?? 'detached HEAD';
-    final stored = const GitCommitCodec().decode(
-      (await repo.show(id.hex))!.bytes,
-    );
-    final root = !parsed.has('amend') && stored.parents.isEmpty
-        ? ' (root-commit)'
-        : '';
-    io.stdout.writeText(
-      '[$branch$root ${_abbr(id.hex)}] ${_subject(message)}\n',
-    );
-    if (parsed.has('amend')) io.stdout.writeText(_commitDate(stored.author));
-    await io.fs.writeBytes(
-      '${repo.gitDirectoryPath}/COMMIT_EDITMSG',
-      Uint8List.fromList(utf8.encode(message)),
-    );
-    io.stdout.writeText(await _commitStat(repo, stored, id.hex));
-    return 0;
-  }
-
-  /// Дата автора в строке `commit --amend`.
-  String _commitDate(GitCommitSignature author) {
-    final date = DateTime.fromMillisecondsSinceEpoch(
-      author.timestampSeconds * 1000,
-      isUtc: true,
-    );
-    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final day = date.day.toString().padLeft(2, ' ');
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    final second = date.second.toString().padLeft(2, '0');
-    return ' Date: ${weekdays[date.weekday - 1]} ${months[date.month - 1]} '
-        '$day $hour:$minute:$second ${date.year} ${author.timezoneOffset}\n';
-  }
-
-  /// Статистика коммита относительно родителя, а для корня — относительно пустого дерева.
-  Future<String> _commitStat(
-    GitRepository repo,
-    GitCommit commit,
-    String hex,
-  ) async {
-    if (commit.parents.isNotEmpty) {
-      return _shortstat(
-        await repo.diffRevisions(commit.parents.first.hex, hex),
-      );
-    }
-    final rows = await repo.listTree(hex, recursive: true);
-    final entries = <GitDiffEntry>[];
-    for (final row in rows) {
-      final object = await repo.readObject(row.entry.objectId);
-      if (object == null) continue;
-      final lines = const LineSplitter().convert(
-        utf8.decode(object.bytes, allowMalformed: true),
-      );
-      entries.add(
-        GitDiffEntry(
-          path: row.path,
-          changeType: GitDiffChangeType.added,
-          newMode: row.entry.mode,
-          hunks: [
-            GitDiffHunk(
-              oldStart: 0,
-              oldLineCount: 0,
-              newStart: 1,
-              newLineCount: lines.length,
-              lines: [
-                for (final line in lines)
-                  GitDiffLine(type: GitDiffLineType.addition, text: line),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
-    return _shortstat(entries);
   }
 
   Future<int> _log(AppletIo io, List<String> args) async {
@@ -1640,135 +1497,6 @@ final class GitApplet implements Applet {
     ];
   }
 
-  void _writeLongStatus(
-    AppletIo io, {
-    required String? branch,
-    required bool committed,
-    required GitStatus report,
-    required bool showUntracked,
-  }) {
-    io.stdout.writeText(
-      branch == null ? 'HEAD detached\n' : 'On branch $branch\n',
-    );
-    final staged = [
-      for (final entry in report.entries)
-        if (entry.isStaged) entry,
-    ];
-    final unstaged = [
-      for (final entry in report.entries)
-        if (entry.isUnstaged && !entry.isUntracked && !entry.isIgnored) entry,
-    ];
-    final untracked = [
-      for (final entry in report.entries)
-        if (showUntracked && entry.isUntracked) entry,
-    ];
-    if (staged.isEmpty && unstaged.isEmpty && untracked.isEmpty) {
-      if (!committed) {
-        io.stdout.writeText(
-          '\nNo commits yet\n\n'
-          'nothing to commit (create/copy files and use "git add" to track)\n',
-        );
-        return;
-      }
-      io.stdout.writeText('nothing to commit, working tree clean\n');
-      return;
-    }
-    if (!committed) io.stdout.writeText('\nNo commits yet\n');
-    final lead = committed ? '' : '\n';
-    if (staged.isNotEmpty) {
-      io.stdout.writeText(
-        '${lead}Changes to be committed:\n'
-        '  (use "git restore --staged <file>..." to unstage)\n',
-      );
-      for (final entry in staged) {
-        io.stdout.writeText(
-          '\t${_longLabel(entry.indexStatus)}${entry.path}\n',
-        );
-      }
-    }
-    if (unstaged.isNotEmpty) {
-      final beforeUnstaged = staged.isEmpty ? lead : '\n';
-      io.stdout.writeText(
-        '${beforeUnstaged}Changes not staged for commit:\n'
-        '  (use "git add <file>..." to update what will be committed)\n'
-        '  (use "git restore <file>..." to discard changes in working directory)\n',
-      );
-      for (final entry in unstaged) {
-        io.stdout.writeText(
-          '\t${_longLabel(entry.workTreeStatus)}${entry.path}\n',
-        );
-      }
-    }
-    if (untracked.isNotEmpty) {
-      final beforeUntracked = staged.isEmpty && unstaged.isEmpty ? lead : '\n';
-      io.stdout.writeText(
-        '${beforeUntracked}Untracked files:\n'
-        '  (use "git add <file>..." to include in what will be committed)\n',
-      );
-      for (final entry in untracked) {
-        io.stdout.writeText('\t${entry.path}\n');
-      }
-    }
-    if (staged.isEmpty && untracked.isNotEmpty && unstaged.isEmpty) {
-      io.stdout.writeText(
-        '\nnothing added to commit but untracked files present (use "git add" to track)\n',
-      );
-    } else if (staged.isEmpty && unstaged.isNotEmpty) {
-      io.stdout.writeText(
-        '\nno changes added to commit (use "git add" and/or "git commit -a")\n',
-      );
-    }
-  }
-
-  void _writeShortStatus(
-    AppletIo io,
-    GitStatus report, {
-    required bool showUntracked,
-  }) {
-    final changes = <GitStatusEntry>[];
-    final untracked = <GitStatusEntry>[];
-    final ignored = <GitStatusEntry>[];
-    for (final entry in report.entries) {
-      if (entry.isUntracked) {
-        untracked.add(entry);
-      } else if (entry.isIgnored) {
-        ignored.add(entry);
-      } else if (entry.indexStatus != GitFileStatus.unchanged ||
-          entry.workTreeStatus != GitFileStatus.unchanged) {
-        changes.add(entry);
-      }
-    }
-    for (final entry in changes) {
-      io.stdout.writeText(
-        '${_letter(entry.indexStatus)}${_letter(entry.workTreeStatus)} ${entry.path}\n',
-      );
-    }
-    if (showUntracked) {
-      for (final entry in untracked) {
-        io.stdout.writeText('?? ${entry.path}\n');
-      }
-    }
-    for (final entry in ignored) {
-      io.stdout.writeText('!! ${entry.path}\n');
-    }
-  }
-
-  void _writeBranchHeader(
-    AppletIo io,
-    String? branch, {
-    required bool committed,
-  }) {
-    if (branch == null) {
-      io.stdout.writeText('## HEAD (no branch)\n');
-      return;
-    }
-    if (!committed) {
-      io.stdout.writeText('## No commits yet on $branch\n');
-      return;
-    }
-    io.stdout.writeText('## $branch\n');
-  }
-
   void _writeCommitHeader(AppletIo io, String hex, GitCommit commit) {
     io.stdout.writeText('commit $hex\n');
     io.stdout.writeText(
@@ -1792,22 +1520,6 @@ final class GitApplet implements Applet {
       return 'all';
     }
     return raw;
-  }
-
-  ({String name, String email})? _authorLine(String? raw) {
-    if (raw == null) return null;
-    final open = raw.lastIndexOf('<');
-    final close = raw.lastIndexOf('>');
-    if (open <= 0 || close < open) {
-      throw GitUsage(
-        "fatal: --author '$raw' is not in the form Name <email>\n",
-        exitCode: 128,
-      );
-    }
-    return (
-      name: _piece(raw, 0, open).trim(),
-      email: _piece(raw, open + 1, close).trim(),
-    );
   }
 
   GitCommitSignature _author(
@@ -1855,7 +1567,7 @@ final class GitApplet implements Applet {
         '$name@${io.profile.hostname}';
     final rawDate = _env(io.env, dateKeys);
     if (rawDate != null) {
-      final parsed = _parseGitDate(rawDate);
+      final parsed = parseGitDate(rawDate);
       if (parsed == null) {
         throw GitUsage('fatal: invalid date format: $rawDate\n', exitCode: 128);
       }
@@ -1871,19 +1583,6 @@ final class GitApplet implements Applet {
       email: email,
       timestamp: DateTime.now(),
     );
-  }
-
-  ({int seconds, String zone})? _parseGitDate(String raw) {
-    final trimmed = raw.trim();
-    final zoned = RegExp(r'^(\d+) ([+-]\d{4})$').firstMatch(trimmed);
-    if (zoned != null) {
-      return (seconds: int.parse(zoned.group(1)!), zone: zoned.group(2)!);
-    }
-    final unix = RegExp(r'^@?(\d+)$').firstMatch(trimmed);
-    if (unix != null) {
-      return (seconds: int.parse(unix.group(1)!), zone: '+0000');
-    }
-    return null;
   }
 
   String? _env(Map<String, String> env, List<String> keys) {
@@ -1999,26 +1698,6 @@ final class GitApplet implements Applet {
     GitIndexEntry.symbolicLinkMode => '120000',
     GitIndexEntry.gitLinkMode => '160000',
     _ => mode.toRadixString(8).padLeft(6, '0'),
-  };
-
-  String _longLabel(GitFileStatus status) => switch (status) {
-    GitFileStatus.added => 'new file:   ',
-    GitFileStatus.modified => 'modified:   ',
-    GitFileStatus.deleted => 'deleted:    ',
-    GitFileStatus.conflicted => 'both modified:   ',
-    GitFileStatus.unchanged ||
-    GitFileStatus.untracked ||
-    GitFileStatus.ignored => 'modified:   ',
-  };
-
-  String _letter(GitFileStatus status) => switch (status) {
-    GitFileStatus.unchanged => ' ',
-    GitFileStatus.added => 'A',
-    GitFileStatus.modified => 'M',
-    GitFileStatus.deleted => 'D',
-    GitFileStatus.conflicted => 'U',
-    GitFileStatus.untracked => '?',
-    GitFileStatus.ignored => '!',
   };
 
   String _fetchLine(GitFetchedReference reference) {
