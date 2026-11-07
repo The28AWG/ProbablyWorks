@@ -8,6 +8,16 @@
 
 `git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
 
+## `format-patch`
+
+Серия писем в mbox: диапазон `A..B` / `A...B`, `since` (коммиты после ревизии, достижимые из `HEAD`) и `-N` (последние N от ревизии, по умолчанию `HEAD`). Без ревизии и без `-N` команда ничего не печатает: upstream не подставлен. Несколько отдельных ревизий без `..` отклоняются с `fatal`.
+
+Письмо совпадает с git по заголовкам (`From`, `Date` в RFC 2822, `Subject` с `[PATCH n/m]`, `-v`, `--rfc`, `--subject-prefix`), телу, `Signed-off-by`, diffstat и unified diff. `--no-binary` оставляет строку `Binary files differ`; без него для двоичного файла пишется `GIT binary patch` (literal, zlib). Подпись по умолчанию — `0.1.0` (строка `git version` апплета), не версия системного git; `--signature`, `--signature-file` и `--no-signature` работают как у git.
+
+`--thread=shallow|deep` ставит `Message-ID` / `In-Reply-To` / `References`. Метка времени в `Message-ID` — момент запуска, как `time(NULL)` у git, поэтому байты расходятся на этих цифрах. Неизвестный стиль (`--thread=nope`) — код 129 и пустой stderr, как у этой сборки git. `--cover-letter`, `--cover-from-description` и `--description-file` заполняют обложку; `--range-diff` и `--interdiff` при нескольких патчах сами включают обложку, а с `--no-cover-letter` дают `fatal`. `--ignore-if-in-upstream` выбрасывает патч, если такой же diff уже есть в указанной ревизии.
+
+Неизвестное длинное имя — `fatal: unrecognized argument` и код 128, как у этой сборки git.
+
 ## `grep`
 
 Ищет в отслеживаемых файлах рабочего дерева, а не в `HEAD`: правка

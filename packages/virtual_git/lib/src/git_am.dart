@@ -137,10 +137,29 @@ String mailBodyAfterHeaders(String message) {
   }
   final body = lines.sublist(headerEnd).join('\n');
   final diff = body.indexOf('diff --git ');
-  if (diff >= 0) {
-    return body.substring(diff);
+  final patch = diff >= 0 ? body.substring(diff) : body;
+  // format-patch дописывает статистику до diff и хвост после него:
+  // подпись `-- `, base-commit, Interdiff, Range-diff. apply их не читает.
+  return _cutFormatPatchFooter(patch);
+}
+
+/// Обрезает хвост письма format-patch, который не входит в unified diff.
+String _cutFormatPatchFooter(String patch) {
+  final kept = <String>[];
+  for (final line in patch.split('\n')) {
+    if (line == '-- ' ||
+        line.startsWith('base-commit:') ||
+        line == 'Interdiff:' ||
+        line == 'Range-diff:') {
+      break;
+    }
+    kept.add(line);
   }
-  return body;
+  while (kept.isNotEmpty && kept.last.isEmpty) {
+    kept.removeLast();
+  }
+  if (kept.isEmpty) return '';
+  return '${kept.join('\n')}\n';
 }
 
 /// Действие `--whitespace` для `git apply` / `git am`.

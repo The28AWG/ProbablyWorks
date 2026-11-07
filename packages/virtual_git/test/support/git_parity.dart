@@ -75,6 +75,7 @@ final class GitParitySession {
   Future<void> both(
     List<String> args, {
     List<GitParityWaiver> waivers = const [],
+    String Function(String text)? normalize,
   }) async {
     final command = args.join(' ');
     GitParityWaiver? waiver;
@@ -92,10 +93,18 @@ final class GitParitySession {
       right.exitCode,
       reason: '$command\nvirtual: ${left.err}\nreal: ${right.stderr}',
     );
-    final realErr = '${right.stderr}'.replaceAll(realRoot.path, '/work');
-    final realOut = '${right.stdout}'.replaceAll(realRoot.path, '/work');
-    expect(left.err, realErr, reason: command);
-    expect(left.out, realOut, reason: command);
+    var realErr = '${right.stderr}'.replaceAll(realRoot.path, '/work');
+    var realOut = '${right.stdout}'.replaceAll(realRoot.path, '/work');
+    var leftErr = left.err;
+    var leftOut = left.out;
+    if (normalize != null) {
+      realErr = normalize(realErr);
+      realOut = normalize(realOut);
+      leftErr = normalize(leftErr);
+      leftOut = normalize(leftOut);
+    }
+    expect(leftErr, realErr, reason: command);
+    expect(leftOut, realOut, reason: command);
   }
 
   /// Только код выхода. Текст `commit` содержит короткий хеш, а дерево

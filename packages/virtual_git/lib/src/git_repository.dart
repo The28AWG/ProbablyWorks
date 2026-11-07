@@ -7753,6 +7753,21 @@ final class GitRepository {
     required GitCommitCodec commitCodec,
     GitTreeCodec? treeCodec,
   }) async {
+    final object = await readObject(commitId);
+    // Пустое дерево git известно по хешу, даже если объекта в базе нет:
+    // корневой коммит сравнивают с ним, не записывая blob в репозиторий.
+    if (object == null) {
+      if (commitId.hex == '4b825dc642cb6eb9a060e54bf8d69288fbee4904') {
+        return const {};
+      }
+      throw StateError('Missing commit object for $commitId.');
+    }
+    if (object.type == GitObjectType.tree) {
+      return _readTreeEntries(
+        commitId,
+        codec: treeCodec ?? GitTreeCodec(algorithm: commitId.algorithm),
+      );
+    }
     final treeId = await _readCommitTreeId(commitId, codec: commitCodec);
     return _readTreeEntries(
       treeId,
@@ -9158,16 +9173,19 @@ final class GitRepository {
         ? operations.length
         : end + contextLines + 1;
     final hunkOperations = operations.sublist(hunkStart, hunkEnd);
-
+    final oldLineCount = hunkOperations
+        .where((operation) => operation.type != GitDiffLineType.addition)
+        .length;
+    final newLineCount = hunkOperations
+        .where((operation) => operation.type != GitDiffLineType.deletion)
+        .length;
+    // Пустая сторона — старт 0 (`@@ -0,0` / `+0,0`), как у git. Иначе
+    // новый файл получал `-1,0`: номер «строки 1», которой в файле нет.
     return GitDiffHunk(
-      oldStart: operations[hunkStart].oldLineNumber,
-      oldLineCount: hunkOperations
-          .where((operation) => operation.type != GitDiffLineType.addition)
-          .length,
-      newStart: operations[hunkStart].newLineNumber,
-      newLineCount: hunkOperations
-          .where((operation) => operation.type != GitDiffLineType.deletion)
-          .length,
+      oldStart: oldLineCount == 0 ? 0 : operations[hunkStart].oldLineNumber,
+      oldLineCount: oldLineCount,
+      newStart: newLineCount == 0 ? 0 : operations[hunkStart].newLineNumber,
+      newLineCount: newLineCount,
       lines: [
         for (final operation in hunkOperations)
           GitDiffLine(type: operation.type, text: operation.text),

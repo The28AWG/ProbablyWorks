@@ -14,11 +14,11 @@ import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_diff.dart';
 import 'package:virtual_git/src/git_diff_codec.dart';
+import 'package:virtual_git/src/git_format_patch.dart';
 import 'package:virtual_git/src/git_grep.dart';
 import 'package:virtual_git/src/git_hash_algorithm.dart';
 import 'package:virtual_git/src/git_host_io.dart' show Directory, File;
 import 'package:virtual_git/src/git_index.dart';
-import 'package:virtual_git/src/git_log.dart';
 import 'package:virtual_git/src/git_object.dart';
 import 'package:virtual_git/src/git_object_id.dart';
 import 'package:virtual_git/src/git_path.dart' as p;
@@ -122,7 +122,7 @@ Future<int?> gitExtraCommand(
   'bisect' => _bisect(io, args),
   'archive' => _archive(io, args),
   'bundle' => _bundle(io, args),
-  'format-patch' => _formatPatch(io, args),
+  'format-patch' => runFormatPatch(io, args, config),
   'am' => _am(io, args, config),
   'fsck' => _fsck(io),
   'prune' => _prune(io),
@@ -251,11 +251,6 @@ GitCommitSignature _committer(
 }
 
 String _abbr(String hex) => hex.length <= 7 ? hex : hex.substring(0, 7);
-
-String _subject(String message) {
-  final line = const LineSplitter().convert(message);
-  return line.isEmpty ? '' : line.first;
-}
 
 Future<int> _reflog(AppletIo io, List<String> args) async {
   final parsed = parseGitArgs(args, const [], usage: 'usage: git reflog\n');
@@ -879,80 +874,6 @@ int _indexOf(List<int> bytes, List<int> needle) {
     if (matches) return index;
   }
   return -1;
-}
-
-Future<int> _formatPatch(AppletIo io, List<String> args) async {
-  var maxCount = 1;
-  final filtered = <String>[];
-  for (final arg in args) {
-    final digit = RegExp(r'^-(\d+)$').firstMatch(arg);
-    if (digit != null) {
-      maxCount = int.parse(digit.group(1)!);
-      continue;
-    }
-    filtered.add(arg);
-  }
-  final parsed = parseGitArgs(filtered, const [
-    GitOption('stdout'),
-    GitOption('output-directory', short: 'o', valued: true),
-  ], usage: 'usage: git format-patch [<options>] [<since> | <revision-range>]');
-  final repo = await _repo(io);
-  final revision = parsed.operands.isEmpty ? 'HEAD' : parsed.operands.first;
-  if (maxCount == 0) {
-    return 0;
-  }
-  final history = await repo.log(revision, maxCount: maxCount);
-  if (history.isEmpty) return 128;
-  final commits = history.reversed.toList();
-
-  Future<String> mboxFor(GitLogEntry entry) async {
-    final parent = entry.commit.parents.isEmpty
-        ? null
-        : entry.commit.parents.first.hex;
-    final patch = parent == null
-        ? ''
-        : const GitDiffCodec().encode(
-            await repo.diffRevisions(parent, entry.objectId.hex),
-          );
-    return 'From ${entry.objectId.hex} Mon Sep 17 00:00:00 2001\n'
-        'From: ${entry.commit.author.name} <${entry.commit.author.email}>\n'
-        'Subject: [PATCH] ${_subject(entry.commit.message)}\n\n'
-        '${entry.commit.message}\n$patch';
-  }
-
-  if (parsed.has('stdout')) {
-    final buffer = StringBuffer();
-    for (var index = 0; index < commits.length; index++) {
-      if (index > 0) {
-        buffer.writeln();
-      }
-      buffer.write(await mboxFor(commits[index]));
-    }
-    io.stdout.writeText(buffer.toString());
-    return 0;
-  }
-
-  final outDir = parsed.value('output-directory');
-  if (outDir != null) {
-    await io.fs.mkdir(
-      outDir.startsWith('/') ? outDir : p.join(io.cwd, outDir),
-      recursive: true,
-    );
-  }
-  for (var index = 0; index < commits.length; index++) {
-    final entry = commits[index];
-    final n = index + 1;
-    final stem = _subject(entry.commit.message);
-    final fileName = '${n.toString().padLeft(4, '0')}-$stem.patch';
-    final text = await mboxFor(entry);
-    final fullPath = outDir == null
-        ? p.join(io.cwd, fileName)
-        : p.join(io.cwd, outDir, fileName);
-    await io.fs.writeBytes(fullPath, Uint8List.fromList(utf8.encode(text)));
-    final listed = outDir == null ? fileName : p.join(outDir, fileName);
-    io.stdout.writeText('$listed\n');
-  }
-  return 0;
 }
 
 Future<int> _am(

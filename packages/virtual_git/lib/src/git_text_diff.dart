@@ -1,5 +1,6 @@
-/// Упрощённый unified diff двух многострочных текстов (для внешнего слоя
-/// `git range-diff` при статусе `!`). Три контекстные строки.
+/// Unified diff двух текстов. Соседние правки ближе чем `2 * context`
+/// строк склеиваются в один hunk: `format-patch --range-diff` тогда
+/// получает один блок `@@ Metadata`, а не заголовок на каждое отличие.
 library;
 
 import 'dart:math' as math;
@@ -34,46 +35,69 @@ String gitUnifiedTextDiff(String aText, String bText, {int context = 3}) {
     if (startA < i || startB < j) {
       hunks.add(_Hunk(startA: startA, endA: i, startB: startB, endB: j));
     }
-    if (k < lcs.length && i < a.length && j < b.length) {
-      k++;
-    }
   }
   if (hunks.isEmpty) return '';
 
+  final groups = <List<_Hunk>>[];
+  for (final hunk in hunks) {
+    if (groups.isEmpty || hunk.startA - groups.last.last.endA > context * 2) {
+      groups.add([hunk]);
+    } else {
+      groups.last.add(hunk);
+    }
+  }
+
   final out = StringBuffer();
-  var prevCtxEndA = 0;
-  var prevCtxEndB = 0;
-  for (final h in hunks) {
-    var ctxStartA = math.max(0, h.startA - context);
-    var ctxStartB = math.max(0, h.startB - context);
-    if (prevCtxEndA > 0 || prevCtxEndB > 0) {
-      ctxStartA = math.min(ctxStartA, prevCtxEndA);
-      ctxStartB = math.min(ctxStartB, prevCtxEndB);
-    }
-    final ctxEndA = math.min(a.length, h.endA + context);
-    final ctxEndB = math.min(b.length, h.endB + context);
+  for (final group in groups) {
+    final first = group.first;
+    final last = group.last;
+    final ctxStartA = math.max(0, first.startA - context);
+    final ctxStartB = math.max(0, first.startB - context);
+    final ctxEndA = math.min(a.length, last.endA + context);
+    final ctxEndB = math.min(b.length, last.endB + context);
+    out.writeln(
+      '@@ -${ctxStartA + 1},${ctxEndA - ctxStartA} '
+      '+${ctxStartB + 1},${ctxEndB - ctxStartB} @@',
+    );
 
-    final oldStart1 = ctxStartA + 1;
-    final newStart1 = ctxStartB + 1;
-    final oldCount = ctxEndA - ctxStartA;
-    final newCount = ctxEndB - ctxStartB;
-    out.writeln('@@ -$oldStart1,$oldCount +$newStart1,$newCount @@');
-
-    for (var x = ctxStartA; x < h.startA; x++) {
-      out.writeln(' ${a[x]}');
+    var aCursor = ctxStartA;
+    var bCursor = ctxStartB;
+    for (final hunk in group) {
+      while (aCursor < hunk.startA && bCursor < hunk.startB) {
+        out.writeln(' ${a[aCursor]}');
+        aCursor++;
+        bCursor++;
+      }
+      while (aCursor < hunk.startA) {
+        out.writeln(' ${a[aCursor]}');
+        aCursor++;
+      }
+      while (bCursor < hunk.startB) {
+        out.writeln(' ${b[bCursor]}');
+        bCursor++;
+      }
+      for (var x = hunk.startA; x < hunk.endA; x++) {
+        out.writeln('-${a[x]}');
+      }
+      for (var x = hunk.startB; x < hunk.endB; x++) {
+        out.writeln('+${b[x]}');
+      }
+      aCursor = hunk.endA;
+      bCursor = hunk.endB;
     }
-    for (var x = h.startA; x < h.endA; x++) {
-      out.writeln('-${a[x]}');
+    while (aCursor < ctxEndA && bCursor < ctxEndB) {
+      out.writeln(' ${a[aCursor]}');
+      aCursor++;
+      bCursor++;
     }
-    for (var x = h.startB; x < h.endB; x++) {
-      out.writeln('+${b[x]}');
+    while (aCursor < ctxEndA) {
+      out.writeln(' ${a[aCursor]}');
+      aCursor++;
     }
-    for (var x = h.endA; x < ctxEndA; x++) {
-      out.writeln(' ${a[x]}');
+    while (bCursor < ctxEndB) {
+      out.writeln(' ${b[bCursor]}');
+      bCursor++;
     }
-
-    prevCtxEndA = ctxEndA;
-    prevCtxEndB = ctxEndB;
   }
   return out.toString();
 }
