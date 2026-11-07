@@ -25,7 +25,7 @@ extension GitRepositorySurface on GitRepository {
       newTree.entries,
     );
     if (pathspecs == null) return entries;
-    final allowed = GitRepository._filterPathsByPathspecs([
+    final allowed = GitRepositoryStatus._filterPathsByPathspecs([
       for (final entry in entries) entry.path,
     ], pathspecs).toSet();
     return [
@@ -378,7 +378,7 @@ extension GitRepositorySurface on GitRepository {
     if (commit.parents.isEmpty) {
       final rows = await listTree(revision, recursive: true);
       for (final row in rows) {
-        if (GitRepository._pathMatchesAnyPathspec(row.path, pathspecs)) {
+        if (GitRepositoryStatus._pathMatchesAnyPathspec(row.path, pathspecs)) {
           return true;
         }
       }
