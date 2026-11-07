@@ -14,6 +14,8 @@ final class GitOption {
     this.short,
     this.valued = false,
     this.optional = false,
+    this.negatable = false,
+    this.whenAbsent,
     this.missing,
     this.missingExit = 129,
 
@@ -36,6 +38,17 @@ final class GitOption {
   /// Голый `--name` остаётся флагом, значение приходит только приклеенным.
   final bool optional;
 
+  /// `--no-name` снимает опцию, даже если у неё бывает значение.
+  ///
+  /// У флага без значения отрицание и так работает. У valued git пишет
+  /// `--no-track` и `--no-abbrev`: без этого флага разбор отвечает
+  /// `unknown option`.
+  final bool negatable;
+
+  /// Нет ни `=value`, ни следующего слова: подставить это, а не требовать
+  /// аргумент. Так `--merged` без ревизии означает `HEAD`.
+  final String? whenAbsent;
+
   /// Текст ошибки, если значения нет. Иначе стандартная фраза git.
   final String? missing;
 
@@ -49,16 +62,30 @@ final class GitInvocation {
     required this.values,
     required this.operands,
     required this.separated,
+    this.repeats = const {},
+    this.negated = const {},
   });
 
   final Set<String> enabled;
   final Map<String, List<String>> values;
   final List<String> operands;
 
+  /// Сколько раз опцию включили. `-vv` и `--verbose --verbose` дают 2.
+  /// `--no-name` обнуляет счётчик.
+  final Map<String, int> repeats;
+
+  /// Опцию выключили `--no-name` и после этого снова не включали.
+  final Set<String> negated;
+
   /// В команде был `--`: операнды после него не выглядят как опции.
   final bool separated;
 
   bool has(String name) => enabled.contains(name);
+
+  /// Сколько раз опцию задали после последнего `--no-name`.
+  int count(String name) => repeats[name] ?? 0;
+
+  bool isNegated(String name) => negated.contains(name);
 
   /// Последнее значение опции. Пустая строка — опция была без приклеенного текста.
   String? value(String name) {
@@ -196,8 +223,24 @@ GitInvocation parseGitArgs(
   };
   final enabled = <String>{};
   final values = <String, List<String>>{};
+  final repeats = <String, int>{};
+  final negated = <String>{};
   final operands = <String>[];
   var separated = false;
+
+  void enable(String key) {
+    negated.remove(key);
+    enabled.add(key);
+    repeats[key] = (repeats[key] ?? 0) + 1;
+  }
+
+  void negate(String key) {
+    enabled.remove(key);
+    values.remove(key);
+    repeats.remove(key);
+    negated.add(key);
+  }
+
   for (var index = 0; index < args.length; index++) {
     final arg = args[index];
     if (separated || arg == '-' || !arg.startsWith('-')) {
@@ -218,18 +261,19 @@ GitInvocation parseGitArgs(
         if (inline == null && name.startsWith('no-')) {
           final base = _slice(name, 3, name.length);
           final positive = byLong[base];
-          if (positive != null && !positive.valued) {
-            enabled.remove(base);
+          if (positive != null && (!positive.valued || positive.negatable)) {
+            negate(recordKey(positive));
             continue;
           }
         }
         throw GitUsage("error: unknown option `$name'\n$usage\n");
       }
+      final key = recordKey(option);
       if (!option.valued) {
         if (inline != null) {
           throw GitUsage("error: unknown option `$name'\n$usage\n");
         }
-        enabled.add(recordKey(option));
+        enable(key);
         continue;
       }
       final value =
@@ -238,7 +282,8 @@ GitInvocation parseGitArgs(
               ? ''
               : _missingOrNext(args, index, option, long: true));
       if (inline == null && !option.optional) index++;
-      _addValue(enabled, values, recordKey(option), value);
+      enable(key);
+      _addValue(enabled, values, key, value);
       continue;
     }
     final body = _slice(arg, 1, arg.length);
@@ -248,8 +293,9 @@ GitInvocation parseGitArgs(
       if (option == null) {
         throw GitUsage("error: unknown switch `$letter'\n$usage\n");
       }
+      final key = recordKey(option);
       if (!option.valued) {
-        enabled.add(recordKey(option));
+        enable(key);
         continue;
       }
       final rest = _slice(body, cursor + 1, body.length);
@@ -259,7 +305,8 @@ GitInvocation parseGitArgs(
                 ? ''
                 : _missingOrNext(args, index, option, long: false));
       if (rest.isEmpty && !option.optional) index++;
-      _addValue(enabled, values, recordKey(option), value);
+      enable(key);
+      _addValue(enabled, values, key, value);
       break;
     }
   }
@@ -268,6 +315,8 @@ GitInvocation parseGitArgs(
     values: values,
     operands: operands,
     separated: separated,
+    repeats: repeats,
+    negated: negated,
   );
 }
 
@@ -278,6 +327,8 @@ String _missingOrNext(
   required bool long,
 }) {
   if (index + 1 >= args.length) {
+    final absent = option.whenAbsent;
+    if (absent != null) return absent;
     throw GitUsage(
       option.missing ??
           (long

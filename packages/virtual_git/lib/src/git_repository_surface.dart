@@ -397,6 +397,84 @@ extension GitRepositorySurface on GitRepository {
     );
   }
 
+  /// Снимает один ключ. Пустой заголовок секции остаётся, как у git
+  /// после `--unset-upstream`: в файле ещё `[branch "name"]`, значений нет.
+  Future<void> configUnset(String key) async {
+    final parsed = _configKey(key);
+    final document = await _readConfigDocument();
+    final sections = <_GitConfigSection>[];
+    for (final section in document.sections) {
+      if (section.name != parsed.section ||
+          section.subsection != parsed.subsection) {
+        sections.add(section);
+        continue;
+      }
+      sections.add(
+        section.copyWith(
+          bodyLines: [
+            for (final line in section.bodyLines)
+              if (_configLineValue(line, parsed.name) == null) line,
+          ],
+        ),
+      );
+    }
+    await _writeConfigDocument(
+      _GitConfigDocument(preamble: document.preamble, sections: sections),
+    );
+  }
+
+  /// Копирует тело секции `branch "from"` в `branch "to"`.
+  ///
+  /// `git branch -c` переносит remote/merge и описание целиком, а не только
+  /// пару upstream. Нет исходной секции — цель не создаётся.
+  Future<void> configCopySubsection(
+    String section,
+    String from,
+    String to,
+  ) async {
+    final document = await _readConfigDocument();
+    _GitConfigSection? source;
+    for (final item in document.sections) {
+      if (item.name == section && item.subsection == from) source = item;
+    }
+    if (source == null) return;
+    final copy = _GitConfigSection(
+      headerLine: '[$section "$to"]',
+      name: section,
+      subsection: to,
+      bodyLines: [...source.bodyLines],
+    );
+    final sections = <_GitConfigSection>[];
+    var replaced = false;
+    for (final item in document.sections) {
+      if (item.name == section && item.subsection == to) {
+        if (!replaced) {
+          sections.add(copy);
+          replaced = true;
+        }
+      } else {
+        sections.add(item);
+      }
+    }
+    if (!replaced) sections.add(copy);
+    await _writeConfigDocument(
+      _GitConfigDocument(preamble: document.preamble, sections: sections),
+    );
+  }
+
+  /// Удаляет секцию целиком. Так `git branch -d` снимает `branch.<name>`.
+  Future<void> configDeleteSubsection(String section, String subsection) async {
+    final document = await _readConfigDocument();
+    final sections = [
+      for (final item in document.sections)
+        if (!(item.name == section && item.subsection == subsection)) item,
+    ];
+    if (sections.length == document.sections.length) return;
+    await _writeConfigDocument(
+      _GitConfigDocument(preamble: document.preamble, sections: sections),
+    );
+  }
+
   /// Добавляет заметку к объекту в `refs/notes/commits`.
   Future<void> addNote(
     String revision,

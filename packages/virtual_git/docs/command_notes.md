@@ -14,6 +14,14 @@
 
 Редактор не запускается. Если git открыл бы его (`git commit` при наличии индекса, `-e`, `-c`, `--fixup=amend|reword`, `--squash` без `-m`), stderr — те же две строки `EDITOR unset`, код 1. `--gpg-sign`, `--interactive`, `--patch` и флаги хуков (`--verify`, `--no-verify`, `--post-rewrite`, `--no-post-rewrite`) дают `fatal` и код 128: молчаливого успеха нет. Относительные даты (`yesterday`) не разбираются. `--short --branch` показывает ahead/behind, если в конфиге есть upstream и ссылка `refs/remotes/...`. Сверка — `test/git_commit_parity_test.dart`.
 
+## `branch`
+
+Список, создание, удаление, переименование, копирование и upstream. Формат по умолчанию совпадает с git 2.53: `* ` у текущей ветки, два пробела у остальных, `remotes/` при `-a`, цвета `--color=always` (`\x1b[32m` / `\x1b[31m` / `\x1b[34m` и сброс `\x1b[m`). `-v` печатает короткий хеш и тему, `-vv` — ещё и upstream (`[origin/main]`, `ahead` / `behind` / `gone`). `--format` понимает `refname`, `objectname`, `HEAD`, `upstream`, `symref`, `contents`, даты автора и коммитера, `align` и `if`/`then`/`else`/`end`. Неизвестное поле — `fatal: unknown field name`, код 128.
+
+`--contains`, `--merged`, `--points-at` фильтруют по предкам. `--sort` (в том числе `version:refname` и дата) и `--column` (`row`, `plain`, `dense`, `auto` без tty — одна колонка) меняют вывод. `--track=direct|inherit` и автотрекинг с remote-ветки пишут `branch.<имя>.remote` / `merge`. `-c` копирует reflog и секцию конфига, `-m` переносит их.
+
+Редактор `--edit-description` не запускается: одна строка `EDITOR unset`, код 1. `--recurse-submodules` без `submodule.propagateBranches=true` даёт тот же `fatal`, что git. Если ключ включён и в индексе есть gitlink или есть `.gitmodules`, команда завершается `fatal: --recurse-submodules with submodules is not supported`: обхода подмодулей нет. Неизвестная опция — код 129. Сверка — `test/git_branch_parity_test.dart`.
+
 ## `format-patch`
 
 Серия писем в mbox: диапазон `A..B` / `A...B`, `since` (коммиты после ревизии, достижимые из `HEAD`) и `-N` (последние N от ревизии, по умолчанию `HEAD`). Без ревизии и без `-N` команда ничего не печатает: upstream не подставлен. Несколько отдельных ревизий без `..` отклоняются с `fatal`.

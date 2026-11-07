@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:virtual_git/src/git_branch_tracking.dart';
+import 'package:virtual_git/src/git_branch_command.dart';
 import 'package:virtual_git/src/git_cli.dart';
 import 'package:virtual_git/src/git_commit.dart';
 import 'package:virtual_git/src/git_commit_codec.dart';
@@ -17,7 +17,6 @@ import 'package:virtual_git/src/git_log.dart';
 import 'package:virtual_git/src/git_merge.dart';
 import 'package:virtual_git/src/git_object_type.dart';
 import 'package:virtual_git/src/git_pull.dart';
-import 'package:virtual_git/src/git_reference.dart';
 import 'package:virtual_git/src/git_refspec.dart';
 import 'package:virtual_git/src/git_remote.dart';
 import 'package:virtual_git/src/git_repository.dart';
@@ -576,144 +575,8 @@ final class GitApplet implements Applet {
     List<String> args,
     List<({String key, String value})> config,
   ) async {
-    const usage = 'usage: git branch [<options>] [<name> [<start-point>]]';
-    final parsed = parseGitArgs(args, const [
-      GitOption('delete', short: 'd'),
-      GitOption('force-delete', short: 'D'),
-      GitOption('force', short: 'f'),
-      GitOption('move', short: 'm'),
-      GitOption('force-move', short: 'M'),
-      GitOption('all', short: 'a'),
-      GitOption('show-current'),
-    ], usage: usage);
     final repo = await _repo(io);
-    if (parsed.has('show-current')) {
-      final head = await repo.readReference('HEAD');
-      final branch = _branchOf(head?.targetReferenceName);
-      if (branch != null) io.stdout.writeText('$branch\n');
-      return 0;
-    }
-    if (parsed.has('delete') || parsed.has('force-delete')) {
-      if (parsed.operands.isEmpty) {
-        throw const GitUsage('fatal: branch name required\n', exitCode: 128);
-      }
-      for (final name in parsed.operands) {
-        final code = await _deleteBranch(
-          io,
-          repo,
-          name,
-          force: parsed.has('force-delete'),
-        );
-        if (code != 0) return code;
-      }
-      return 0;
-    }
-    if (parsed.has('move') || parsed.has('force-move')) {
-      if (parsed.operands.isEmpty || parsed.operands.length > 2) {
-        throw const GitUsage('$usage\n');
-      }
-      final current = _branchOf(
-        (await repo.readReference('HEAD'))?.targetReferenceName,
-      );
-      final from = parsed.operands.length == 2
-          ? parsed.operands.first
-          : current;
-      final to = parsed.operands.length == 2
-          ? parsed.operands[1]
-          : parsed.operands.first;
-      if (from == null) {
-        throw const GitUsage('fatal: no branch named\n', exitCode: 128);
-      }
-      final id = await repo.resolveReferenceObjectId('refs/heads/$from');
-      if (id == null) {
-        io.stderr.writeText("fatal: no branch named '$from'\n");
-        return 128;
-      }
-      if (await repo.readReference('refs/heads/$to') != null &&
-          !parsed.has('force-move')) {
-        io.stderr.writeText("fatal: a branch named '$to' already exists\n");
-        return 128;
-      }
-      await repo.writeReference(GitReference.direct('refs/heads/$to', id));
-      if (current == from) {
-        await repo.writeReference(
-          GitReference.symbolic('HEAD', 'refs/heads/$to'),
-        );
-      }
-      await repo.deleteReference('refs/heads/$from');
-      final oldLog = File(repo.resolveReflogPath('refs/heads/$from'));
-      if (await oldLog.exists()) {
-        final newLog = File(repo.resolveReflogPath('refs/heads/$to'));
-        await newLog.parent.create(recursive: true);
-        final text = await oldLog.readAsString();
-        final lines = const LineSplitter().convert(text);
-        final last = lines.isEmpty ? '' : lines.last;
-        final tab = last.indexOf('\t');
-        final header = tab < 0 ? '' : _piece(last, 0, tab);
-        final secondSpace = header.indexOf(' ');
-        final actor = secondSpace < 0
-            ? ''
-            : _piece(
-                header,
-                header.indexOf(' ', secondSpace + 1) + 1,
-                header.length,
-              );
-        final body = text.endsWith('\n') ? text : '$text\n';
-        await newLog.writeAsString(
-          '$body${id.hex} ${id.hex} $actor\tBranch: renamed refs/heads/$from to refs/heads/$to\n',
-        );
-        await oldLog.delete();
-      }
-      final tracking = await repo.branchTracking(from);
-      if (tracking != null) {
-        await repo.setBranchTracking(
-          GitBranchTracking(
-            branchName: to,
-            referenceName: 'refs/heads/$to',
-            remoteName: tracking.remoteName,
-            mergeReferenceName: tracking.mergeReferenceName,
-          ),
-        );
-        await repo.deleteBranchTracking(from);
-      }
-      return 0;
-    }
-    if (parsed.has('all') && parsed.operands.isNotEmpty) {
-      throw const GitUsage(
-        'fatal: the -a, and -r, options to \'git branch\' do not take a branch name.\n'
-        'Did you mean to use: -a|-r --list <pattern>?\n',
-        exitCode: 128,
-      );
-    }
-    if (parsed.operands.isEmpty) {
-      final branches = await repo.branches();
-      for (final branch in branches) {
-        final mark = branch.current ? '* ' : '  ';
-        io.stdout.writeText('$mark${branch.name}\n');
-      }
-      if (parsed.has('all')) {
-        final remotes = await repo.references(prefix: 'refs/remotes');
-        for (final ref in remotes) {
-          final stored = await repo.readReference(ref.referenceName);
-          final target = stored?.targetReferenceName;
-          if (target != null && target.startsWith('refs/remotes/')) {
-            final short = _piece(target, 'refs/remotes/'.length, target.length);
-            io.stdout.writeText('  remotes/${ref.name} -> $short\n');
-          } else {
-            io.stdout.writeText('  remotes/${ref.name}\n');
-          }
-        }
-      }
-      return 0;
-    }
-    if (parsed.operands.length > 2) throw const GitUsage('$usage\n');
-    await repo.branch(
-      parsed.operands.first,
-      startPoint: parsed.operands.length == 2 ? parsed.operands[1] : 'HEAD',
-      force: parsed.has('force'),
-      reflogActor: _committer(io, config),
-    );
-    return 0;
+    return runGitBranch(io, repo, args, committer: _committer(io, config));
   }
 
   Future<int> _tag(
@@ -877,6 +740,9 @@ final class GitApplet implements Applet {
       create: create,
       startPoint: start ?? 'HEAD',
       force: force || forceCreate,
+      detachedLabel: detach && !create
+          ? await _detachedLabel(repo, target)
+          : null,
       reflogActor: _committer(io, config),
     );
     if (create) {
@@ -1403,42 +1269,6 @@ final class GitApplet implements Applet {
     return repository;
   }
 
-  Future<int> _deleteBranch(
-    AppletIo io,
-    GitRepository repo,
-    String name, {
-    required bool force,
-  }) async {
-    final reference = 'refs/heads/$name';
-    final id = await repo.resolveReferenceObjectId(reference);
-    if (id == null) {
-      io.stderr.writeText("error: branch '$name' not found\n");
-      return 1;
-    }
-    final current = _branchOf(
-      (await repo.readReference('HEAD'))?.targetReferenceName,
-    );
-    if (current == name) {
-      io.stderr.writeText(
-        "error: cannot delete branch '$name' which you are currently on\n",
-      );
-      return 1;
-    }
-    if (!force) {
-      final base = await repo.mergeBase(name, 'HEAD');
-      if (base != id) {
-        io.stderr.writeText(
-          "error: the branch '$name' is not fully merged\n"
-          "hint: If you are sure you want to delete it, run 'git branch -D $name'\n",
-        );
-        return 1;
-      }
-    }
-    await repo.deleteReference(reference);
-    io.stdout.writeText('Deleted branch $name (was ${_abbr(id.hex)}).\n');
-    return 0;
-  }
-
   Future<int> _restorePaths(
     AppletIo io,
     List<String> paths, {
@@ -1668,6 +1498,17 @@ final class GitApplet implements Applet {
       return _piece(revision, 'refs/heads/'.length, revision.length);
     }
     return revision;
+  }
+
+  /// Имя, которое git пишет в reflog при `switch --detach`.
+  ///
+  /// Ветка становится `refs/heads/<имя>`: список потом показывает
+  /// `(HEAD detached at refs/heads/side)`, а не полный хеш.
+  Future<String> _detachedLabel(GitRepository repo, String target) async {
+    if (await repo.resolveReferenceObjectId('refs/heads/$target') != null) {
+      return 'refs/heads/$target';
+    }
+    return target;
   }
 
   String? _branchOf(String? reference) {

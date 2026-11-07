@@ -2278,6 +2278,7 @@ final class GitRepository {
     String branchName, {
     String startPoint = 'HEAD',
     bool force = false,
+    bool writeReflog = true,
     GitCommitSignature? reflogActor,
     GitCommitCodec commitCodec = const GitCommitCodec(),
   }) async {
@@ -2299,13 +2300,20 @@ final class GitRepository {
     final startLabel = startPoint.trim() == 'HEAD'
         ? _branchShortName(headReference?.targetReferenceName ?? 'HEAD')
         : startPoint.trim();
-    await _writeReferenceWithReflog(
-      reference,
-      actor: _resolveReflogActor(reflogActor),
-      message: force && existing != null
-          ? 'branch: Reset to $startLabel'
-          : 'branch: Created from $startLabel',
-    );
+    final reflogMessage = force && existing != null
+        ? 'branch: Reset to $startLabel'
+        : 'branch: Created from $startLabel';
+    // core.logAllRefUpdates=false не пишет журнал, пока нет --create-reflog.
+    // По умолчанию журнал есть: так git ведёт себя в непустом рабочем дереве.
+    if (writeReflog) {
+      await _writeReferenceWithReflog(
+        reference,
+        actor: _resolveReflogActor(reflogActor),
+        message: reflogMessage,
+      );
+    } else {
+      await writeReference(reference);
+    }
     return GitBranch(
       name: _branchShortName(referenceName),
       referenceName: referenceName,
@@ -2363,6 +2371,7 @@ final class GitRepository {
     bool track = false,
     String? trackingRemoteName,
     bool force = false,
+    String? detachedLabel,
     GitCommitSignature? reflogActor,
     GitCommitCodec commitCodec = const GitCommitCodec(),
     GitTreeCodec? treeCodec,
@@ -2442,7 +2451,7 @@ final class GitRepository {
         message:
             'checkout: moving from '
             '${_describeReflogLocation(currentHeadReference, currentHeadObjectId)} '
-            'to ${targetObjectId.hex}',
+            'to ${detachedLabel ?? targetObjectId.hex}',
       );
     }
 
