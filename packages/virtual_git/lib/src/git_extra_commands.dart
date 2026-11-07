@@ -126,7 +126,7 @@ Future<int?> gitExtraCommand(
   'am' => _am(io, args, config),
   'fsck' => _fsck(io),
   'prune' => _prune(io),
-  'gc' => _gc(io),
+  'gc' => _gc(io, args),
   'submodule' => _submodule(io, args),
   'sparse-checkout' => _sparse(io, args),
   'lfs' => _lfs(io, args),
@@ -891,7 +891,7 @@ Future<int> _am(
     GitOption('3way', short: '3'),
     GitOption('quiet', short: 'q'),
     GitOption('signoff', short: 's'),
-    GitOption('utf8', short: 'u'),
+    GitOption('utf8', short: 'u', negatable: true),
     GitOption('keep', short: 'k'),
     GitOption('keep-non-patch'),
     GitOption('message-id'),
@@ -940,6 +940,12 @@ Future<int> _am(
   if (parsed.has('rerere-autoupdate')) {
     throw GitUsage(
       'fatal: rerere is not supported in virtual git\n',
+      exitCode: 128,
+    );
+  }
+  if (parsed.has('no-verify') || parsed.has('verify')) {
+    throw GitUsage(
+      'fatal: applypatch hooks are not supported in virtual git\n',
       exitCode: 128,
     );
   }
@@ -1434,7 +1440,14 @@ final class _AmEffectiveOptions {
 
   bool get signoff => _p.has('signoff') || (_r?.signoff ?? false);
 
-  bool get utf8 => _p.has('utf8') || (_r?.utf8 ?? false);
+  /// Как у git: без флага mailinfo перекодирует в UTF-8, `--no-utf8` выключает.
+  ///
+  /// Явный `--utf8` и отрицание важнее значения, сохранённого для `--continue`.
+  bool get utf8 {
+    if (_p.isNegated('utf8')) return false;
+    if (_p.has('utf8')) return true;
+    return _r?.utf8 ?? true;
+  }
 
   bool get threeway => _p.has('3way') || (_r?.threeway ?? false);
 
@@ -1682,6 +1695,13 @@ Future<int> _amApplyOneMailboxMessage(
   }
   message = normalizeMboxNewlines(message, keepCr: parsed.has('keep-cr'));
   final headers = parseMailHeaders(message);
+  final foreignCharset = mailCharsetNeedingConversion(message);
+  if (foreignCharset != null) {
+    throw GitUsage(
+      'fatal: cannot convert from $foreignCharset to UTF-8\n',
+      exitCode: 128,
+    );
+  }
   var body = mailBodyAfterHeaders(message);
   body = applyScissorsToBody(body, scissors: opts.scissors);
 
@@ -2064,7 +2084,17 @@ Future<int> _prune(AppletIo io) async {
   return 0;
 }
 
-Future<int> _gc(AppletIo io) async {
+/// `git gc` без флагов: тот же проход, что и prune.
+///
+/// Аргументы разбираются, хотя ни один флаг справки не реализован.
+/// Иначе `--quiet` и прочие опции молча завершались бы успехом, и отчёт
+/// паритета считал бы их поддержанными.
+Future<int> _gc(AppletIo io, List<String> args) async {
+  const usage = 'usage: git gc [<options>]';
+  final parsed = parseGitArgs(args, const [], usage: usage);
+  if (parsed.operands.isNotEmpty) {
+    throw const GitUsage('$usage\n');
+  }
   await _prune(io);
   return 0;
 }

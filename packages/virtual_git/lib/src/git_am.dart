@@ -256,6 +256,42 @@ String? messageIdTrailer(Map<String, String> headers) {
   return 'Message-ID: ${id.trim()}\n';
 }
 
-/// Псевдо `-u` / `--utf8`: mbox в virtual_git уже читается как UTF-8 (`utf8.decode`);
-/// отдельное перекодирование метаданных не требуется, поведение совместимо с git при валидном UTF-8.
-String recodeMailinfoMetadata(String message) => message;
+final _mailCharsetParam = RegExp(
+  'charset\\s*=\\s*"?([^";\\s]+)',
+  caseSensitive: false,
+);
+
+final _mailEncodedWord = RegExp(r'=\?([^?]+)\?[BbQq]\?');
+
+/// Кодировка из заголовков, которую `git am -u` перевёл бы в UTF-8.
+///
+/// Письмо к этому моменту уже прочитано как UTF-8, поэтому ни перекодировать
+/// его, ни отдать байты как есть нельзя. null — charset нет или это
+/// UTF-8 / US-ASCII, и отдельный проход не нужен.
+String? mailCharsetNeedingConversion(String message) {
+  final headers = parseMailHeaders(message);
+  final declared = <String>[];
+  final contentType = headers['content-type'];
+  if (contentType != null) {
+    final match = _mailCharsetParam.firstMatch(contentType);
+    final token = match?.group(1);
+    if (token != null) declared.add(token);
+  }
+  for (final value in headers.values) {
+    for (final match in _mailEncodedWord.allMatches(value)) {
+      final token = match.group(1);
+      if (token != null) declared.add(token);
+    }
+  }
+  for (final token in declared) {
+    if (!_isIdentityMailCharset(token)) return token.trim();
+  }
+  return null;
+}
+
+bool _isIdentityMailCharset(String name) => const {
+  'utf-8',
+  'utf8',
+  'us-ascii',
+  'ascii',
+}.contains(name.trim().toLowerCase());

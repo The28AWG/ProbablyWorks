@@ -8,6 +8,8 @@
 
 `git am` пробрасывает в `apply` политику `--whitespace` (в т.ч. `error` / `fix`), `--reject`, режимы `--ignore-space-change` / `--ignore-whitespace`; при `--continue` флаги читаются из `.git/rebase-apply`. `--quoted-cr` обрабатывается для тела письма до `diff --git` (`nowarn` / `warn` / `strip`). Тема коммита — логика `mailinfo` через `-k` / `-b` (`--keep` / `--keep-non-patch`); при `-m` в конец сообщения добавляется строка `Message-ID:` из заголовка.
 
+`--interactive`, `--gpg-sign`, `--rerere-autoupdate` и флаги хуков (`--verify`, `--no-verify`) дают `fatal` и код 128. `--utf8` включён по умолчанию, как у git: письмо в UTF-8 или US-ASCII применяется как есть. Объявленная другая кодировка (`Content-Type` или RFC 2047) — `fatal: cannot convert from … to UTF-8`, без подмены байт. `git gc` без флагов вызывает prune; неизвестная опция и лишний аргумент — код 129, молчаливого успеха нет.
+
 ## `commit`
 
 Сообщение собирается из `-m` / `-F` / `-C` / `--amend` / `--fixup` / `--squash`, затем cleanup (`whitespace`, `strip`, `verbatim`; `scissors` без редактора совпадает с `whitespace`), `--signoff` и `--trailer`. `-a` добавляет в индекс правки отслеживаемых файлов. Пути без `-i` — частичный коммит `--only`: в коммит попадают только они, остальные проиндексированные правки остаются в индексе. `-i` индексирует пути и коммитит весь индекс. `--dry-run`, `--short`, `--porcelain` и `--long` печатают статус и не создают коммит. `--date` и `--author` меняют автора; `--reset-author` — только вместе с `-C`, `-c` или `--amend`.

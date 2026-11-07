@@ -488,24 +488,10 @@ const expectedOptionGaps = <String, List<ParityGapRule>>{
           'подмножество индексации: без интерактива, pathspec-from-file, chmod',
     ),
   ],
-  'am': [
-    (
-      pattern: '--interactive',
-      reason: 'интерактивный режим в virtual_git не поддерживается',
-    ),
-    (pattern: '-i', reason: 'см. --interactive'),
-    (pattern: '--no-verify', reason: 'хуки applypatch-msg не вызываются'),
-    (pattern: '-n', reason: 'см. --no-verify'),
-    (pattern: '--verify', reason: 'см. --no-verify'),
-    (pattern: '--rerere-autoupdate', reason: 'rerere в virtual_git нет'),
-    (pattern: '--gpg-sign', reason: 'подпись коммитов GPG не поддерживается'),
-    (pattern: '-S', reason: 'см. --gpg-sign'),
-    (
-      pattern: '--utf8',
-      reason: 'перекодирование в UTF-8 как у git-mailinfo не выполняется',
-    ),
-    (pattern: '-u', reason: 'см. --utf8'),
-  ],
+  // Флаги разбираются: интерактив, GPG, rerere и хуки дают fatal,
+  // чужой charset при `-u` тоже. В пробел их класть нельзя: isExpectedGap
+  // для меток из supportedOptionLabels всегда false.
+  'am': <ParityGapRule>[],
   'archive': [
     (pattern: '*', reason: 'локальный tar по дереву без remote/exec/add-file'),
   ],

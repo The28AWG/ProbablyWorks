@@ -84,6 +84,75 @@ void main() {
     },
   );
 
+  test('git gc отвергает флаги и лишний аргумент', () async {
+    final quiet = await _git('git init -b main && git gc --quiet');
+    expect(quiet.exitCode, 129);
+    expect(quiet.stderr, contains("error: unknown option `quiet'"));
+
+    final extra = await _git('git init -b main && git gc nope');
+    expect(extra.exitCode, 129);
+    expect(extra.stderr, contains('usage: git gc'));
+
+    final plain = await _git(
+      'git init -b main && printf "a\\n" > a.txt && git add a.txt && '
+      'git commit -m first && git gc',
+    );
+    expect(plain.exitCode, 0, reason: plain.stderr);
+  });
+
+  test('git am: хуки и чужая кодировка не проходят молча', () async {
+    const setup =
+        'git init -b main && printf "base\\n" > a.txt && git add a.txt && '
+        'git commit -m first && ';
+    const patch =
+        '"diff --git a/a.txt b/a.txt" "--- a/a.txt" "+++ b/a.txt" '
+        '"@@ -1 +1 @@" "-base" "+patched"';
+
+    final hooks = await _git(
+      '$setup'
+      '{ printf "%s\\n" '
+      '"From dev@test Mon Jan 1 00:00:00 2024" "" "Subject: patch" "" '
+      '$patch; } > p.mbox ; '
+      'git am --no-verify p.mbox ; git log --oneline -1',
+    );
+    expect(hooks.stderr, contains('applypatch hooks'));
+    expect(hooks.stdout.trim(), endsWith('first'));
+
+    final verify = await _git(
+      '$setup'
+      '{ printf "%s\\n" '
+      '"From dev@test Mon Jan 1 00:00:00 2024" "" "Subject: patch" "" '
+      '$patch; } > p.mbox ; '
+      'git am --verify p.mbox ; git log --oneline -1',
+    );
+    expect(verify.stderr, contains('applypatch hooks'));
+    expect(verify.stdout.trim(), endsWith('first'));
+
+    final charset = await _git(
+      '$setup'
+      '{ printf "%s\\n" '
+      '"From dev@test Mon Jan 1 00:00:00 2024" '
+      '"Content-Type: text/plain; charset=ISO-8859-1" '
+      '"Subject: patch" "" '
+      '$patch; } > p.mbox ; '
+      'git am --utf8 p.mbox ; git log --oneline -1',
+    );
+    expect(charset.stderr, contains('cannot convert from ISO-8859-1'));
+    expect(charset.stdout.trim(), endsWith('first'));
+
+    final utf8Mail = await _git(
+      '$setup'
+      '{ printf "%s\\n" '
+      '"From dev@test Mon Jan 1 00:00:00 2024" '
+      '"Content-Type: text/plain; charset=UTF-8" '
+      '"Subject: patch" "" '
+      '$patch; } > p.mbox && '
+      'git am --utf8 p.mbox && git log --oneline -1',
+    );
+    expect(utf8Mail.exitCode, 0, reason: utf8Mail.stderr);
+    expect(utf8Mail.stdout.trim(), endsWith('patch'));
+  });
+
   test('git am: неверное значение --whitespace даёт fatal', () async {
     final r = await _git(
       'git init -b main && '
