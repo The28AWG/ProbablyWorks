@@ -61,6 +61,26 @@ class ToolResult {
   final bool finish;
 }
 
+/// Ответ на карточку, которую показали снова после перезапуска.
+class WaitingDecision {
+  /// [text] — ответ на вопрос. null значит, что ход остановили и ответа нет.
+  const WaitingDecision.question(this.text) : allowed = null;
+
+  /// [allowed] — решение по подтверждению. false — явный отказ.
+  const WaitingDecision.approval({required this.allowed}) : text = null;
+
+  final String? text;
+  final bool? allowed;
+}
+
+/// Незавершённый запуск и будущее его решения. Карточка уже лежит в [InteractionBroker].
+class ReopenedWait {
+  const ReopenedWait(this.run, this.decision);
+
+  final ToolRun run;
+  final Future<WaitingDecision> decision;
+}
+
 /// Исполняет вызовы инструментов модели: Policy → approve → выполнение → ToolRun.
 @lazySingleton
 class ToolExecutor {
@@ -420,19 +440,10 @@ class ToolExecutor {
     Map<String, dynamic> args,
   ) async {
     final question = _str(args, 'question');
-    final runId = _uuid.v4();
-    final run = _newRun(ctx, runId, call, args, ToolRunStatus.waitingUser);
+    final run = _newRun(ctx, _uuid.v4(), call, args, ToolRunStatus.waitingUser);
     await _saveRun(run);
-    final answer = await _broker.askUser(ctx.chat.id, runId, question);
-    final text = answer ?? 'User did not answer (the turn was stopped).';
-    await _saveRun(
-      run.copyWith(
-        status: ToolRunStatus.done,
-        finishedAt: DateTime.now(),
-        resultPreview: _preview(text),
-      ),
-    );
-    return ToolResult(answer == null ? text : 'User answered: $answer');
+    final answer = await _broker.askUser(ctx.chat.id, run.id, question);
+    return _finishQuestion(run, answer);
   }
 
   // ---- state tools -------------------------------------------------------
@@ -637,6 +648,7 @@ class ToolExecutor {
     bool inTerminal = false,
     Uint8List? stdin,
     HostOp? op,
+    DateTime? startedAt,
   }) async {
     final runId = presetRunId ?? _uuid.v4();
     var run = _newRun(
@@ -647,6 +659,7 @@ class ToolExecutor {
       ToolRunStatus.running,
       command: command,
       background: background,
+      startedAt: startedAt,
     );
     await _saveRun(run);
 
@@ -725,6 +738,7 @@ class ToolExecutor {
     String? command,
     String? diff,
   }) async {
+    final card = PendingCard(summary: summary, reason: reason, diff: diff);
     final run = _newRun(
       ctx,
       runId,
@@ -732,6 +746,7 @@ class ToolExecutor {
       args,
       ToolRunStatus.waitingApproval,
       command: command,
+      pendingCard: card.encode(),
     );
     await _saveRun(run);
     final allowed = await _broker.requestApproval(
@@ -744,12 +759,285 @@ class ToolExecutor {
         diff: diff,
       ),
     );
-    if (!allowed) {
-      await _saveRun(
-        run.copyWith(status: ToolRunStatus.denied, finishedAt: DateTime.now()),
+    if (!allowed) await _denyRun(run, summary);
+    return allowed;
+  }
+
+  /// Снова показывает карточку незавершённого запуска. Регистрация синхронная:
+  /// открытие чата может сразу отдать список карточек, не дожидаясь ответа.
+  /// Бросает [ArgumentError], если статус не waiting*.
+  ReopenedWait reopenWaiting(ToolRun run) {
+    if (run.status == ToolRunStatus.waitingUser) {
+      final pending = _broker.askUser(run.chatId, run.id, _questionText(run));
+      return ReopenedWait(run, _asQuestion(pending));
+    }
+    if (run.status == ToolRunStatus.waitingApproval) {
+      final card = PendingCard.tryDecode(run.pendingCard);
+      final pending = _broker.requestApproval(
+        ApprovalRequest(
+          id: run.id,
+          chatId: run.chatId,
+          toolName: run.toolName,
+          summary: card?.summary ?? run.command ?? run.toolName,
+          reason: card?.reason ?? '',
+          diff: card?.diff,
+        ),
+      );
+      return ReopenedWait(run, _asApproval(pending));
+    }
+    throw ArgumentError.value(run.status, 'run.status', 'not waiting');
+  }
+
+  /// Ждёт ответ. Карточка уже зарегистрирована вызовом брокера до этого будущего.
+  Future<WaitingDecision> _asQuestion(Future<String?> pending) async =>
+      WaitingDecision.question(await pending);
+
+  /// Ждёт подтверждение, не откладывая регистрацию карточки.
+  Future<WaitingDecision> _asApproval(Future<bool> pending) async =>
+      WaitingDecision.approval(allowed: await pending);
+
+  /// Записывает ответ и, если действие подтвердили, выполняет его тем же запуском.
+  /// [ctx] нужен только для подтверждённой команды или записи. Вопрос и отказ обходятся без него.
+  Future<ToolResult> completeWaiting(
+    ToolRun run,
+    WaitingDecision decision,
+    ToolContext? ctx,
+  ) async {
+    if (run.status == ToolRunStatus.waitingUser) {
+      return _finishQuestion(run, decision.text);
+    }
+    if (run.status != ToolRunStatus.waitingApproval) {
+      return ToolResult('run ${run.id} is not waiting', isError: true);
+    }
+    final summary =
+        PendingCard.tryDecode(run.pendingCard)?.summary ??
+        run.command ??
+        run.toolName;
+    if (decision.allowed != true) return _denyRun(run, summary);
+    if (ctx == null) return _failRun(run, 'host not found');
+    final args = _decodeArgs(run.argsJson);
+    if (args == null) return _failRun(run, 'invalid arguments JSON');
+    final call = LlmToolCall(
+      id: run.toolCallId ?? run.id,
+      name: run.toolName,
+      arguments: run.argsJson,
+    );
+    try {
+      return await _executeApproved(ctx, call, args, run);
+    } on ArgumentError catch (error) {
+      return _failRun(run, 'invalid arguments: ${error.message}');
+    }
+  }
+
+  Future<ToolResult> _finishQuestion(ToolRun run, String? answer) async {
+    final text = answer ?? 'User did not answer (the turn was stopped).';
+    await _saveRun(
+      run.copyWith(
+        status: ToolRunStatus.done,
+        finishedAt: DateTime.now(),
+        resultPreview: _preview(text),
+        clearPendingCard: true,
+      ),
+    );
+    return ToolResult(answer == null ? text : 'User answered: $answer');
+  }
+
+  /// Отказ — явный ответ: статус больше не waiting, карточка после перезапуска не вернётся.
+  Future<ToolResult> _denyRun(ToolRun run, String summary) async {
+    await _saveRun(
+      run.copyWith(
+        status: ToolRunStatus.denied,
+        finishedAt: DateTime.now(),
+        clearPendingCard: true,
+      ),
+    );
+    return _rejected(summary);
+  }
+
+  Future<ToolResult> _failRun(ToolRun run, String text) async {
+    await _saveRun(
+      run.copyWith(
+        status: ToolRunStatus.failed,
+        finishedAt: DateTime.now(),
+        resultPreview: _preview(text),
+        clearPendingCard: true,
+      ),
+    );
+    return ToolResult(text, isError: true);
+  }
+
+  /// Продолжение уже подтверждённого действия. Политику заново не спрашиваем:
+  /// пользователь ответил на ту карточку, которая была показана.
+  Future<ToolResult> _executeApproved(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) => switch (call.name) {
+    ToolNames.runCommand => _resumeCommand(ctx, call, args, run),
+    ToolNames.writeFile => _resumeWrite(ctx, call, args, run),
+    ToolNames.editFile => _resumeEdit(ctx, call, args, run),
+    ToolNames.hostAdd ||
+    ToolNames.hostUpdate ||
+    ToolNames.settingsUpdate => _resumeSelf(ctx, call, args, run),
+    _ => _failRun(run, 'cannot resume ${call.name}'),
+  };
+
+  Future<ToolResult> _resumeCommand(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) {
+    final command = _str(args, 'command');
+    final background = args['background'] == true;
+    if (background && ctx.host.kind == HostKind.virtual) {
+      return _failRun(
+        run,
+        'background is not supported on a virtual host: run the command in the foreground',
       );
     }
-    return allowed;
+    final cwdArg = args['cwd'] as String?;
+    final cwd = cwdArg == null || cwdArg.isEmpty
+        ? ctx.chat.workspace
+        : _resolve(ctx, cwdArg);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: command,
+      cwd: cwd,
+      background: background,
+      presetRunId: run.id,
+      inTerminal: true,
+      startedAt: run.startedAt,
+    );
+  }
+
+  Future<ToolResult> _resumeWrite(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) async {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final content = _str(args, 'content');
+    final mtime = await _mtimeOrNull(ctx, path);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: run.command ?? 'write $path',
+      op: WriteFileOp(
+        path,
+        backupPath: '$path.pw-bak-${run.id}',
+        expectedMtime: mtime,
+      ),
+      background: false,
+      presetRunId: run.id,
+      stdin: Uint8List.fromList(utf8.encode(content)),
+      startedAt: run.startedAt,
+    );
+  }
+
+  Future<ToolResult> _resumeEdit(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) async {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final oldString = _str(args, 'old_string');
+    final newString = _str(args, 'new_string');
+    final replaceAll = args['replace_all'] == true;
+    final mtime = await _mtimeOrNull(ctx, path);
+    final read = await captureOp(ctx.runtime, ReadRawOp(path));
+    if (mtime == null || !read.ok) {
+      return _failRun(run, 'cannot read $path (file missing or unreadable)');
+    }
+    final before = read.stdout;
+    if (before.contains('\uFFFD')) {
+      return _failRun(
+        run,
+        'cannot edit $path: it is not valid UTF-8 text (or contains U+FFFD), and an edit would corrupt its bytes. The file was not changed.',
+      );
+    }
+    final occurrences = oldString.isEmpty
+        ? 0
+        : oldString.allMatches(before).length;
+    if (occurrences == 0) {
+      return _failRun(run, 'old_string not found in $path');
+    }
+    if (occurrences > 1 && !replaceAll) {
+      return _failRun(
+        run,
+        'old_string matches $occurrences times in $path; provide more context or set replace_all',
+      );
+    }
+    final after = replaceAll
+        ? before.replaceAll(oldString, newString)
+        : before.replaceFirst(oldString, newString);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: run.command ?? 'write $path',
+      op: WriteFileOp(
+        path,
+        backupPath: '$path.pw-bak-${run.id}',
+        expectedMtime: mtime,
+      ),
+      background: false,
+      presetRunId: run.id,
+      stdin: Uint8List.fromList(utf8.encode(after)),
+      startedAt: run.startedAt,
+    );
+  }
+
+  Future<ToolResult> _resumeSelf(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) async {
+    // Запись меняет приложение, а не Host, но запуск должен принадлежать этому чату.
+    if (ctx.chat.id != run.chatId) {
+      return _failRun(run, 'run ${run.id} belongs to another chat');
+    }
+    final change = await _self.prepare(call.name, args);
+    try {
+      final text = await change.apply();
+      await _saveRun(
+        run.copyWith(
+          status: ToolRunStatus.done,
+          command: change.summary,
+          finishedAt: DateTime.now(),
+          resultPreview: _preview(text),
+          clearPendingCard: true,
+        ),
+      );
+      return ToolResult(text);
+    } on Object catch (error) {
+      return _failRun(run, '${call.name} failed: $error');
+    }
+  }
+
+  String _questionText(ToolRun run) {
+    final args = _decodeArgs(run.argsJson);
+    final question = args?['question'];
+    if (question is String && question.isNotEmpty) return question;
+    return run.command ?? run.toolName;
+  }
+
+  Map<String, dynamic>? _decodeArgs(String raw) {
+    try {
+      final decoded = raw.trim().isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   Future<ToolResult> _denied(
@@ -784,6 +1072,8 @@ class ToolExecutor {
     String? command,
     bool background = false,
     DateTime? finishedAt,
+    String? pendingCard,
+    DateTime? startedAt,
   }) => ToolRun(
     id: runId,
     chatId: ctx.chat.id,
@@ -795,8 +1085,10 @@ class ToolExecutor {
         (call.name == ToolNames.runCommand ? _str(args, 'command') : null),
     background: background,
     status: status,
-    startedAt: DateTime.now(),
+    startedAt: startedAt ?? DateTime.now(),
     finishedAt: finishedAt,
+    toolCallId: call.id,
+    pendingCard: pendingCard,
   );
 
   String _resolve(ToolContext ctx, String path) {

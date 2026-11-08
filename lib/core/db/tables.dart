@@ -98,6 +98,13 @@ class ToolRuns extends Table {
   DateTimeColumn get startedAt => dateTime()();
   DateTimeColumn get finishedAt => dateTime().nullable()();
 
+  /// Id вызова в сообщении ассистента. Нужен, чтобы после перезапуска привязать ответ к тому же вызову.
+  TextColumn get toolCallId => text().nullable()();
+
+  /// Карточка подтверждения (summary, reason, diff), пока статус waitingApproval.
+  /// Вопрос ask_user лежит в argsJson, поэтому для него поле пустое.
+  TextColumn get pendingCard => text().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

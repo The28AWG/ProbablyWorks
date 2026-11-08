@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
 
@@ -40,8 +41,56 @@ class UserQuestion {
   final String text;
 }
 
+/// Текст карточки подтверждения, который нужно показать снова после перезапуска.
+/// В базе лежит JSON в поле pendingCard запуска, пока его статус — waitingApproval.
+class PendingCard {
+  const PendingCard({required this.summary, required this.reason, this.diff});
+
+  /// Команда или путь, как на карточке.
+  final String summary;
+
+  /// Почему нужно подтверждение.
+  final String reason;
+
+  /// Построчный diff для записи файла. Пустая строка не хранится.
+  final String? diff;
+
+  /// JSON для колонки `pending_card`.
+  String encode() => jsonEncode({
+    'summary': summary,
+    'reason': reason,
+    if (diff != null && diff!.isNotEmpty) 'diff': diff,
+  });
+
+  /// Разбирает JSON карточки. Битый или пустой текст даёт null: карточку всё равно можно
+  /// собрать из команды запуска, но без причины и diff.
+  static PendingCard? tryDecode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map) return null;
+      final summary = json['summary'];
+      final reason = json['reason'];
+      if (summary is! String || reason is! String) return null;
+      final diff = json['diff'];
+      return PendingCard(
+        summary: summary,
+        reason: reason,
+        diff: diff is String && diff.isNotEmpty ? diff : null,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+}
+
 /// Единая точка ожидания решений пользователя. Агент ждёт [requestApproval]/[askUser];
 /// UI отвечает через [resolveApproval]/[answer]. Stop отменяет все ожидания чата.
+///
+/// Сами карты живут только в памяти процесса. Долгая отметка «ответа ещё не было» —
+/// статус ToolRun `waitingUser` / `waitingApproval`. Пока он такой, открытие чата
+/// регистрирует карточку здесь заново. Отказ, ответ и остановка хода меняют статус,
+/// и карточка больше не появляется.
 @singleton
 class InteractionBroker {
   final _approvalRequests = StreamController<ApprovalRequest>.broadcast();

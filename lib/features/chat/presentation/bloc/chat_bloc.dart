@@ -756,6 +756,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     final shared = await _readShared();
     final snapshot = await _readChat(event.chatId);
+    // Карточки этого чата — из базы, не при старте приложения. Ход, который уже ждёт, не дублируем.
+    await _session?.restoreUnanswered();
     // Один emit на открытие: каждый промежуточный emit перестраивает весь экран чата на UI-потоке.
     final loaded = state.copyWith(
       hosts: shared.hosts,

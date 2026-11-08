@@ -23,6 +23,16 @@ const _virtualFsV7 =
     'size INTEGER NOT NULL, target TEXT, content BLOB, '
     'PRIMARY KEY (host_id, path))';
 
+/// Таблица tool_runs до версии 9: без связи с вызовом модели и без текста карточки.
+const _toolRunsBeforeV9 =
+    'CREATE TABLE tool_runs ('
+    'id TEXT NOT NULL PRIMARY KEY, chat_id TEXT NOT NULL, '
+    'message_id TEXT NOT NULL, tool_name TEXT NOT NULL, args_json TEXT NOT NULL, '
+    'command TEXT, background INTEGER NOT NULL DEFAULT 0, pid INTEGER, '
+    'status TEXT NOT NULL, exit_code INTEGER, timed_out INTEGER NOT NULL DEFAULT 0, '
+    'log_path TEXT, output_text TEXT, output_truncated INTEGER NOT NULL DEFAULT 0, '
+    'result_preview TEXT, started_at INTEGER NOT NULL, finished_at INTEGER)';
+
 /// Таблица saved_models в форме схемы v4 (без входных модальностей).
 const _savedModelsV4 =
     'CREATE TABLE saved_models ('
@@ -48,6 +58,7 @@ AppDatabase _openAtVersion(
       }
       raw
         ..execute(_chatsV4)
+        ..execute(_toolRunsBeforeV9)
         ..execute('PRAGMA user_version = $version');
       if (version >= 4) raw.execute(_savedModelsV4);
       if (withVirtualFs) {
@@ -98,7 +109,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 8);
+    expect(AppDatabase.currentSchemaVersion, 9);
   });
 
   test(
@@ -161,5 +172,19 @@ void main() {
         .map((row) => row.read<String>('path'))
         .get();
     expect(paths, ['/home/agent/n']);
+  });
+
+  test('v8 → v9 adds the tool call link and the pending card', () async {
+    final db = _openAtVersion(8);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name FROM pragma_table_info('tool_runs') "
+          "WHERE name IN ('tool_call_id', 'pending_card')",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(columns, containsAll(['tool_call_id', 'pending_card']));
   });
 }

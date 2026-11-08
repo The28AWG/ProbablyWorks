@@ -76,11 +76,49 @@ class ContextBuilder {
         if (message.role == MessageRole.assistant)
           for (final call in message.toolCalls) call.id: call,
     };
+    // Ответ инструмента должен идти сразу за вызовом. После перезапуска между ними
+    // может оказаться событие (прерванная команда): его оставляем на своём месте,
+    // а результат подтягиваем к вызову.
+    final toolResults = <String, ChatMessage>{
+      for (final message in window)
+        if (message.role == MessageRole.tool && message.toolCallId != null)
+          message.toolCallId!: message,
+    };
+    final pulled = <String>{};
     return [
       LlmMessage.system(system),
       for (final message in window)
-        ..._toLlm(message, calls, input.inlineFiles),
+        ..._emitInOrder(message, calls, input.inlineFiles, toolResults, pulled),
     ];
+  }
+
+  /// Сообщение в порядке ленты. Результат инструмента, который в ленте стоит позже
+  /// своего вызова, уходит сразу за этим вызовом и второй раз не повторяется.
+  List<LlmMessage> _emitInOrder(
+    ChatMessage message,
+    Map<String, ToolCallRef> calls,
+    Map<String, List<LlmFilePart>> inlineFiles,
+    Map<String, ChatMessage> toolResults,
+    Set<String> pulled,
+  ) {
+    final callId = message.toolCallId;
+    if (message.role == MessageRole.tool &&
+        callId != null &&
+        pulled.contains(callId)) {
+      return const [];
+    }
+    final own = _toLlm(message, calls, inlineFiles);
+    if (message.role != MessageRole.assistant || message.toolCalls.isEmpty) {
+      return own;
+    }
+    final results = <LlmMessage>[];
+    for (final call in message.toolCalls) {
+      final tool = toolResults[call.id];
+      if (tool == null || tool.seq <= message.seq) continue;
+      pulled.add(call.id);
+      results.addAll(_toLlm(tool, calls, inlineFiles));
+    }
+    return [...own, ...results];
   }
 
   /// Грубая оценка токенов: ~4 символа на токен. Достаточно для порогов сжатия.

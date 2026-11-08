@@ -1016,4 +1016,378 @@ void main() {
     expect(tool.text, contains('background is not supported'));
     expect(await hub.chats.toolRunsForChat(chatId), isEmpty);
   });
+
+  Future<void> seedWaiting({
+    required String chatId,
+    required ToolRunStatus status,
+    required String toolName,
+    required String args,
+    required String callId,
+    String? command,
+    String? pendingCard,
+    String? eventText,
+  }) async {
+    final now = DateTime.now();
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'user-1',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: now,
+        text: 'do it',
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'assistant-1',
+        chatId: chatId,
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+        toolCalls: [ToolCallRef(id: callId, name: toolName, arguments: args)],
+      ),
+    );
+    if (eventText != null) {
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'event-1',
+          chatId: chatId,
+          seq: 3,
+          role: MessageRole.event,
+          createdAt: now,
+          text: eventText,
+        ),
+      );
+    }
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'run-1',
+        chatId: chatId,
+        messageId: 'assistant-1',
+        toolName: toolName,
+        argsJson: args,
+        command: command,
+        status: status,
+        startedAt: now,
+        toolCallId: callId,
+        pendingCard: pendingCard,
+      ),
+    );
+  }
+
+  test(
+    'an unanswered question is shown again when the chat is opened',
+    () async {
+      final chatId = await createChat();
+      const args = '{"question":"Which color?"}';
+      await seedWaiting(
+        chatId: chatId,
+        status: ToolRunStatus.waitingUser,
+        toolName: 'ask_user',
+        args: args,
+        callId: 'call-1',
+        eventText: 'a command was interrupted',
+      );
+      final session = hub.session(chatId);
+
+      await session.restoreUnanswered();
+
+      final question = broker.pendingQuestions(chatId).single;
+      expect(question.text, 'Which color?');
+      expect(session.isRunning, isTrue);
+
+      llm.script.add([const LlmTextDelta('thanks'), const LlmCompleted()]);
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      broker.answer(question.id, 'blue');
+      await finished;
+
+      expect(broker.pendingQuestions(chatId), isEmpty);
+      final runs = await hub.chats.toolRunsForChat(chatId);
+      expect(runs.single.status, ToolRunStatus.done);
+      final tool = (await hub.chats.messages(chatId))
+          .firstWhere((m) => m.role == MessageRole.tool);
+      expect(tool.text, 'User answered: blue');
+      expect(tool.toolCallId, 'call-1');
+      final sent = llm.requests.single.messages;
+      final assistant = sent.indexWhere(
+        (m) => m.role == LlmRole.assistant && m.toolCalls.isNotEmpty,
+      );
+      expect(sent[assistant + 1].role, LlmRole.tool);
+      expect(sent[assistant + 1].content, contains('blue'));
+      expect(
+        sent.indexWhere((m) => m.content.contains('a command was interrupted')),
+        greaterThan(assistant + 1),
+      );
+
+      await session.restoreUnanswered();
+      expect(await hub.chats.waitingRuns(chatId), isEmpty);
+      expect(session.isRunning, isFalse);
+    },
+  );
+
+  test(
+    'stopping a restored question records the answer and does not ask again',
+    () async {
+      final chatId = await createChat();
+      await seedWaiting(
+        chatId: chatId,
+        status: ToolRunStatus.waitingUser,
+        toolName: 'ask_user',
+        args: '{"question":"Still there?"}',
+        callId: 'call-1',
+      );
+      final session = hub.session(chatId);
+      await session.restoreUnanswered();
+      expect(broker.pendingQuestions(chatId), hasLength(1));
+
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      await session.stop();
+      await finished;
+
+      expect(broker.pendingQuestions(chatId), isEmpty);
+      expect(llm.requests, isEmpty);
+      final runs = await hub.chats.toolRunsForChat(chatId);
+      expect(runs.single.status, ToolRunStatus.done);
+      final tool = (await hub.chats.messages(chatId))
+          .firstWhere((m) => m.role == MessageRole.tool);
+      expect(tool.text, contains('did not answer'));
+
+      await session.restoreUnanswered();
+      expect(await hub.chats.waitingRuns(chatId), isEmpty);
+    },
+  );
+
+  test('a restored approval card runs only after the user allows it', () async {
+    final chatId = await createChat();
+    const args = '{"command":"printf approved"}';
+    await seedWaiting(
+      chatId: chatId,
+      status: ToolRunStatus.waitingApproval,
+      toolName: 'run_command',
+      args: args,
+      callId: 'call-1',
+      command: 'printf approved',
+      pendingCard: const PendingCard(
+        summary: 'printf approved',
+        reason: 'needs approval',
+      ).encode(),
+    );
+    final session = hub.session(chatId);
+    await session.restoreUnanswered();
+    final request = broker.pendingApprovals(chatId).single;
+    expect(request.summary, 'printf approved');
+    expect(request.reason, 'needs approval');
+
+    llm.script.add([const LlmTextDelta('ran'), const LlmCompleted()]);
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    broker.resolveApproval(request.id, allow: true);
+    await finished;
+
+    expect(broker.pendingApprovals(chatId), isEmpty);
+    final runs = await hub.chats.toolRunsForChat(chatId);
+    expect(runs, hasLength(1));
+    expect(runs.single.status, ToolRunStatus.done);
+    expect(runs.single.outputText, contains('approved'));
+    expect(runs.single.pendingCard, isNull);
+  });
+
+  test('denying a restored approval is a final answer', () async {
+    final chatId = await createChat();
+    const args = '{"command":"printf should-not-run"}';
+    await seedWaiting(
+      chatId: chatId,
+      status: ToolRunStatus.waitingApproval,
+      toolName: 'run_command',
+      args: args,
+      callId: 'call-1',
+      command: 'printf should-not-run',
+      pendingCard: const PendingCard(
+        summary: 'printf should-not-run',
+        reason: 'needs approval',
+      ).encode(),
+    );
+    final session = hub.session(chatId);
+    await session.restoreUnanswered();
+    final request = broker.pendingApprovals(chatId).single;
+
+    llm.script.add([const LlmTextDelta('stopped'), const LlmCompleted()]);
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    broker.resolveApproval(request.id, allow: false);
+    await finished;
+
+    expect(broker.pendingApprovals(chatId), isEmpty);
+    final tool = (await hub.chats.messages(chatId))
+        .firstWhere((m) => m.role == MessageRole.tool);
+    expect(tool.text, contains('rejected'));
+    final runs = await hub.chats.toolRunsForChat(chatId);
+    expect(runs.single.status, ToolRunStatus.denied);
+    expect(runs.single.outputText, isNull);
+
+    await session.restoreUnanswered();
+    expect(await hub.chats.waitingRuns(chatId), isEmpty);
+    expect(session.isRunning, isFalse);
+  });
+
+  test('several questions in one step are asked one after another', () async {
+    final chatId = await createChat();
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call('c1', 'ask_user', '{"question":"first?"}'),
+            _call('c2', 'ask_user', '{"question":"second?"}'),
+            _call('c3', 'ask_user', '{"question":"third?"}'),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('all three'), const LlmCompleted()]);
+    final session = hub.session(chatId);
+    final first = broker.questions.first;
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    await session.submit('ask three');
+
+    final q1 = await first;
+    expect(q1.text, 'first?');
+    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['first?']);
+
+    final second = broker.questions.first;
+    broker.answer(q1.id, 'one');
+    final q2 = await second;
+    expect(q2.text, 'second?');
+    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['second?']);
+
+    final third = broker.questions.first;
+    broker.answer(q2.id, 'two');
+    final q3 = await third;
+    expect(q3.text, 'third?');
+    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['third?']);
+
+    broker.answer(q3.id, 'three');
+    await finished;
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(
+      [for (final message in tools) message.toolCallId],
+      ['c1', 'c2', 'c3'],
+    );
+    expect(tools.map((message) => message.text), [
+      'User answered: one',
+      'User answered: two',
+      'User answered: three',
+    ]);
+  });
+
+  test('restart on the second of three questions restores only that card, then the third', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    const firstArgs = '{"question":"first?"}';
+    const secondArgs = '{"question":"second?"}';
+    const thirdArgs = '{"question":"third?"}';
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'user-1',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: now,
+        text: 'ask three',
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'assistant-1',
+        chatId: chatId,
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+        toolCalls: [
+          const ToolCallRef(id: 'c1', name: 'ask_user', arguments: firstArgs),
+          const ToolCallRef(id: 'c2', name: 'ask_user', arguments: secondArgs),
+          const ToolCallRef(id: 'c3', name: 'ask_user', arguments: thirdArgs),
+        ],
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'tool-1',
+        chatId: chatId,
+        seq: 3,
+        role: MessageRole.tool,
+        createdAt: now,
+        text: 'User answered: one',
+        toolCallId: 'c1',
+      ),
+    );
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'run-1',
+        chatId: chatId,
+        messageId: 'assistant-1',
+        toolName: 'ask_user',
+        argsJson: firstArgs,
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        toolCallId: 'c1',
+        resultPreview: 'User answered: one',
+      ),
+    );
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'run-2',
+        chatId: chatId,
+        messageId: 'assistant-1',
+        toolName: 'ask_user',
+        argsJson: secondArgs,
+        status: ToolRunStatus.waitingUser,
+        startedAt: now.add(const Duration(seconds: 1)),
+        toolCallId: 'c2',
+      ),
+    );
+
+    final session = hub.session(chatId);
+    await session.restoreUnanswered();
+    final pending = broker.pendingQuestions(chatId);
+    expect(pending.map((q) => q.text), ['second?']);
+
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+    final third = broker.questions.first;
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    broker.answer(pending.single.id, 'two');
+    final q3 = await third;
+    expect(q3.text, 'third?');
+    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['third?']);
+    final waiting = await hub.chats.waitingRuns(chatId);
+    expect(waiting.single.toolCallId, 'c3');
+
+    broker.answer(q3.id, 'three');
+    await finished;
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(
+      [for (final message in tools) message.toolCallId],
+      ['c1', 'c2', 'c3'],
+    );
+    expect(tools.map((message) => message.text), [
+      'User answered: one',
+      'User answered: two',
+      'User answered: three',
+    ]);
+    expect(await hub.chats.waitingRuns(chatId), isEmpty);
+    final sent = llm.requests.single.messages;
+    final assistant = sent.indexWhere(
+      (m) => m.role == LlmRole.assistant && m.toolCalls.length == 3,
+    );
+    expect(
+      [for (var i = 1; i <= 3; i++) sent[assistant + i].toolCallId],
+      ['c1', 'c2', 'c3'],
+    );
+  });
 }

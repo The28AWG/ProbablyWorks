@@ -68,6 +68,9 @@ class ChatSession {
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
 
+  /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
+  Future<void>? _restoreInFlight;
+
   Stream<AgentEvent> get events => _events.stream;
 
   bool get isRunning => _running;
@@ -154,6 +157,37 @@ class ChatSession {
     });
   }
 
+  /// Показывает неотвеченные карточки этого чата и продолжает ход с места ожидания.
+  ///
+  /// Читает только этот чат: закрытые чаты не трогаем. Возвращается, когда карточки
+  /// уже в брокере, и не ждёт ответ. Повторный вызов во время того же хода ничего не делает.
+  /// Явный ответ, отказ и Stop записывают статус и больше не восстанавливаются.
+  ///
+  /// Вызовы одного сообщения модели идут по очереди, поэтому в базе ждёт только
+  /// текущая карточка. Уже отвеченные не открываются снова. Вызовы после неё
+  /// выполняются после ответа: если следующему тоже нужна карточка, она появится тогда.
+  Future<void> restoreUnanswered() async {
+    if (_running) return;
+    final inflight = _restoreInFlight;
+    if (inflight != null) {
+      await inflight;
+      return;
+    }
+    final gate = Completer<void>();
+    _restoreInFlight = gate.future;
+    try {
+      final runs = await _hub.chats.waitingRuns(chatId);
+      if (runs.isEmpty || _running) return;
+      _running = true;
+      final turn = _turnCancel = CancelToken();
+      final reopened = [for (final run in runs) _hub.tools.reopenWaiting(run)];
+      unawaited(_finishTurn(() => _resumeThenLoop(reopened, turn)));
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      if (identical(_restoreInFlight, gate.future)) _restoreInFlight = null;
+    }
+  }
+
   /// Продолжить после достижения лимита шагов.
   Future<void> continueAfterStepLimit() async {
     if (_running) return;
@@ -192,10 +226,16 @@ class ChatSession {
 
   Future<void> _runTurn() async {
     final turn = _turnCancel = CancelToken();
+    await _finishTurn(() => _loop(turn));
+  }
+
+  /// Общая оболочка хода: событие старта, ошибка, финал и уведомление.
+  /// И обычный ход, и продолжение после карточки заканчиваются здесь.
+  Future<void> _finishTurn(Future<TurnEnd> Function() body) async {
     _emit(AgentTurnStarted(chatId));
     var end = TurnEnd.completed;
     try {
-      end = await _loop(turn);
+      end = await body();
     } on AppFailure catch (failure) {
       end = TurnEnd.failed;
       if (failure is LlmFailure && failure.modelNotFound) {
@@ -222,6 +262,164 @@ class ChatSession {
         unawaited(_notify(AgentNoticeKind.stepLimitReached));
       case TurnEnd.stopped:
     }
+  }
+
+  /// Дожидается карточек, записывает их результаты и доигрывает хвост того же шага,
+  /// затем продолжает обычный цикл модели.
+  Future<TurnEnd> _resumeThenLoop(
+    List<ReopenedWait> items,
+    CancelToken turn,
+  ) async {
+    final answered = await _answeredToolCallIds();
+    final callIds = <ReopenedWait, String>{};
+    for (final item in items) {
+      callIds[item] = await _callIdFor(item.run);
+    }
+    final restoredIds = callIds.values.toSet();
+    for (final item in items) {
+      final decision = await item.decision;
+      final ctx = await _toolContext(item.run.messageId);
+      final result = await _hub.tools.completeWaiting(item.run, decision, ctx);
+      final callId = callIds[item] ?? item.run.id;
+      await _append(
+        MessageRole.tool,
+        text: Redactor.redact(result.text),
+        toolCallId: callId,
+      );
+      answered.add(callId);
+      if (result.finish) {
+        await _closeUnanswered(
+          item.run.messageId,
+          answered,
+          'not executed: the task was finished',
+        );
+        return TurnEnd.completed;
+      }
+      if (turn.isCancelled) {
+        await _closeUnanswered(
+          item.run.messageId,
+          answered,
+          'cancelled by the user',
+        );
+        return TurnEnd.stopped;
+      }
+      final end = await _runUntilNextWait(
+        item.run.messageId,
+        answered,
+        restoredIds,
+        turn,
+      );
+      if (end != null) return end;
+    }
+    return _loop(turn);
+  }
+
+  /// Вызовы сообщения ассистента, которые ещё не получили результат и не ждут свою карточку.
+  /// Очередная восстановленная карточка останавливает проход: её обработает следующий шаг.
+  Future<TurnEnd?> _runUntilNextWait(
+    String messageId,
+    Set<String> answered,
+    Set<String> restoredIds,
+    CancelToken turn,
+  ) async {
+    final message = await _find(messageId);
+    if (message == null || message.role != MessageRole.assistant) return null;
+    final calls = [
+      for (final call in message.toolCalls)
+        LlmToolCall(id: call.id, name: call.name, arguments: call.arguments),
+    ];
+    for (var i = 0; i < calls.length; i++) {
+      final call = calls[i];
+      if (answered.contains(call.id)) continue;
+      if (restoredIds.contains(call.id)) return null;
+      if (turn.isCancelled) {
+        await _answerRemaining(calls, i, 'cancelled by the user');
+        return TurnEnd.stopped;
+      }
+      final ctx = await _toolContext(messageId);
+      if (ctx == null) {
+        await _answerRemaining(calls, i, 'not executed: host not found');
+        return TurnEnd.failed;
+      }
+      final result = await _hub.tools.execute(call, ctx);
+      await _append(
+        MessageRole.tool,
+        text: Redactor.redact(result.text),
+        toolCallId: call.id,
+      );
+      answered.add(call.id);
+      if (result.finish) {
+        await _answerRemaining(
+          calls,
+          i + 1,
+          'not executed: the task was finished',
+        );
+        return TurnEnd.completed;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _closeUnanswered(
+    String messageId,
+    Set<String> answered,
+    String reason,
+  ) async {
+    final message = await _find(messageId);
+    if (message == null) return;
+    final calls = [
+      for (final call in message.toolCalls)
+        if (!answered.contains(call.id))
+          LlmToolCall(id: call.id, name: call.name, arguments: call.arguments),
+    ];
+    await _answerRemaining(calls, 0, reason);
+  }
+
+  Future<Set<String>> _answeredToolCallIds() async {
+    final messages = await _hub.chats.messages(chatId);
+    return {
+      for (final message in messages)
+        if (message.role == MessageRole.tool && message.toolCallId != null)
+          message.toolCallId!,
+    };
+  }
+
+  /// Id вызова для результата. Новые запуски хранят его; старые ищем по имени и аргументам.
+  Future<String> _callIdFor(ToolRun run) async {
+    final stored = run.toolCallId;
+    if (stored != null && stored.isNotEmpty) return stored;
+    final message = await _find(run.messageId);
+    if (message == null) return run.id;
+    for (final call in message.toolCalls) {
+      if (call.name == run.toolName && call.arguments == run.argsJson) {
+        return call.id;
+      }
+    }
+    if (message.toolCalls.length == 1) return message.toolCalls.single.id;
+    return run.id;
+  }
+
+  /// Контекст инструмента без сборки запроса к модели: карточка уже задана, ход ещё не у модели.
+  Future<ToolContext?> _toolContext(String messageId) async {
+    final chat = await _hub.chats.chat(chatId);
+    if (chat == null) return null;
+    final host = await _hub.hosts.byId(chat.hostId);
+    if (host == null) return null;
+    final limits = await _hub.limits();
+    final denylist = await _hub.settings.readDenylist();
+    final profile = await _hub.settings.readSecurityProfile();
+    return ToolContext(
+      chat: chat,
+      messageId: messageId,
+      host: host,
+      runtime: _hub.runtimes.forHost(host),
+      limits: limits,
+      policy: PolicyEngine(
+        classifier: CommandClassifier(denylist: denylist, profile: profile),
+        mode: chat.policyMode,
+      ),
+      onBackgroundDone: _onBackgroundDone,
+    );
   }
 
   /// Системное уведомление о событии этого чата. Название чата читается здесь, потому что

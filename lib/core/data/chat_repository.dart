@@ -214,6 +214,8 @@ class ChatRepository {
           resultPreview: Value(run.resultPreview),
           startedAt: run.startedAt,
           finishedAt: Value(run.finishedAt),
+          toolCallId: Value(run.toolCallId),
+          pendingCard: Value(run.pendingCard),
         ),
       );
 
@@ -249,6 +251,23 @@ class ChatRepository {
                   ToolRunStatus.waitingUser.name,
                 ]),
               ))
+              .get())
+          .map(_toolRun)
+          .toList();
+
+  /// Запуски чата, у которых ещё нет ответа пользователя: вопрос или подтверждение.
+  /// Отказ, остановка хода и обычное завершение сюда не попадают — статус уже другой.
+  Future<List<ToolRun>> waitingRuns(String chatId) async =>
+      (await (_db.select(_toolRunsTable)
+                ..where(
+                  (t) =>
+                      t.chatId.equals(chatId) &
+                      t.status.isIn([
+                        ToolRunStatus.waitingApproval.name,
+                        ToolRunStatus.waitingUser.name,
+                      ]),
+                )
+                ..orderBy([(t) => OrderingTerm.asc(t.startedAt)]))
               .get())
           .map(_toolRun)
           .toList();
@@ -347,6 +366,8 @@ class ChatRepository {
     resultPreview: row.resultPreview,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
+    toolCallId: row.toolCallId,
+    pendingCard: row.pendingCard,
   );
 
   SessionStateRevision _revision(RevisionRow row) => SessionStateRevision(

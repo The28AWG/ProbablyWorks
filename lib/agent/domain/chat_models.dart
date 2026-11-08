@@ -332,6 +332,8 @@ class ToolRun {
     this.outputTruncated = false,
     this.resultPreview,
     this.finishedAt,
+    this.toolCallId,
+    this.pendingCard,
   });
 
   final String id;
@@ -351,6 +353,12 @@ class ToolRun {
   final String? resultPreview;
   final DateTime startedAt;
   final DateTime? finishedAt;
+
+  /// Id вызова в сообщении ассистента. У старых строк пусто: тогда ход сопоставляет вызов по имени и аргументам.
+  final String? toolCallId;
+
+  /// JSON карточки подтверждения, пока пользователь не ответил. После ответа очищается.
+  final String? pendingCard;
 
   bool get isActive =>
       status == ToolRunStatus.running ||
@@ -377,6 +385,9 @@ class ToolRun {
     String? resultPreview,
     DateTime? startedAt,
     DateTime? finishedAt,
+    String? toolCallId,
+    String? pendingCard,
+    bool clearPendingCard = false,
   }) => ToolRun(
     id: id ?? this.id,
     chatId: chatId ?? this.chatId,
@@ -395,5 +406,7 @@ class ToolRun {
     resultPreview: resultPreview ?? this.resultPreview,
     startedAt: startedAt ?? this.startedAt,
     finishedAt: finishedAt ?? this.finishedAt,
+    toolCallId: toolCallId ?? this.toolCallId,
+    pendingCard: clearPendingCard ? null : (pendingCard ?? this.pendingCard),
   );
 }

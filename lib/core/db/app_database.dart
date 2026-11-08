@@ -19,7 +19,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 8;
+  static const currentSchemaVersion = 9;
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -66,6 +66,12 @@ class AppDatabase extends _$AppDatabase {
           "DELETE FROM virtual_fs_nodes WHERE path = '/tmp' "
           "OR (path >= '/tmp/' AND path < '/tmp0')",
         );
+      }
+      // Версия 9: связь запуска с вызовом модели и текст карточки подтверждения.
+      // Без них после перезапуска нельзя снова показать ту же карточку.
+      if (from < 9) {
+        await m.addColumn(toolRuns, toolRuns.toolCallId);
+        await m.addColumn(toolRuns, toolRuns.pendingCard);
       }
     },
   );

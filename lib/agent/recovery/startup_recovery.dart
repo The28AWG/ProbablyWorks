@@ -7,8 +7,12 @@ import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:uuid/uuid.dart';
 
-/// Восстановление после аварийного завершения: запуски, которые не дошли до финала,
+/// Восстановление после аварийного завершения: запуски команд, которые не дошли до финала,
 /// помечаются interrupted, их логи переносятся в БД, осиротевшие файлы удаляются.
+///
+/// Вопрос и подтверждение не прерываются. Нет ответа в базе — карточка ещё нужна,
+/// её покажет открытие чата. Остановка хода и явный отказ записывают другой статус
+/// ещё в живом процессе, поэтому сюда они не попадают.
 @lazySingleton
 class StartupRecovery {
   StartupRecovery(this._chats, this._logs, this._settings);
@@ -24,11 +28,19 @@ class StartupRecovery {
   /// [closedText] — событие в чате (на языке интерфейса): запуск прервали при закрытии приложения.
   Future<int> run({required String closedText}) async {
     final limits = await _settings.limits();
-    final runs = await _chats.allActiveRuns();
+    final active = await _chats.allActiveRuns();
+    // Ожидание пользователя — не оборванный процесс. Статус остаётся, пока не будет ответа.
+    final runs = [
+      for (final run in active)
+        if (run.status != ToolRunStatus.waitingApproval &&
+            run.status != ToolRunStatus.waitingUser)
+          run,
+    ];
     for (final run in runs) {
       await _finalize(run, limits);
     }
     // Одно событие на чат, даже если в нём несколько прерванных запусков.
+    // Неотвеченная карточка события не порождает: её ход ещё не закончен.
     final chats = {for (final run in runs) run.chatId};
     for (final chatId in chats) {
       final seq = await _chats.nextSeq(chatId);
