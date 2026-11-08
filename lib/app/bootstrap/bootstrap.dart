@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
 import 'package:probably_works/app/di/injection.dart';
@@ -34,7 +35,11 @@ Future<bool> bootstrap() async {
   final closedText = lookupAppLocalizations(resolveAppLocale(language))
       .runInterruptedByClose;
   await getIt<StartupRecovery>().run(closedText: closedText);
+  // Локальный Host нужен до продолжения хода: иначе шаг, оборванный на нём, не найдёт рантайм.
   await getIt<HostRepository>().ensureLocalHost(DateTime.now());
+  // Карточки здесь не показываются. Их регистрирует открытие чата.
+  // Вызовы без карточки, чьи зависимости уже закрыты, продолжаются сразу.
+  await getIt<AgentHub>().resumeAfterRestart();
   // Хосты тоже читаются здесь, чтобы список хостов был в первом кадре, а не появлялся после чтения БД.
   getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
   // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.

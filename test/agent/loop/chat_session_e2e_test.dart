@@ -16,6 +16,7 @@ import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
+import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
@@ -36,7 +37,9 @@ import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_diagnostics.dart';
+import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/host/ssh_connection_pool.dart';
@@ -212,6 +215,40 @@ void main() {
     final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
     await session.submit(text);
     await finished;
+  }
+
+  Future<void> waitUntil(bool Function() ready) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    while (!ready() && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(ready(), isTrue);
+  }
+
+  /// Ждёт, пока в ленте появятся результаты ровно этих вызовов, в этом порядке.
+  Future<List<ChatMessage>> waitForToolIds(
+    String chatId,
+    List<String> ids,
+  ) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    var tools = <ChatMessage>[];
+    while (DateTime.now().isBefore(deadline)) {
+      tools = [
+        for (final message in await hub.chats.messages(chatId))
+          if (message.role == MessageRole.tool) message,
+      ];
+      final got = [for (final message in tools) message.toolCallId];
+      if (got.length == ids.length) {
+        var same = true;
+        for (var i = 0; i < ids.length; i++) {
+          if (got[i] != ids[i]) same = false;
+        }
+        if (same) return tools;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect([for (final message in tools) message.toolCallId], ids);
+    return tools;
   }
 
   test('a model removed from OpenRouter is not blocked: the send fails with a model-missing failure and the catalog is rechecked', () async {
@@ -1017,6 +1054,51 @@ void main() {
     expect(await hub.chats.toolRunsForChat(chatId), isEmpty);
   });
 
+  test(
+    'write then read of the same file sees the write, in call order',
+    () async {
+      final chatId = await createVirtualChat();
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                'write_file',
+                jsonEncode({
+                  'path': '/home/agent/note.txt',
+                  'content': 'hello from write',
+                }),
+              ),
+              _call(
+                'r',
+                'read_file',
+                jsonEncode({'path': '/home/agent/note.txt'}),
+              ),
+              _call(
+                'o',
+                'read_file',
+                jsonEncode({'path': '/home/agent/other.txt'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'write and check');
+
+      final tools = [
+        for (final message in await hub.chats.messages(chatId))
+          if (message.role == MessageRole.tool) message,
+      ];
+      expect(
+        [for (final message in tools) message.toolCallId],
+        ['w', 'r', 'o'],
+      );
+      expect(tools[1].text, contains('hello from write'));
+    },
+  );
+
   Future<void> seedWaiting({
     required String chatId,
     required ToolRunStatus status,
@@ -1229,7 +1311,7 @@ void main() {
     expect(session.isRunning, isFalse);
   });
 
-  test('several questions in one step are asked one after another', () async {
+  test('several questions in one step are asked together', () async {
     final chatId = await createChat();
     llm.script
       ..add([
@@ -1243,27 +1325,27 @@ void main() {
       ])
       ..add([const LlmTextDelta('all three'), const LlmCompleted()]);
     final session = hub.session(chatId);
-    final first = broker.questions.first;
+    final seen = <UserQuestion>[];
+    final questions = broker.questions.listen(seen.add);
+    addTearDown(questions.cancel);
     final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
     await session.submit('ask three');
+    await waitUntil(() => seen.length == 3);
 
-    final q1 = await first;
-    expect(q1.text, 'first?');
-    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['first?']);
+    expect(seen.map((question) => question.text).toSet(), {
+      'first?',
+      'second?',
+      'third?',
+    });
+    expect(broker.pendingQuestions(chatId), hasLength(3));
 
-    final second = broker.questions.first;
-    broker.answer(q1.id, 'one');
-    final q2 = await second;
-    expect(q2.text, 'second?');
-    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['second?']);
-
-    final third = broker.questions.first;
-    broker.answer(q2.id, 'two');
-    final q3 = await third;
-    expect(q3.text, 'third?');
-    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['third?']);
-
-    broker.answer(q3.id, 'three');
+    // Ответы приходят не в порядке вызовов: в ленту результаты всё равно ложатся по нему.
+    String idOf(String text) =>
+        seen.firstWhere((question) => question.text == text).id;
+    broker
+      ..answer(idOf('third?'), 'three')
+      ..answer(idOf('second?'), 'two')
+      ..answer(idOf('first?'), 'one');
     await finished;
 
     final tools = [
@@ -1281,113 +1363,411 @@ void main() {
     ]);
   });
 
-  test('restart on the second of three questions restores only that card, then the third', () async {
-    final chatId = await createChat();
+  test(
+    'restart on the second question also asks the third without waiting',
+    () async {
+      final chatId = await createChat();
+      final now = DateTime.now();
+      const firstArgs = '{"question":"first?"}';
+      const secondArgs = '{"question":"second?"}';
+      const thirdArgs = '{"question":"third?"}';
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'user-1',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: now,
+          text: 'ask three',
+        ),
+      );
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'assistant-1',
+          chatId: chatId,
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: now,
+          toolCalls: [
+            const ToolCallRef(id: 'c1', name: 'ask_user', arguments: firstArgs),
+            const ToolCallRef(
+              id: 'c2',
+              name: 'ask_user',
+              arguments: secondArgs,
+            ),
+            const ToolCallRef(id: 'c3', name: 'ask_user', arguments: thirdArgs),
+          ],
+        ),
+      );
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'tool-1',
+          chatId: chatId,
+          seq: 3,
+          role: MessageRole.tool,
+          createdAt: now,
+          text: 'User answered: one',
+          toolCallId: 'c1',
+        ),
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'run-1',
+          chatId: chatId,
+          messageId: 'assistant-1',
+          toolName: 'ask_user',
+          argsJson: firstArgs,
+          status: ToolRunStatus.done,
+          startedAt: now,
+          finishedAt: now,
+          toolCallId: 'c1',
+          resultPreview: 'User answered: one',
+        ),
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'run-2',
+          chatId: chatId,
+          messageId: 'assistant-1',
+          toolName: 'ask_user',
+          argsJson: secondArgs,
+          status: ToolRunStatus.waitingUser,
+          startedAt: now.add(const Duration(seconds: 1)),
+          toolCallId: 'c2',
+        ),
+      );
+
+      final seen = <String>[];
+      final questions = broker.questions.listen(
+        (question) => seen.add(question.text),
+      );
+      addTearDown(questions.cancel);
+      final session = hub.session(chatId);
+      await session.restoreUnanswered();
+      await waitUntil(() => seen.contains('third?'));
+      expect(broker.pendingQuestions(chatId).map((q) => q.text).toSet(), {
+        'second?',
+        'third?',
+      });
+      final waiting = await hub.chats.waitingRuns(chatId);
+      expect(waiting.map((run) => run.toolCallId).toSet(), {'c2', 'c3'});
+
+      llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      final pending = broker.pendingQuestions(chatId);
+      broker
+        ..answer(
+          pending.firstWhere((question) => question.text == 'third?').id,
+          'three',
+        )
+        ..answer(
+          pending.firstWhere((question) => question.text == 'second?').id,
+          'two',
+        );
+      await finished;
+
+      final tools = [
+        for (final message in await hub.chats.messages(chatId))
+          if (message.role == MessageRole.tool) message,
+      ];
+      expect(
+        [for (final message in tools) message.toolCallId],
+        ['c1', 'c2', 'c3'],
+      );
+      expect(tools.map((message) => message.text), [
+        'User answered: one',
+        'User answered: two',
+        'User answered: three',
+      ]);
+      expect(await hub.chats.waitingRuns(chatId), isEmpty);
+      final sent = llm.requests.single.messages;
+      final assistant = sent.indexWhere(
+        (m) => m.role == LlmRole.assistant && m.toolCalls.length == 3,
+      );
+      expect(
+        [for (var i = 1; i <= 3; i++) sent[assistant + i].toolCallId],
+        ['c1', 'c2', 'c3'],
+      );
+    },
+  );
+
+  test('after restart independent work continues and the card appears only when the chat opens', () async {
+    final chatId = await createVirtualChat();
+    final chat = (await hub.chats.chat(chatId))!;
+    await hub.chats.saveChat(chat.copyWith(policyMode: PolicyMode.ask));
     final now = DateTime.now();
-    const firstArgs = '{"question":"first?"}';
-    const secondArgs = '{"question":"second?"}';
-    const thirdArgs = '{"question":"third?"}';
-    await hub.chats.insertMessage(
-      ChatMessage(
-        id: 'user-1',
-        chatId: chatId,
-        seq: 1,
-        role: MessageRole.user,
+    await hub.chats.saveChat(
+      Chat(
+        id: 'idle',
+        hostId: 'local',
+        title: 'idle',
         createdAt: now,
-        text: 'ask three',
+        updatedAt: now,
       ),
     );
+    final host = (await hub.hosts.byId('sandbox'))!;
+    final seeded = await captureOp(
+      hub.runtimes.forHost(host),
+      const WriteFileOp(
+        '/home/agent/other.txt',
+        backupPath: '/home/agent/other.txt.pw-bak-seed',
+      ),
+      stdin: Uint8List.fromList(utf8.encode('present\n')),
+    );
+    expect(seeded.ok, isTrue);
+    const otherArgs = '{"path":"/home/agent/other.txt"}';
+    const commandArgs = '{"command":"ls"}';
+    const writeArgs =
+        '{"path":"/home/agent/note.txt","content":"hello from write"}';
+    const noteArgs = '{"path":"/home/agent/note.txt"}';
     await hub.chats.insertMessage(
       ChatMessage(
-        id: 'assistant-1',
+        id: 'm',
         chatId: chatId,
-        seq: 2,
+        seq: 1,
         role: MessageRole.assistant,
         createdAt: now,
-        toolCalls: [
-          const ToolCallRef(id: 'c1', name: 'ask_user', arguments: firstArgs),
-          const ToolCallRef(id: 'c2', name: 'ask_user', arguments: secondArgs),
-          const ToolCallRef(id: 'c3', name: 'ask_user', arguments: thirdArgs),
+        toolCalls: const [
+          ToolCallRef(id: 'other', name: 'read_file', arguments: otherArgs),
+          ToolCallRef(id: 'cmd', name: 'run_command', arguments: commandArgs),
+          ToolCallRef(id: 'write', name: 'write_file', arguments: writeArgs),
+          ToolCallRef(id: 'note', name: 'read_file', arguments: noteArgs),
         ],
       ),
     );
-    await hub.chats.insertMessage(
-      ChatMessage(
-        id: 'tool-1',
-        chatId: chatId,
-        seq: 3,
-        role: MessageRole.tool,
-        createdAt: now,
-        text: 'User answered: one',
-        toolCallId: 'c1',
-      ),
-    );
     await hub.chats.saveToolRun(
       ToolRun(
-        id: 'run-1',
+        id: 'run-cmd',
         chatId: chatId,
-        messageId: 'assistant-1',
-        toolName: 'ask_user',
-        argsJson: firstArgs,
-        status: ToolRunStatus.done,
+        messageId: 'm',
+        toolName: 'run_command',
+        argsJson: commandArgs,
+        command: 'ls',
+        status: ToolRunStatus.running,
         startedAt: now,
-        finishedAt: now,
-        toolCallId: 'c1',
-        resultPreview: 'User answered: one',
+        toolCallId: 'cmd',
       ),
     );
     await hub.chats.saveToolRun(
       ToolRun(
-        id: 'run-2',
+        id: 'run-write',
         chatId: chatId,
-        messageId: 'assistant-1',
-        toolName: 'ask_user',
-        argsJson: secondArgs,
-        status: ToolRunStatus.waitingUser,
-        startedAt: now.add(const Duration(seconds: 1)),
-        toolCallId: 'c2',
+        messageId: 'm',
+        toolName: 'write_file',
+        argsJson: writeArgs,
+        command: 'write /home/agent/note.txt',
+        status: ToolRunStatus.waitingApproval,
+        startedAt: now,
+        toolCallId: 'write',
+        pendingCard: const PendingCard(
+          summary: 'write /home/agent/note.txt',
+          reason: 'write operation',
+        ).encode(),
       ),
     );
 
-    final session = hub.session(chatId);
-    await session.restoreUnanswered();
-    final pending = broker.pendingQuestions(chatId);
-    expect(pending.map((q) => q.text), ['second?']);
+    final recovered = await StartupRecovery(
+      hub.chats,
+      hub.logs,
+      hub.settings,
+    ).run(closedText: 'closed');
+    expect(recovered, 1);
+
+    await hub.resumeAfterRestart();
+
+    // Старт не показывает карточку и не зовёт модель: запись ещё ждёт открытия чата.
+    expect(broker.pendingApprovals(chatId), isEmpty);
+    expect(broker.pendingQuestions(chatId), isEmpty);
+    expect(hub.runningChatIds, {chatId});
+    expect(llm.requests, isEmpty);
+
+    final early = await waitForToolIds(chatId, ['other', 'cmd']);
+    expect(early.first.text, contains('present'));
+    expect(early[1].text, contains('interrupted'));
+    final runs = await hub.chats.toolRunsForChat(chatId);
+    expect(runs.where((run) => run.toolName == 'run_command'), hasLength(1));
+    expect(
+      runs.singleWhere((run) => run.id == 'run-cmd').status,
+      ToolRunStatus.interrupted,
+    );
+    expect(
+      runs.singleWhere((run) => run.id == 'run-write').status,
+      ToolRunStatus.waitingApproval,
+    );
+    expect(runs.where((run) => run.toolCallId == 'note'), isEmpty);
+    expect(
+      runs.singleWhere((run) => run.toolCallId == 'other').status,
+      ToolRunStatus.done,
+    );
+
+    await hub.session(chatId).restoreUnanswered();
+
+    expect(broker.pendingApprovals(chatId).map((card) => card.id), [
+      'run-write',
+    ]);
+    expect(
+      (await hub.chats.toolRunsForChat(chatId))
+          .where((run) => run.toolCallId == 'note'),
+      isEmpty,
+    );
 
     llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
-    final third = broker.questions.first;
-    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
-    broker.answer(pending.single.id, 'two');
-    final q3 = await third;
-    expect(q3.text, 'third?');
-    expect(broker.pendingQuestions(chatId).map((q) => q.text), ['third?']);
-    final waiting = await hub.chats.waitingRuns(chatId);
-    expect(waiting.single.toolCallId, 'c3');
+    final finished = hub
+        .session(chatId)
+        .events
+        .firstWhere((event) => event is AgentTurnFinished);
+    broker.resolveApproval('run-write', allow: true);
+    final event = await finished;
 
-    broker.answer(q3.id, 'three');
-    await finished;
-
+    expect((event as AgentTurnFinished).end, TurnEnd.completed);
     final tools = [
       for (final message in await hub.chats.messages(chatId))
         if (message.role == MessageRole.tool) message,
     ];
     expect(
       [for (final message in tools) message.toolCallId],
-      ['c1', 'c2', 'c3'],
+      ['other', 'cmd', 'write', 'note'],
     );
-    expect(tools.map((message) => message.text), [
-      'User answered: one',
-      'User answered: two',
-      'User answered: three',
-    ]);
-    expect(await hub.chats.waitingRuns(chatId), isEmpty);
-    final sent = llm.requests.single.messages;
-    final assistant = sent.indexWhere(
-      (m) => m.role == LlmRole.assistant && m.toolCalls.length == 3,
-    );
+    expect(tools.last.text, contains('hello from write'));
     expect(
-      [for (var i = 1; i <= 3; i++) sent[assistant + i].toolCallId],
-      ['c1', 'c2', 'c3'],
+      (await hub.chats.toolRunsForChat(chatId))
+          .singleWhere((run) => run.id == 'run-write')
+          .status,
+      ToolRunStatus.done,
+    );
+    expect(await hub.chats.waitingRuns(chatId), isEmpty);
+    expect(llm.requests, hasLength(1));
+    expect(hub.runningChatIds, isEmpty);
+  });
+
+  test('a card alone is not resumed until the chat opens', () async {
+    final chatId = await createChat(mode: PolicyMode.ask);
+    final now = DateTime.now();
+    const askArgs = '{"question":"color?"}';
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'm',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.assistant,
+        createdAt: now,
+        toolCalls: const [
+          ToolCallRef(id: 'ask', name: 'ask_user', arguments: askArgs),
+        ],
+      ),
+    );
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'run-ask',
+        chatId: chatId,
+        messageId: 'm',
+        toolName: 'ask_user',
+        argsJson: askArgs,
+        status: ToolRunStatus.waitingUser,
+        startedAt: now,
+        toolCallId: 'ask',
+      ),
+    );
+
+    await hub.resumeAfterRestart();
+
+    expect(broker.pendingQuestions(chatId), isEmpty);
+    expect(hub.runningChatIds, isEmpty);
+    expect(llm.requests, isEmpty);
+
+    final session = hub.session(chatId);
+    await session.restoreUnanswered();
+    expect(broker.pendingQuestions(chatId).map((question) => question.id), [
+      'run-ask',
+    ]);
+
+    final finished = session.events.firstWhere(
+      (event) => event is AgentTurnFinished,
+    );
+    await session.stop();
+    final event = await finished;
+    expect((event as AgentTurnFinished).end, TurnEnd.stopped);
+    expect(
+      (await hub.chats.toolRunsForChat(chatId))
+          .singleWhere((run) => run.id == 'run-ask')
+          .status,
+      ToolRunStatus.done,
     );
   });
+
+  test(
+    'stop before the chat opens closes a parked card without showing it',
+    () async {
+      final chatId = await createVirtualChat();
+      final now = DateTime.now();
+      final host = (await hub.hosts.byId('sandbox'))!;
+      final seeded = await captureOp(
+        hub.runtimes.forHost(host),
+        const WriteFileOp(
+          '/home/agent/other.txt',
+          backupPath: '/home/agent/other.txt.pw-bak-seed',
+        ),
+        stdin: Uint8List.fromList(utf8.encode('present\n')),
+      );
+      expect(seeded.ok, isTrue);
+      const otherArgs = '{"path":"/home/agent/other.txt"}';
+      const askArgs = '{"question":"color?"}';
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.assistant,
+          createdAt: now,
+          toolCalls: const [
+            ToolCallRef(id: 'other', name: 'read_file', arguments: otherArgs),
+            ToolCallRef(id: 'ask', name: 'ask_user', arguments: askArgs),
+          ],
+        ),
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'run-ask',
+          chatId: chatId,
+          messageId: 'm',
+          toolName: 'ask_user',
+          argsJson: askArgs,
+          status: ToolRunStatus.waitingUser,
+          startedAt: now,
+          toolCallId: 'ask',
+        ),
+      );
+
+      await StartupRecovery(
+        hub.chats,
+        hub.logs,
+        hub.settings,
+      ).run(closedText: 'closed');
+      await hub.resumeAfterRestart();
+      await waitForToolIds(chatId, ['other']);
+      expect(broker.pendingQuestions(chatId), isEmpty);
+
+      final session = hub.session(chatId);
+      final finished = session.events.firstWhere(
+        (event) => event is AgentTurnFinished,
+      );
+      await session.stop();
+      final event = await finished;
+
+      expect((event as AgentTurnFinished).end, TurnEnd.stopped);
+      final ask = (await hub.chats.toolRunsForChat(chatId))
+          .singleWhere((run) => run.id == 'run-ask');
+      expect(ask.status, ToolRunStatus.done);
+      final tools = [
+        for (final message in await hub.chats.messages(chatId))
+          if (message.role == MessageRole.tool) message,
+      ];
+      expect(
+        [for (final message in tools) message.toolCallId],
+        ['other', 'ask'],
+      );
+      expect(tools.last.text, contains('did not answer'));
+      expect(llm.requests, isEmpty);
+    },
+  );
 }

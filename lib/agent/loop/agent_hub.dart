@@ -67,6 +67,18 @@ class AgentHub {
   /// События всех сессий в одном потоке (для списка чатов: активность, бейджи).
   Stream<AgentEvent> get allEvents => _allEvents.stream;
 
+  /// Продолжает незакрытые шаги после старта приложения.
+  ///
+  /// Карточки подтверждения и вопросов не регистрируются: их покажет открытие
+  /// чата. Вызов, которому карточка не нужна, выполняется сразу. Прерванный
+  /// процесс заново не запускается.
+  Future<void> resumeAfterRestart() async {
+    for (final id in await chats.chatIds()) {
+      if (!await ChatSession.hasUnfinishedStep(chats, id)) continue;
+      await session(id).resumeAfterRestart();
+    }
+  }
+
   /// Чаты, в которых сейчас идёт ход.
   Set<String> get runningChatIds => {
     for (final session in _sessions.values)

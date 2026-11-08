@@ -10,12 +10,14 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
+import 'package:probably_works/agent/loop/tool_scheduler.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
 import 'package:probably_works/agent/tools/self_tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/core/config/app_limits.dart';
+import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
@@ -70,6 +72,10 @@ class ChatSession {
 
   /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
   Future<void>? _restoreInFlight;
+
+  /// Карточки, которые ход уже ждёт, но в брокер ещё не положил.
+  /// Открытие чата их показывает. До этого зависимый вызов стоит, а независимый идёт.
+  final Map<String, _ParkedCard> _parked = {};
 
   Stream<AgentEvent> get events => _events.stream;
 
@@ -146,6 +152,8 @@ class ChatSession {
   Future<void> stop({String? reason}) async {
     _turnCancel?.cancel();
     _stepCancel?.cancel();
+    // Карточка ещё не в брокере: cancelChat её не видит, а планировщик ждёт это будущее.
+    _releaseParked();
     _hub.broker.cancelChat(chatId);
     await _hub.registry.stopChat(chatId);
     if (reason != null) await _append(MessageRole.event, text: reason);
@@ -163,15 +171,26 @@ class ChatSession {
   /// уже в брокере, и не ждёт ответ. Повторный вызов во время того же хода ничего не делает.
   /// Явный ответ, отказ и Stop записывают статус и больше не восстанавливаются.
   ///
-  /// Вызовы одного сообщения модели идут по очереди, поэтому в базе ждёт только
-  /// текущая карточка. Уже отвеченные не открываются снова. Вызовы после неё
-  /// выполняются после ответа: если следующему тоже нужна карточка, она появится тогда.
+  /// Карточки одного сообщения регистрируются все сразу. Планировщик доигрывает
+  /// остальные вызовы, не дожидаясь чужих ответов, и держит порядок только там,
+  /// где вызовы конфликтуют по ресурсам. Уже отвеченные повторно не открываются.
+  ///
+  /// Если ход уже продолжен после старта приложения, второй не запускается:
+  /// здесь только появляются карточки, которые старт сознательно не показывал.
   Future<void> restoreUnanswered() async {
-    if (_running) return;
+    if (_running) {
+      _showParkedCards();
+      return;
+    }
     final inflight = _restoreInFlight;
     if (inflight != null) {
       await inflight;
-      return;
+      // Ход уже идёт: карточки, отложенные стартом, пора показать.
+      // Ход не стартовал (в шаге были только карточки) — идём обычным путём ниже.
+      if (_running) {
+        _showParkedCards();
+        return;
+      }
     }
     final gate = Completer<void>();
     _restoreInFlight = gate.future;
@@ -186,6 +205,149 @@ class ChatSession {
       if (!gate.isCompleted) gate.complete();
       if (identical(_restoreInFlight, gate.future)) _restoreInFlight = null;
     }
+  }
+
+  /// Есть ли шаг модели, у которого ещё не все вызовы лежат в ленте.
+  ///
+  /// Активный запуск для этого не обязателен: после закрытия приложения процесс
+  /// уже помечен прерванным, а хвост вызовов мог не начаться.
+  static Future<bool> hasUnfinishedStep(
+    ChatRepository chats,
+    String chatId,
+  ) async {
+    final messages = await chats.messages(chatId);
+    return _unfinishedAssistant(messages) != null;
+  }
+
+  /// Продолжает незакрытый шаг после старта приложения, не показывая карточки.
+  ///
+  /// Процесс, который прервало закрытие, в ленту возвращается готовым результатом
+  /// и заново не запускается. Вызов без карточки стартует, как только закрыты его
+  /// зависимости, даже если чат никто не открыл. Вопрос и подтверждение ждут
+  /// открытия: до этого их нет в брокере, и зависимый вызов стоит вместе с ними.
+  /// Если выполнять больше нечего, ход не стартует: иначе чат выглядел бы занятым
+  /// из-за карточки, которой на экране ещё нет.
+  Future<void> resumeAfterRestart() async {
+    if (_running) return;
+    final inflight = _restoreInFlight;
+    if (inflight != null) {
+      await inflight;
+      if (_running) return;
+    }
+    final gate = Completer<void>();
+    _restoreInFlight = gate.future;
+    try {
+      if (_running) return;
+      final messages = await _hub.chats.messages(chatId);
+      final assistant = _unfinishedAssistant(messages);
+      if (assistant == null) return;
+      final answered = _toolResultIds(messages);
+      final runs = await _hub.chats.toolRunsForMessages([assistant.id]);
+      final recovered = <String, Future<ToolResult> Function()>{};
+      final parked = <ReopenedWait>[];
+      final parkedCalls = <String>{};
+      for (final run in runs) {
+        final callId = await _callIdFor(run);
+        if (answered.contains(callId)) continue;
+        if (run.status == ToolRunStatus.waitingApproval ||
+            run.status == ToolRunStatus.waitingUser) {
+          final card = _ParkedCard(run);
+          _parked[run.id] = card;
+          parkedCalls.add(callId);
+          parked.add(ReopenedWait(run, card.decision.future));
+          continue;
+        }
+        // Живого процесса уже нет: StartupRecovery перевёл его в interrupted
+        // либо запуск успел завершиться до записи в ленту. Повторно Host не трогаем.
+        recovered[callId] = () async => _recoveredResult(run);
+      }
+      // Одни карточки — не работа. Ход поднимет открытие чата и сразу покажет их.
+      // Иначе список чатов крутил бы спиннер у вопроса, которого ещё не видно.
+      var executable = false;
+      for (final call in assistant.toolCalls) {
+        if (answered.contains(call.id) || parkedCalls.contains(call.id)) {
+          continue;
+        }
+        executable = true;
+        break;
+      }
+      if (!executable) {
+        _parked.clear();
+        return;
+      }
+      _running = true;
+      final turn = _turnCancel = CancelToken();
+      unawaited(
+        _finishTurn(() async {
+          final end = await _resumeMessage(
+            assistant.id,
+            parked,
+            turn,
+            recovered: recovered,
+          );
+          if (end != null) return end;
+          return _loop(turn);
+        }),
+      );
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      if (identical(_restoreInFlight, gate.future)) _restoreInFlight = null;
+    }
+  }
+
+  /// Кладёт отложенные карточки в брокер. Регистрация синхронная: открытие чата
+  /// сразу читает список, не дожидаясь ответа. Повторный вызов карточки не двоит.
+  void _showParkedCards() {
+    for (final card in _parked.values) {
+      if (card.shown) continue;
+      final reopened = _hub.tools.reopenWaiting(card.run);
+      card.shown = true;
+      unawaited(_forwardDecision(reopened.decision, card.decision));
+    }
+  }
+
+  /// Ответ брокера завершает будущее, которого планировщик ждёт с момента старта.
+  Future<void> _forwardDecision(
+    Future<WaitingDecision> from,
+    Completer<WaitingDecision> to,
+  ) async {
+    try {
+      final decision = await from;
+      if (!to.isCompleted) to.complete(decision);
+    } on Object catch (error, stack) {
+      if (!to.isCompleted) to.completeError(error, stack);
+    }
+  }
+
+  /// Карточки, которые ещё не показаны, получают отказ или пустой ответ.
+  /// Показанные закрывает [InteractionBroker.cancelChat]: он же завершит будущее.
+  void _releaseParked() {
+    for (final card in _parked.values) {
+      if (card.shown || card.decision.isCompleted) continue;
+      if (card.run.status == ToolRunStatus.waitingUser) {
+        card.decision.complete(const WaitingDecision.question(null));
+      } else {
+        card.decision.complete(const WaitingDecision.approval(allowed: false));
+      }
+    }
+  }
+
+  /// Текст уже закончившегося запуска. Ошибка — всё, кроме обычного done:
+  /// прерванный процесс модель должна увидеть как сбой, а не как успех.
+  ToolResult _recoveredResult(ToolRun run) {
+    final failed = run.status != ToolRunStatus.done;
+    final preview = run.resultPreview;
+    if (preview != null && preview.isNotEmpty) {
+      return ToolResult(preview, isError: failed);
+    }
+    final output = run.outputText;
+    if (output != null && output.isNotEmpty) {
+      return ToolResult(output, isError: failed);
+    }
+    return const ToolResult(
+      'interrupted: the application was closed while the run was active',
+      isError: true,
+    );
   }
 
   /// Продолжить после достижения лимита шагов.
@@ -250,6 +412,8 @@ class ChatSession {
       _running = false;
       _turnCancel = null;
       _stepCancel = null;
+      // Решение уже записано в запуск. Следующее открытие читает базу, а не эту карту.
+      _parked.clear();
       _emit(AgentTurnFinished(chatId, end));
     }
     // Stop пользователем уведомления не даёт: он сам знает, что остановил ход.
@@ -264,100 +428,96 @@ class ChatSession {
     }
   }
 
-  /// Дожидается карточек, записывает их результаты и доигрывает хвост того же шага,
+  /// Дожидается карточек вместе с остальными вызовами того же сообщения,
   /// затем продолжает обычный цикл модели.
   Future<TurnEnd> _resumeThenLoop(
     List<ReopenedWait> items,
     CancelToken turn,
   ) async {
-    final answered = await _answeredToolCallIds();
-    final callIds = <ReopenedWait, String>{};
+    final order = <String>[];
+    final groups = <String, List<ReopenedWait>>{};
     for (final item in items) {
-      callIds[item] = await _callIdFor(item.run);
+      groups
+          .putIfAbsent(item.run.messageId, () {
+            order.add(item.run.messageId);
+            return [];
+          })
+          .add(item);
     }
-    final restoredIds = callIds.values.toSet();
-    for (final item in items) {
-      final decision = await item.decision;
-      final ctx = await _toolContext(item.run.messageId);
-      final result = await _hub.tools.completeWaiting(item.run, decision, ctx);
-      final callId = callIds[item] ?? item.run.id;
-      await _append(
-        MessageRole.tool,
-        text: Redactor.redact(result.text),
-        toolCallId: callId,
-      );
-      answered.add(callId);
-      if (result.finish) {
-        await _closeUnanswered(
-          item.run.messageId,
-          answered,
-          'not executed: the task was finished',
-        );
-        return TurnEnd.completed;
-      }
+    for (final messageId in order) {
       if (turn.isCancelled) {
         await _closeUnanswered(
-          item.run.messageId,
-          answered,
+          messageId,
+          await _answeredToolCallIds(),
           'cancelled by the user',
         );
         return TurnEnd.stopped;
       }
-      final end = await _runUntilNextWait(
-        item.run.messageId,
-        answered,
-        restoredIds,
-        turn,
-      );
+      final end = await _resumeMessage(messageId, groups[messageId]!, turn);
       if (end != null) return end;
     }
     return _loop(turn);
   }
 
-  /// Вызовы сообщения ассистента, которые ещё не получили результат и не ждут свою карточку.
-  /// Очередная восстановленная карточка останавливает проход: её обработает следующий шаг.
-  Future<TurnEnd?> _runUntilNextWait(
+  /// Карточки [items] либо уже в брокере, либо отложены до открытия чата.
+  /// [recovered] — запуски, которые после перезапуска живыми не являются:
+  /// их результат пишется в ленту, Host повторно не вызывается.
+  /// Остальные вызовы сообщения идут по плану, не дожидаясь чужого ответа.
+  Future<TurnEnd?> _resumeMessage(
     String messageId,
-    Set<String> answered,
-    Set<String> restoredIds,
-    CancelToken turn,
-  ) async {
+    List<ReopenedWait> items,
+    CancelToken turn, {
+    Map<String, Future<ToolResult> Function()> recovered = const {},
+  }) async {
     final message = await _find(messageId);
-    if (message == null || message.role != MessageRole.assistant) return null;
     final calls = [
-      for (final call in message.toolCalls)
-        LlmToolCall(id: call.id, name: call.name, arguments: call.arguments),
+      if (message != null && message.role == MessageRole.assistant)
+        for (final call in message.toolCalls)
+          LlmToolCall(id: call.id, name: call.name, arguments: call.arguments),
     ];
-    for (var i = 0; i < calls.length; i++) {
-      final call = calls[i];
-      if (answered.contains(call.id)) continue;
-      if (restoredIds.contains(call.id)) return null;
-      if (turn.isCancelled) {
-        await _answerRemaining(calls, i, 'cancelled by the user');
-        return TurnEnd.stopped;
+    final known = {for (final call in calls) call.id};
+    final resumed = <String, Future<ToolResult> Function()>{};
+    for (final item in items) {
+      final callId = await _callIdFor(item.run);
+      if (!known.contains(callId)) {
+        final result = await _completeReopened(item);
+        await _appendTool(callId, result);
+        if (result.finish) return TurnEnd.completed;
+        continue;
       }
-      final ctx = await _toolContext(messageId);
-      if (ctx == null) {
-        await _answerRemaining(calls, i, 'not executed: host not found');
-        return TurnEnd.failed;
-      }
-      final result = await _hub.tools.execute(call, ctx);
-      await _append(
-        MessageRole.tool,
-        text: Redactor.redact(result.text),
-        toolCallId: call.id,
-      );
-      answered.add(call.id);
-      if (result.finish) {
-        await _answerRemaining(
-          calls,
-          i + 1,
-          'not executed: the task was finished',
-        );
-        return TurnEnd.completed;
-      }
+      resumed[callId] = () => _completeReopened(item);
     }
-    return null;
+    for (final entry in recovered.entries) {
+      resumed.putIfAbsent(entry.key, () => entry.value);
+    }
+    if (calls.isEmpty) return null;
+    final ctx = await _toolContext(messageId);
+    if (ctx == null) {
+      // Иначе отложенная карточка держит ход: показать её некому, хоста нет.
+      _releaseParked();
+      for (final entry in resumed.entries) {
+        await _appendTool(entry.key, await entry.value());
+      }
+      await _closeUnanswered(
+        messageId,
+        await _answeredToolCallIds(),
+        'not executed: host not found',
+      );
+      return TurnEnd.failed;
+    }
+    return _scheduleCalls(
+      calls,
+      ctx,
+      turn,
+      alreadyAnswered: await _answeredToolCallIds(),
+      resumed: resumed,
+    );
+  }
+
+  Future<ToolResult> _completeReopened(ReopenedWait item) async {
+    final decision = await item.decision;
+    final ctx = await _toolContext(item.run.messageId);
+    return _hub.tools.completeWaiting(item.run, decision, ctx);
   }
 
   Future<void> _closeUnanswered(
@@ -491,32 +651,42 @@ class ChatSession {
         policy: prepared.policy,
         onBackgroundDone: _onBackgroundDone,
       );
-      var finished = false;
-      for (var i = 0; i < step.toolCalls.length; i++) {
-        final call = step.toolCalls[i];
-        if (turn.isCancelled) {
-          await _answerRemaining(step.toolCalls, i, 'cancelled by the user');
-          return TurnEnd.stopped;
-        }
-        final result = await _hub.tools.execute(call, toolCtx);
-        await _append(
-          MessageRole.tool,
-          text: Redactor.redact(result.text),
-          toolCallId: call.id,
-        );
-        if (result.finish) {
-          finished = true;
-          await _answerRemaining(
-            step.toolCalls,
-            i + 1,
-            'not executed: the task was finished',
-          );
-          break;
-        }
-      }
-      if (finished) return TurnEnd.completed;
+      final scheduled = await _scheduleCalls(step.toolCalls, toolCtx, turn);
+      if (scheduled != null) return scheduled;
     }
   }
+
+  /// Батч вызовов одного шага. null — все результаты записаны, цикл модели продолжается.
+  Future<TurnEnd?> _scheduleCalls(
+    List<LlmToolCall> calls,
+    ToolContext ctx,
+    CancelToken turn, {
+    Set<String> alreadyAnswered = const {},
+    Map<String, Future<ToolResult> Function()> resumed = const {},
+  }) async {
+    final end = await ToolScheduler.run(
+      calls: calls,
+      workspace: ctx.chat.workspace,
+      policy: ctx.policy,
+      hostKind: ctx.host.kind,
+      cancel: turn,
+      alreadyAnswered: alreadyAnswered,
+      resumed: resumed,
+      execute: (call) => _hub.tools.execute(call, ctx),
+      commit: (call, result) => _appendTool(call.id, result),
+    );
+    return switch (end) {
+      ToolScheduleEnd.done => null,
+      ToolScheduleEnd.finish => TurnEnd.completed,
+      ToolScheduleEnd.cancelled => TurnEnd.stopped,
+    };
+  }
+
+  Future<void> _appendTool(String callId, ToolResult result) => _append(
+    MessageRole.tool,
+    text: Redactor.redact(result.text),
+    toolCallId: callId,
+  );
 
   Future<_Prepared> _prepare(
     AppLimits limits, {
@@ -959,6 +1129,41 @@ class ChatSession {
     await _questionSub.cancel();
     await _events.close();
   }
+}
+
+/// Последний ответ модели, у которого не каждый вызов уже есть в ленте.
+ChatMessage? _unfinishedAssistant(List<ChatMessage> messages) {
+  final answered = _toolResultIds(messages);
+  ChatMessage? open;
+  for (final message in messages) {
+    if (message.role != MessageRole.assistant || message.toolCalls.isEmpty) {
+      continue;
+    }
+    for (final call in message.toolCalls) {
+      if (answered.contains(call.id)) continue;
+      open = message;
+      break;
+    }
+  }
+  return open;
+}
+
+/// Id вызовов, для которых в ленте уже лежит результат.
+Set<String> _toolResultIds(List<ChatMessage> messages) => {
+  for (final message in messages)
+    if (message.role == MessageRole.tool && message.toolCallId != null)
+      message.toolCallId!,
+};
+
+/// Подтверждение или вопрос, который старт приложения не кладёт в брокер.
+class _ParkedCard {
+  _ParkedCard(this.run) : decision = Completer<WaitingDecision>();
+
+  final ToolRun run;
+  final Completer<WaitingDecision> decision;
+
+  /// Уже передана в брокер. Повторное открытие чата карточку не регистрирует снова.
+  var shown = false;
 }
 
 class _Prepared {

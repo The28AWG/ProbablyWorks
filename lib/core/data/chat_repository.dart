@@ -57,6 +57,13 @@ class ChatRepository {
         ),
       );
 
+  /// Id всех чатов. После старта по ним ищут незакрытый шаг: у него может не быть
+  /// активного запуска, если процесс уже прерван, а остальные вызовы не начались.
+  Future<List<String>> chatIds() async {
+    final rows = await _db.select(_chatsTable).get();
+    return [for (final row in rows) row.id];
+  }
+
   Future<Chat?> chat(String id) async {
     final row = await (_db.select(
       _chatsTable,

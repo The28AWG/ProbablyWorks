@@ -13,6 +13,7 @@ import 'package:probably_works/agent/skills/builtin_skills.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
+import 'package:probably_works/agent/tools/tool_effect.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
@@ -51,7 +52,12 @@ class ToolContext {
 }
 
 class ToolResult {
-  const ToolResult(this.text, {this.isError = false, this.finish = false});
+  const ToolResult(
+    this.text, {
+    this.isError = false,
+    this.finish = false,
+    this.whenSettled,
+  });
 
   /// Текст для модели (role tool).
   final String text;
@@ -59,6 +65,11 @@ class ToolResult {
 
   /// `finish` завершает ход агента.
   final bool finish;
+
+  /// Когда побочный эффект станет виден следующим вызовам. Пусто — эффект
+  /// уже виден в момент возврата. Фоновая команда отдаёт текст «запущено»
+  /// сразу, а это будущее завершается вместе с процессом.
+  final Future<void>? whenSettled;
 }
 
 /// Ответ на карточку, которую показали снова после перезапуска.
@@ -688,13 +699,21 @@ class ToolExecutor {
     if (background && pid != null) {
       run = run.copyWith(status: ToolRunStatus.backgroundRunning);
       await _saveRun(run);
+      // Текст для модели готов сразу. Зависимые вызовы этого батча ждут
+      // процесс: иначе чтение «для проверки» попало бы в ещё идущую команду.
+      final settled = Completer<void>();
       unawaited(() async {
-        final outcome = await handle.finished;
-        final finished = await _complete(run, outcome);
-        ctx.onBackgroundDone(finished, outcome);
+        try {
+          final outcome = await handle.finished;
+          final finished = await _complete(run, outcome);
+          ctx.onBackgroundDone(finished, outcome);
+        } finally {
+          if (!settled.isCompleted) settled.complete();
+        }
       }());
       return ToolResult(
         'started in background (run $runId, pid $pid). You will be notified when it finishes.',
+        whenSettled: settled.future,
       );
     }
 
@@ -1091,16 +1110,8 @@ class ToolExecutor {
     pendingCard: pendingCard,
   );
 
-  String _resolve(ToolContext ctx, String path) {
-    if (path.startsWith('/') ||
-        path.startsWith('~') ||
-        RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) {
-      return path;
-    }
-    final workspace = ctx.chat.workspace;
-    if (workspace == null || workspace.isEmpty) return path;
-    return '$workspace/$path';
-  }
+  String _resolve(ToolContext ctx, String path) =>
+      hostToolPath(ctx.chat.workspace, path);
 
   Future<String> _readOrEmpty(ToolContext ctx, String path) async {
     final read = await captureOp(ctx.runtime, ReadRawOp(path));
