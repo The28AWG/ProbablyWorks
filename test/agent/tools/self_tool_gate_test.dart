@@ -21,6 +21,7 @@ import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/data/virtual_host_provisioner.dart';
@@ -91,6 +92,7 @@ void main() {
       SessionStateService(chats),
       WorkspaceContextLoader(settings),
       self,
+      ProjectRepository(db),
     );
 
     final now = DateTime.now();

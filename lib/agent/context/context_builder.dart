@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/context/untrusted.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/domain/session_state.dart';
 import 'package:probably_works/agent/skills/builtin_skills.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
@@ -23,6 +24,7 @@ class ContextInput {
     this.hostStub,
     this.backgroundNotes = const [],
     this.inlineFiles = const {},
+    this.projectFacts = const [],
   });
 
   final Chat chat;
@@ -33,6 +35,9 @@ class ContextInput {
   final SessionStateRevision state;
   final WorkspaceSnapshot workspace;
   final int recentWindow;
+
+  /// Долгоживущие факты проекта. Отдельный раздел: они не принадлежат ревизии состояния чата.
+  final List<ProjectFact> projectFacts;
 
   /// Краткий снимок хоста (user, cwd, shell) из host_info; null, если ещё не получен.
   final String? hostStub;
@@ -267,6 +272,16 @@ class ContextBuilder {
     if (state.pinnedFacts.isNotEmpty) {
       buffer.writeln('\n## Pinned facts');
       for (final fact in state.pinnedFacts) {
+        buffer.writeln('- (${fact.id}) ${fact.text}');
+      }
+    }
+    if (input.projectFacts.isNotEmpty) {
+      buffer
+        ..writeln('\n## Project facts')
+        ..writeln(
+          'Long-lived facts of this project. They apply to every chat in it and were confirmed by the user.',
+        );
+      for (final fact in input.projectFacts) {
         buffer.writeln('- (${fact.id}) ${fact.text}');
       }
     }

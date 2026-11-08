@@ -77,6 +77,7 @@ class ChatRepository {
         ChatsCompanion.insert(
           id: chat.id,
           hostId: chat.hostId,
+          projectId: Value(chat.projectId),
           title: chat.title,
           titleSource: Value(chat.titleSource.name),
           model: Value(chat.model),
@@ -322,6 +323,7 @@ class ChatRepository {
   Chat _chat(ChatRow row) => Chat(
     id: row.id,
     hostId: row.hostId,
+    projectId: row.projectId,
     title: row.title,
     titleSource: ChatTitleSource.values.byName(row.titleSource),
     model: row.model,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
@@ -298,6 +299,7 @@ class ChatState extends Equatable {
   const ChatState({
     this.chatId,
     this.chat,
+    this.project,
     this.messages = const [],
     this.runs = const [],
     this.queue = const [],
@@ -328,6 +330,9 @@ class ChatState extends Equatable {
 
   final String? chatId;
   final Chat? chat;
+
+  /// Проект открытого чата. Null у нового чата до первой отправки.
+  final Project? project;
 
   /// Чат ещё не записан в БД (новый чат до первой отправки). Его настройки живут в памяти.
   final bool unsaved;
@@ -403,6 +408,8 @@ class ChatState extends Equatable {
   ChatState copyWith({
     String? chatId,
     Chat? chat,
+    Project? project,
+    bool clearProject = false,
     List<ChatMessage>? messages,
     List<ToolRun>? runs,
     List<String>? queue,
@@ -433,6 +440,7 @@ class ChatState extends Equatable {
   }) => ChatState(
     chatId: chatId ?? this.chatId,
     chat: chat ?? this.chat,
+    project: clearProject ? null : (project ?? this.project),
     messages: messages ?? this.messages,
     runs: runs ?? this.runs,
     queue: queue ?? this.queue,
@@ -465,6 +473,7 @@ class ChatState extends Equatable {
   List<Object?> get props => [
     chatId,
     chat,
+    project,
     messages,
     runs,
     queue,
@@ -756,6 +765,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     final shared = await _readShared();
     final snapshot = await _readChat(event.chatId);
+    final project = await _hub.projectStore.forChat(event.chatId);
     // Карточки этого чата — из базы, не при старте приложения.
     // Если ход уже продолжен после старта, здесь только показываем карточки.
     await _session?.restoreUnanswered();
@@ -768,6 +778,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       stepsDisplay: shared.stepsDisplay,
       defaultModelId: shared.defaultModel,
       chat: snapshot.chat,
+      project: project,
       messages: snapshot.messages,
       runs: snapshot.runs,
       approvals: _hub.broker.pendingApprovals(event.chatId),
@@ -815,7 +826,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     required int draftId,
   }) {
     final settings = hub.settings;
-    final chat = hub.draftChat(hostId: _defaultHostId(hosts));
+    final hostId = _defaultHostId(hosts);
+    final host = hosts.where((h) => h.id == hostId).firstOrNull;
+    final chat = hub.draftChat(hostId: hostId, host: host);
     return ChatState(
       hosts: hosts,
       limits: settings.cachedLimits(),
@@ -885,13 +898,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (created) onChatCreated?.call(state.chatId!);
   }
 
-  /// Первая отправка в новом чате: чат записывается в БД, и блок начинает слушать его сессию.
+  /// Первая отправка в новом чате: чат получает проект, записывается в БД, и блок начинает слушать его сессию.
   Future<void> _saveNewChat(Emitter<ChatState> emit) async {
     final now = DateTime.now();
-    final chat = state.chat!.copyWith(createdAt: now, updatedAt: now);
+    var chat = state.chat!.copyWith(createdAt: now, updatedAt: now);
+    chat = await _hub.projects.attach(chat);
     await _hub.chats.saveChat(chat);
     await _attach(chat.id);
-    emit(state.copyWith(chat: chat, unsaved: false));
+    final project = await _hub.projectStore.forChat(chat.id);
+    emit(state.copyWith(chat: chat, project: project, unsaved: false));
   }
 
   /// Изменения настроек нового чата остаются в памяти: запись появится с первой отправкой.
@@ -1031,9 +1046,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final chat = state.chat;
     if (chat == null || (_session?.isRunning ?? false)) return;
-    final updated = chat.copyWith(hostId: event.hostId);
-    await _persistChat(updated);
-    emit(state.copyWith(chat: updated));
+    if (state.unsaved) {
+      final host = state.hosts.where((h) => h.id == event.hostId).firstOrNull;
+      final workspace = host == null
+          ? chat.workspace
+          : _hub.projects.defaultWorkspaceFor(host);
+      final updated = chat.copyWith(hostId: event.hostId, workspace: workspace);
+      emit(state.copyWith(chat: updated, clearProject: true));
+      return;
+    }
+    final updated = await _hub.projects.relocate(chat, hostId: event.hostId);
+    final project = await _hub.projectStore.forChat(updated.id);
+    emit(state.copyWith(chat: updated, project: project, trustNeeded: false));
   }
 
   Future<void> _onWorkspaceChanged(
@@ -1042,9 +1066,17 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final chat = state.chat;
     if (chat == null) return;
-    final updated = chat.copyWith(workspace: event.workspace);
-    await _persistChat(updated);
-    emit(state.copyWith(chat: updated, trustNeeded: false));
+    if (state.unsaved) {
+      final updated = chat.copyWith(workspace: event.workspace);
+      emit(state.copyWith(chat: updated, clearProject: true));
+      return;
+    }
+    final updated = await _hub.projects.relocate(
+      chat,
+      workspace: event.workspace,
+    );
+    final project = await _hub.projectStore.forChat(updated.id);
+    emit(state.copyWith(chat: updated, project: project, trustNeeded: false));
   }
 
   Future<void> _onTrusted(
@@ -1052,8 +1084,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Emitter<ChatState> emit,
   ) async {
     final chat = state.chat;
-    final workspace = chat?.workspace;
-    if (chat == null || workspace == null) return;
+    final project = state.project;
+    if (chat == null) return;
+    if (project != null) {
+      await _hub.projects.trustWorkspace(project.id);
+      final updated = await _hub.projectStore.byId(project.id);
+      emit(state.copyWith(project: updated, trustNeeded: false));
+      return;
+    }
+    final workspace = chat.workspace;
+    if (workspace == null) return;
     await _hub.settings.setTrusted(chat.hostId, workspace, trusted: true);
     emit(state.copyWith(trustNeeded: false));
   }

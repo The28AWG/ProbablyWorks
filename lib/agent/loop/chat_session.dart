@@ -4,6 +4,7 @@ import 'package:logging/logging.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
@@ -650,6 +651,7 @@ class ChatSession {
         limits: limits,
         policy: prepared.policy,
         onBackgroundDone: _onBackgroundDone,
+        project: prepared.project,
       );
       final scheduled = await _scheduleCalls(step.toolCalls, toolCtx, turn);
       if (scheduled != null) return scheduled;
@@ -702,7 +704,30 @@ class ChatSession {
       );
     }
     final runtime = _hub.runtimes.forHost(host);
-    final snapshot = await _hub.workspace.load(chat, runtime);
+    var project = chat.projectId == null
+        ? null
+        : await _hub.projectStore.byId(chat.projectId!);
+    if (project == null) {
+      project = await _hub.projects.ensureForChat(chat);
+      chat = await _hub.chats.chat(chatId) ?? chat;
+    }
+    final trustedSkills = await _hub.projectStore.trustedSkillNames(project.id);
+    final snapshot = await _hub.workspace.load(
+      chat,
+      runtime,
+      project: project,
+      trustedSkills: trustedSkills,
+    );
+    // Новые skills появляются недоверенными: доверие выдаёт пользователь, а не содержимое папки.
+    final foundSkills = [
+      for (final skill in [...snapshot.skills, ...snapshot.untrustedSkills])
+        skill.name,
+    ];
+    if (await _hub.projectStore.syncSkills(project.id, foundSkills) &&
+        !project.skillsInitialized) {
+      project = project.copyWith(skillsInitialized: true);
+      await _hub.projectStore.save(project);
+    }
     if (snapshot.needsTrust) {
       _emit(AgentTrustNeeded(chatId, snapshot.workspace));
     }
@@ -715,6 +740,7 @@ class ChatSession {
 
     final state = await _hub.state.current(chat);
     final messages = await _hub.chats.messages(chatId);
+    final projectFacts = await _hub.projectStore.facts(project.id);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
     ContextInput inputFor(
@@ -730,6 +756,7 @@ class ChatSession {
       hostStub: hostStub,
       backgroundNotes: notes,
       inlineFiles: files,
+      projectFacts: projectFacts,
     );
     chat = await _hub.compactor.compactIfNeeded(
       inputFor(chat),
@@ -745,7 +772,12 @@ class ChatSession {
     );
 
     final denylist = await _hub.settings.readDenylist();
-    final profile = await _hub.settings.readSecurityProfile();
+    var profile = await _hub.settings.readSecurityProfile();
+    final profileId = project.policyProfileId;
+    if (profileId != null) {
+      final custom = await _hub.policyProfiles.byId(profileId);
+      if (custom != null) profile = custom.profile;
+    }
     final policy = PolicyEngine(
       classifier: CommandClassifier(denylist: denylist, profile: profile),
       mode: chat.policyMode,
@@ -757,6 +789,7 @@ class ChatSession {
       policy: policy,
       limit: limit,
       inlineIds: inline.keys.toList(),
+      project: project,
       request: LlmRequest(
         model: model,
         messages: llmMessages,
@@ -1175,6 +1208,7 @@ class _Prepared {
     required this.limit,
     required this.inlineIds,
     required this.request,
+    this.project,
   });
 
   final Chat chat;
@@ -1182,6 +1216,9 @@ class _Prepared {
   final HostRuntime runtime;
   final PolicyEngine policy;
   final int limit;
+
+  /// Проект чата. Инвариант приложения: у сохранённого чата он есть.
+  final Project? project;
 
   /// Сообщения, чьи файлы входят в этот запрос; после ответа модели их байты освобождаются.
   final List<String> inlineIds;

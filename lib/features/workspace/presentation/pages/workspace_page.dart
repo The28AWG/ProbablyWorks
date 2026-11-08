@@ -5,8 +5,11 @@ import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
+import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 
@@ -28,6 +31,10 @@ class WorkspacePage extends StatelessWidget {
         ),
       ),
       BlocProvider(
+        create: (_) =>
+            ProjectsCubit(getIt<ProjectRepository>(), getIt<HostRepository>()),
+      ),
+      BlocProvider(
         create: (_) => SidebarCubit(
           getIt<SettingsRepository>(),
           getIt<SidebarStartupWidth>().value,
@@ -35,7 +42,12 @@ class WorkspacePage extends StatelessWidget {
       ),
     ],
     child: AutoTabsRouter(
-      routes: const [ChatsTabRoute(), HostsRoute(), SettingsRoute()],
+      routes: [
+        ChatsTabRoute(),
+        ProjectsTabRoute(),
+        HostsRoute(),
+        SettingsRoute(),
+      ],
       builder: (context, child) => WorkspaceShell(child: child),
     ),
   );

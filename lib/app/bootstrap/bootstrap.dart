@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
 import 'package:probably_works/app/di/injection.dart';
@@ -37,6 +38,10 @@ Future<bool> bootstrap() async {
   await getIt<StartupRecovery>().run(closedText: closedText);
   // Локальный Host нужен до продолжения хода: иначе шаг, оборванный на нём, не найдёт рантайм.
   await getIt<HostRepository>().ensureLocalHost(DateTime.now());
+  // Проекты чинятся до продолжения хода: у каждого чата должен быть проект.
+  final projects = getIt<ProjectLifecycleService>();
+  await projects.repairOrphans();
+  await projects.purgeExpired();
   // Карточки здесь не показываются. Их регистрирует открытие чата.
   // Вызовы без карточки, чьи зависимости уже закрыты, продолжаются сразу.
   await getIt<AgentHub>().resumeAfterRestart();

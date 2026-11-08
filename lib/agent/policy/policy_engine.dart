@@ -44,7 +44,14 @@ class PolicyEngine {
     ToolNames.settingsUpdate,
   };
 
+  /// Общая память проекта: меняется только с подтверждением, даже в YOLO.
+  static const _alwaysAskTools = {
+    ToolNames.pinProjectFact,
+    ToolNames.unpinProjectFact,
+  };
+
   PolicyDecision decide(String toolName, Map<String, dynamic> args) {
+    if (_alwaysAskTools.contains(toolName)) return PolicyDecision.ask;
     if (_safeTools.contains(toolName)) return PolicyDecision.allow;
     if (toolName == 'run_command') {
       final command = args['command'] as String? ?? '';
@@ -62,6 +69,9 @@ class PolicyEngine {
 
   /// Причина для карточки approve и для модели.
   String reasonFor(String toolName, Map<String, dynamic> args) {
+    if (_alwaysAskTools.contains(toolName)) {
+      return 'project facts are shared with every chat in this project';
+    }
     if (toolName == 'run_command') {
       return classifier.classify(args['command'] as String? ?? '').reason;
     }

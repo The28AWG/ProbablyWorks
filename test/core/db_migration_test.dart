@@ -76,6 +76,52 @@ AppDatabase _openAtVersion(
   ),
 );
 
+/// База v9 с хостами, чатами и старым ключом доверия к папке.
+AppDatabase _openProjectsV9() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(
+          'CREATE TABLE hosts ('
+          'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, '
+          'address TEXT, port INTEGER NOT NULL DEFAULT 22, username TEXT, '
+          "auth_type TEXT NOT NULL DEFAULT 'key', key_path TEXT, "
+          'host_key_fingerprint TEXT, os_family TEXT NOT NULL DEFAULT '
+          "'posix', default_workspace TEXT, shell_override TEXT, notes TEXT, "
+          'connect_timeout_seconds INTEGER, last_check_at INTEGER, '
+          'last_latency_ms INTEGER, last_check_error TEXT, '
+          'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        )
+        ..execute(_chatsV4)
+        ..execute(_toolRunsBeforeV9)
+        ..execute(_savedModelsV4)
+        ..execute(
+          'CREATE TABLE kv_settings (key TEXT NOT NULL PRIMARY KEY, value TEXT)',
+        )
+        ..execute(
+          'INSERT INTO hosts (id, name, kind, os_family, default_workspace, '
+          'created_at, updated_at) VALUES '
+          "('local', 'local', 'local', 'posix', '/home/user', 0, 0)",
+        )
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'one', 0, 0), "
+          "('c2', 'local', 'two', 0, 0), "
+          "('c3', 'local', 'three', 0, 0), "
+          "('c4', 'local', 'four', 0, 0)",
+        )
+        ..execute(
+          "UPDATE chats SET workspace = '~/repo' WHERE id IN ('c1', 'c2')",
+        )
+        ..execute("UPDATE chats SET workspace = '/srv/app/' WHERE id = 'c3'")
+        ..execute(
+          "INSERT INTO kv_settings (key, value) VALUES ('trust:local:~/repo', '1')",
+        )
+        ..execute('PRAGMA user_version = 9');
+    },
+  ),
+);
+
 void main() {
   test(
     'v3 → v4 drops the full catalog cache and creates saved models',
@@ -109,7 +155,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 9);
+    expect(AppDatabase.currentSchemaVersion, 10);
   });
 
   test(
@@ -186,5 +232,40 @@ void main() {
         .map((row) => row.read<String>('name'))
         .get();
     expect(columns, containsAll(['tool_call_id', 'pending_card']));
+  });
+
+  test('v9 → v10 creates one project per host and workspace', () async {
+    final db = _openProjectsV9();
+    addTearDown(db.close);
+
+    final projects = await db
+        .customSelect(
+          'SELECT id, host_id, workspace, workspace_key, trust_agents_md '
+          'FROM projects',
+        )
+        .get();
+    // `~/repo` и `/srv/app/` нормализуются, а чат без папки получает папку хоста.
+    final byKey = {
+      for (final row in projects) row.read<String>('workspace_key'): row,
+    };
+    expect(byKey.keys, containsAll(['~/repo', '/srv/app', '/home/user']));
+    expect(byKey, hasLength(3));
+    expect(byKey['~/repo']!.read<int>('trust_agents_md'), 1);
+    expect(byKey['/srv/app']!.read<int>('trust_agents_md'), 0);
+
+    final chatProjects = await db
+        .customSelect('SELECT id, project_id, workspace FROM chats ORDER BY id')
+        .get();
+    expect(chatProjects, hasLength(4));
+    expect({
+      for (final row in chatProjects) row.read<String?>('project_id'),
+    }, hasLength(3));
+    expect(chatProjects.first.read<String?>('project_id'), isNot(null));
+    expect(chatProjects.last.read<String?>('project_id'), isNot(null));
+    expect(
+      chatProjects.last.read<String?>('workspace'),
+      '/home/user',
+      reason: 'чат без папки получает папку хоста по умолчанию',
+    );
   });
 }

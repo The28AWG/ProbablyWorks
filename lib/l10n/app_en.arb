@@ -24,6 +24,10 @@
   "@commonClose": {
     "description": "Generic close button label."
   },
+  "commonRequired": "Required",
+  "@commonRequired": {
+    "description": "Validation message for a required field."
+  },
   "commonRetry": "Retry",
   "@commonRetry": {
     "description": "Button that retries a failed operation."
@@ -49,6 +53,10 @@
   "navHosts": "Hosts",
   "@navHosts": {
     "description": "Navigation item that opens host management."
+  },
+  "navProjects": "Projects",
+  "@navProjects": {
+    "description": "Navigation item that opens the project list."
   },
   "navSettings": "Settings",
   "@navSettings": {
@@ -1872,5 +1880,99 @@
   "securityCatEnvironment": "Environment",
   "@securityCatEnvironment": {"description": "Command category: environment-variable tools."},
   "securityCatOther": "Other",
-  "@securityCatOther": {"description": "Command category: commands that do not fit another category."}
+  "@securityCatOther": {"description": "Command category: commands that do not fit another category."},
+  "projectsTitle": "Projects",
+  "@projectsTitle": {"description": "Title of the project list tab."},
+  "projectsEmptyTitle": "No projects yet",
+  "@projectsEmptyTitle": {"description": "Empty state title when no project exists."},
+  "projectsEmptyMessage": "A project appears together with the first chat in a host folder. Change the host or folder in a chat to start another one.",
+  "@projectsEmptyMessage": {"description": "Empty state explanation: projects are created from chats."},
+  "projectsActiveSection": "Active",
+  "@projectsActiveSection": {"description": "Heading of the list of projects that still have chats."},
+  "projectsArchivedSection": "Archived",
+  "@projectsArchivedSection": {"description": "Heading of the list of projects without chats."},
+  "projectsArchivedHint": "The project has no chats left. It will be deleted permanently in a week unless a chat returns to it.",
+  "@projectsArchivedHint": {"description": "Explains the one-week archive period before permanent deletion."},
+  "projectsArchivedBadge": "Archived",
+  "@projectsArchivedBadge": {"description": "Status badge of a project without chats."},
+  "projectsChatCount": "{count, plural, =0{No chats} =1{1 chat} other{{count} chats}}",
+  "@projectsChatCount": {
+    "description": "Number of chats in a project.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "projectsHostLabel": "Host",
+  "@projectsHostLabel": {"description": "Label of the read-only host of a project."},
+  "projectsWorkspaceLabel": "Folder",
+  "@projectsWorkspaceLabel": {"description": "Label of the read-only folder of a project."},
+  "projectsChatsLabel": "Chats",
+  "@projectsChatsLabel": {"description": "Label of the chat count in a project card."},
+  "projectsPolicyTitle": "Policy profile",
+  "@projectsPolicyTitle": {"description": "Heading of the project policy profile section."},
+  "projectsPolicyHint": "Overrides the global policy for this project. The security floor still applies.",
+  "@projectsPolicyHint": {"description": "Explains that a project profile replaces the global one."},
+  "projectsPolicyLabel": "Profile",
+  "@projectsPolicyLabel": {"description": "Label of the policy profile picker."},
+  "projectsPolicyCreate": "New profile",
+  "@projectsPolicyCreate": {"description": "Button that creates a named policy profile for the project."},
+  "projectsPolicyEdit": "Edit profile",
+  "@projectsPolicyEdit": {"description": "Button that edits the selected policy profile."},
+  "projectsPolicyName": "Profile name",
+  "@projectsPolicyName": {"description": "Label of the policy profile name field."},
+  "projectsPolicyDescription": "Description",
+  "@projectsPolicyDescription": {"description": "Label of the policy profile description field."},
+  "projectsPolicyDelete": "Delete profile",
+  "@projectsPolicyDelete": {"description": "Button that deletes a policy profile."},
+  "projectsPolicyDeleteConfirm": "{name}: delete this policy profile? Projects using it will fall back to the global policy.",
+  "@projectsPolicyDeleteConfirm": {
+    "description": "Confirmation before deleting a policy profile.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "@projectsPolicyGlobal": {"description": "Policy profile option that uses the global setting."},
+  "projectsPolicyGlobal": "Global policy",
+  "projectsTrustTitle": "Trust",
+  "@projectsTrustTitle": {"description": "Heading of the trust section of a project."},
+  "projectsTrustHint": "Instructions and skills from the folder are used only after you trust them.",
+  "@projectsTrustHint": {"description": "Explains what trust enables."},
+  "projectsAgentsMd": "AGENTS.md",
+  "@projectsAgentsMd": {"description": "Label of the AGENTS.md trust switch."},
+  "projectsAgentsMdHint": "Instructions from the project folder.",
+  "@projectsAgentsMdHint": {"description": "Explains what AGENTS.md contains."},
+  "projectsSkillsTitle": "Skills",
+  "@projectsSkillsTitle": {"description": "Heading of the project skills list."},
+  "projectsSkillsEmpty": "No skills found in the project folder yet.",
+  "@projectsSkillsEmpty": {"description": "Shown when the project has no discovered skills."},
+  "projectsSkillTrusted": "Trusted",
+  "@projectsSkillTrusted": {"description": "Skill state: the project trusts it."},
+  "projectsSkillUntrusted": "Not trusted",
+  "@projectsSkillUntrusted": {"description": "Skill state: the project does not trust it yet."},
+  "projectsFactsTitle": "Project facts",
+  "@projectsFactsTitle": {"description": "Heading of the shared project memory."},
+  "projectsFactsHint": "Every new chat in the project reads these facts. The agent can add one only with your confirmation.",
+  "@projectsFactsHint": {"description": "Explains the scope and confirmation rule of project facts."},
+  "projectsFactsEmpty": "No facts yet.",
+  "@projectsFactsEmpty": {"description": "Shown when a project has no facts."},
+  "projectsAddFact": "Add fact",
+  "@projectsAddFact": {"description": "Button that opens the new project fact dialog."},
+  "projectsFactHint": "What should every chat in this project know?",
+  "@projectsFactHint": {"description": "Hint of the new project fact field."},
+  "projectsFactDeleteConfirm": "Remove this fact from the project?",
+  "@projectsFactDeleteConfirm": {"description": "Confirmation before deleting a project fact."},
+  "projectsRename": "Rename",
+  "@projectsRename": {"description": "Tooltip of the project rename button."},
+  "projectsRenameTitle": "Project name",
+  "@projectsRenameTitle": {"description": "Title of the project rename dialog."},
+  "projectsDeleteNow": "Delete permanently",
+  "@projectsDeleteNow": {"description": "Button that deletes an archived project immediately."},
+  "projectsDeleteConfirm": "{name}: delete the project and all its facts and skill trust? This cannot be undone.",
+  "@projectsDeleteConfirm": {
+    "description": "Confirmation before permanent deletion of a project.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "projectsNotFound": "Project not found",
+  "@projectsNotFound": {"description": "Empty state when a project was deleted or is unknown."},
+  "chatProjectTooltip": "Project: {name}",
+  "@chatProjectTooltip": {
+    "description": "Tooltip of the project chip in the chat settings row.",
+    "placeholders": {"name": {"type": "String"}}
+  }
 }

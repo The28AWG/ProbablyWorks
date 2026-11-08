@@ -24,6 +24,10 @@
   "@commonClose": {
     "description": "Подпись общей кнопки закрытия."
   },
+  "commonRequired": "Обязательное поле",
+  "@commonRequired": {
+    "description": "Validation message for a required field."
+  },
   "commonRetry": "Повторить",
   "@commonRetry": {
     "description": "Кнопка повтора неудавшейся операции."
@@ -49,6 +53,10 @@
   "navHosts": "Хосты",
   "@navHosts": {
     "description": "Пункт навигации, открывающий управление хостами."
+  },
+  "navProjects": "Проекты",
+  "@navProjects": {
+    "description": "Пункт навигации, открывающий список проектов."
   },
   "navSettings": "Настройки",
   "@navSettings": {
@@ -1872,5 +1880,99 @@
   "securityCatEnvironment": "Окружение",
   "@securityCatEnvironment": {"description": "Command category: environment-variable tools."},
   "securityCatOther": "Прочее",
-  "@securityCatOther": {"description": "Command category: commands that do not fit another category."}
+  "@securityCatOther": {"description": "Command category: commands that do not fit another category."},
+  "projectsTitle": "Проекты",
+  "@projectsTitle": {"description": "Заголовок вкладки со списком проектов."},
+  "projectsEmptyTitle": "Проектов пока нет",
+  "@projectsEmptyTitle": {"description": "Пустой список, когда проектов ещё нет."},
+  "projectsEmptyMessage": "Проект появляется вместе с первым чатом в папке хоста. Смените хост или папку в чате, чтобы начать другой проект.",
+  "@projectsEmptyMessage": {"description": "Пояснение: проекты создаются из чатов."},
+  "projectsActiveSection": "Активные",
+  "@projectsActiveSection": {"description": "Заголовок списка проектов, в которых есть чаты."},
+  "projectsArchivedSection": "В архиве",
+  "@projectsArchivedSection": {"description": "Заголовок списка проектов без чатов."},
+  "projectsArchivedHint": "В проекте не осталось чатов. Через неделю он удалится окончательно, если чат не вернётся.",
+  "@projectsArchivedHint": {"description": "Поясняет недельный срок архива до удаления."},
+  "projectsArchivedBadge": "В архиве",
+  "@projectsArchivedBadge": {"description": "Статус проекта без чатов."},
+  "projectsChatCount": "{count, plural, =0{Нет чатов} =1{1 чат} few{{count} чата} many{{count} чатов} other{{count} чата}}",
+  "@projectsChatCount": {
+    "description": "Число чатов в проекте.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "projectsHostLabel": "Хост",
+  "@projectsHostLabel": {"description": "Подпись неизменяемого хоста проекта."},
+  "projectsWorkspaceLabel": "Папка",
+  "@projectsWorkspaceLabel": {"description": "Подпись неизменяемой папки проекта."},
+  "projectsChatsLabel": "Чаты",
+  "@projectsChatsLabel": {"description": "Подпись числа чатов в карточке проекта."},
+  "projectsPolicyTitle": "Профиль политики",
+  "@projectsPolicyTitle": {"description": "Заголовок раздела профиля политики проекта."},
+  "projectsPolicyHint": "Заменяет глобальную политику для этого проекта. Жёсткий пол безопасности сохраняется.",
+  "@projectsPolicyHint": {"description": "Поясняет, что профиль проекта заменяет глобальный."},
+  "projectsPolicyLabel": "Профиль",
+  "@projectsPolicyLabel": {"description": "Подпись выбора профиля политики."},
+  "projectsPolicyCreate": "Новый профиль",
+  "@projectsPolicyCreate": {"description": "Кнопка создания именованного профиля политики для проекта."},
+  "projectsPolicyEdit": "Редактировать профиль",
+  "@projectsPolicyEdit": {"description": "Кнопка редактирования выбранного профиля политики."},
+  "projectsPolicyName": "Имя профиля",
+  "@projectsPolicyName": {"description": "Подпись поля имени профиля политики."},
+  "projectsPolicyDescription": "Описание",
+  "@projectsPolicyDescription": {"description": "Подпись поля описания профиля политики."},
+  "projectsPolicyDelete": "Удалить профиль",
+  "@projectsPolicyDelete": {"description": "Кнопка удаления профиля политики."},
+  "projectsPolicyDeleteConfirm": "{name}: удалить этот профиль политики? Проекты, использующие его, вернутся к глобальной политике.",
+  "@projectsPolicyDeleteConfirm": {
+    "description": "Подтверждение удаления профиля политики.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "@projectsPolicyGlobal": {"description": "Пункт выбора: используется глобальная настройка."},
+  "projectsPolicyGlobal": "Глобальная политика",
+  "projectsTrustTitle": "Доверие",
+  "@projectsTrustTitle": {"description": "Заголовок раздела доверия проекта."},
+  "projectsTrustHint": "Инструкции и skills из папки используются только после доверия.",
+  "@projectsTrustHint": {"description": "Поясняет, что включает доверие."},
+  "projectsAgentsMd": "AGENTS.md",
+  "@projectsAgentsMd": {"description": "Подпись переключателя доверия к AGENTS.md."},
+  "projectsAgentsMdHint": "Инструкции из папки проекта.",
+  "@projectsAgentsMdHint": {"description": "Поясняет, что содержит AGENTS.md."},
+  "projectsSkillsTitle": "Skills",
+  "@projectsSkillsTitle": {"description": "Заголовок списка skills проекта."},
+  "projectsSkillsEmpty": "В папке проекта пока нет skills.",
+  "@projectsSkillsEmpty": {"description": "Показывается, когда у проекта нет найденных skills."},
+  "projectsSkillTrusted": "Доверен",
+  "@projectsSkillTrusted": {"description": "Состояние skill: проект ему доверяет."},
+  "projectsSkillUntrusted": "Не доверен",
+  "@projectsSkillUntrusted": {"description": "Состояние skill: проект ещё не доверяет."},
+  "projectsFactsTitle": "Факты проекта",
+  "@projectsFactsTitle": {"description": "Заголовок общей памяти проекта."},
+  "projectsFactsHint": "Каждый новый чат проекта читает эти факты. Агент добавляет факт только с подтверждением.",
+  "@projectsFactsHint": {"description": "Поясняет область действия и правило подтверждения фактов."},
+  "projectsFactsEmpty": "Фактов пока нет.",
+  "@projectsFactsEmpty": {"description": "Показывается, когда у проекта нет фактов."},
+  "projectsAddFact": "Добавить факт",
+  "@projectsAddFact": {"description": "Кнопка, открывающая диалог нового факта проекта."},
+  "projectsFactHint": "Что должен знать каждый чат этого проекта?",
+  "@projectsFactHint": {"description": "Подсказка поля нового факта проекта."},
+  "projectsFactDeleteConfirm": "Удалить этот факт из проекта?",
+  "@projectsFactDeleteConfirm": {"description": "Подтверждение удаления факта проекта."},
+  "projectsRename": "Переименовать",
+  "@projectsRename": {"description": "Подсказка кнопки переименования проекта."},
+  "projectsRenameTitle": "Имя проекта",
+  "@projectsRenameTitle": {"description": "Заголовок диалога переименования проекта."},
+  "projectsDeleteNow": "Удалить окончательно",
+  "@projectsDeleteNow": {"description": "Кнопка немедленного удаления архивного проекта."},
+  "projectsDeleteConfirm": "{name}: удалить проект, все его факты и доверие к skills? Это нельзя отменить.",
+  "@projectsDeleteConfirm": {
+    "description": "Подтверждение окончательного удаления проекта.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "projectsNotFound": "Проект не найден",
+  "@projectsNotFound": {"description": "Пустое состояние, если проект удалён или неизвестен."},
+  "chatProjectTooltip": "Проект: {name}",
+  "@chatProjectTooltip": {
+    "description": "Подсказка чипа проекта в строке настроек чата.",
+    "placeholders": {"name": {"type": "String"}}
+  }
 }

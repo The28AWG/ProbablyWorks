@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/domain/session_state.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
@@ -17,6 +18,7 @@ import 'package:probably_works/agent/tools/tool_effect.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
+import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
@@ -38,6 +40,7 @@ class ToolContext {
     required this.limits,
     required this.policy,
     required this.onBackgroundDone,
+    this.project,
   });
 
   final Chat chat;
@@ -46,6 +49,9 @@ class ToolContext {
   final HostRuntime runtime;
   final AppLimits limits;
   final PolicyEngine policy;
+
+  /// Проект чата: нужен для доверия skills и общей памяти. Null только у чата без проекта.
+  final Project? project;
 
   /// Вызывается, когда фоновая команда завершилась (после записи ToolRun).
   final void Function(ToolRun run, ExecOutcome outcome) onBackgroundDone;
@@ -102,6 +108,7 @@ class ToolExecutor {
     this._state,
     this._workspace,
     this._self,
+    this._projects,
   );
 
   final ChatRepository _chats;
@@ -110,6 +117,7 @@ class ToolExecutor {
   final SessionStateService _state;
   final WorkspaceContextLoader _workspace;
   final SelfToolHandler _self;
+  final ProjectRepository _projects;
 
   /// Self-инструменты, которые только читают (выполняются сразу, без подтверждения).
   static const _selfReadTools = {
@@ -192,6 +200,8 @@ class ToolExecutor {
         ToolNames.chatHistorySearch ||
         ToolNames.listSkills ||
         ToolNames.loadSkill => _stateTool(ctx, call, args),
+        ToolNames.pinProjectFact ||
+        ToolNames.unpinProjectFact => _projectFact(ctx, call, args),
         ToolNames.hostList ||
         ToolNames.hostAdd ||
         ToolNames.hostUpdate ||
@@ -457,6 +467,113 @@ class ToolExecutor {
     return _finishQuestion(run, answer);
   }
 
+  // ---- project facts -----------------------------------------------------
+
+  /// Общая память проекта. Карточка подтверждения обязательна даже в YOLO:
+  /// факт увидят все чаты проекта, поэтому решение не должно быть побочным эффектом.
+  Future<ToolResult> _projectFact(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final project = ctx.project;
+    if (project == null) {
+      return const ToolResult(
+        'this chat has no project yet; project facts are unavailable',
+        isError: true,
+      );
+    }
+    final pin = call.name == ToolNames.pinProjectFact;
+    final text = pin ? _str(args, 'text').trim() : '';
+    final factId = pin ? '' : _str(args, 'id');
+    if (pin && text.isEmpty) {
+      return const ToolResult('fact text is empty', isError: true);
+    }
+    if (!pin) {
+      final fact = await _projects.fact(factId);
+      if (fact == null || fact.projectId != project.id) {
+        return ToolResult('project fact not found: $factId', isError: true);
+      }
+    }
+    final summary = pin
+        ? 'Save project fact: $text'
+        : 'Remove project fact $factId';
+    final runId = _uuid.v4();
+    final approved = await _approve(
+      ctx,
+      call,
+      args,
+      runId: runId,
+      summary: summary,
+      command: summary,
+      reason: ctx.policy.reasonFor(call.name, args),
+    );
+    if (!approved) return _rejected(summary);
+    return _applyProjectFact(
+      ctx,
+      call,
+      args,
+      runId: runId,
+      pin: pin,
+      startedAt: DateTime.now(),
+    );
+  }
+
+  Future<ToolResult> _resumeProjectFact(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) => _applyProjectFact(
+    ctx,
+    call,
+    args,
+    runId: run.id,
+    pin: call.name == ToolNames.pinProjectFact,
+    startedAt: run.startedAt,
+  );
+
+  Future<ToolResult> _applyProjectFact(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args, {
+    required String runId,
+    required bool pin,
+    required DateTime startedAt,
+  }) async {
+    final project = ctx.project;
+    if (project == null) {
+      return const ToolResult('this chat has no project', isError: true);
+    }
+    final String summary;
+    if (pin) {
+      final fact = ProjectFact(
+        id: _uuid.v4(),
+        projectId: project.id,
+        text: _str(args, 'text').trim(),
+        createdAt: DateTime.now(),
+      );
+      await _projects.addFact(fact);
+      summary = 'project fact ${fact.id} saved';
+    } else {
+      final id = _str(args, 'id');
+      await _projects.deleteFact(id);
+      summary = 'project fact $id removed';
+    }
+    final run = _newRun(
+      ctx,
+      runId,
+      call,
+      args,
+      ToolRunStatus.done,
+      command: summary,
+      startedAt: startedAt,
+      finishedAt: DateTime.now(),
+    ).copyWith(resultPreview: summary, clearPendingCard: true);
+    await _saveRun(run);
+    return ToolResult(summary);
+  }
+
   // ---- state tools -------------------------------------------------------
 
   Future<ToolResult> _stateTool(
@@ -539,7 +656,15 @@ class ToolExecutor {
           ].join('\n'),
         );
       case ToolNames.listSkills:
-        final snapshot = await _workspace.load(chat, ctx.runtime);
+        final trusted = ctx.project == null
+            ? const <String>{}
+            : await _projects.trustedSkillNames(ctx.project!.id);
+        final snapshot = await _workspace.load(
+          chat,
+          ctx.runtime,
+          project: ctx.project,
+          trustedSkills: trusted,
+        );
         final skills = BuiltinSkills.catalog(
           snapshot.needsTrust ? const [] : snapshot.skills,
         );
@@ -554,7 +679,15 @@ class ToolExecutor {
         final name = _str(args, 'name');
         final builtin = BuiltinSkills.byName(name);
         if (builtin != null) return ToolResult(builtin.body);
-        final snapshot = await _workspace.load(chat, ctx.runtime);
+        final trusted = ctx.project == null
+            ? const <String>{}
+            : await _projects.trustedSkillNames(ctx.project!.id);
+        final snapshot = await _workspace.load(
+          chat,
+          ctx.runtime,
+          project: ctx.project,
+          trustedSkills: trusted,
+        );
         final skill = snapshot.skills.where((s) => s.name == name).firstOrNull;
         if (skill == null) {
           return ToolResult('skill not found: $name', isError: true);
@@ -899,6 +1032,8 @@ class ToolExecutor {
     ToolNames.hostAdd ||
     ToolNames.hostUpdate ||
     ToolNames.settingsUpdate => _resumeSelf(ctx, call, args, run),
+    ToolNames.pinProjectFact ||
+    ToolNames.unpinProjectFact => _resumeProjectFact(ctx, call, args, run),
     _ => _failRun(run, 'cannot resume ${call.name}'),
   };
 

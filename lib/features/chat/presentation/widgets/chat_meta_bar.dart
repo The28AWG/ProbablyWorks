@@ -46,6 +46,8 @@ class ChatMetaBar extends StatelessWidget {
     required this.contextFraction,
     required this.onOpenContext,
     required this.running,
+    this.projectName,
+    this.onOpenProject,
     this.modelUnavailable = false,
     this.modelLoading = false,
     this.modelPending = false,
@@ -57,6 +59,12 @@ class ChatMetaBar extends StatelessWidget {
   final ValueChanged<String> onHostSelected;
   final String? workspace;
   final VoidCallback onPickWorkspace;
+
+  /// Имя проекта чата. Null у нового чата до первой отправки: проект появится вместе с записью.
+  final String? projectName;
+
+  /// Открывает карточку проекта во вкладке проектов.
+  final VoidCallback? onOpenProject;
 
   /// Null — модель не выбрана: чип предлагает выбрать её и подсвечивается предупреждением.
   final String? modelLabel;
@@ -95,6 +103,9 @@ class ChatMetaBar extends StatelessWidget {
         : (modelUnavailable ? '! $modelLabel' : modelLabel);
     // Ширины считаются заранее, до раскладки: по ним решается, какие чипы свернуть до значка.
     final labeled = <_Chip, _ChipWidth?>{
+      _Chip.project: projectName == null
+          ? null
+          : _chipWidth(context, projectName, cap: capped(160)),
       _Chip.host: _chipWidth(context, hostLabel, cap: capped(180)),
       _Chip.folder: folder == null
           ? null
@@ -128,6 +139,16 @@ class ChatMetaBar extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (projectName != null) ...[
+                _ActionChip(
+                  tooltip: l10n.chatProjectTooltip(projectName!),
+                  icon: Icons.workspaces_outline,
+                  label: iconOnly(_Chip.project) ? null : projectName,
+                  maxWidth: capped(160),
+                  onTap: onOpenProject,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
               PopupMenuButton<String>(
                 tooltip: iconOnly(_Chip.host)
                     ? l10n.chatHostTooltip(hostLabel)
@@ -233,9 +254,9 @@ class ChatMetaBar extends StatelessWidget {
   static const _warnFraction = 0.9;
 }
 
-/// Чипы строки настроек в порядке сворачивания: сначала хост (его значение длиннее всего), затем папка,
-/// модель и контекст. Контекст сворачивается последним: его подпись короткая и нужна для оценки заполнения.
-enum _Chip { host, folder, model, context }
+/// Чипы строки настроек в порядке сворачивания: сначала проект, затем хост (его значение длиннее всего),
+/// потом папка, модель и контекст. Контекст сворачивается последним: его подпись короткая и нужна для оценки заполнения.
+enum _Chip { project, host, folder, model, context }
 
 /// Ширина чипа в двух состояниях: с подписью (не больше ограничения) и только значком.
 typedef _ChipWidth = ({double full, double collapsed});
@@ -298,11 +319,13 @@ Set<_Chip> _collapsedChips(Map<_Chip, _ChipWidth?> chips, double available) {
   final collapsed = <_Chip>{};
   double rowWidth() {
     var total = 0.0;
+    var first = true;
     for (final chip in _Chip.values) {
       final width = chips[chip];
       if (width == null) continue;
-      // Перед каждым чипом, кроме первого, стоит отступ. Он же стоит перед чипом папки и контекста.
-      if (chip != _Chip.host) total += AppSpacing.xs;
+      // Перед каждым чипом, кроме первого показанного, стоит отступ.
+      if (!first) total += AppSpacing.xs;
+      first = false;
       total += collapsed.contains(chip) ? width.collapsed : width.full;
     }
     return total;

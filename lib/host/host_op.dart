@@ -124,6 +124,17 @@ final class StatOp extends HostOp {
   String get label => 'stat $path';
 }
 
+/// Канонический путь: раскрывает `~`, симлинки и `..` силами Host.
+/// Нужен ключу проекта, чтобы `~/repo` и `/home/user/repo` были одной папкой.
+final class RealpathOp extends HostOp {
+  const RealpathOp(this.path);
+
+  final String path;
+
+  @override
+  String get label => 'realpath $path';
+}
+
 /// Первый существующий файл из списка путей, в порядке списка. Вывод — путь найденного файла.
 final class FirstFileOp extends HostOp {
   const FirstFileOp(this.paths);

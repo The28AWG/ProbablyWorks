@@ -17,6 +17,7 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
+import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
@@ -27,6 +28,8 @@ import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/policy_profile_repository.dart';
+import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/data/virtual_host_provisioner.dart';
@@ -151,9 +154,18 @@ void main() {
       modelCatalog,
       HostDiagnostics(hosts, MemorySecretStore(), settings, runtimes),
     );
-    final tools = ToolExecutor(chats, commands, broker, state, workspace, self);
+    final tools = ToolExecutor(
+      chats,
+      commands,
+      broker,
+      state,
+      workspace,
+      self,
+      ProjectRepository(db),
+    );
     final compactor = ContextCompactor(chats, llm, builder);
     drafts = ChatDraftStore(chats);
+    final projectStore = ProjectRepository(db);
     hub = AgentHub(
       chats,
       settings,
@@ -170,6 +182,9 @@ void main() {
       registry,
       logs,
       _SilentNotifier(),
+      ProjectLifecycleService(db, projectStore, hosts, runtimes),
+      projectStore,
+      PolicyProfileRepository(db),
     );
     await hosts.ensureLocalHost(DateTime.now());
     await settings.write(SettingsRepository.keyDefaultModel, 'fake/model');

@@ -26,11 +26,108 @@ class Hosts extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+/// Проект: неявная пара «хост + рабочая папка», к которой привязаны чаты.
+///
+/// Проект создаётся при первом сохранении чата и находится по ключу ([hostId], [workspaceKey]).
+/// Хост и папка — идентичность проекта: их нельзя изменить, можно только перейти в другой проект.
+/// Когда чатов не осталось, проект уходит в архив и удаляется окончательно через неделю.
+@DataClassName('ProjectRow')
+@TableIndex(
+  name: 'projects_host_key',
+  columns: {#hostId, #workspaceKey},
+  unique: true,
+)
+class Projects extends Table {
+  TextColumn get id => text()();
+  TextColumn get hostId =>
+      text().references(Hosts, #id, onDelete: KeyAction.cascade)();
+
+  /// Имя для интерфейса. Меняется пользователем, по умолчанию — последняя папка пути.
+  TextColumn get name => text()();
+
+  /// Путь так, как его видит пользователь. Может содержать `~`.
+  TextColumn get workspace => text()();
+
+  /// Канонический путь для поиска проекта: `~` раскрыт, симлинки разрешены.
+  TextColumn get workspaceKey => text()();
+  TextColumn get policyProfileId => text().nullable()();
+
+  /// Доверие к AGENTS.md проекта. Отдельно от доверия к skills: это разные источники инструкций.
+  BoolColumn get trustAgentsMd =>
+      boolean().withDefault(const Constant(false))();
+
+  /// Первое сканирование skills выполнено. Нужно миграции: старые skills доверяются один раз,
+  /// а появившиеся позже — уже нет.
+  BoolColumn get skillsInitialized =>
+      boolean().withDefault(const Constant(false))();
+
+  /// Время архивации: чатов не осталось. Null — проект активен.
+  DateTimeColumn get archivedAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Доверие к отдельному skill проекта. Запись создаётся при первом сканировании каталогов skills.
+@DataClassName('ProjectSkillRow')
+class ProjectSkills extends Table {
+  TextColumn get projectId =>
+      text().references(Projects, #id, onDelete: KeyAction.cascade)();
+  TextColumn get name => text()();
+  BoolColumn get trusted => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {projectId, name};
+}
+
+/// Факт проекта: долгоживущая память, которую читает каждый новый чат проекта.
+/// Меняется только через подтверждение пользователя (инструмент или карточка проекта).
+@DataClassName('ProjectFactRow')
+@TableIndex(name: 'project_facts_project', columns: {#projectId})
+class ProjectFacts extends Table {
+  TextColumn get id => text()();
+  TextColumn get projectId =>
+      text().references(Projects, #id, onDelete: KeyAction.cascade)();
+  TextColumn get content => text()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Именованный профиль политики. Проект может ссылаться на него вместо глобального профиля.
+@DataClassName('PolicyProfileRow')
+class PolicyProfiles extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get description => text().nullable()();
+
+  /// JSON профиля ([SecurityProfile.encode]).
+  TextColumn get profileJson => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DataClassName('ChatRow')
+@TableIndex(name: 'chats_project', columns: {#projectId})
 class Chats extends Table {
   TextColumn get id => text()();
   TextColumn get hostId =>
       text().references(Hosts, #id, onDelete: KeyAction.cascade)();
+
+  /// Проект чата. Null допустим только для строк, созданных до миграции v10:
+  /// приложение чинит такие строки при старте и при открытии чата.
+  TextColumn get projectId => text().nullable().references(
+    Projects,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
   TextColumn get title => text()();
   TextColumn get titleSource => text().withDefault(const Constant('none'))();
   TextColumn get model => text().nullable()();

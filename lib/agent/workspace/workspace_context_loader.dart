@@ -1,5 +1,6 @@
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/host/host_capture.dart';
@@ -26,6 +27,7 @@ class WorkspaceSnapshot {
     this.needsTrust = false,
     this.agentsMd,
     this.skills = const [],
+    this.untrustedSkills = const [],
   });
 
   static const empty = WorkspaceSnapshot();
@@ -36,7 +38,12 @@ class WorkspaceSnapshot {
   /// В workspace есть AGENTS.md или skills, но пользователь ещё не доверил каталог.
   final bool needsTrust;
   final String? agentsMd;
+
+  /// Skills, доверенные проектом: попадают в каталог и доступны для load_skill.
   final List<SkillInfo> skills;
+
+  /// Skills, найденные в workspace, но не доверенные. Нужны бейджу и карточке проекта.
+  final List<SkillInfo> untrustedSkills;
 }
 
 /// Читает AGENTS.md и skills (.probablyworks/skills, .cursor/skills) с Host. Гейт доверия: без подтверждения
@@ -55,8 +62,13 @@ class WorkspaceContextLoader {
   static const _maxAgentsBytes = 20000;
   static const _maxSkillBytes = 3000;
 
-  Future<WorkspaceSnapshot> load(Chat chat, HostRuntime runtime) async {
-    final workspace = chat.workspace;
+  Future<WorkspaceSnapshot> load(
+    Chat chat,
+    HostRuntime runtime, {
+    Project? project,
+    Set<String> trustedSkills = const {},
+  }) async {
+    final workspace = project?.workspace ?? chat.workspace;
     if (workspace == null || workspace.isEmpty) return WorkspaceSnapshot.empty;
 
     final skillsDirs = [
@@ -68,22 +80,36 @@ class WorkspaceContextLoader {
       return WorkspaceSnapshot(workspace: workspace, trusted: true);
     }
 
-    final trusted = await _settings.isTrusted(chat.hostId, workspace);
-    if (!trusted) {
-      return WorkspaceSnapshot(workspace: workspace, needsTrust: true);
-    }
-
-    final agentsMd = presence.agentsPath == null
-        ? null
-        : await _readAgents(runtime, chat.hostId, presence.agentsPath!);
-    final skills = presence.hasSkills
+    // Проект хранит доверие отдельно для AGENTS.md и каждого skill. Старые чаты без проекта
+    // читают прежний ключ доверия целиком, чтобы поведение до миграции не изменилось.
+    final legacyTrust =
+        project == null && await _settings.isTrusted(chat.hostId, workspace);
+    final agentsTrusted = project?.trustAgentsMd ?? legacyTrust;
+    final found = presence.hasSkills
         ? await _scanSkills(runtime, skillsDirs)
         : const <SkillInfo>[];
+    final trusted = project == null && legacyTrust
+        ? found
+        : [
+            for (final skill in found)
+              if (trustedSkills.contains(skill.name)) skill,
+          ];
+    final untrusted = [
+      for (final skill in found)
+        if (!trusted.contains(skill)) skill,
+    ];
+    final needsTrust =
+        (presence.hasAgents && !agentsTrusted) || untrusted.isNotEmpty;
+    final agentsMd = presence.agentsPath == null || !agentsTrusted
+        ? null
+        : await _readAgents(runtime, chat.hostId, presence.agentsPath!);
     return WorkspaceSnapshot(
       workspace: workspace,
-      trusted: true,
+      trusted: !needsTrust,
+      needsTrust: needsTrust,
       agentsMd: agentsMd,
-      skills: skills,
+      skills: trusted,
+      untrustedSkills: untrusted,
     );
   }
 

@@ -27,7 +27,15 @@ import 'package:probably_works/providers/ai/model_catalog.dart';
 
 @RoutePage()
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+  const SettingsPage({@PathParam('group') this.initialGroup, super.key});
+
+  /// Начальная группа настроек (например, `safety` при переходе из проекта).
+  final String? initialGroup;
+
+  /// Уведомление о запросе переключения группы (для уже открытой страницы настроек).
+  static final ValueNotifier<String?> requestedGroup = ValueNotifier<String?>(
+    null,
+  );
 
   @override
   Widget build(BuildContext context) => BlocProvider(
@@ -38,7 +46,7 @@ class SettingsPage extends StatelessWidget {
       getIt<LocaleController>(),
       getIt<ThemeController>(),
     )..load(),
-    child: const _SettingsView(),
+    child: _SettingsView(initialGroup: initialGroup),
   );
 }
 
@@ -46,7 +54,9 @@ class SettingsPage extends StatelessWidget {
 enum _Group { account, interface, safety, advanced }
 
 class _SettingsView extends StatefulWidget {
-  const _SettingsView();
+  const _SettingsView({this.initialGroup});
+
+  final String? initialGroup;
 
   @override
   State<_SettingsView> createState() => _SettingsViewState();
@@ -62,13 +72,59 @@ class _SettingsViewState extends State<_SettingsView> {
   var _group = _Group.account;
 
   @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialGroup ?? SettingsPage.requestedGroup.value;
+    SettingsPage.requestedGroup.value = null;
+    _group = _groupFromName(initial) ?? _Group.account;
+    SettingsPage.requestedGroup.addListener(_onRequestedGroup);
+    final requested = SettingsPage.requestedGroup.value;
+    if (requested != null) {
+      final next = _groupFromName(requested);
+      if (next != null) _group = next;
+      SettingsPage.requestedGroup.value = null;
+    }
+  }
+
+  void _onRequestedGroup() {
+    final requested = SettingsPage.requestedGroup.value;
+    if (requested == null) return;
+    final next = _groupFromName(requested);
+    if (next != null && next != _group) {
+      setState(() => _group = next);
+    }
+    SettingsPage.requestedGroup.value = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _SettingsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final initial = widget.initialGroup;
+    if (initial != null) {
+      final next = _groupFromName(initial);
+      if (next != null && next != _group) {
+        _group = next;
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    SettingsPage.requestedGroup.removeListener(_onRequestedGroup);
     _denylist.dispose();
     _limits.dispose();
     _attachPerMessage.dispose();
     _attachMaxBytes.dispose();
     super.dispose();
   }
+
+  static _Group? _groupFromName(String? name) => switch (name) {
+    'account' => _Group.account,
+    'interface' => _Group.interface,
+    'safety' => _Group.safety,
+    'advanced' => _Group.advanced,
+    _ => null,
+  };
 
   void _saveAttachLimits(SettingsCubit cubit, AppLocalizations l10n) {
     final perMessage = int.tryParse(_attachPerMessage.text.trim());

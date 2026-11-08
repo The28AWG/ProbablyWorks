@@ -86,6 +86,7 @@ final class VirtualOpExecutor {
         GrepOp(:final pattern, :final path) => _grep(pattern, path, dir),
         WhichOp(:final name) => _which(name),
         StatOp(:final path) => _stat(path, dir),
+        RealpathOp(:final path) => _realpath(path, dir),
         FirstFileOp(:final paths) => _firstFile(paths, dir),
         WriteFileOp(:final path, :final backupPath, :final expectedMtime) =>
           _writeFile(
@@ -179,6 +180,13 @@ final class VirtualOpExecutor {
     if (node == null) return VirtualOpResult(exitCode: 1);
     final kind = node.kind == VfsNodeKind.dir ? 'dir' : 'file';
     return VirtualOpResult.text('$kind ${node.mtime}\n');
+  }
+
+  /// Канонический путь виртуальной ФС. Как `realpath`: последний компонент может отсутствовать,
+  /// поэтому путь ещё не созданного проекта тоже получает стабильный ключ.
+  Future<VirtualOpResult> _realpath(String path, String dir) async {
+    final canonical = await _fs.realpath(_expand(path), cwd: dir);
+    return VirtualOpResult.text('$canonical\n');
   }
 
   /// Первый существующий файл из списка, в порядке списка. Печатает путь как его раскрыл бы shell.

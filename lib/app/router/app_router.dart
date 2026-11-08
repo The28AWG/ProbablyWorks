@@ -30,8 +30,16 @@ class AppRouter extends RootStackRouter {
             AutoRoute(page: ChatRoute.page, path: ':chatId'),
           ],
         ),
+        AutoRoute(
+          page: ProjectsTabRoute.page,
+          path: 'projects',
+          children: [
+            AutoRoute(page: ProjectsRoute.page, path: '', initial: true),
+            AutoRoute(page: ProjectRoute.page, path: ':projectId'),
+          ],
+        ),
         AutoRoute(page: HostsRoute.page, path: 'hosts'),
-        AutoRoute(page: SettingsRoute.page, path: 'settings'),
+        AutoRoute(page: SettingsRoute.page, path: 'settings/:group?'),
       ],
     ),
   ];

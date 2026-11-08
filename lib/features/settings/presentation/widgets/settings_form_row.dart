@@ -14,6 +14,8 @@ class SettingsFormRow extends StatelessWidget {
     this.description,
     this.trailing,
     this.action,
+    this.crossAxisAlignment = CrossAxisAlignment.start,
+    this.textBaseline,
     super.key,
   });
 
@@ -32,6 +34,12 @@ class SettingsFormRow extends StatelessWidget {
 
   /// Действие под полями, например «Сохранить»; прижимается к правому краю.
   final Widget? action;
+
+  /// Выравнивание заголовка и поля по поперечной оси. По умолчанию — по верхнему краю (как у полей с подписью).
+  final CrossAxisAlignment crossAxisAlignment;
+
+  /// Базовая линия для выравнивания текста, если [crossAxisAlignment] — baseline.
+  final TextBaseline? textBaseline;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +90,8 @@ class SettingsFormRow extends StatelessWidget {
           );
         }
         return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: crossAxisAlignment,
+          textBaseline: textBaseline,
           children: [
             SizedBox(width: AppLayout.formLabelWidth, child: header),
             const SizedBox(width: AppSpacing.xl),

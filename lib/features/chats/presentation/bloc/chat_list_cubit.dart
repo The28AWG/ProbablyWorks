@@ -111,12 +111,15 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   /// Удаление: сначала останавливаем активный ход, затем чистим БД и файлы логов чата.
+  /// Если чат был последним в проекте, проект уходит в архив и живёт там неделю.
   Future<void> delete(String chatId) async {
     final session = _hub.session(chatId);
     if (session.isRunning) await session.stop();
+    final project = await _hub.projects.projectForChat(chatId);
     await _hub.chats.deleteChat(chatId);
     _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);
+    await _hub.projects.releaseIfEmpty(project?.id);
   }
 
   @override

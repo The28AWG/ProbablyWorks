@@ -9,13 +9,17 @@ import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
+import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/policy_profile_repository.dart';
+import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -42,6 +46,9 @@ class AgentHub {
     this.registry,
     this.logs,
     this.notifier,
+    this.projects,
+    this.projectStore,
+    this.policyProfiles,
   );
 
   final ChatRepository chats;
@@ -59,6 +66,13 @@ class AgentHub {
   final ActiveExecRegistry registry;
   final ExecLogStore logs;
   final AppNotifier notifier;
+
+  /// Жизненный цикл проекта: создание, перенос чата, архив и окончательное удаление.
+  final ProjectLifecycleService projects;
+
+  /// Строки проектов, факты и доверие skills.
+  final ProjectRepository projectStore;
+  final PolicyProfileRepository policyProfiles;
 
   final Map<String, ChatSession> _sessions = {};
 
@@ -96,15 +110,20 @@ class AgentHub {
   static const _uuid = Uuid();
 
   /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
+  /// Чат получает проект по эффективной рабочей папке хоста.
   Future<Chat> newChat({required String hostId}) async {
-    final chat = draftChat(hostId: hostId);
+    final host = await hosts.byId(hostId);
+    var chat = draftChat(hostId: hostId, host: host);
+    chat = await projects.attach(chat);
     await chats.saveChat(chat);
     return chat;
   }
 
   /// Чат на Host, который ещё не записан в БД: появится в списке с первым сообщением.
   /// Политика берётся из памяти настроек, поэтому чат создаётся синхронно (см. [SettingsRepository.preload]).
-  Chat draftChat({required String hostId}) {
+  ///
+  /// Рабочая папка сразу равна папке хоста по умолчанию: чат без папки всё равно получит проект.
+  Chat draftChat({required String hostId, Host? host}) {
     final now = DateTime.now();
     final policy = PolicyMode.values.byName(
       settings.cached(SettingsRepository.keyDefaultPolicy) ?? 'ask',
@@ -112,6 +131,7 @@ class AgentHub {
     return Chat(
       id: _uuid.v4(),
       hostId: hostId,
+      workspace: host == null ? null : projects.defaultWorkspaceFor(host),
       title: '',
       createdAt: now,
       updatedAt: now,

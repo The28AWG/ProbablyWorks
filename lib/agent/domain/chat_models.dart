@@ -123,6 +123,7 @@ class Chat {
     required this.title,
     required this.createdAt,
     required this.updatedAt,
+    this.projectId,
     this.titleSource = ChatTitleSource.none,
     this.model,
     this.policyMode = PolicyMode.ask,
@@ -138,6 +139,9 @@ class Chat {
 
   final String id;
   final String hostId;
+
+  /// Проект чата. Null только у чата, который ещё не записан или ждёт починки после миграции.
+  final String? projectId;
   final String title;
   final ChatTitleSource titleSource;
   final String? model;
@@ -158,6 +162,7 @@ class Chat {
   Chat copyWith({
     String? id,
     String? hostId,
+    String? projectId,
     String? title,
     ChatTitleSource? titleSource,
     String? model,
@@ -176,6 +181,7 @@ class Chat {
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
+    projectId: projectId ?? this.projectId,
     title: title ?? this.title,
     titleSource: titleSource ?? this.titleSource,
     model: model ?? this.model,

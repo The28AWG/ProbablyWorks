@@ -46,6 +46,7 @@ class ShellAdapter {
     GrepOp(:final pattern, :final path) => grep(pattern, path),
     WhichOp(:final name) => which(name),
     StatOp(:final path) => stat(path),
+    RealpathOp(:final path) => realpath(path),
     FirstFileOp(:final paths) => firstFile(paths),
     WriteFileOp(:final path, :final backupPath, :final expectedMtime) =>
       writeFile(path, backupPath: backupPath, expectedMtime: expectedMtime),
@@ -65,6 +66,16 @@ class ShellAdapter {
       'if [ -d $p ]; then echo "dir \$(${_posixMtime(p)})"; '
       'elif [ -e $p ]; then echo "file \$(${_posixMtime(p)})"; '
       'else false; fi';
+
+  /// Канонический путь существующего каталога. `cd` и `pwd -P` раскрывают `~` и симлинки.
+  /// Для отсутствующего пути команда завершается ошибкой: вызывающий берёт лексическую форму.
+  String realpath(String path) => _windows
+      ? powershell(
+          '\$p = ${psQuote(path)}; '
+          'if (-not (Test-Path -LiteralPath \$p)) { exit 1 }; '
+          '[Console]::Out.Write((Resolve-Path -LiteralPath \$p).ProviderPath)',
+        )
+      : 'if [ -d ${quotePath(path)} ]; then cd -- ${quotePath(path)} && pwd -P; else false; fi';
 
   /// Первый существующий файл из списка. Порядок списка — порядок проверки; вывод — путь найденного файла.
   String firstFile(List<String> paths) {

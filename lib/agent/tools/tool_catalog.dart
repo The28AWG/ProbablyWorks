@@ -15,6 +15,8 @@ abstract final class ToolNames {
   static const updatePlan = 'update_plan';
   static const pinFact = 'pin_fact';
   static const unpinFact = 'unpin_fact';
+  static const pinProjectFact = 'pin_project_fact';
+  static const unpinProjectFact = 'unpin_project_fact';
   static const listStateRevisions = 'list_state_revisions';
   static const getStateRevision = 'get_state_revision';
   static const chatHistorySearch = 'chat_history_search';
@@ -212,6 +214,30 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.unpinFact,
       description: 'Remove a pinned fact by id.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string'},
+        },
+        'required': ['id'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.pinProjectFact,
+      description:
+          'Save a long-lived fact for the whole project. Every chat in the project reads it. '
+          'The user must confirm it, even in YOLO mode.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'text': {'type': 'string'},
+        },
+        'required': ['text'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.unpinProjectFact,
+      description: 'Remove a project fact by id. The user must confirm it, even in YOLO mode.',
       parameters: {
         'type': 'object',
         'properties': {

@@ -99,6 +99,12 @@ class WorkspaceSidebar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _SidebarRow(
+                  icon: Icons.workspaces_outline,
+                  label: l10n.navProjects,
+                  selected: activeTab == WorkspaceTab.projects,
+                  onTap: () => onOpenTab(WorkspaceTab.projects),
+                ),
+                _SidebarRow(
                   icon: Icons.dns_outlined,
                   label: l10n.navHosts,
                   selected: activeTab == WorkspaceTab.hosts,
@@ -168,6 +174,12 @@ class WorkspaceRail extends StatelessWidget {
               onPressed: onNewChat,
             ),
             const Spacer(),
+            IconButton(
+              tooltip: l10n.navProjects,
+              icon: const Icon(Icons.workspaces_outline),
+              isSelected: activeTab == WorkspaceTab.projects,
+              onPressed: () => onOpenTab(WorkspaceTab.projects),
+            ),
             IconButton(
               tooltip: l10n.navHosts,
               icon: const Icon(Icons.dns_outlined),

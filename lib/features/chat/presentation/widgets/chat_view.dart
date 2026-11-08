@@ -26,6 +26,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
+import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 
@@ -224,6 +225,10 @@ class _ChatBodyState extends State<ChatBody> {
                   contextFraction: fraction,
                   onOpenContext: () => _openContext(bloc),
                   running: state.isRunning,
+                  projectName: state.project?.name,
+                  onOpenProject: state.project == null
+                      ? null
+                      : () => openProject(context, state.project!.id),
                 ),
                 onAttach: _pickFiles,
                 onRemoveAttachment: (index) =>
