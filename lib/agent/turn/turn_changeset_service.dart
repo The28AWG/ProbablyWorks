@@ -46,7 +46,8 @@ class TurnChangesetService {
     );
   }
 
-  Future<TurnChangeset> recordBeforeWrite({
+  /// Учитывает путь в manifest после **успешной** записи на Host.
+  Future<TurnChangeset> recordSuccessfulWrite({
     required String chatId,
     required String turnId,
     required String path,

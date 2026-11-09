@@ -439,15 +439,6 @@ class ToolExecutor {
     // Бэкап привязан к нему: предыдущие версии не затираются при повторной записи.
     final runId = _uuid.v4();
     final turnId = ctx.turnUserMessageId;
-    if (turnId != null) {
-      await _changesets.recordBeforeWrite(
-        chatId: ctx.chat.id,
-        turnId: turnId,
-        path: path,
-        fileExisted: expectedMtime != null,
-        beforeText: before,
-      );
-    }
     if (decision == PolicyDecision.ask) {
       final approved = await _approve(
         ctx,
@@ -470,7 +461,7 @@ class ToolExecutor {
             targetPath: path,
             toolRunId: runId,
           );
-    return _exec(
+    final result = await _exec(
       ctx,
       call,
       args,
@@ -483,6 +474,33 @@ class ToolExecutor {
       background: false,
       presetRunId: runId,
       stdin: Uint8List.fromList(utf8.encode(after)),
+    );
+    await _recordSuccessfulWriteIfNeeded(
+      ctx,
+      result,
+      path: path,
+      before: before,
+      fileExisted: expectedMtime != null,
+    );
+    return result;
+  }
+
+  /// Manifest и backup в store — только после успешной записи на Host.
+  Future<void> _recordSuccessfulWriteIfNeeded(
+    ToolContext ctx,
+    ToolResult result, {
+    required String path,
+    required String before,
+    required bool fileExisted,
+  }) async {
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null || result.isError) return;
+    await _changesets.recordSuccessfulWrite(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      path: path,
+      fileExisted: fileExisted,
+      beforeText: before,
     );
   }
 
@@ -1167,7 +1185,12 @@ class ToolExecutor {
     final path = _resolve(ctx, _str(args, 'path'));
     final content = _str(args, 'content');
     final mtime = await _mtimeOrNull(ctx, path);
-    return _exec(
+    var before = '';
+    if (mtime != null) {
+      final read = await captureOp(ctx.runtime, ReadRawOp(path));
+      if (read.ok) before = read.stdout;
+    }
+    final result = await _exec(
       ctx,
       call,
       args,
@@ -1182,6 +1205,14 @@ class ToolExecutor {
       stdin: Uint8List.fromList(utf8.encode(content)),
       startedAt: run.startedAt,
     );
+    await _recordSuccessfulWriteIfNeeded(
+      ctx,
+      result,
+      path: path,
+      before: before,
+      fileExisted: mtime != null,
+    );
+    return result;
   }
 
   Future<ToolResult> _resumeEdit(
@@ -1221,7 +1252,7 @@ class ToolExecutor {
     final after = replaceAll
         ? before.replaceAll(oldString, newString)
         : before.replaceFirst(oldString, newString);
-    return _exec(
+    final result = await _exec(
       ctx,
       call,
       args,
@@ -1236,6 +1267,14 @@ class ToolExecutor {
       stdin: Uint8List.fromList(utf8.encode(after)),
       startedAt: run.startedAt,
     );
+    await _recordSuccessfulWriteIfNeeded(
+      ctx,
+      result,
+      path: path,
+      before: before,
+      fileExisted: true,
+    );
+    return result;
   }
 
   Future<String> _resumeBackupPath(

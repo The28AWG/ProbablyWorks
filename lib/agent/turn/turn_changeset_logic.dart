@@ -148,7 +148,8 @@ List<String> turnIdsNewestFirst({
   });
 }
 
-/// Сводка путей для диалога: при конфликте побеждает более поздний ответ агента.
+/// Сводка путей для диалога: подпись — эффект отката до состояния **до самого
+/// раннего** затронутого ответа агента (не последнего в цепочке).
 List<EditFileChangesEntry> aggregateEditFileChanges({
   required Map<String, TurnChangeset> allTurns,
   required List<String> turnIdsOldestFirst,
@@ -158,7 +159,7 @@ List<EditFileChangesEntry> aggregateEditFileChanges({
     final cs = allTurns[turnId];
     if (cs == null) continue;
     for (final change in cs.files.values) {
-      byPath[change.path] = change.kind;
+      byPath.putIfAbsent(change.path, () => change.kind);
     }
   }
   return [

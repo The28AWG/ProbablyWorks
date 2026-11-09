@@ -104,6 +104,30 @@ void main() {
     expect(sorted, ['u2', 'u1']);
   });
 
+  test('aggregate edit labels use oldest turn per path', () {
+    final created = _empty().copyWith(
+      turnId: 't1',
+      files: {
+        '/f.txt': TurnFileChange(path: '/f.txt', kind: TurnFileKind.created),
+      },
+    );
+    final modified = _empty().copyWith(
+      turnId: 't2',
+      files: {
+        '/f.txt': TurnFileChange(
+          path: '/f.txt',
+          kind: TurnFileKind.modified,
+          backupName: 'b',
+        ),
+      },
+    );
+    final entries = aggregateEditFileChanges(
+      allTurns: {'t1': created, 't2': modified},
+      turnIdsOldestFirst: ['t1', 't2'],
+    );
+    expect(entries.single.kind, TurnFileKind.created);
+  });
+
   test('shell mutation marks non-recoverable', () {
     var cs = _empty();
     cs = turnChangesetMarkShellMutation(changeset: cs, toolRunId: 'run1');
