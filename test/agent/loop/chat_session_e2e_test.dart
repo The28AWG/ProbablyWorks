@@ -2109,19 +2109,21 @@ void main() {
         await runTurn(session, 'shell and write');
 
         final userId = (await userMessages(chatId)).single.id;
-        final pending = broker.editFileChangesRequests
-            .where((item) => item.chatId == chatId)
-            .first;
-        unawaited(
-          pending.then((request) {
-            expect(request.shellMayHaveChangedFiles, isTrue);
-            broker.resolveEditFileChanges(
-              request.id,
-              EditFileChangesChoice.cancel,
-            );
-          }),
-        );
-        await session.editUserMessage(userId, 'edit');
+        Future<void> answerPrompt() async {
+          final request = await broker.editFileChangesRequests
+              .where((item) => item.chatId == chatId)
+              .first;
+          expect(request.shellMayHaveChangedFiles, isTrue);
+          broker.resolveEditFileChanges(
+            request.id,
+            EditFileChangesChoice.cancel,
+          );
+        }
+
+        await Future.wait([
+          answerPrompt(),
+          session.editUserMessage(userId, 'edit'),
+        ]);
       },
     );
 
