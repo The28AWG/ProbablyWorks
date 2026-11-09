@@ -142,7 +142,10 @@ void main() {
         ),
         mode: PolicyMode.ask,
       ),
-      onBackgroundDone: (_, _) {},
+      onBackgroundDone: (_, outcome) {
+        // Фоновые команды в этом наборе не проверяются.
+        expect(outcome, isNotNull);
+      },
     );
   });
 

@@ -148,23 +148,42 @@ List<String> turnIdsNewestFirst({
   });
 }
 
-/// Сводка путей для диалога: подпись — эффект отката до состояния **до самого
-/// раннего** затронутого ответа агента (не последнего в цепочке).
+/// Подпись в диалоге правки истории по цепочке ответов агента для одного пути.
+TurnFileKind editFileChangesLabelKind({
+  required TurnFileKind oldestInChain,
+  required TurnFileKind newestInChain,
+}) {
+  if (oldestInChain == TurnFileKind.created) return TurnFileKind.created;
+  if (newestInChain == TurnFileKind.deleted) return TurnFileKind.deleted;
+  return TurnFileKind.modified;
+}
+
+/// Сводка путей для диалога: подпись отражает итог отката цепочки до самого
+/// раннего затронутого ответа (создание в цепочке → «создан», иначе удаление
+/// в конце цепочки → «удалён», иначе «изменён»).
 List<EditFileChangesEntry> aggregateEditFileChanges({
   required Map<String, TurnChangeset> allTurns,
   required List<String> turnIdsOldestFirst,
 }) {
-  final byPath = <String, TurnFileKind>{};
+  final oldestByPath = <String, TurnFileKind>{};
+  final newestByPath = <String, TurnFileKind>{};
   for (final turnId in turnIdsOldestFirst) {
     final cs = allTurns[turnId];
     if (cs == null) continue;
     for (final change in cs.files.values) {
-      byPath.putIfAbsent(change.path, () => change.kind);
+      oldestByPath.putIfAbsent(change.path, () => change.kind);
+      newestByPath[change.path] = change.kind;
     }
   }
   return [
-    for (final entry in byPath.entries)
-      EditFileChangesEntry(path: entry.key, kind: entry.value),
+    for (final path in oldestByPath.keys)
+      EditFileChangesEntry(
+        path: path,
+        kind: editFileChangesLabelKind(
+          oldestInChain: oldestByPath[path]!,
+          newestInChain: newestByPath[path]!,
+        ),
+      ),
   ]..sort((a, b) => a.path.compareTo(b.path));
 }
 

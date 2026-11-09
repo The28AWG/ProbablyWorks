@@ -104,7 +104,7 @@ void main() {
     expect(sorted, ['u2', 'u1']);
   });
 
-  test('aggregate edit labels use oldest turn per path', () {
+  test('aggregate shows created when chain started with create', () {
     final created = _empty().copyWith(
       turnId: 't1',
       files: {
@@ -126,6 +126,58 @@ void main() {
       turnIdsOldestFirst: ['t1', 't2'],
     );
     expect(entries.single.kind, TurnFileKind.created);
+  });
+
+  test('aggregate shows deleted when chain ends with delete', () {
+    final modified = _empty().copyWith(
+      turnId: 't1',
+      files: {
+        '/f.txt': TurnFileChange(
+          path: '/f.txt',
+          kind: TurnFileKind.modified,
+          backupName: 'b',
+        ),
+      },
+    );
+    final deleted = _empty().copyWith(
+      turnId: 't2',
+      files: {
+        '/f.txt': TurnFileChange(
+          path: '/f.txt',
+          kind: TurnFileKind.deleted,
+          backupName: 'b',
+        ),
+      },
+    );
+    final entries = aggregateEditFileChanges(
+      allTurns: {'t1': modified, 't2': deleted},
+      turnIdsOldestFirst: ['t1', 't2'],
+    );
+    expect(entries.single.kind, TurnFileKind.deleted);
+  });
+
+  test('aggregate shows modified when file was deleted then created again', () {
+    final deleted = _empty().copyWith(
+      turnId: 't1',
+      files: {
+        '/f.txt': TurnFileChange(
+          path: '/f.txt',
+          kind: TurnFileKind.deleted,
+          backupName: 'b',
+        ),
+      },
+    );
+    final created = _empty().copyWith(
+      turnId: 't2',
+      files: {
+        '/f.txt': TurnFileChange(path: '/f.txt', kind: TurnFileKind.created),
+      },
+    );
+    final entries = aggregateEditFileChanges(
+      allTurns: {'t1': deleted, 't2': created},
+      turnIdsOldestFirst: ['t1', 't2'],
+    );
+    expect(entries.single.kind, TurnFileKind.modified);
   });
 
   test('shell mutation marks non-recoverable', () {
