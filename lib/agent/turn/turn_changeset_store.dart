@@ -33,6 +33,12 @@ class TurnChangesetStore {
   String stagingBackupPath(String chatId, String turnId, String toolRunId) =>
       p.join(stagingDir(chatId, turnId).path, '$toolRunId.stg');
 
+  /// Каталог staging создаётся отдельно от [save]/[writeBackup]: Host делает `cp`
+  /// в этот путь только при перезаписи существующего файла.
+  Future<void> ensureStagingDir(String chatId, String turnId) async {
+    await stagingDir(chatId, turnId).create(recursive: true);
+  }
+
   File backupFile(String chatId, String turnId, String backupName) =>
       File(p.join(backupsDir(chatId, turnId).path, backupName));
 

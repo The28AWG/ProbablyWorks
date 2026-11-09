@@ -459,7 +459,13 @@ class ToolExecutor {
     }
     final backupPath = turnId == null
         ? '$path.pw-bak-$runId'
-        : _changesets.writeStagingBackupPath(ctx.chat.id, turnId, runId);
+        : await _changesets.prepareHostWriteBackupPath(
+            hostKind: ctx.host.kind,
+            chatId: ctx.chat.id,
+            turnId: turnId,
+            targetPath: path,
+            toolRunId: runId,
+          );
     return _exec(
       ctx,
       call,
@@ -1135,7 +1141,7 @@ class ToolExecutor {
       command: run.command ?? 'write $path',
       op: WriteFileOp(
         path,
-        backupPath: _resumeBackupPath(ctx, path, run),
+        backupPath: await _resumeBackupPath(ctx, path, run),
         expectedMtime: mtime,
       ),
       background: false,
@@ -1189,7 +1195,7 @@ class ToolExecutor {
       command: run.command ?? 'write $path',
       op: WriteFileOp(
         path,
-        backupPath: _resumeBackupPath(ctx, path, run),
+        backupPath: await _resumeBackupPath(ctx, path, run),
         expectedMtime: mtime,
       ),
       background: false,
@@ -1199,10 +1205,20 @@ class ToolExecutor {
     );
   }
 
-  String _resumeBackupPath(ToolContext ctx, String path, ToolRun run) {
+  Future<String> _resumeBackupPath(
+    ToolContext ctx,
+    String path,
+    ToolRun run,
+  ) async {
     final turnId = ctx.turnUserMessageId;
     if (turnId == null) return '$path.pw-bak-${run.id}';
-    return _changesets.writeStagingBackupPath(ctx.chat.id, turnId, run.id);
+    return _changesets.prepareHostWriteBackupPath(
+      hostKind: ctx.host.kind,
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      targetPath: path,
+      toolRunId: run.id,
+    );
   }
 
   Future<ToolResult> _resumeSelf(

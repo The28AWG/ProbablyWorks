@@ -383,6 +383,7 @@ class ChatSession {
     await _hub.turnChangesets.rollback(
       changeset: cs,
       runtime: runtime,
+      hostKind: host.kind,
       cwd: cwd,
     );
     _emit(AgentStateChanged(chatId));

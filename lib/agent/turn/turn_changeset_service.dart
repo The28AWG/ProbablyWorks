@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
+import 'package:probably_works/agent/turn/host_write_backup_path.dart';
 import 'package:probably_works/agent/turn/shell_fs_mutation.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
@@ -68,11 +69,25 @@ class TurnChangesetService {
     return saved;
   }
 
-  String writeStagingBackupPath(
-    String chatId,
-    String turnId,
-    String toolRunId,
-  ) => _store.stagingBackupPath(chatId, turnId, toolRunId);
+  /// Путь бэкапа на стороне Host для [WriteFileOp]; для local создаёт `staging/`.
+  Future<String> prepareHostWriteBackupPath({
+    required HostKind hostKind,
+    required String chatId,
+    required String turnId,
+    required String targetPath,
+    required String toolRunId,
+  }) async {
+    final appStaging = _store.stagingBackupPath(chatId, turnId, toolRunId);
+    if (hostKind == HostKind.local) {
+      await _store.ensureStagingDir(chatId, turnId);
+    }
+    return hostWriteBackupPath(
+      hostKind: hostKind,
+      targetPath: targetPath,
+      runId: toolRunId,
+      appStagingPath: appStaging,
+    );
+  }
 
   Future<TurnChangeset> recordShellMutation({
     required String chatId,
@@ -101,6 +116,7 @@ class TurnChangesetService {
   Future<TurnChangeset> rollback({
     required TurnChangeset changeset,
     required HostRuntime runtime,
+    required HostKind hostKind,
     String? cwd,
   }) async {
     if (changeset.rolledBack) {
@@ -122,10 +138,11 @@ class TurnChangesetService {
           }
           await _restoreFile(
             runtime,
-            changeset.chatId,
-            changeset.turnId,
-            path,
-            bytes,
+            hostKind: hostKind,
+            chatId: changeset.chatId,
+            turnId: changeset.turnId,
+            path: path,
+            bytes: bytes,
             cwd: cwd,
           );
       }
@@ -155,16 +172,23 @@ class TurnChangesetService {
   }
 
   Future<void> _restoreFile(
-    HostRuntime runtime,
-    String chatId,
-    String turnId,
-    String path,
-    Uint8List bytes, {
+    HostRuntime runtime, {
+    required HostKind hostKind,
+    required String chatId,
+    required String turnId,
+    required String path,
+    required Uint8List bytes,
     String? cwd,
   }) async {
     final mtime = await _mtimeOrNull(runtime, path, cwd: cwd);
     final stagingId = _uuid.v4();
-    final backupPath = _store.stagingBackupPath(chatId, turnId, stagingId);
+    final backupPath = await prepareHostWriteBackupPath(
+      hostKind: hostKind,
+      chatId: chatId,
+      turnId: turnId,
+      targetPath: path,
+      toolRunId: stagingId,
+    );
     final run = await captureOp(
       runtime,
       WriteFileOp(path, backupPath: backupPath, expectedMtime: mtime),
