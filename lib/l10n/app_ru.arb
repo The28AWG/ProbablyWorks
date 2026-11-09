@@ -189,6 +189,14 @@
   "@messageEdit": {
     "description": "Действие меню: изменить сообщение пользователя и запустить ход заново."
   },
+  "messageEditHint": "Правка запустит ход заново",
+  "@messageEditHint": {
+    "description": "Подсказка в поле правки сообщения. Отправка переписывает историю с этого сообщения."
+  },
+  "messageEditDraft": "Неотправленная правка",
+  "@messageEditDraft": {
+    "description": "Подсказка для чтения с экрана у пузыря, который показывает ещё не отправленную правку. Пузырь окрашен и содержит текст правки; эта фраза на экране не пишется."
+  },
   "messageShowFull": "Показать целиком",
   "@messageShowFull": {
     "description": "Expands a long user message that is shown truncated in the transcript."

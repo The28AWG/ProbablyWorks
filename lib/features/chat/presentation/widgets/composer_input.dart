@@ -20,6 +20,7 @@ class ComposerInput extends StatefulWidget {
     required this.loading,
     required this.maxLines,
     required this.onSubmit,
+    this.onFocus,
     super.key,
   });
 
@@ -33,6 +34,9 @@ class ComposerInput extends StatefulWidget {
   final int maxLines;
   final ValueChanged<bool> onSubmit;
 
+  /// Фокус поля сменился. Нижний композер по этому сигналу сворачивает правку сообщения.
+  final ValueChanged<bool>? onFocus;
+
   @override
   State<ComposerInput> createState() => _ComposerInputState();
 }
@@ -44,6 +48,7 @@ class _ComposerInputState extends State<ComposerInput> {
   @override
   void initState() {
     super.initState();
+    _focusNode.addListener(_emitFocus);
     if (!widget.loading) _focusAfterFrame();
   }
 
@@ -56,9 +61,13 @@ class _ComposerInputState extends State<ComposerInput> {
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _focusNode
+      ..removeListener(_emitFocus)
+      ..dispose();
     super.dispose();
   }
+
+  void _emitFocus() => widget.onFocus?.call(_focusNode.hasFocus);
 
   /// Фокус после кадра: на момент initState или didUpdateWidget родитель может ещё не снять [ExcludeFocus].
   /// На мобильных фокус не ставим ([AppPlatform.focusesInputOnOpen]): иначе клавиатура открывалась бы при каждом чате.

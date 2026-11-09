@@ -24,12 +24,32 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 /// не уезжает: коррекция считается в layout (см. [AnchoredSliverList]), без кадров с рывком.
 /// Кнопка «к новым сообщениям» возвращает к концу. Отправка своего сообщения всегда возвращает к концу.
 class ChatTimeline extends StatefulWidget {
-  const ChatTimeline({required this.state, this.terminalFor, super.key});
+  const ChatTimeline({
+    required this.state,
+    this.terminalFor,
+    this.editingMessageId,
+    this.messageEditor,
+    this.onEditMessage,
+    this.editDraftTexts = const {},
+    super.key,
+  });
 
   final ChatState state;
 
   /// Терминал активного запуска по его id; `null`, если запуск не выполняется в PTY.
   final HostTerminal? Function(String runId)? terminalFor;
+
+  /// Сообщение пользователя, пузырь которого заменён композером правки.
+  final String? editingMessageId;
+
+  /// Композер правки. Показывается вместо пузыря [editingMessageId].
+  final Widget? messageEditor;
+
+  /// «Изменить» или нажатие по пузырю пользователя. Null — правку из ленты не начать.
+  final ValueChanged<ChatMessage>? onEditMessage;
+
+  /// Неотправленный текст правки по id сообщения. Пузырь показывает его вместо исходного и окрашен.
+  final Map<String, String> editDraftTexts;
 
   @override
   State<ChatTimeline> createState() => _ChatTimelineState();
@@ -244,14 +264,43 @@ class _ChatTimelineState extends State<ChatTimeline> {
       }
       // Пустой текст ассистента не рисуем, но его шаги остаются в журнале.
       if (!isAssistant || message.text.trim().isNotEmpty) {
+        final edit = widget.onEditMessage;
+        final tile = ChatMessageTile(
+          key: const ValueKey('bubble'),
+          message: message,
+          editable: !state.isRunning,
+          isLastAnswer: message.id == lastAnswerId,
+          turnElapsed: taskTimes[message.id],
+          onEdit: message.role == MessageRole.user && edit != null
+              ? () => edit(message)
+              : null,
+          editText: widget.editDraftTexts[message.id],
+        );
+        // Пузырь пользователя и композер правки меняют высоту: обёртка сглаживает этот переход.
+        // У остальных строк её нет, чтобы первое появление ленты не анимировало каждую высоту.
+        final editor = widget.messageEditor;
+        final editing =
+            message.role == MessageRole.user &&
+            message.id == widget.editingMessageId &&
+            editor != null;
         item(
           message.id,
-          ChatMessageTile(
-            message: message,
-            editable: !state.isRunning,
-            isLastAnswer: message.id == lastAnswerId,
-            turnElapsed: taskTimes[message.id],
-          ),
+          message.role == MessageRole.user
+              ? AnimatedSize(
+                  duration: AppDurations.normal,
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: AnimatedSwitcher(
+                    duration: AppDurations.fast,
+                    child: editing
+                        ? KeyedSubtree(
+                            key: const ValueKey('editing'),
+                            child: editor,
+                          )
+                        : tile,
+                  ),
+                )
+              : tile,
         );
       }
       for (final run in runsByMessage[message.id] ?? const <ToolRun>[]) {

@@ -16,6 +16,11 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 /// и режим выполнения. Внизу карточки одна строка: «+», строка настроек и одна кнопка действия справа.
 /// Кнопка действия зависит от состояния: при тексте или вложениях это отправка (во время работы агента —
 /// очередь), а при работе агента с пустым полем — остановка. Иначе справа ничего нет.
+///
+/// Та же карточка правит уже отправленное сообщение ([editing]): пузырь в ленте подменяется ею.
+/// Остановки и отдельной отмены там нет — правку сворачивает уход фокуса в нижнее поле, закрытие
+/// чата или Escape, а текст остаётся черновиком. Отправка переписывает историю.
+/// [embedded] убирает обёртку колонки: в ленте колонку уже даёт родитель.
 class ChatComposer extends StatelessWidget {
   const ChatComposer({
     required this.state,
@@ -31,6 +36,11 @@ class ChatComposer extends StatelessWidget {
     required this.onRemoveAttachment,
     required this.onSubmit,
     required this.onStop,
+    this.onInputFocus,
+    this.hint,
+    this.editing = false,
+    this.embedded = false,
+    this.submitting = false,
     this.centered = false,
     super.key,
   });
@@ -55,6 +65,21 @@ class ChatComposer extends StatelessWidget {
   final void Function(bool sendNow) onSubmit;
   final VoidCallback onStop;
 
+  /// Фокус поля ввода. Нижний композер сообщает им, что пользователь вернулся к новому сообщению.
+  final ValueChanged<bool>? onInputFocus;
+
+  /// Карточка заменяет пузырь пользователя. Кнопки остановки нет: ход в этот момент не идёт.
+  final bool editing;
+
+  /// Подсказка поля. Null — обычная подсказка нового сообщения.
+  final String? hint;
+
+  /// Карточка без [ChatColumn]: родитель уже ограничил ширину (пузырь в ленте).
+  final bool embedded;
+
+  /// Отправка уже ушла (диалог отката файлов). Кнопки правки не нажимаются второй раз.
+  final bool submitting;
+
   /// Композер стоит по центру пустого чата. Там поле может вырасти вдвое больше (см. [ChatDensity.composerMaxLines]).
   final bool centered;
 
@@ -64,102 +89,106 @@ class ChatComposer extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final density = ChatDensityScope.of(context);
     final busy = state.isRunning;
-    return ChatColumn.fixed(
-      context,
-      Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh,
-            borderRadius: density.composerRadius,
-            border: Border.all(
-              color: dragging ? scheme.primary : Colors.transparent,
-              width: 1.5,
-            ),
+    final card = Padding(
+      padding: embedded
+          ? const EdgeInsets.symmetric(vertical: AppSpacing.sm)
+          : const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHigh,
+          borderRadius: density.composerRadius,
+          border: Border.all(
+            color: dragging ? scheme.primary : Colors.transparent,
+            width: 1.5,
           ),
-          child: Padding(
-            padding: density.composerPadding,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ChatReveal(
-                  open: attachments.isNotEmpty,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Wrap(
-                        spacing: AppSpacing.xs,
-                        runSpacing: AppSpacing.xs,
-                        children: [
-                          for (var i = 0; i < attachments.length; i++)
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: AppLayout.attachmentChipMaxWidth,
-                              ),
-                              child: InputChip(
-                                avatar: Icon(
-                                  attachments[i].mode == AttachmentMode.attach
-                                      ? Icons.description_outlined
-                                      : Icons.attach_file,
-                                  size: 16,
-                                ),
-                                label: Text(
-                                  attachments[i].name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                onDeleted: () => onRemoveAttachment(i),
-                              ),
+        ),
+        child: Padding(
+          padding: density.composerPadding,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ChatReveal(
+                open: attachments.isNotEmpty,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        for (var i = 0; i < attachments.length; i++)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: AppLayout.attachmentChipMaxWidth,
                             ),
-                        ],
-                      ),
+                            child: InputChip(
+                              avatar: Icon(
+                                attachments[i].mode == AttachmentMode.attach
+                                    ? Icons.description_outlined
+                                    : Icons.attach_file,
+                                size: 16,
+                              ),
+                              label: Text(
+                                attachments[i].name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onDeleted: () => onRemoveAttachment(i),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-                AnimatedSize(
-                  duration: AppDurations.fast,
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: ComposerInput(
+              ),
+              AnimatedSize(
+                duration: AppDurations.fast,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: ComposerInput(
+                  controller: controller,
+                  hint: hint ?? l10n.composerHint,
+                  busy: busy,
+                  loading: state.loading,
+                  maxLines: density.composerMaxLines(centered: centered),
+                  onSubmit: onSubmit,
+                  onFocus: onInputFocus,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: [
+                  _PlusMenu(
+                    workspace: workspace,
+                    running: busy,
+                    policy: policy,
+                    onAttach: onAttach,
+                    onPickWorkspace: onPickWorkspace,
+                    onPolicySelected: onPolicySelected,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(child: settings),
+                  _ActionSlot(
                     controller: controller,
-                    hint: l10n.composerHint,
+                    hasAttachments: attachments.isNotEmpty,
                     busy: busy,
-                    loading: state.loading,
-                    maxLines: density.composerMaxLines(centered: centered),
-                    onSubmit: onSubmit,
+                    submitting: submitting,
+                    editing: editing,
+                    sendTooltip: l10n.composerSend,
+                    stopTooltip: l10n.composerStop,
+                    onSend: () => onSubmit(false),
+                    onStop: onStop,
                   ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Row(
-                  children: [
-                    _PlusMenu(
-                      workspace: workspace,
-                      running: busy,
-                      policy: policy,
-                      onAttach: onAttach,
-                      onPickWorkspace: onPickWorkspace,
-                      onPolicySelected: onPolicySelected,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(child: settings),
-                    _ActionSlot(
-                      controller: controller,
-                      hasAttachments: attachments.isNotEmpty,
-                      busy: busy,
-                      sendTooltip: l10n.composerSend,
-                      stopTooltip: l10n.composerStop,
-                      onSend: () => onSubmit(false),
-                      onStop: onStop,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
+    if (embedded) return card;
+    return ChatColumn.fixed(context, card);
   }
 }
 
@@ -169,12 +198,17 @@ class ChatComposer extends StatelessWidget {
 /// - поле пустое и агент работает: только стоп;
 /// - поле пустое и агент не работает: ничего, место справа освобождается.
 ///
+/// Правка сообщения ([editing]) показывает только отправку: остановки нет, отмена живёт снаружи
+/// карточки. Отправка блокируется, пока правка уже ушла ([submitting]).
+///
 /// Переход между состояниями плавный ([ChatMorph]). Ключи у кнопок обязательны, иначе смену не видно.
 class _ActionSlot extends StatelessWidget {
   const _ActionSlot({
     required this.controller,
     required this.hasAttachments,
     required this.busy,
+    required this.submitting,
+    required this.editing,
     required this.sendTooltip,
     required this.stopTooltip,
     required this.onSend,
@@ -184,6 +218,8 @@ class _ActionSlot extends StatelessWidget {
   final TextEditingController controller;
   final bool hasAttachments;
   final bool busy;
+  final bool submitting;
+  final bool editing;
   final String sendTooltip;
   final String stopTooltip;
   final VoidCallback onSend;
@@ -195,16 +231,18 @@ class _ActionSlot extends StatelessWidget {
         valueListenable: controller,
         builder: (context, value, _) {
           final canSend = hasAttachments || value.text.trim().isNotEmpty;
+          final showStop = !editing && !canSend && busy;
+          final showSend = canSend;
           return ChatMorph(
-            child: canSend
+            child: showSend
                 ? IconButton.filled(
                     key: const ValueKey('send'),
                     visualDensity: VisualDensity.compact,
                     tooltip: sendTooltip,
                     icon: const Icon(Icons.arrow_upward),
-                    onPressed: onSend,
+                    onPressed: submitting ? null : onSend,
                   )
-                : busy
+                : showStop
                 ? IconButton.filledTonal(
                     key: const ValueKey('stop'),
                     visualDensity: VisualDensity.compact,

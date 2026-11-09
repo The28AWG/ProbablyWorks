@@ -146,6 +146,10 @@ class Chats extends Table {
 
   /// Вложения черновика: JSON-список AttachmentRef (содержимое уже замаскировано).
   TextColumn get draftAttachments => text().withDefault(const Constant('[]'))();
+
+  /// Неотправленные правки сообщений: JSON-объект id сообщения → текст и вложения.
+  /// Пишется отдельно от [draft], чтобы набор в ленте не затирал поле внизу.
+  TextColumn get messageEdits => text().withDefault(const Constant('{}'))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

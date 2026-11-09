@@ -116,6 +116,53 @@ class ChatDraft extends Equatable {
   List<Object?> get props => [text, attachments];
 }
 
+/// Черновики правки уже отправленных сообщений: id сообщения → текст и вложения.
+///
+/// Пустая строка и `{}` — правок нет. Байты бинарных файлов в JSON не пишутся, как у черновика
+/// композера: после перезапуска такой файл нужно прикрепить заново.
+String encodeMessageEdits(Map<String, ChatDraft> edits) => jsonEncode({
+  for (final entry in edits.entries)
+    entry.key: {
+      'text': entry.value.text,
+      'attachments': [
+        for (final attachment in entry.value.attachments)
+          attachment.redacted().toJson(),
+      ],
+    },
+});
+
+/// Читает [encodeMessageEdits]. Повреждённая запись читается как пустая карта, а не как ошибка:
+/// чат должен открываться, даже если черновик правки не разобрать.
+Map<String, ChatDraft> decodeMessageEdits(String raw) {
+  if (raw.isEmpty || raw == '{}') return const {};
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) return const {};
+  final result = <String, ChatDraft>{};
+  for (final entry in decoded.entries) {
+    final value = entry.value;
+    if (value is! Map) continue;
+    final text = value['text'];
+    final attachments = <AttachmentRef>[];
+    final rawAttachments = value['attachments'];
+    if (rawAttachments is List) {
+      for (final item in rawAttachments) {
+        if (item is Map<String, dynamic>) {
+          attachments.add(AttachmentRef.fromJson(item));
+        } else if (item is Map) {
+          attachments.add(
+            AttachmentRef.fromJson(Map<String, dynamic>.from(item)),
+          );
+        }
+      }
+    }
+    result['${entry.key}'] = ChatDraft(
+      text: text is String ? text : '',
+      attachments: attachments,
+    );
+  }
+  return result;
+}
+
 class Chat {
   const Chat({
     required this.id,
@@ -135,6 +182,7 @@ class Chat {
     this.compactedUntilSeq = 0,
     this.currentRevisionId,
     this.draft = ChatDraft.empty,
+    this.messageEdits = const {},
   });
 
   final String id;
@@ -160,6 +208,10 @@ class Chat {
   /// Черновик, сохранённый вместе с чатом. Записывается отдельно от остальных полей (см. ChatRepository.saveDraft).
   final ChatDraft draft;
 
+  /// Неотправленные правки сообщений этого чата. Живут отдельно от черновика композера:
+  /// пузырь показывает этот текст и окрашен, пока правку не отправят.
+  final Map<String, ChatDraft> messageEdits;
+
   Chat copyWith({
     String? id,
     String? hostId,
@@ -181,6 +233,7 @@ class Chat {
     DateTime? createdAt,
     DateTime? updatedAt,
     ChatDraft? draft,
+    Map<String, ChatDraft>? messageEdits,
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
@@ -201,6 +254,7 @@ class Chat {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? DateTime.now(),
     draft: draft ?? this.draft,
+    messageEdits: messageEdits ?? this.messageEdits,
   );
 }
 

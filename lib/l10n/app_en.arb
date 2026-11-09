@@ -189,6 +189,14 @@
   "@messageEdit": {
     "description": "Menu action that edits a user message and re-runs from it."
   },
+  "messageEditHint": "Editing restarts the turn",
+  "@messageEditHint": {
+    "description": "Placeholder in the inline editor that replaces a user message. Sending rewrites history from that message."
+  },
+  "messageEditDraft": "Unsent edit",
+  "@messageEditDraft": {
+    "description": "Accessibility hint on a user bubble that shows an edit which has not been sent yet. The bubble itself is tinted and shows the edited text; this phrase is not a visible caption."
+  },
   "messageShowFull": "Show full message",
   "@messageShowFull": {
     "description": "Expands a long user message that is shown truncated in the transcript."

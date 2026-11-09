@@ -368,19 +368,27 @@ class ChatSession {
 
   /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
   ///
-  /// Если агент менял файлы в этом сообщении или позже, спрашивает об откате на Host.
-  Future<void> editUserMessage(String messageId, String newText) async {
+  /// [attachments] заменяют вложения исходного сообщения. Null оставляет прежние — так правка
+  /// меняет только текст. Если агент менял файлы в этом сообщении или позже, спрашивает об откате
+  /// на Host. false — сообщения нет или пользователь отказался откатывать файлы, история не меняется.
+  /// true — ход с новым текстом запущен.
+  Future<bool> editUserMessage(
+    String messageId,
+    String newText, {
+    List<AttachmentRef>? attachments,
+  }) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);
-    if (message == null || message.role != MessageRole.user) return;
+    if (message == null || message.role != MessageRole.user) return false;
     if (!await _confirmFileChangesBeforeRewind(
       anchor: message,
       afterOnly: false,
     )) {
-      return;
+      return false;
     }
     await _truncate(message, fromSelf: true, restoreBefore: true);
-    await submit(newText, attachments: message.attachments);
+    await submit(newText, attachments: attachments ?? message.attachments);
+    return true;
   }
 
   /// Delete-after N: оставляет N, удаляет всё после, состояние — как после N.

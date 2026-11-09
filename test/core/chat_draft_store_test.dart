@@ -139,4 +139,76 @@ void main() {
     drafts.update('c1', const ChatDraft(text: 'из памяти'));
     expect(drafts.of('c1', fallback: stored).text, 'из памяти');
   });
+
+  test(
+    'a message edit is saved without moving the chat and keeps empty text',
+    () async {
+      await drafts.flush();
+      drafts.updateEdit('c1', 'm1', const ChatDraft());
+      expect((await chats.chat('c1'))!.messageEdits, isEmpty);
+
+      await drafts.flush();
+      final saved = (await chats.chat('c1'))!;
+      expect(saved.messageEdits['m1']?.text, isEmpty);
+      expect(saved.updatedAt, now);
+
+      drafts.updateEdit('c1', 'm1', const ChatDraft(text: 'правка'));
+      await drafts.flush();
+      expect((await chats.chat('c1'))!.messageEdits['m1']?.text, 'правка');
+      expect((await chats.chat('c1'))!.updatedAt, now);
+    },
+  );
+
+  test('a message edit does not re-emit the chat list', () async {
+    final emissions = <List<Chat>>[];
+    final sub = chats.watchChats().listen(emissions.add);
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    drafts.updateEdit('c1', 'm1', const ChatDraft(text: 'правка'));
+    await drafts.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(emissions, hasLength(1));
+  });
+
+  test('message edit attachments are stored redacted', () async {
+    await drafts.flush();
+    drafts.updateEdit(
+      'c1',
+      'm1',
+      const ChatDraft(
+        attachments: [
+          AttachmentRef(
+            name: 'env.txt',
+            mode: AttachmentMode.attach,
+            content: 'token=sk-secret-value-123456789',
+          ),
+        ],
+      ),
+    );
+    await drafts.flush();
+
+    final saved = (await chats.chat('c1'))!
+        .messageEdits['m1']!
+        .attachments
+        .single;
+    expect(saved.name, 'env.txt');
+    expect(saved.content, isNot(contains('sk-secret-value-123456789')));
+  });
+
+  test('removing a message edit drops it', () async {
+    drafts
+      ..updateEdit('c1', 'm1', const ChatDraft(text: 'правка'))
+      ..removeEdit('c1', 'm1');
+    await drafts.flush();
+    expect((await chats.chat('c1'))!.messageEdits, isEmpty);
+  });
+
+  test('discarding a chat drops its message edits', () async {
+    drafts
+      ..updateEdit('c1', 'm1', const ChatDraft(text: 'ещё'))
+      ..discard('c1');
+    await drafts.flush();
+    expect((await chats.chat('c1'))!.messageEdits, isEmpty);
+  });
 }

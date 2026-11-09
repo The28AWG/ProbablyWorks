@@ -121,13 +121,26 @@ final class ChatQuestionAnswered extends ChatEvent {
 }
 
 final class ChatMessageEdited extends ChatEvent {
-  const ChatMessageEdited(this.messageId, this.text);
+  const ChatMessageEdited(
+    this.messageId,
+    this.text, {
+    this.attachments = const [],
+    this.onDone,
+  });
 
   final String messageId;
   final String text;
 
+  /// Вложения нового сообщения. Пустой список отправляет текст без вложений:
+  /// композер правки сам решает, что оставить от исходного сообщения.
+  final List<AttachmentRef> attachments;
+
+  /// true — история переписана и ход запущен. false — отмена отката файлов или сообщение
+  /// не найдено: поле правки нужно оставить. В [props] нет: это не данные события.
+  final void Function(bool accepted)? onDone;
+
   @override
-  List<Object?> get props => [messageId, text];
+  List<Object?> get props => [messageId, text, attachments];
 }
 
 final class ChatDeletedAfter extends ChatEvent {
@@ -993,12 +1006,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatMessageEdited event,
     Emitter<ChatState> emit,
   ) async {
+    var accepted = false;
     try {
-      await _session?.editUserMessage(event.messageId, event.text);
+      accepted =
+          await _session?.editUserMessage(
+            event.messageId,
+            event.text,
+            attachments: event.attachments,
+          ) ??
+          false;
     } on StateError catch (error) {
       emit(state.copyWith(failure: error.message));
     }
     await _reload(emit);
+    event.onDone?.call(accepted);
   }
 
   Future<void> _onDeletedAfter(

@@ -207,10 +207,14 @@ void main() {
     final db = _openAtVersion(2);
     addTearDown(db.close);
 
-    final savedModels = db.savedModels;
-    final rows = await db.select(savedModels).get();
-    expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 11);
+    final tables = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name IN ('llm_models', 'saved_models')",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(tables, ['saved_models']);
   });
 
   test(
@@ -229,6 +233,20 @@ void main() {
       expect(columns, containsAll(['draft', 'draft_attachments']));
     },
   );
+
+  test('v11 → v12 adds message edits to an existing chats table', () async {
+    final db = _openAtVersion(11);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name, dflt_value FROM pragma_table_info('chats') "
+          "WHERE name = 'message_edits'",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(columns, ['message_edits']);
+  });
 
   test(
     'v6 → v7 creates virtual filesystem nodes with a parent index',

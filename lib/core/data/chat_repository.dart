@@ -41,7 +41,7 @@ class ChatRepository {
   }
 
   static ChatRow _withoutDraft(ChatRow row) =>
-      row.copyWith(draft: '', draftAttachments: '[]');
+      row.copyWith(draft: '', draftAttachments: '[]', messageEdits: '{}');
 
   /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
   Stream<List<Chat>> watchByProject(String projectId) =>
@@ -50,6 +50,12 @@ class ChatRepository {
             ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
           .watch()
           .map((rows) => rows.map(_chat).toList());
+
+  /// Неотправленные правки сообщений. Как [saveDraft], не трогает updatedAt.
+  Future<void> saveMessageEdits(String chatId, Map<String, ChatDraft> edits) =>
+      (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
+        ChatsCompanion(messageEdits: Value(encodeMessageEdits(edits))),
+      );
 
   /// Черновик пишется отдельно от записи чата: не трогает updatedAt, поэтому порядок списка не меняется.
   Future<void> saveDraft(String chatId, ChatDraft draft) =>
@@ -350,6 +356,7 @@ class ChatRepository {
           AttachmentRef.fromJson(json as Map<String, dynamic>),
       ],
     ),
+    messageEdits: decodeMessageEdits(row.messageEdits),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );

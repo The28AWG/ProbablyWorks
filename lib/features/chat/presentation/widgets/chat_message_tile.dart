@@ -2,23 +2,25 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/elapsed_format.dart';
-import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Сообщение в ленте. Пользователь — нейтральный пузырь справа, ассистент — текст на всю колонку,
-/// служебные события — одна приглушённая строка. Действия сообщения пользователя видны при наведении
-/// и при фокусе с клавиатуры. У ответа агента кнопка «Копировать» есть только у последнего ответа.
+/// служебные события — одна приглушённая строка. Копирование и правка видны при наведении и при
+/// фокусе с клавиатуры. Нажатие по тексту пузыря тоже открывает правку: лента подменяет его
+/// композером. Неотправленная правка остаётся в пузыре и окрашивает его, пока сообщение не отправят.
+/// У ответа агента кнопка «Копировать» есть только у последнего ответа.
 class ChatMessageTile extends StatelessWidget {
   const ChatMessageTile({
     required this.message,
     required this.editable,
+    this.onEdit,
+    this.editText,
     this.isLastAnswer = false,
     this.turnElapsed,
     super.key,
@@ -26,8 +28,15 @@ class ChatMessageTile extends StatelessWidget {
 
   final ChatMessage message;
 
-  /// Правка и удаление недоступны, пока агент работает: история меняется только между шагами.
+  /// Правка недоступна, пока агент работает: история меняется только между шагами.
   final bool editable;
+
+  /// Открывает правку на месте. Null — ни нажатие по пузырю, ни кнопка «Изменить» правку не начинают.
+  final VoidCallback? onEdit;
+
+  /// Текст несохранённой правки. Null — пузырь показывает [ChatMessage.text] обычным цветом.
+  /// Пустая строка тоже видна: пользователь мог стереть сообщение и свернуть правку.
+  final String? editText;
 
   /// Ответ агента — последний в ленте: только у него есть кнопка «Копировать».
   final bool isLastAnswer;
@@ -38,7 +47,12 @@ class ChatMessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => switch (message.role) {
-    MessageRole.user => _UserMessage(message: message, editable: editable),
+    MessageRole.user => _UserMessage(
+      message: message,
+      editable: editable,
+      onEdit: onEdit,
+      editText: editText,
+    ),
     MessageRole.assistant => _AssistantMessage(
       message: message,
       isLastAnswer: isLastAnswer,
@@ -54,10 +68,17 @@ class ChatMessageTile extends StatelessWidget {
 const _previewChars = 2000;
 
 class _UserMessage extends StatefulWidget {
-  const _UserMessage({required this.message, required this.editable});
+  const _UserMessage({
+    required this.message,
+    required this.editable,
+    required this.onEdit,
+    required this.editText,
+  });
 
   final ChatMessage message;
   final bool editable;
+  final VoidCallback? onEdit;
+  final String? editText;
 
   @override
   State<_UserMessage> createState() => _UserMessageState();
@@ -70,11 +91,57 @@ class _UserMessageState extends State<_UserMessage> {
   Widget build(BuildContext context) {
     final message = widget.message;
     final editable = widget.editable;
+    final edit = widget.onEdit;
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final preview = charPrefix(message.text, _previewChars);
-    final long = preview.length < message.text.length;
-    final shown = long && !_expanded ? '$preview…' : message.text;
+    final pending = widget.editText;
+    final text = pending ?? message.text;
+    final preview = charPrefix(text, _previewChars);
+    final long = preview.length < text.length;
+    final shown = long && !_expanded ? '$preview…' : text;
+    final bubble = DecoratedBox(
+      decoration: BoxDecoration(
+        color: pending == null
+            ? scheme.surfaceContainerHigh
+            : scheme.primaryContainer,
+        borderRadius: AppRadius.lgAll,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _EditOnTap(
+              onTap: editable ? edit : null,
+              child: SelectableText(
+                shown,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: pending == null
+                      ? scheme.onSurface
+                      : scheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+            if (long)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: TextButton(
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  child: Text(
+                    _expanded ? l10n.messageCollapse : l10n.messageShowFull,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Align(
@@ -87,93 +154,85 @@ class _UserMessageState extends State<_UserMessage> {
               _ActionIcon(
                 tooltip: l10n.commonCopy,
                 icon: Icons.copy_outlined,
-                onPressed: () => _copy(context, message.text, l10n),
+                onPressed: () => _copy(context, text, l10n),
               ),
-              if (editable) ...[
+              if (editable && edit != null)
                 _ActionIcon(
                   tooltip: l10n.messageEdit,
                   icon: Icons.edit_outlined,
-                  onPressed: () => _edit(context, l10n),
+                  onPressed: edit,
                 ),
-                _ActionIcon(
-                  tooltip: l10n.messageDeleteAfter,
-                  icon: Icons.delete_outline,
-                  onPressed: () => _deleteAfter(context, l10n),
-                ),
-              ],
             ],
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
-                borderRadius: AppRadius.lgAll,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SelectableText(
-                      shown,
-                      style: Theme.of(context).textTheme.bodyLarge
-                          ?.copyWith(color: scheme.onSurface),
-                    ),
-                    if (long)
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: TextButton(
-                          onPressed: () =>
-                              setState(() => _expanded = !_expanded),
-                          child: Text(
-                            _expanded
-                                ? l10n.messageCollapse
-                                : l10n.messageShowFull,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+            child: pending == null
+                ? bubble
+                : Semantics(hint: l10n.messageEditDraft, child: bubble),
           ),
         ),
       ),
     );
   }
+}
 
-  Future<void> _edit(BuildContext context, AppLocalizations l10n) async {
-    final bloc = context.read<ChatBloc>();
-    final text = await ConfirmDialog.prompt(
-      context,
-      title: l10n.messageEdit,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.messageEdit,
-      initialText: widget.message.text,
-      minLines: 2,
-      maxLines: 10,
-    );
-    if (text != null && text.trim().isNotEmpty) {
-      bloc.add(ChatMessageEdited(widget.message.id, text));
+/// Короткое нажатие по тексту пузыря открывает правку. Сдвиг дальше [kTouchSlop] — это
+/// выделение, его не перехватываем. Долгое нажатие обрабатывает строка действий отдельно.
+class _EditOnTap extends StatefulWidget {
+  const _EditOnTap({required this.child, this.onTap});
+
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  State<_EditOnTap> createState() => _EditOnTapState();
+}
+
+class _EditOnTapState extends State<_EditOnTap> {
+  var _moved = false;
+  var _primary = false;
+  Offset? _start;
+  DateTime? _downAt;
+
+  void _down(PointerDownEvent event) {
+    _moved = false;
+    // Правая кнопка открывает меню выделения, это не переход в правку.
+    _primary =
+        event.kind != PointerDeviceKind.mouse ||
+        event.buttons == kPrimaryButton;
+    _start = event.position;
+    _downAt = DateTime.now();
+  }
+
+  void _move(PointerMoveEvent event) {
+    final start = _start;
+    if (start != null && (event.position - start).distance > kTouchSlop) {
+      _moved = true;
     }
   }
 
-  Future<void> _deleteAfter(BuildContext context, AppLocalizations l10n) async {
-    final bloc = context.read<ChatBloc>();
-    final ok = await ConfirmDialog.confirm(
-      context,
-      title: l10n.messageDeleteAfter,
-      message: l10n.messageDeleteAfterConfirm,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.commonDelete,
-      destructive: true,
-    );
-    if (ok) bloc.add(ChatDeletedAfter(widget.message.id));
+  void _up(PointerUpEvent _) {
+    final start = _start;
+    final at = _downAt;
+    _start = null;
+    _downAt = null;
+    if (!_primary || _moved || start == null || at == null) return;
+    // Долгое нажатие уже открыло лист действий: вторым шагом правку не начинаем.
+    if (DateTime.now().difference(at) >= kLongPressTimeout) return;
+    widget.onTap?.call();
   }
+
+  void _cancel(PointerCancelEvent _) {
+    _start = null;
+    _downAt = null;
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: widget.onTap == null ? null : _down,
+    onPointerMove: widget.onTap == null ? null : _move,
+    onPointerUp: widget.onTap == null ? null : _up,
+    onPointerCancel: widget.onTap == null ? null : _cancel,
+    child: widget.child,
+  );
 }
 
 class _AssistantMessage extends StatelessWidget {
