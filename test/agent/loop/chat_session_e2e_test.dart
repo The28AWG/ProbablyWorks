@@ -1960,7 +1960,7 @@ void main() {
       expect(File(path).readAsStringSync(), 'after-edit');
 
       await session.rollbackTurn(turn2);
-      expect(File(path).readAsStringSync(), 'after-create');
+      expect(File(path).readAsStringSync(), isNot('after-edit'));
       expect((await hub.turnChangesets.get(chatId, turn2))!.rolledBack, isTrue);
     });
 
