@@ -6,6 +6,7 @@ import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
@@ -17,6 +18,7 @@ import 'package:probably_works/agent/policy/policy_engine.dart';
 import 'package:probably_works/agent/tools/self_tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
@@ -47,6 +49,9 @@ class ChatSession {
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
         .listen((_) => unawaited(_notify(AgentNoticeKind.questionAsked)));
+    _changesetSub = _hub.turnChangesets.changes
+        .where((cs) => cs.chatId == chatId)
+        .listen((cs) => _emit(AgentTurnChangesetChanged(chatId, cs)));
   }
 
   final String chatId;
@@ -71,6 +76,8 @@ class ChatSession {
   bool _running = false;
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
+
+  late final StreamSubscription _changesetSub;
 
   /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
   Future<void>? _restoreInFlight;
@@ -360,10 +367,18 @@ class ChatSession {
   }
 
   /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
+  ///
+  /// Если агент менял файлы в этом сообщении или позже, спрашивает об откате на Host.
   Future<void> editUserMessage(String messageId, String newText) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);
     if (message == null || message.role != MessageRole.user) return;
+    if (!await _confirmFileChangesBeforeRewind(
+      anchor: message,
+      afterOnly: false,
+    )) {
+      return;
+    }
     await _truncate(message, fromSelf: true, restoreBefore: true);
     await submit(newText, attachments: message.attachments);
   }
@@ -372,9 +387,79 @@ class ChatSession {
   Future<void> deleteAfter(String messageId) async {
     if (_running) throw StateError('cannot delete while the agent is running');
     final message = await _find(messageId);
-    if (message == null) return;
+    if (message == null || message.role != MessageRole.user) return;
+    if (!await _confirmFileChangesBeforeRewind(
+      anchor: message,
+      afterOnly: true,
+    )) {
+      return;
+    }
     await _truncate(message, fromSelf: false, restoreBefore: false);
     _emit(AgentStateChanged(chatId));
+  }
+
+  /// Спрашивает об откате файлов на Host. false — пользователь отменил или откат не удался.
+  Future<bool> _confirmFileChangesBeforeRewind({
+    required ChatMessage anchor,
+    required bool afterOnly,
+  }) async {
+    final messages = await _hub.chats.messages(chatId);
+    final allTurns = await _hub.turnChangesets.forChat(chatId);
+    final turnIds = turnIdsWithPendingFileChanges(
+      messages: messages,
+      allTurns: allTurns,
+      anchorSeq: anchor.seq,
+      afterOnly: afterOnly,
+    );
+    if (turnIds.isEmpty) return true;
+
+    final newestFirst = turnIdsNewestFirst(
+      messages: messages,
+      turnIds: turnIds,
+    );
+    final oldestFirst = List<String>.of(newestFirst.reversed);
+    final shellWarning = turnIds.any(
+      (turnId) => allTurns[turnId]?.nonRecoverable ?? false,
+    );
+    final choice = await _hub.broker.requestEditFileChanges(
+      EditFileChangesRequest(
+        id: _uuid.v4(),
+        chatId: chatId,
+        files: aggregateEditFileChanges(
+          allTurns: allTurns,
+          turnIdsOldestFirst: oldestFirst,
+        ),
+        shellMayHaveChangedFiles: shellWarning,
+      ),
+    );
+    if (choice == EditFileChangesChoice.cancel) return false;
+
+    if (choice == EditFileChangesChoice.continueWithoutRollback) {
+      await _hub.turnChangesets.markKeptOnEdit(chatId, turnIds);
+      return true;
+    }
+
+    final chat = await _hub.chats.chat(chatId);
+    if (chat == null) return false;
+    final host = await _hub.hosts.byId(chat.hostId);
+    if (host == null) return false;
+    final runtime = _hub.runtimes.forHost(host);
+    final cwd = commandWorkspace(host, chat.workspace);
+    final result = await _hub.turnChangesets.rollbackTurnsNewestFirst(
+      chatId: chatId,
+      turnIdsNewestFirst: newestFirst,
+      runtime: runtime,
+      hostKind: host.kind,
+      cwd: cwd,
+    );
+    if (!result.ok) {
+      throw StateError(
+        'file rollback failed: ${result.describe()}; '
+        'history was not changed',
+      );
+    }
+    _emit(AgentStateChanged(chatId));
+    return true;
   }
 
   // ---- turn loop ---------------------------------------------------------
@@ -575,6 +660,7 @@ class ChatSession {
     return ToolContext(
       chat: bound.chat,
       messageId: messageId,
+      turnUserMessageId: await _turnForAssistant(messageId),
       host: host,
       runtime: _hub.runtimes.forHost(host),
       limits: limits,
@@ -582,6 +668,27 @@ class ChatSession {
       onBackgroundDone: _onBackgroundDone,
       project: bound.project,
     );
+  }
+
+  /// Пользовательское сообщение, которым открыт ход с ответом [assistantMessageId].
+  ///
+  /// Инструменты привязываются к последнему user-сообщению с меньшим seq, чем ответ
+  /// ассистента (а не к последнему влитому из очереди).
+  Future<String?> _turnForAssistant(String assistantMessageId) async {
+    final messages = await _hub.chats.messages(chatId);
+    ChatMessage? assistant;
+    for (final message in messages) {
+      if (message.id == assistantMessageId) assistant = message;
+    }
+    if (assistant == null) return null;
+    ChatMessage? user;
+    for (final message in messages) {
+      if (message.role != MessageRole.user || message.seq >= assistant.seq) {
+        continue;
+      }
+      if (user == null || message.seq > user.seq) user = message;
+    }
+    return user?.id;
   }
 
   /// Проект и политика хода. Общие для живого шага и возобновления, чтобы
@@ -684,6 +791,7 @@ class ChatSession {
       final toolCtx = ToolContext(
         chat: prepared.chat,
         messageId: messageId,
+        turnUserMessageId: await _turnForAssistant(messageId),
         host: prepared.host,
         runtime: prepared.runtime,
         limits: limits,
@@ -1210,6 +1318,7 @@ class ChatSession {
     await _runSub.cancel();
     await _waitSub.cancel();
     await _questionSub.cancel();
+    await _changesetSub.cancel();
     await _events.close();
   }
 }

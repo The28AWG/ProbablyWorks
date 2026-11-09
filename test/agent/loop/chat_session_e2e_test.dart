@@ -13,6 +13,7 @@ import 'package:probably_works/agent/exec/active_exec_registry.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
@@ -25,6 +26,8 @@ import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/turn/turn_changeset_service.dart';
+import 'package:probably_works/agent/turn/turn_changeset_store.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
@@ -138,6 +141,7 @@ void main() {
     final registry = ActiveExecRegistry();
     final bus = LiveOutputBus();
     final logs = ExecLogStore(tmp);
+    final turnChangesets = TurnChangesetService(TurnChangesetStore(tmp));
     final commands = CommandExecutor(logs, registry, bus);
     final state = SessionStateService(chats);
     final workspace = WorkspaceContextLoader(settings);
@@ -165,6 +169,7 @@ void main() {
       workspace,
       self,
       ProjectRepository(db),
+      turnChangesets,
     );
     final compactor = ContextCompactor(chats, llm, builder);
     drafts = ChatDraftStore(chats);
@@ -184,6 +189,7 @@ void main() {
       broker,
       registry,
       logs,
+      turnChangesets,
       _SilentNotifier(),
       ProjectLifecycleService(db, projectStore, hosts, runtimes),
       projectStore,
@@ -1894,4 +1900,273 @@ void main() {
       expect(facts.single.text, 'staging host only');
     },
   );
+
+  group('edit message file rollback', () {
+    Future<List<ChatMessage>> userMessages(String chatId) async => [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.user) message,
+    ];
+
+    Future<void> resolveNextEditFileChanges(
+      String chatId,
+      EditFileChangesChoice choice,
+    ) async {
+      final request = await broker.editFileChangesRequests
+          .where((item) => item.chatId == chatId)
+          .first;
+      broker.resolveEditFileChanges(request.id, choice);
+    }
+
+    test(
+      'editing a later message restores files to state after the first write',
+      () async {
+        final chatId = await createChat();
+        final path = '${tmp.path}/edit_msg_two.txt';
+        final session = hub.session(chatId);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'after-create'}),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('created'), const LlmCompleted()]);
+        await runTurn(session, 'create the file');
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'e',
+                  'edit_file',
+                  jsonEncode({
+                    'path': path,
+                    'old_string': 'after-create',
+                    'new_string': 'after-edit',
+                  }),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('edited'), const LlmCompleted()]);
+        await runTurn(session, 'edit the file');
+
+        final users = await userMessages(chatId);
+        final secondId = users.last.id;
+        unawaited(
+          resolveNextEditFileChanges(
+            chatId,
+            EditFileChangesChoice.rollbackAndContinue,
+          ),
+        );
+        llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+        await session.editUserMessage(secondId, 'rephrase edit');
+
+        expect(File(path).existsSync(), isTrue);
+        final onDisk = await File(path).readAsString();
+        expect(onDisk, 'after-create');
+        expect(
+          (await hub.turnChangesets.get(chatId, secondId))!.rolledBack,
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'editing the first message chains rollback and removes a created file',
+      () async {
+        final chatId = await createChat();
+        final path = '${tmp.path}/edit_msg_chain.txt';
+        final session = hub.session(chatId);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'v1'}),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('1'), const LlmCompleted()]);
+        await runTurn(session, 'write');
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'e',
+                  'edit_file',
+                  jsonEncode({
+                    'path': path,
+                    'old_string': 'v1',
+                    'new_string': 'v2',
+                  }),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('2'), const LlmCompleted()]);
+        await runTurn(session, 'edit more');
+
+        final firstId = (await userMessages(chatId)).first.id;
+        unawaited(
+          resolveNextEditFileChanges(
+            chatId,
+            EditFileChangesChoice.rollbackAndContinue,
+          ),
+        );
+        llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+        await session.editUserMessage(firstId, 'rephrase first');
+
+        expect(File(path).existsSync(), isFalse);
+      },
+    );
+
+    test(
+      'edit without rollback keeps files and marks changesets kept',
+      () async {
+        final chatId = await createChat();
+        final path = '${tmp.path}/edit_msg_keep.txt';
+        final session = hub.session(chatId);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'keep-me'}),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+        await runTurn(session, 'write once');
+
+        final userId = (await userMessages(chatId)).single.id;
+        unawaited(
+          resolveNextEditFileChanges(
+            chatId,
+            EditFileChangesChoice.continueWithoutRollback,
+          ),
+        );
+        llm.script.add([const LlmTextDelta('again'), const LlmCompleted()]);
+        await session.editUserMessage(userId, 'rephrase');
+
+        expect(await File(path).readAsString(), 'keep-me');
+        final kept = await hub.turnChangesets.get(chatId, userId);
+        expect(kept!.keptOnEdit, isTrue);
+
+        var prompted = false;
+        final sub = broker.editFileChangesRequests.listen(
+          (_) => prompted = true,
+        );
+        llm.script.add([const LlmTextDelta('third'), const LlmCompleted()]);
+        await session.editUserMessage(userId, 'once more');
+        await sub.cancel();
+        expect(prompted, isFalse);
+      },
+    );
+
+    test(
+      'shell mutation sets nonRecoverable on the edit-file prompt',
+      () async {
+        final chatId = await createChat();
+        final path = '${tmp.path}/edit_msg_shell.txt';
+        final session = hub.session(chatId);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'sh',
+                  'run_command',
+                  jsonEncode({'command': 'echo hi > /tmp/x'}),
+                ),
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'body'}),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+        await runTurn(session, 'shell and write');
+
+        final userId = (await userMessages(chatId)).single.id;
+        Future<void> answerPrompt() async {
+          final request = await broker.editFileChangesRequests
+              .where((item) => item.chatId == chatId)
+              .first;
+          expect(request.shellMayHaveChangedFiles, isTrue);
+          broker.resolveEditFileChanges(
+            request.id,
+            EditFileChangesChoice.cancel,
+          );
+        }
+
+        await Future.wait([
+          answerPrompt(),
+          session.editUserMessage(userId, 'edit'),
+        ]);
+      },
+    );
+
+    test('staging copy is removed after a successful edit', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/turn_cs_staging_cleanup.txt';
+      final session = hub.session(chatId);
+      final store = TurnChangesetStore(tmp);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                'write_file',
+                jsonEncode({'path': path, 'content': 'x'}),
+              ),
+              _call(
+                'ed',
+                'edit_file',
+                jsonEncode({
+                  'path': path,
+                  'old_string': 'x',
+                  'new_string': 'y',
+                }),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+      await runTurn(session, 'write then edit');
+
+      final turnId = (await userMessages(chatId)).single.id;
+      final staging = store.stagingDir(chatId, turnId);
+      final leftovers = staging.existsSync()
+          ? staging
+                .listSync()
+                .whereType<File>()
+                .where((file) => file.path.endsWith('.stg'))
+                .toList()
+          : <File>[];
+      expect(leftovers, isEmpty);
+    });
+  });
 }

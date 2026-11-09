@@ -6,6 +6,7 @@ import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
@@ -187,6 +188,16 @@ final class ChatRunStopRequested extends ChatEvent {
   List<Object?> get props => [runId];
 }
 
+final class ChatEditFileChangesAnswered extends ChatEvent {
+  const ChatEditFileChangesAnswered(this.requestId, this.choice);
+
+  final String requestId;
+  final EditFileChangesChoice choice;
+
+  @override
+  List<Object?> get props => [requestId, choice];
+}
+
 /// Элемент очереди: отправить сейчас (прерывает текущий шаг модели).
 final class ChatQueueSendNow extends ChatEvent {
   const ChatQueueSendNow(this.index);
@@ -305,6 +316,7 @@ class ChatState extends Equatable {
     this.queue = const [],
     this.approvals = const [],
     this.questions = const [],
+    this.editFileChanges = const [],
     this.hosts = const [],
     this.catalog = const ModelCatalogState(),
     this.pinnedModels = const [],
@@ -338,9 +350,11 @@ class ChatState extends Equatable {
   final bool unsaved;
   final List<ChatMessage> messages;
   final List<ToolRun> runs;
+
   final List<String> queue;
   final List<ApprovalRequest> approvals;
   final List<UserQuestion> questions;
+  final List<EditFileChangesRequest> editFileChanges;
   final List<Host> hosts;
 
   /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
@@ -415,6 +429,7 @@ class ChatState extends Equatable {
     List<String>? queue,
     List<ApprovalRequest>? approvals,
     List<UserQuestion>? questions,
+    List<EditFileChangesRequest>? editFileChanges,
     List<Host>? hosts,
     ModelCatalogState? catalog,
     List<String>? pinnedModels,
@@ -446,6 +461,7 @@ class ChatState extends Equatable {
     queue: queue ?? this.queue,
     approvals: approvals ?? this.approvals,
     questions: questions ?? this.questions,
+    editFileChanges: editFileChanges ?? this.editFileChanges,
     hosts: hosts ?? this.hosts,
     catalog: catalog ?? this.catalog,
     pinnedModels: pinnedModels ?? this.pinnedModels,
@@ -479,6 +495,7 @@ class ChatState extends Equatable {
     queue,
     approvals,
     questions,
+    editFileChanges,
     hosts,
     catalog,
     pinnedModels,
@@ -541,6 +558,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatWorkspaceChanged>(_onWorkspaceChanged);
     on<ChatWorkspaceTrusted>(_onTrusted);
     on<ChatRunStopRequested>(_onRunStop);
+    on<ChatEditFileChangesAnswered>(_onEditFileChanges);
     on<ChatQueueSendNow>(
       (event, _) async => _session?.promoteQueued(event.index),
     );
@@ -577,6 +595,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<LiveChunk>? _liveSub;
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
+  StreamSubscription<EditFileChangesRequest>? _editFileChangesSub;
 
   /// Общие подписки блока (каталог, хосты, журнал шагов): живут, пока открыт блок, и не зависят от чата.
   var _sharedWatching = false;
@@ -616,6 +635,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         queue: _queueTexts(),
         approvals: _hub.broker.pendingApprovals(event.chatId),
         questions: _hub.broker.pendingQuestions(event.chatId),
+        editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
         loading: true,
       ),
       _drafts.of(event.chatId),
@@ -681,6 +701,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
+    await _editFileChangesSub?.cancel();
     await _catalogSub?.cancel();
     await _hostsSub?.cancel();
     // Закрытие чата сохраняет его черновик сразу, не дожидаясь задержки записи.
@@ -731,10 +752,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
+    await _editFileChangesSub?.cancel();
     _sessionSub = null;
     _liveSub = null;
     _approvalSub = null;
     _questionSub = null;
+    _editFileChangesSub = null;
     _pendingLive.clear();
     _session = null;
   }
@@ -752,6 +775,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         .listen((_) => add(const _Refresh()));
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
+        .listen((_) => add(const _Refresh()));
+    _editFileChangesSub = _hub.broker.editFileChangesRequests
+        .where((request) => request.chatId == chatId)
         .listen((_) => add(const _Refresh()));
   }
 
@@ -783,6 +809,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       runs: snapshot.runs,
       approvals: _hub.broker.pendingApprovals(event.chatId),
       questions: _hub.broker.pendingQuestions(event.chatId),
+      editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
       contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
       isRunning: _session?.isRunning ?? false,
       queue: _queueTexts(),
@@ -966,14 +993,38 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatMessageEdited event,
     Emitter<ChatState> emit,
   ) async {
-    await _session?.editUserMessage(event.messageId, event.text);
+    try {
+      await _session?.editUserMessage(event.messageId, event.text);
+    } on StateError catch (error) {
+      emit(state.copyWith(failure: error.message));
+    }
+    await _reload(emit);
   }
 
   Future<void> _onDeletedAfter(
     ChatDeletedAfter event,
     Emitter<ChatState> emit,
   ) async {
-    await _session?.deleteAfter(event.messageId);
+    try {
+      await _session?.deleteAfter(event.messageId);
+    } on StateError catch (error) {
+      emit(state.copyWith(failure: error.message));
+    }
+    await _reload(emit);
+  }
+
+  void _onEditFileChanges(
+    ChatEditFileChangesAnswered event,
+    Emitter<ChatState> emit,
+  ) {
+    _hub.broker.resolveEditFileChanges(event.requestId, event.choice);
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    emit(
+      state.copyWith(
+        editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
+      ),
+    );
   }
 
   Future<void> _onModelChanged(
@@ -1165,6 +1216,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         await _reload(emit);
       case AgentRunChanged():
         await _reload(emit);
+      case AgentTurnChangesetChanged():
+        break;
       case AgentQueueChanged():
         emit(state.copyWith(queue: _queueTexts()));
       case AgentFailureRaised(:final failure):
@@ -1224,6 +1277,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       state.copyWith(
         approvals: _hub.broker.pendingApprovals(chatId),
         questions: _hub.broker.pendingQuestions(chatId),
+        editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
       ),
     );
   }
@@ -1237,7 +1291,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     return (chat: chat, messages: messages, runs: runs);
   }
 
-  /// Перечитывает чат, сообщения и запуски из БД; очищает живой вывод завершившихся запусков.
   Future<void> _reload(Emitter<ChatState> emit) async {
     final chatId = state.chatId;
     if (chatId == null) return;
@@ -1258,6 +1311,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         live: live,
         approvals: _hub.broker.pendingApprovals(chatId),
         questions: _hub.broker.pendingQuestions(chatId),
+        editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
         contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
       ),

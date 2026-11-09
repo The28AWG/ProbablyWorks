@@ -1980,5 +1980,21 @@
   "@chatProjectTooltip": {
     "description": "Подсказка чипа проекта в строке настроек чата.",
     "placeholders": {"name": {"type": "String"}}
-  }
+  },
+  "editFileChangesTitle": "Восстановить файлы на хосте?",
+  "@editFileChangesTitle": {"description": "Заголовок карточки при правке истории, если агент менял файлы."},
+  "editFileChangesBody": "Агент изменил файлы после этого сообщения (или в более поздних сообщениях, которые вы убираете). Можно восстановить их на хосте перед продолжением или оставить как есть.",
+  "@editFileChangesBody": {"description": "Основной текст карточки отката при правке истории."},
+  "editFileChangesShellWarning": "Команды shell могли менять файлы вне этого списка. Восстанавливаются только изменения write_file и edit_file.",
+  "@editFileChangesShellWarning": {"description": "Предупреждение, если run_command мог менять ФС."},
+  "editFileChangesRestore": "Восстановить и продолжить",
+  "@editFileChangesRestore": {"description": "Откатить файлы на хосте и продолжить правку истории."},
+  "editFileChangesKeep": "Оставить файлы",
+  "@editFileChangesKeep": {"description": "Продолжить без восстановления файлов на хосте."},
+  "editFileChangesKindCreated": "Создан",
+  "@editFileChangesKindCreated": {"description": "Файл создан агентом."},
+  "editFileChangesKindModified": "Изменён",
+  "@editFileChangesKindModified": {"description": "Файл изменён агентом."},
+  "editFileChangesKindDeleted": "Удалён",
+  "@editFileChangesKindDeleted": {"description": "Файл удалён агентом."}
 }

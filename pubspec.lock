@@ -1024,9 +1024,11 @@ packages:
   openrouter:
     dependency: "direct main"
     description:
-      path: "../openrouter"
-      relative: true
-    source: path
+      path: "."
+      resolved-ref: "54be90547727663313ae933ce2f10ee36cb9ec0f"
+      tag-pattern: "dist-v{{version}}"
+      url: "https://github.com/The28AWG/openrouter.git"
+    source: git
     version: "1.0.1"
   package_config:
     dependency: transitive

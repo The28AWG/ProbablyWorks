@@ -12,6 +12,7 @@ import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
@@ -45,6 +46,7 @@ class AgentHub {
     this.broker,
     this.registry,
     this.logs,
+    this.turnChangesets,
     this.notifier,
     this.projects,
     this.projectStore,
@@ -65,6 +67,7 @@ class AgentHub {
   final InteractionBroker broker;
   final ActiveExecRegistry registry;
   final ExecLogStore logs;
+  final TurnChangesetService turnChangesets;
   final AppNotifier notifier;
 
   /// Жизненный цикл проекта: создание, перенос чата, архив и окончательное удаление.

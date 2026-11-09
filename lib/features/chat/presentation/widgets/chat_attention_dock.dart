@@ -1,6 +1,8 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
+import 'package:probably_works/agent/turn/turn_file_kind.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/text_clip.dart';
@@ -77,6 +79,11 @@ class ChatAttentionDock extends StatelessWidget {
         _DockItem('approval:${approval.id}', _ApprovalCard(request: approval)),
       for (final question in state.questions)
         _DockItem('question:${question.id}', _QuestionCard(question: question)),
+      for (final request in state.editFileChanges)
+        _DockItem(
+          'edit-files:${request.id}',
+          _EditFileChangesCard(request: request),
+        ),
       if (state.queue.isNotEmpty)
         _DockItem('queue', _QueueCard(items: state.queue)),
     ];
@@ -248,6 +255,79 @@ class _ApprovalCard extends StatelessWidget {
         Text(request.reason, style: Theme.of(context).textTheme.bodyMedium),
         CodeBlock(text: request.summary, maxHeight: 160),
         if (diff != null && diff.isNotEmpty) DiffView(diff: diff),
+      ],
+    );
+  }
+}
+
+String _editFileKindLabel(AppLocalizations l10n, TurnFileKind kind) =>
+    switch (kind) {
+      TurnFileKind.created => l10n.editFileChangesKindCreated,
+      TurnFileKind.modified => l10n.editFileChangesKindModified,
+      TurnFileKind.deleted => l10n.editFileChangesKindDeleted,
+    };
+
+class _EditFileChangesCard extends StatelessWidget {
+  const _EditFileChangesCard({required this.request});
+
+  final EditFileChangesRequest request;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final bloc = context.read<ChatBloc>();
+    final scheme = Theme.of(context).colorScheme;
+    final fileLines = [
+      for (final file in request.files)
+        '${_editFileKindLabel(l10n, file.kind)}  ${file.path}',
+    ].join('\n');
+    return ActionCard(
+      title: l10n.editFileChangesTitle,
+      icon: Icons.edit_note_outlined,
+      tone: AppTone.warning,
+      actions: [
+        TextButton(
+          onPressed: () => bloc.add(
+            ChatEditFileChangesAnswered(
+              request.id,
+              EditFileChangesChoice.cancel,
+            ),
+          ),
+          child: Text(l10n.commonCancel),
+        ),
+        TextButton(
+          onPressed: () => bloc.add(
+            ChatEditFileChangesAnswered(
+              request.id,
+              EditFileChangesChoice.continueWithoutRollback,
+            ),
+          ),
+          child: Text(l10n.editFileChangesKeep),
+        ),
+        FilledButton(
+          onPressed: () => bloc.add(
+            ChatEditFileChangesAnswered(
+              request.id,
+              EditFileChangesChoice.rollbackAndContinue,
+            ),
+          ),
+          child: Text(l10n.editFileChangesRestore),
+        ),
+      ],
+      children: [
+        Text(
+          l10n.editFileChangesBody,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        if (request.shellMayHaveChangedFiles)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              l10n.editFileChangesShellWarning,
+              style: TextStyle(color: scheme.error, fontSize: 12),
+            ),
+          ),
+        if (fileLines.isNotEmpty) CodeBlock(text: fileLines, maxHeight: 160),
       ],
     );
   }

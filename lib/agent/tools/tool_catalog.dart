@@ -139,7 +139,7 @@ abstract final class ToolCatalog {
     ),
     const LlmToolSpec(
       name: ToolNames.writeFile,
-      description: 'Create or overwrite a text file. The previous version is kept as <path>.pw-bak-<run_id> next to it. Requires approval in Ask mode.',
+      description: 'Create or overwrite a text file. Earlier content of this agent turn is kept in app storage for rollback. Requires approval in Ask mode.',
       parameters: {
         'type': 'object',
         'properties': {

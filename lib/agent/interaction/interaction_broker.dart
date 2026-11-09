@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 
 /// Запрос на подтверждение действия (run_command / write_file / edit_file / trust).
 class ApprovalRequest {
@@ -95,14 +96,21 @@ class PendingCard {
 class InteractionBroker {
   final _approvalRequests = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
+  final _editFileChangesRequests =
+      StreamController<EditFileChangesRequest>.broadcast();
   final Map<String, Completer<bool>> _approvals = {};
   final Map<String, Completer<String?>> _answers = {};
+  final Map<String, Completer<EditFileChangesChoice>> _editFileChanges = {};
   final Map<String, ApprovalRequest> _pendingApprovals = {};
   final Map<String, UserQuestion> _pendingQuestions = {};
+  final Map<String, EditFileChangesRequest> _pendingEditFileChanges = {};
 
   Stream<ApprovalRequest> get approvalRequests => _approvalRequests.stream;
 
   Stream<UserQuestion> get questions => _questions.stream;
+
+  Stream<EditFileChangesRequest> get editFileChangesRequests =>
+      _editFileChangesRequests.stream;
 
   List<ApprovalRequest> pendingApprovals(String chatId) => [
     for (final r in _pendingApprovals.values)
@@ -112,6 +120,11 @@ class InteractionBroker {
   List<UserQuestion> pendingQuestions(String chatId) => [
     for (final q in _pendingQuestions.values)
       if (q.chatId == chatId) q,
+  ];
+
+  List<EditFileChangesRequest> pendingEditFileChanges(String chatId) => [
+    for (final request in _pendingEditFileChanges.values)
+      if (request.chatId == chatId) request,
   ];
 
   Future<bool> requestApproval(ApprovalRequest request) {
@@ -143,6 +156,23 @@ class InteractionBroker {
     if (completer != null && !completer.isCompleted) completer.complete(text);
   }
 
+  /// Спросить, откатывать ли файлы перед правкой или укорочением истории.
+  Future<EditFileChangesChoice> requestEditFileChanges(
+    EditFileChangesRequest request,
+  ) {
+    final completer = Completer<EditFileChangesChoice>();
+    _editFileChanges[request.id] = completer;
+    _pendingEditFileChanges[request.id] = request;
+    _editFileChangesRequests.add(request);
+    return completer.future;
+  }
+
+  void resolveEditFileChanges(String requestId, EditFileChangesChoice choice) {
+    _pendingEditFileChanges.remove(requestId);
+    final completer = _editFileChanges.remove(requestId);
+    if (completer != null && !completer.isCompleted) completer.complete(choice);
+  }
+
   /// Stop: все ожидания чата получают отказ/пустой ответ, чтобы цикл агента завершился.
   void cancelChat(String chatId) {
     for (final request in pendingApprovals(chatId)) {
@@ -150,6 +180,9 @@ class InteractionBroker {
     }
     for (final question in pendingQuestions(chatId)) {
       answer(question.id, null);
+    }
+    for (final request in pendingEditFileChanges(chatId)) {
+      resolveEditFileChanges(request.id, EditFileChangesChoice.cancel);
     }
   }
 }
