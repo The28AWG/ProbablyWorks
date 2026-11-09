@@ -1901,6 +1901,52 @@ void main() {
     },
   );
 
+  group('changeset only records successful writes', () {
+    test(
+      'denied write_file is not stored and does not prompt rollback later',
+      () async {
+        final chatId = await createChat(mode: PolicyMode.ask);
+        final path = '${tmp.path}/denied_create.txt';
+        final session = hub.session(chatId);
+        final approvals = broker.approvalRequests.listen((request) {
+          broker.resolveApproval(request.id, allow: false);
+        });
+        addTearDown(approvals.cancel);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'agent'}),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('no'), const LlmCompleted()]);
+        await runTurn(session, 'try create');
+
+        final turnId = (await hub.chats.messages(chatId))
+            .firstWhere((m) => m.role == MessageRole.user)
+            .id;
+        expect(await hub.turnChangesets.get(chatId, turnId), isNull);
+        File(path).writeAsStringSync('user content');
+
+        var prompted = false;
+        final sub = broker.editFileChangesRequests.listen(
+          (_) => prompted = true,
+        );
+        addTearDown(sub.cancel);
+        llm.script.add([const LlmTextDelta('again'), const LlmCompleted()]);
+        await session.editUserMessage(turnId, 'retry');
+        expect(prompted, isFalse);
+        expect(File(path).readAsStringSync(), 'user content');
+      },
+    );
+  });
+
   group('edit message file rollback', () {
     Future<List<ChatMessage>> userMessages(String chatId) async => [
       for (final message in await hub.chats.messages(chatId))
