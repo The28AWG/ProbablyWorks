@@ -7,6 +7,8 @@ import 'package:probably_works/agent/turn/shell_fs_mutation.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/agent/turn/turn_changeset_store.dart';
+import 'package:probably_works/core/domain/host.dart';
+import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
@@ -50,12 +52,12 @@ class TurnChangesetService {
     required String beforeText,
   }) async {
     var cs = await _open(chatId, turnId);
-    final backupName = TurnChangesetLogic.backupNameFor(path);
+    final backupName = turnChangesetBackupNameFor(path);
     final prior = cs.files[path];
     if (fileExisted && prior?.backupName == null) {
       await _store.writeBackupText(chatId, turnId, backupName, beforeText);
     }
-    cs = TurnChangesetLogic.recordBeforeWrite(
+    cs = turnChangesetRecordBeforeWrite(
       changeset: cs,
       path: path,
       fileExisted: fileExisted,
@@ -83,10 +85,7 @@ class TurnChangesetService {
       return await _open(chatId, turnId);
     }
     var cs = await _open(chatId, turnId);
-    cs = TurnChangesetLogic.markShellMutation(
-      changeset: cs,
-      toolRunId: toolRunId,
-    );
+    cs = turnChangesetMarkShellMutation(changeset: cs, toolRunId: toolRunId);
     final saved = await _store.save(cs);
     _emit(saved);
     return saved;
@@ -107,7 +106,7 @@ class TurnChangesetService {
     if (changeset.rolledBack) {
       throw StateError('turn already rolled back');
     }
-    final actions = TurnChangesetLogic.rollbackPlan(changeset);
+    final actions = turnChangesetRollbackPlan(changeset);
     for (final action in actions) {
       switch (action) {
         case RollbackRemove(:final path):
@@ -131,7 +130,7 @@ class TurnChangesetService {
           );
       }
     }
-    final saved = TurnChangesetLogic.markRolledBack(changeset);
+    final saved = turnChangesetMarkRolledBack(changeset);
     final stored = await _store.save(saved);
     _emit(stored);
     return stored;
@@ -142,8 +141,14 @@ class TurnChangesetService {
     String path, {
     String? cwd,
   }) async {
-    final quoted = quotePath(path);
-    final run = await captureRun(runtime, 'rm -f -- $quoted', cwd: cwd);
+    final adapter = ShellAdapter(runtime.os);
+    final command = switch (runtime.os) {
+      HostOs.windows => adapter.powershell(
+        'Remove-Item -LiteralPath ${psQuote(path)} -Force -ErrorAction SilentlyContinue',
+      ),
+      _ => 'rm -f -- ${adapter.quotePath(path)}',
+    };
+    final run = await captureRun(runtime, command, cwd: cwd);
     if (!run.ok && run.exitCode != 1) {
       throw StateError('failed to remove $path: ${run.stderr}');
     }

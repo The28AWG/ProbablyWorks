@@ -11,6 +11,12 @@ final class TurnFileChange extends Equatable {
     this.backupName,
   });
 
+  factory TurnFileChange.fromJson(Map<String, dynamic> json) => TurnFileChange(
+    path: json['path'] as String,
+    kind: TurnFileKind.values.byName(json['kind'] as String),
+    backupName: json['backupName'] as String?,
+  );
+
   final String path;
   final TurnFileKind kind;
 
@@ -35,12 +41,6 @@ final class TurnFileChange extends Equatable {
     if (backupName != null) 'backupName': backupName,
   };
 
-  factory TurnFileChange.fromJson(Map<String, dynamic> json) => TurnFileChange(
-    path: json['path'] as String,
-    kind: TurnFileKind.values.byName(json['kind'] as String),
-    backupName: json['backupName'] as String?,
-  );
-
   @override
   List<Object?> get props => [path, kind, backupName];
 }
@@ -56,6 +56,30 @@ final class TurnChangeset extends Equatable {
     this.rolledBack = false,
     required this.updatedAt,
   });
+
+  factory TurnChangeset.fromJson(Map<String, dynamic> json) {
+    final rawFiles = json['files'] as List<dynamic>? ?? const [];
+    final files = <String, TurnFileChange>{};
+    for (final item in rawFiles) {
+      final change = TurnFileChange.fromJson(item as Map<String, dynamic>);
+      files[change.path] = change;
+    }
+    return TurnChangeset(
+      chatId: json['chatId'] as String,
+      turnId: json['turnId'] as String,
+      files: files,
+      nonRecoverable: json['nonRecoverable'] as bool? ?? false,
+      shellMutationToolRunIds: [
+        for (final id in json['shellMutationToolRunIds'] as List? ?? const [])
+          id as String,
+      ],
+      rolledBack: json['rolledBack'] as bool? ?? false,
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+
+  factory TurnChangeset.fromEncoded(String raw) =>
+      TurnChangeset.fromJson(jsonDecode(raw) as Map<String, dynamic>);
 
   final String chatId;
 
@@ -101,31 +125,7 @@ final class TurnChangeset extends Equatable {
     'updatedAt': updatedAt.toIso8601String(),
   };
 
-  factory TurnChangeset.fromJson(Map<String, dynamic> json) {
-    final rawFiles = json['files'] as List<dynamic>? ?? const [];
-    final files = <String, TurnFileChange>{};
-    for (final item in rawFiles) {
-      final change = TurnFileChange.fromJson(item as Map<String, dynamic>);
-      files[change.path] = change;
-    }
-    return TurnChangeset(
-      chatId: json['chatId'] as String,
-      turnId: json['turnId'] as String,
-      files: files,
-      nonRecoverable: json['nonRecoverable'] as bool? ?? false,
-      shellMutationToolRunIds: [
-        for (final id in json['shellMutationToolRunIds'] as List? ?? const [])
-          id as String,
-      ],
-      rolledBack: json['rolledBack'] as bool? ?? false,
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
-    );
-  }
-
   String encode() => jsonEncode(toJson());
-
-  static TurnChangeset decode(String raw) =>
-      TurnChangeset.fromJson(jsonDecode(raw) as Map<String, dynamic>);
 
   @override
   List<Object?> get props => [

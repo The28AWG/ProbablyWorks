@@ -40,7 +40,7 @@ class TurnChangesetStore {
     final file = manifestFile(chatId, turnId);
     if (!file.existsSync()) return null;
     final raw = await file.readAsString();
-    return TurnChangeset.decode(raw);
+    return TurnChangeset.fromEncoded(raw);
   }
 
   Future<TurnChangeset> save(TurnChangeset changeset) async {

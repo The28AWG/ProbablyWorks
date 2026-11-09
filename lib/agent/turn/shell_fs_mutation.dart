@@ -1,5 +1,4 @@
 import 'package:probably_works/agent/policy/command_classifier.dart';
-import 'package:probably_works/agent/policy/command_risk.dart';
 
 /// Команда shell могла изменить файлы в обход write_file/edit_file.
 ///

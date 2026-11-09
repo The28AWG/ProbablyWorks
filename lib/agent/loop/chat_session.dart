@@ -370,8 +370,9 @@ class ChatSession {
   /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
   /// Откатывает изменения файлов хода, начатого сообщением [userMessageId].
   Future<void> rollbackTurn(String userMessageId) async {
-    if (_running)
+    if (_running) {
       throw StateError('cannot rollback while the agent is running');
+    }
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return;
     final host = await _hub.hosts.byId(chat.hostId);
