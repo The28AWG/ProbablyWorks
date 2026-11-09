@@ -22,7 +22,8 @@ void main() {
       fileExisted: true,
       backupName: 'b2',
     );
-    expect(cs.files['/a.txt']!.kind, TurnFileKind.created);
+    expect(cs.files['/a.txt']!.backupName, isNull);
+    expect(cs.files.length, 1);
     final plan = turnChangesetRollbackPlan(cs);
     expect(plan, hasLength(1));
     expect(plan.single, isA<RollbackRemove>());

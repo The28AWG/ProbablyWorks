@@ -367,7 +367,6 @@ class ChatSession {
     unawaited(_runTurn());
   }
 
-  /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
   /// Откатывает изменения файлов хода, начатого сообщением [userMessageId].
   Future<void> rollbackTurn(String userMessageId) async {
     if (_running) {
@@ -389,6 +388,7 @@ class ChatSession {
     _emit(AgentStateChanged(chatId));
   }
 
+  /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
   Future<void> editUserMessage(String messageId, String newText) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);

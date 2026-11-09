@@ -1,13 +1,15 @@
 /// Чистая логика учёта и планирования отката изменений файлов в ходе.
 library;
 
+import 'package:characters/characters.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_file_kind.dart';
+import 'package:probably_works/core/util/char_substring.dart';
 
 /// Имя файла снимка в `backups/` по пути на Host.
 String turnChangesetBackupNameFor(String hostPath) {
   final safe = hostPath.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
-  final tail = safe.length > 64 ? safe.substring(safe.length - 64) : safe;
+  final tail = safe.characters.length > 64 ? charSuffix(safe, 64) : safe;
   return '${hostPath.hashCode.abs().toRadixString(16)}_$tail.bin';
 }
 
@@ -56,8 +58,7 @@ TurnChangeset turnChangesetRecordDelete({
 }) {
   final existing = changeset.files[path];
   if (existing?.kind == TurnFileKind.created) {
-    final next = Map<String, TurnFileChange>.from(changeset.files)
-      ..remove(path);
+    final next = Map<String, TurnFileChange>.of(changeset.files)..remove(path);
     return changeset.copyWith(files: next, updatedAt: DateTime.now());
   }
   final backup = existing?.backupName;
