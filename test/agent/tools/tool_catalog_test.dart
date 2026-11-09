@@ -9,10 +9,10 @@ void main() {
     expect(spec.parameters['required'], contains('id'));
   });
 
-  test('write_file documents the per-run backup naming', () {
+  test('write_file documents turn rollback storage', () {
     final spec = ToolCatalog.specs.firstWhere(
       (s) => s.name == ToolNames.writeFile,
     );
-    expect(spec.description, contains('.pw-bak-'));
+    expect(spec.description, contains('rollback'));
   });
 }

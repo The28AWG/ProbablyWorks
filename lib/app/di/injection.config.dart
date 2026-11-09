@@ -19,6 +19,8 @@ import '../../agent/context/context_compactor.dart' as _i422;
 import '../../agent/exec/active_exec_registry.dart' as _i970;
 import '../../agent/exec/command_executor.dart' as _i401;
 import '../../agent/exec/exec_log_store.dart' as _i67;
+import '../../agent/turn/turn_changeset_service.dart' as _i1048;
+import '../../agent/turn/turn_changeset_store.dart' as _i1049;
 import '../../agent/exec/live_output_bus.dart' as _i972;
 import '../../agent/interaction/interaction_broker.dart' as _i765;
 import '../../agent/loop/agent_hub.dart' as _i168;
@@ -80,6 +82,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.singleton<_i67.ExecLogStore>(
       () => coreModule.execLogStore(gh<_i859.AppPaths>()),
+    );
+    gh.singleton<_i1049.TurnChangesetStore>(
+      () => coreModule.turnChangesetStore(gh<_i859.AppPaths>()),
     );
     await gh.factoryAsync<_i386.AppDatabase>(
       () => coreModule.database(gh<_i859.AppPaths>()),
@@ -201,6 +206,9 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i81.AppRouter>(
       () => coreModule.appRouter(gh<_i519.ApiKeyGuard>()),
     );
+    gh.lazySingleton<_i1048.TurnChangesetService>(
+      () => _i1048.TurnChangesetService(gh<_i1049.TurnChangesetStore>()),
+    );
     gh.lazySingleton<_i125.ToolExecutor>(
       () => _i125.ToolExecutor(
         gh<_i193.ChatRepository>(),
@@ -210,6 +218,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i359.WorkspaceContextLoader>(),
         gh<_i235.SelfToolHandler>(),
         gh<_i1031.ProjectRepository>(),
+        gh<_i1048.TurnChangesetService>(),
       ),
     );
     gh.singleton<_i168.AgentHub>(
@@ -228,6 +237,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i765.InteractionBroker>(),
         gh<_i970.ActiveExecRegistry>(),
         gh<_i67.ExecLogStore>(),
+        gh<_i1048.TurnChangesetService>(),
         gh<_i404.AppNotifier>(),
         gh<_i766.ProjectLifecycleService>(),
         gh<_i1031.ProjectRepository>(),

@@ -1,4 +1,5 @@
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
@@ -51,6 +52,13 @@ final class AgentRunChanged extends AgentEvent {
   const AgentRunChanged(super.chatId, this.run);
 
   final ToolRun run;
+}
+
+/// Снимок изменений файлов хода (manifest на диске обновился).
+final class AgentTurnChangesetChanged extends AgentEvent {
+  const AgentTurnChangesetChanged(super.chatId, this.changeset);
+
+  final TurnChangeset changeset;
 }
 
 final class AgentQueueChanged extends AgentEvent {

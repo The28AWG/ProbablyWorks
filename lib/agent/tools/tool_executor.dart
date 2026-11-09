@@ -15,6 +15,7 @@ import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_effect.dart';
+import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
@@ -42,10 +43,14 @@ class ToolContext {
     required this.policy,
     required this.onBackgroundDone,
     this.project,
+    this.turnUserMessageId,
   });
 
   final Chat chat;
   final String messageId;
+
+  /// Пользовательское сообщение, открывшее ход (для журнала изменений).
+  final String? turnUserMessageId;
   final Host host;
   final HostRuntime runtime;
   final AppLimits limits;
@@ -110,6 +115,7 @@ class ToolExecutor {
     this._workspace,
     this._self,
     this._projects,
+    this._changesets,
   );
 
   final ChatRepository _chats;
@@ -119,6 +125,7 @@ class ToolExecutor {
   final WorkspaceContextLoader _workspace;
   final SelfToolHandler _self;
   final ProjectRepository _projects;
+  final TurnChangesetService _changesets;
 
   /// Self-инструменты, которые только читают (выполняются сразу, без подтверждения).
   static const _selfReadTools = {
@@ -427,6 +434,16 @@ class ToolExecutor {
     // Один id на всю жизнь записи: ожидание подтверждения и выполнение — одна строка в журнале.
     // Бэкап привязан к нему: предыдущие версии не затираются при повторной записи.
     final runId = _uuid.v4();
+    final turnId = ctx.turnUserMessageId;
+    if (turnId != null) {
+      await _changesets.recordBeforeWrite(
+        chatId: ctx.chat.id,
+        turnId: turnId,
+        path: path,
+        fileExisted: expectedMtime != null,
+        beforeText: before,
+      );
+    }
     if (decision == PolicyDecision.ask) {
       final approved = await _approve(
         ctx,
@@ -440,6 +457,9 @@ class ToolExecutor {
       );
       if (!approved) return _rejected(path);
     }
+    final backupPath = turnId == null
+        ? '$path.pw-bak-$runId'
+        : _changesets.writeStagingBackupPath(ctx.chat.id, turnId, runId);
     return _exec(
       ctx,
       call,
@@ -447,7 +467,7 @@ class ToolExecutor {
       command: 'write $path',
       op: WriteFileOp(
         path,
-        backupPath: '$path.pw-bak-$runId',
+        backupPath: backupPath,
         expectedMtime: expectedMtime,
       ),
       background: false,
@@ -840,6 +860,13 @@ class ToolExecutor {
         try {
           final outcome = await handle.finished;
           final finished = await _complete(run, outcome);
+          await _recordShellIfNeeded(
+            ctx,
+            call,
+            args,
+            finished,
+            command: command,
+          );
           ctx.onBackgroundDone(finished, outcome);
         } finally {
           if (!settled.isCompleted) settled.complete();
@@ -853,9 +880,32 @@ class ToolExecutor {
 
     final outcome = await handle.finished;
     final finished = await _complete(run, outcome);
+    await _recordShellIfNeeded(ctx, call, args, finished, command: command);
     return ToolResult(
       _modelText(outcome, ctx.limits, finished.id),
       isError: outcome.status != ToolRunStatus.done,
+    );
+  }
+
+  Future<void> _recordShellIfNeeded(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run, {
+    required String command,
+  }) async {
+    if (call.name != ToolNames.runCommand) return;
+    if (run.status != ToolRunStatus.done) return;
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null) return;
+    final raw = args['command'];
+    final cmd = raw is String && raw.trim().isNotEmpty ? raw : command;
+    await _changesets.recordShellMutation(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      toolRunId: run.id,
+      classifier: ctx.policy.classifier,
+      command: cmd,
     );
   }
 
@@ -1085,7 +1135,7 @@ class ToolExecutor {
       command: run.command ?? 'write $path',
       op: WriteFileOp(
         path,
-        backupPath: '$path.pw-bak-${run.id}',
+        backupPath: _resumeBackupPath(ctx, path, run),
         expectedMtime: mtime,
       ),
       background: false,
@@ -1139,7 +1189,7 @@ class ToolExecutor {
       command: run.command ?? 'write $path',
       op: WriteFileOp(
         path,
-        backupPath: '$path.pw-bak-${run.id}',
+        backupPath: _resumeBackupPath(ctx, path, run),
         expectedMtime: mtime,
       ),
       background: false,
@@ -1147,6 +1197,12 @@ class ToolExecutor {
       stdin: Uint8List.fromList(utf8.encode(after)),
       startedAt: run.startedAt,
     );
+  }
+
+  String _resumeBackupPath(ToolContext ctx, String path, ToolRun run) {
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null) return '$path.pw-bak-${run.id}';
+    return _changesets.writeStagingBackupPath(ctx.chat.id, turnId, run.id);
   }
 
   Future<ToolResult> _resumeSelf(

@@ -47,6 +47,9 @@ class ChatSession {
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
         .listen((_) => unawaited(_notify(AgentNoticeKind.questionAsked)));
+    _changesetSub = _hub.turnChangesets.changes
+        .where((cs) => cs.chatId == chatId)
+        .listen((cs) => _emit(AgentTurnChangesetChanged(chatId, cs)));
   }
 
   final String chatId;
@@ -71,6 +74,11 @@ class ChatSession {
   bool _running = false;
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
+
+  /// Пользовательское сообщение, с которого начался текущий или последний ход.
+  String? _turnUserMessageId;
+
+  late final StreamSubscription _changesetSub;
 
   /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
   Future<void>? _restoreInFlight;
@@ -360,6 +368,26 @@ class ChatSession {
   }
 
   /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
+  /// Откатывает изменения файлов хода, начатого сообщением [userMessageId].
+  Future<void> rollbackTurn(String userMessageId) async {
+    if (_running)
+      throw StateError('cannot rollback while the agent is running');
+    final chat = await _hub.chats.chat(chatId);
+    if (chat == null) return;
+    final host = await _hub.hosts.byId(chat.hostId);
+    if (host == null) return;
+    final cs = await _hub.turnChangesets.get(chatId, userMessageId);
+    if (cs == null || !cs.canRollback) return;
+    final runtime = _hub.runtimes.forHost(host);
+    final cwd = commandWorkspace(host, chat.workspace);
+    await _hub.turnChangesets.rollback(
+      changeset: cs,
+      runtime: runtime,
+      cwd: cwd,
+    );
+    _emit(AgentStateChanged(chatId));
+  }
+
   Future<void> editUserMessage(String messageId, String newText) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);
@@ -575,6 +603,7 @@ class ChatSession {
     return ToolContext(
       chat: bound.chat,
       messageId: messageId,
+      turnUserMessageId: await _turnForAssistant(messageId),
       host: host,
       runtime: _hub.runtimes.forHost(host),
       limits: limits,
@@ -582,6 +611,25 @@ class ChatSession {
       onBackgroundDone: _onBackgroundDone,
       project: bound.project,
     );
+  }
+
+  /// Пользовательское сообщение, которым открыт ход с ответом [assistantMessageId].
+  Future<String?> _turnForAssistant(String assistantMessageId) async {
+    if (_turnUserMessageId != null && _running) return _turnUserMessageId;
+    final messages = await _hub.chats.messages(chatId);
+    ChatMessage? assistant;
+    for (final message in messages) {
+      if (message.id == assistantMessageId) assistant = message;
+    }
+    if (assistant == null) return _turnUserMessageId;
+    ChatMessage? user;
+    for (final message in messages) {
+      if (message.role != MessageRole.user || message.seq >= assistant.seq) {
+        continue;
+      }
+      if (user == null || message.seq > user.seq) user = message;
+    }
+    return user?.id;
   }
 
   /// Проект и политика хода. Общие для живого шага и возобновления, чтобы
@@ -684,6 +732,7 @@ class ChatSession {
       final toolCtx = ToolContext(
         chat: prepared.chat,
         messageId: messageId,
+        turnUserMessageId: _turnUserMessageId,
         host: prepared.host,
         runtime: prepared.runtime,
         limits: limits,
@@ -1017,6 +1066,7 @@ class ChatSession {
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return;
     final messageId = _uuid.v4();
+    _turnUserMessageId = messageId;
     final revisions = await _hub.state.onUserMessage(chat, messageId);
     await _append(
       MessageRole.user,
@@ -1210,6 +1260,7 @@ class ChatSession {
     await _runSub.cancel();
     await _waitSub.cancel();
     await _questionSub.cancel();
+    await _changesetSub.cancel();
     await _events.close();
   }
 }

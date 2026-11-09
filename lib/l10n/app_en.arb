@@ -1980,5 +1980,23 @@
   "@chatProjectTooltip": {
     "description": "Tooltip of the project chip in the chat settings row.",
     "placeholders": {"name": {"type": "String"}}
-  }
+  },
+  "turnChangesetTitle": "Files changed this turn",
+  "@turnChangesetTitle": {"description": "Title of the per-turn file changes list in chat."},
+  "turnChangesetCreated": "Created",
+  "@turnChangesetCreated": {"description": "Label for a file created during the agent turn."},
+  "turnChangesetModified": "Modified",
+  "@turnChangesetModified": {"description": "Label for a file modified during the agent turn."},
+  "turnChangesetDeleted": "Deleted",
+  "@turnChangesetDeleted": {"description": "Label for a file deleted during the agent turn."},
+  "turnChangesetNonRecoverable": "Shell commands may have changed files outside this list. Rollback only restores write_file and edit_file changes.",
+  "@turnChangesetNonRecoverable": {"description": "Warning when run_command may have mutated the host filesystem."},
+  "turnChangesetRollback": "Rollback turn",
+  "@turnChangesetRollback": {"description": "Button that restores tracked file changes from this turn."},
+  "turnChangesetRolledBack": "This turn was rolled back.",
+  "@turnChangesetRolledBack": {"description": "Status after the user rolled back file changes."},
+  "turnChangesetRollbackConfirmTitle": "Rollback file changes?",
+  "@turnChangesetRollbackConfirmTitle": {"description": "Title of the rollback confirmation dialog."},
+  "turnChangesetRollbackConfirmBody": "Tracked files from this turn will be restored or removed. Changes made by shell commands are not guaranteed to be undone.",
+  "@turnChangesetRollbackConfirmBody": {"description": "Body of the rollback confirmation dialog."}
 }

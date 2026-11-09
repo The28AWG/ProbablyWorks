@@ -1980,5 +1980,23 @@
   "@chatProjectTooltip": {
     "description": "Подсказка чипа проекта в строке настроек чата.",
     "placeholders": {"name": {"type": "String"}}
-  }
+  },
+  "turnChangesetTitle": "Файлы в этом ходе",
+  "@turnChangesetTitle": {"description": "Заголовок списка изменённых файлов за ход агента."},
+  "turnChangesetCreated": "Создан",
+  "@turnChangesetCreated": {"description": "Подпись для файла, созданного в ходе."},
+  "turnChangesetModified": "Изменён",
+  "@turnChangesetModified": {"description": "Подпись для изменённого файла."},
+  "turnChangesetDeleted": "Удалён",
+  "@turnChangesetDeleted": {"description": "Подпись для удалённого файла."},
+  "turnChangesetNonRecoverable": "Команды shell могли менять файлы вне этого списка. Откат восстанавливает только write_file и edit_file.",
+  "@turnChangesetNonRecoverable": {"description": "Предупреждение, если run_command мог менять ФС."},
+  "turnChangesetRollback": "Откатить ход",
+  "@turnChangesetRollback": {"description": "Кнопка отката учтённых изменений файлов."},
+  "turnChangesetRolledBack": "Ход откачен.",
+  "@turnChangesetRolledBack": {"description": "Статус после отката изменений."},
+  "turnChangesetRollbackConfirmTitle": "Откатить изменения файлов?",
+  "@turnChangesetRollbackConfirmTitle": {"description": "Заголовок диалога подтверждения отката."},
+  "turnChangesetRollbackConfirmBody": "Учтённые файлы будут восстановлены или удалены. Изменения от shell-команд могут остаться.",
+  "@turnChangesetRollbackConfirmBody": {"description": "Текст диалога подтверждения отката."}
 }

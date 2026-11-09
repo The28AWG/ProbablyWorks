@@ -119,6 +119,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _hub.chats.deleteChat(chatId);
     _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);
+    await _hub.turnChangesets.store.deleteChat(chatId);
     await _hub.projects.releaseIfEmpty(project?.id);
   }
 

@@ -15,6 +15,8 @@ import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/turn/turn_changeset_service.dart';
+import 'package:probably_works/agent/turn/turn_changeset_store.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
@@ -85,6 +87,7 @@ void main() {
       ModelCatalogService(SavedModelRepository(db), _NoNetworkLlm()),
       HostDiagnostics(hosts, secrets, settings, runtimes),
     );
+    final turnChangesets = TurnChangesetService(TurnChangesetStore(tmp));
     tools = ToolExecutor(
       chats,
       CommandExecutor(ExecLogStore(tmp), ActiveExecRegistry(), LiveOutputBus()),
@@ -93,6 +96,7 @@ void main() {
       WorkspaceContextLoader(settings),
       self,
       ProjectRepository(db),
+      turnChangesets,
     );
 
     final now = DateTime.now();

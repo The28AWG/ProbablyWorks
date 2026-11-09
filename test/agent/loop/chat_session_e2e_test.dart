@@ -12,6 +12,8 @@ import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/exec/active_exec_registry.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/exec/exec_log_store.dart';
+import 'package:probably_works/agent/turn/turn_changeset_service.dart';
+import 'package:probably_works/agent/turn/turn_changeset_store.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
@@ -138,6 +140,7 @@ void main() {
     final registry = ActiveExecRegistry();
     final bus = LiveOutputBus();
     final logs = ExecLogStore(tmp);
+    final turnChangesets = TurnChangesetService(TurnChangesetStore(tmp));
     final commands = CommandExecutor(logs, registry, bus);
     final state = SessionStateService(chats);
     final workspace = WorkspaceContextLoader(settings);
@@ -165,6 +168,7 @@ void main() {
       workspace,
       self,
       ProjectRepository(db),
+      turnChangesets,
     );
     final compactor = ContextCompactor(chats, llm, builder);
     drafts = ChatDraftStore(chats);
@@ -184,6 +188,7 @@ void main() {
       broker,
       registry,
       logs,
+      turnChangesets,
       _SilentNotifier(),
       ProjectLifecycleService(db, projectStore, hosts, runtimes),
       projectStore,

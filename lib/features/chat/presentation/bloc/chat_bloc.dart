@@ -11,6 +11,7 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/prompt_queue.dart';
+import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/host_repository.dart';
@@ -187,6 +188,16 @@ final class ChatRunStopRequested extends ChatEvent {
   List<Object?> get props => [runId];
 }
 
+/// Откат учтённых изменений файлов хода (сообщение пользователя [userMessageId]).
+final class ChatTurnRollbackRequested extends ChatEvent {
+  const ChatTurnRollbackRequested(this.userMessageId);
+
+  final String userMessageId;
+
+  @override
+  List<Object?> get props => [userMessageId];
+}
+
 /// Элемент очереди: отправить сейчас (прерывает текущий шаг модели).
 final class ChatQueueSendNow extends ChatEvent {
   const ChatQueueSendNow(this.index);
@@ -302,6 +313,7 @@ class ChatState extends Equatable {
     this.project,
     this.messages = const [],
     this.runs = const [],
+    this.turnChangesets = const {},
     this.queue = const [],
     this.approvals = const [],
     this.questions = const [],
@@ -338,6 +350,9 @@ class ChatState extends Equatable {
   final bool unsaved;
   final List<ChatMessage> messages;
   final List<ToolRun> runs;
+
+  /// Изменения файлов по id пользовательского сообщения, открывшего ход.
+  final Map<String, TurnChangeset> turnChangesets;
   final List<String> queue;
   final List<ApprovalRequest> approvals;
   final List<UserQuestion> questions;
@@ -412,6 +427,7 @@ class ChatState extends Equatable {
     bool clearProject = false,
     List<ChatMessage>? messages,
     List<ToolRun>? runs,
+    Map<String, TurnChangeset>? turnChangesets,
     List<String>? queue,
     List<ApprovalRequest>? approvals,
     List<UserQuestion>? questions,
@@ -443,6 +459,7 @@ class ChatState extends Equatable {
     project: clearProject ? null : (project ?? this.project),
     messages: messages ?? this.messages,
     runs: runs ?? this.runs,
+    turnChangesets: turnChangesets ?? this.turnChangesets,
     queue: queue ?? this.queue,
     approvals: approvals ?? this.approvals,
     questions: questions ?? this.questions,
@@ -476,6 +493,7 @@ class ChatState extends Equatable {
     project,
     messages,
     runs,
+    turnChangesets,
     queue,
     approvals,
     questions,
@@ -541,6 +559,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatWorkspaceChanged>(_onWorkspaceChanged);
     on<ChatWorkspaceTrusted>(_onTrusted);
     on<ChatRunStopRequested>(_onRunStop);
+    on<ChatTurnRollbackRequested>(_onTurnRollback);
     on<ChatQueueSendNow>(
       (event, _) async => _session?.promoteQueued(event.index),
     );
@@ -1119,6 +1138,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _hub.registry.stop(exec, force: false);
   }
 
+  Future<void> _onTurnRollback(
+    ChatTurnRollbackRequested event,
+    Emitter<ChatState> emit,
+  ) async {
+    try {
+      await _session?.rollbackTurn(event.userMessageId);
+    } on StateError catch (error) {
+      emit(state.copyWith(failure: error.message));
+    }
+    await _reloadChangesets(emit);
+  }
+
   Future<void> _onSessionEvent(
     _SessionEvent wrapper,
     Emitter<ChatState> emit,
@@ -1165,6 +1196,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         await _reload(emit);
       case AgentRunChanged():
         await _reload(emit);
+      case AgentTurnChangesetChanged(:final changeset):
+        emit(
+          state.copyWith(
+            turnChangesets: {
+              ...state.turnChangesets,
+              changeset.turnId: changeset,
+            },
+          ),
+        );
       case AgentQueueChanged():
         emit(state.copyWith(queue: _queueTexts()));
       case AgentFailureRaised(:final failure):
@@ -1229,15 +1269,35 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   /// Чат, сообщения и запуски из БД. Без emit: вызывающий сам решает, когда перерисовать экран.
-  Future<({Chat? chat, List<ChatMessage> messages, List<ToolRun> runs})>
+  Future<
+    ({
+      Chat? chat,
+      List<ChatMessage> messages,
+      List<ToolRun> runs,
+      Map<String, TurnChangeset> turnChangesets,
+    })
+  >
   _readChat(String chatId) async {
     final chat = await _hub.chats.chat(chatId);
     final messages = await _hub.chats.messages(chatId);
     final runs = await _hub.chats.toolRunsForChat(chatId);
-    return (chat: chat, messages: messages, runs: runs);
+    final turnChangesets = await _hub.turnChangesets.forChat(chatId);
+    return (
+      chat: chat,
+      messages: messages,
+      runs: runs,
+      turnChangesets: turnChangesets,
+    );
   }
 
   /// Перечитывает чат, сообщения и запуски из БД; очищает живой вывод завершившихся запусков.
+  Future<void> _reloadChangesets(Emitter<ChatState> emit) async {
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    final turnChangesets = await _hub.turnChangesets.forChat(chatId);
+    emit(state.copyWith(turnChangesets: turnChangesets));
+  }
+
   Future<void> _reload(Emitter<ChatState> emit) async {
     final chatId = state.chatId;
     if (chatId == null) return;
@@ -1255,6 +1315,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         chat: snapshot.chat,
         messages: snapshot.messages,
         runs: snapshot.runs,
+        turnChangesets: snapshot.turnChangesets,
         live: live,
         approvals: _hub.broker.pendingApprovals(chatId),
         questions: _hub.broker.pendingQuestions(chatId),
