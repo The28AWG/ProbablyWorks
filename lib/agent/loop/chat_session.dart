@@ -17,6 +17,7 @@ import 'package:probably_works/agent/policy/policy_engine.dart';
 import 'package:probably_works/agent/tools/self_tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
@@ -74,9 +75,6 @@ class ChatSession {
   bool _running = false;
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
-
-  /// Пользовательское сообщение, с которого начался текущий или последний ход.
-  String? _turnUserMessageId;
 
   late final StreamSubscription _changesetSub;
 
@@ -368,6 +366,9 @@ class ChatSession {
   }
 
   /// Откатывает изменения файлов хода, начатого сообщением [userMessageId].
+  ///
+  /// Более новый ход, затронувший те же пути, блокирует откат старых — сначала
+  /// откатывайте последние ходы.
   Future<void> rollbackTurn(String userMessageId) async {
     if (_running) {
       throw StateError('cannot rollback while the agent is running');
@@ -378,6 +379,27 @@ class ChatSession {
     if (host == null) return;
     final cs = await _hub.turnChangesets.get(chatId, userMessageId);
     if (cs == null || !cs.canRollback) return;
+    final messages = await _hub.chats.messages(chatId);
+    final userSeqById = {
+      for (final message in messages)
+        if (message.role == MessageRole.user) message.id: message.seq,
+    };
+    final turnSeq = userSeqById[userMessageId];
+    if (turnSeq != null) {
+      final allTurns = await _hub.turnChangesets.forChat(chatId);
+      final blocked = turnChangesetRollbackBlocked(
+        changeset: cs,
+        turnUserSeq: turnSeq,
+        allTurns: allTurns,
+        userSeqByMessageId: userSeqById,
+      );
+      if (blocked != null) {
+        throw StateError(
+          'rollback blocked: a later turn changed $blocked; '
+          'roll back newer turns first',
+        );
+      }
+    }
     final runtime = _hub.runtimes.forHost(host);
     final cwd = commandWorkspace(host, chat.workspace);
     await _hub.turnChangesets.rollback(
@@ -616,14 +638,16 @@ class ChatSession {
   }
 
   /// Пользовательское сообщение, которым открыт ход с ответом [assistantMessageId].
+  ///
+  /// Инструменты привязываются к последнему user-сообщению с меньшим seq, чем ответ
+  /// ассистента (а не к последнему влитому из очереди).
   Future<String?> _turnForAssistant(String assistantMessageId) async {
-    if (_turnUserMessageId != null && _running) return _turnUserMessageId;
     final messages = await _hub.chats.messages(chatId);
     ChatMessage? assistant;
     for (final message in messages) {
       if (message.id == assistantMessageId) assistant = message;
     }
-    if (assistant == null) return _turnUserMessageId;
+    if (assistant == null) return null;
     ChatMessage? user;
     for (final message in messages) {
       if (message.role != MessageRole.user || message.seq >= assistant.seq) {
@@ -734,7 +758,7 @@ class ChatSession {
       final toolCtx = ToolContext(
         chat: prepared.chat,
         messageId: messageId,
-        turnUserMessageId: _turnUserMessageId,
+        turnUserMessageId: await _turnForAssistant(messageId),
         host: prepared.host,
         runtime: prepared.runtime,
         limits: limits,
@@ -1068,7 +1092,6 @@ class ChatSession {
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return;
     final messageId = _uuid.v4();
-    _turnUserMessageId = messageId;
     final revisions = await _hub.state.onUserMessage(chat, messageId);
     await _append(
       MessageRole.user,

@@ -57,6 +57,32 @@ void main() {
     expect((action as RollbackRemove).path, '/new.txt');
   });
 
+  test('rollback blocked when a newer turn touched the same path', () {
+    final older = _empty().copyWith(
+      turnId: 'user-old',
+      files: {
+        '/f.txt': TurnFileChange(path: '/f.txt', kind: TurnFileKind.created),
+      },
+    );
+    final newer = _empty().copyWith(
+      turnId: 'user-new',
+      files: {
+        '/f.txt': TurnFileChange(
+          path: '/f.txt',
+          kind: TurnFileKind.modified,
+          backupName: 'b',
+        ),
+      },
+    );
+    final blocked = turnChangesetRollbackBlocked(
+      changeset: older,
+      turnUserSeq: 1,
+      allTurns: {'user-old': older, 'user-new': newer},
+      userSeqByMessageId: const {'user-old': 1, 'user-new': 3},
+    );
+    expect(blocked, '/f.txt');
+  });
+
   test('shell mutation marks non-recoverable', () {
     var cs = _empty();
     cs = turnChangesetMarkShellMutation(changeset: cs, toolRunId: 'run1');

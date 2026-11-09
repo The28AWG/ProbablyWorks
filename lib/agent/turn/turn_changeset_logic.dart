@@ -106,6 +106,27 @@ List<RollbackFileAction> turnChangesetRollbackPlan(TurnChangeset changeset) => [
   for (final change in changeset.files.values) turnChangesetActionFor(change),
 ];
 
+/// Путь, из‑за которого нельзя откатить более ранний ход: поздний ход трогал тот же файл.
+///
+/// Откатывайте сначала более новые ходы (больший [userSeqByMessageId]).
+String? turnChangesetRollbackBlocked({
+  required TurnChangeset changeset,
+  required int turnUserSeq,
+  required Map<String, TurnChangeset> allTurns,
+  required Map<String, int> userSeqByMessageId,
+}) {
+  final paths = changeset.files.keys.toSet();
+  for (final other in allTurns.values) {
+    if (other.turnId == changeset.turnId || other.rolledBack) continue;
+    final seq = userSeqByMessageId[other.turnId];
+    if (seq == null || seq <= turnUserSeq) continue;
+    for (final path in other.files.keys) {
+      if (paths.contains(path)) return path;
+    }
+  }
+  return null;
+}
+
 /// Одно файловое действие при откате хода.
 sealed class RollbackFileAction {
   const RollbackFileAction();

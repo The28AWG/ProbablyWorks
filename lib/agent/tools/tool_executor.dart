@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -15,6 +16,7 @@ import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_effect.dart';
+import 'package:probably_works/agent/turn/host_write_backup_path.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -24,11 +26,13 @@ import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/line_diff.dart';
+import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
+import 'package:probably_works/host/shell_adapter.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:uuid/uuid.dart';
 
@@ -887,10 +891,39 @@ class ToolExecutor {
     final outcome = await handle.finished;
     final finished = await _complete(run, outcome);
     await _recordShellIfNeeded(ctx, call, args, finished, command: command);
+    if (finished.status == ToolRunStatus.done &&
+        op is WriteFileOp &&
+        isEphemeralHostWriteBackup(op.backupPath)) {
+      await _discardEphemeralWriteBackup(ctx, op.backupPath);
+    }
     return ToolResult(
       _modelText(outcome, ctx.limits, finished.id),
       isError: outcome.status != ToolRunStatus.done,
     );
+  }
+
+  Future<void> _discardEphemeralWriteBackup(
+    ToolContext ctx,
+    String backupPath,
+  ) async {
+    if (ctx.host.kind == HostKind.local) {
+      try {
+        final file = File(backupPath);
+        if (file.existsSync()) file.deleteSync();
+      } on Object {
+        return;
+      }
+      return;
+    }
+    final adapter = ShellAdapter(ctx.runtime.os);
+    final command = switch (ctx.runtime.os) {
+      HostOs.windows => adapter.powershell(
+        'Remove-Item -LiteralPath ${psQuote(backupPath)} '
+        '-Force -ErrorAction SilentlyContinue',
+      ),
+      _ => 'rm -f -- ${adapter.quotePath(backupPath)}',
+    };
+    unawaited(captureRun(ctx.runtime, command));
   }
 
   Future<void> _recordShellIfNeeded(

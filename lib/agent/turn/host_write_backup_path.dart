@@ -15,3 +15,10 @@ String hostWriteBackupPath({
   HostKind.ssh => '/tmp/pw-stg-$runId',
   HostKind.virtual => '$targetPath.pw-stg-$runId',
 };
+
+/// Временный бэкап [WriteFileOp] для changeset: после успешной записи удаляется.
+bool isEphemeralHostWriteBackup(String path) =>
+    path.endsWith('.stg') ||
+    path.contains('/pw-stg-') ||
+    path.contains(r'\pw-stg-') ||
+    path.contains('.pw-stg-');

@@ -27,6 +27,7 @@ import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/turn/turn_changeset_store.dart';
+import 'package:probably_works/agent/turn/turn_file_kind.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
@@ -1899,4 +1900,202 @@ void main() {
       expect(facts.single.text, 'staging host only');
     },
   );
+
+  group('turn changeset rollback', () {
+    Future<List<ChatMessage>> userMessages(String chatId) async => [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.user) message,
+    ];
+
+    test('write then edit in separate messages: second turn is modified and rollback restores', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/turn_cs_two_msg.txt';
+      final session = hub.session(chatId);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                'write_file',
+                jsonEncode({'path': path, 'content': 'after-create'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('created'), const LlmCompleted()]);
+      await runTurn(session, 'create the file');
+
+      final users1 = await userMessages(chatId);
+      final turn1 = users1.single.id;
+      final cs1 = await hub.turnChangesets.get(chatId, turn1);
+      expect(cs1!.files[path]!.kind, TurnFileKind.created);
+      expect(File(path).readAsStringSync(), 'after-create');
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'e',
+                'edit_file',
+                jsonEncode({
+                  'path': path,
+                  'old_string': 'after-create',
+                  'new_string': 'after-edit',
+                }),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('edited'), const LlmCompleted()]);
+      await runTurn(session, 'edit the file');
+
+      final users2 = await userMessages(chatId);
+      expect(users2, hasLength(2));
+      final turn2 = users2.last.id;
+      final cs2 = await hub.turnChangesets.get(chatId, turn2);
+      expect(cs2!.files[path]!.kind, TurnFileKind.modified);
+      expect(File(path).readAsStringSync(), 'after-edit');
+
+      await session.rollbackTurn(turn2);
+      expect(File(path).readAsStringSync(), 'after-create');
+      expect((await hub.turnChangesets.get(chatId, turn2))!.rolledBack, isTrue);
+    });
+
+    test(
+      'create and edit in one message rolls back by removing the file',
+      () async {
+        final chatId = await createChat();
+        final path = '${tmp.path}/turn_cs_one_msg.txt';
+        final session = hub.session(chatId);
+
+        llm.script
+          ..add([
+            LlmCompleted(
+              toolCalls: [
+                _call(
+                  'w',
+                  'write_file',
+                  jsonEncode({'path': path, 'content': 'v1'}),
+                ),
+                _call(
+                  'e',
+                  'edit_file',
+                  jsonEncode({
+                    'path': path,
+                    'old_string': 'v1',
+                    'new_string': 'v2',
+                  }),
+                ),
+              ],
+            ),
+          ])
+          ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+        await runTurn(session, 'create then edit');
+
+        final turnId = (await userMessages(chatId)).single.id;
+        final cs = await hub.turnChangesets.get(chatId, turnId);
+        expect(cs!.files[path]!.kind, TurnFileKind.created);
+
+        await session.rollbackTurn(turnId);
+        expect(File(path).existsSync(), isFalse);
+      },
+    );
+
+    test('rollback of an older turn is blocked while a newer turn touched the file', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/turn_cs_order.txt';
+      final session = hub.session(chatId);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                'write_file',
+                jsonEncode({'path': path, 'content': 'a'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('1'), const LlmCompleted()]);
+      await runTurn(session, 'write');
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'e',
+                'edit_file',
+                jsonEncode({
+                  'path': path,
+                  'old_string': 'a',
+                  'new_string': 'b',
+                }),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('2'), const LlmCompleted()]);
+      await runTurn(session, 'edit');
+
+      final turn1 = (await userMessages(chatId)).first.id;
+      expect(
+        () => session.rollbackTurn(turn1),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('roll back newer turns first'),
+          ),
+        ),
+      );
+    });
+
+    test('staging copy is removed after a successful edit', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/turn_cs_staging_cleanup.txt';
+      final session = hub.session(chatId);
+      final store = TurnChangesetStore(tmp);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                'write_file',
+                jsonEncode({'path': path, 'content': 'x'}),
+              ),
+              _call(
+                'ed',
+                'edit_file',
+                jsonEncode({
+                  'path': path,
+                  'old_string': 'x',
+                  'new_string': 'y',
+                }),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+      await runTurn(session, 'write then edit');
+
+      final turnId = (await userMessages(chatId)).single.id;
+      final staging = store.stagingDir(chatId, turnId);
+      final leftovers = staging.existsSync()
+          ? staging
+                .listSync()
+                .whereType<File>()
+                .where((file) => file.path.endsWith('.stg'))
+                .toList()
+          : <File>[];
+      expect(leftovers, isEmpty);
+    });
+  });
 }

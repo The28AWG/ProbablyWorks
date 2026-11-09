@@ -8,6 +8,7 @@ import 'package:probably_works/agent/turn/shell_fs_mutation.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/agent/turn/turn_changeset_store.dart';
+import 'package:probably_works/agent/turn/turn_file_kind.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/host/host_capture.dart';
@@ -55,7 +56,9 @@ class TurnChangesetService {
     var cs = await _open(chatId, turnId);
     final backupName = turnChangesetBackupNameFor(path);
     final prior = cs.files[path];
-    if (fileExisted && prior?.backupName == null) {
+    if (fileExisted &&
+        prior?.backupName == null &&
+        prior?.kind != TurnFileKind.created) {
       await _store.writeBackupText(chatId, turnId, backupName, beforeText);
     }
     cs = turnChangesetRecordBeforeWrite(
