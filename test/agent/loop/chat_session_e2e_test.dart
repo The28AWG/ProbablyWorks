@@ -8,6 +8,7 @@ import 'package:logging/logging.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/exec/active_exec_registry.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
 import 'package:probably_works/agent/exec/exec_log_store.dart';
@@ -17,6 +18,8 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
+import 'package:probably_works/agent/policy/command_risk.dart';
+import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
@@ -1783,6 +1786,112 @@ void main() {
       );
       expect(tools.last.text, contains('did not answer'));
       expect(llm.requests, isEmpty);
+    },
+  );
+
+  test(
+    'resumed turn uses the project profile and saves a confirmed fact',
+    () async {
+      final now = DateTime.now();
+      const profileId = 'strict';
+      await PolicyProfileRepository(db).save(
+        PolicyProfile(
+          id: profileId,
+          name: 'strict',
+          profile: const SecurityProfile().withCommand(
+            'echo',
+            CommandRisk.deny,
+          ),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final project = await hub.projects.ensureProject(
+        hostId: 'local',
+        workspace: '/srv/resume-app',
+      );
+      await hub.projectStore.save(project.copyWith(policyProfileId: profileId));
+      const chatId = 'resume-project';
+      await hub.chats.saveChat(
+        Chat(
+          id: chatId,
+          hostId: 'local',
+          projectId: project.id,
+          workspace: '/srv/resume-app',
+          title: 'resume',
+          titleSource: ChatTitleSource.user,
+          model: 'fake/model',
+          policyMode: PolicyMode.yolo,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      const echoArgs = '{"command":"echo hi"}';
+      const pinArgs = '{"text":"staging host only"}';
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.assistant,
+          createdAt: now,
+          toolCalls: const [
+            ToolCallRef(id: 'echo', name: 'run_command', arguments: echoArgs),
+            ToolCallRef(
+              id: 'pin',
+              name: 'pin_project_fact',
+              arguments: pinArgs,
+            ),
+          ],
+        ),
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'run-pin',
+          chatId: chatId,
+          messageId: 'm',
+          toolName: 'pin_project_fact',
+          argsJson: pinArgs,
+          command: 'Save project fact: staging host only',
+          status: ToolRunStatus.waitingApproval,
+          startedAt: now,
+          toolCallId: 'pin',
+          pendingCard: const PendingCard(
+            summary: 'Save project fact: staging host only',
+            reason: 'project facts are shared with every chat in this project',
+          ).encode(),
+        ),
+      );
+
+      llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+      final session = hub.session(chatId);
+      final finished = session.events.firstWhere(
+        (event) => event is AgentTurnFinished,
+      );
+      await hub.resumeAfterRestart();
+
+      final denied = await waitForToolIds(chatId, ['echo']);
+      expect(denied.single.text, contains('denied by policy'));
+
+      await session.restoreUnanswered();
+      expect(broker.pendingApprovals(chatId).map((card) => card.id), [
+        'run-pin',
+      ]);
+      broker.resolveApproval('run-pin', allow: true);
+      await finished;
+
+      final tools = [
+        for (final message in await hub.chats.messages(chatId))
+          if (message.role == MessageRole.tool) message,
+      ];
+      expect(
+        [for (final message in tools) message.toolCallId],
+        ['echo', 'pin'],
+      );
+      expect(tools.last.text, contains('saved'));
+      expect(tools.last.text, isNot(contains('no project')));
+      final facts = await hub.projectStore.facts(project.id);
+      expect(facts.single.text, 'staging host only');
     },
   );
 }

@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:probably_works/core/db/tables.dart';
+import 'package:probably_works/core/util/home_path.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:uuid/uuid.dart';
 
@@ -25,7 +26,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 10;
+  static const currentSchemaVersion = 11;
 
   static const _uuid = Uuid();
 
@@ -93,6 +94,9 @@ class AppDatabase extends _$AppDatabase {
         await m.createIndex(chatsProject);
         await _backfillProjects();
       }
+      // Версия 11: чаты без явной папки больше не делят домашний проект.
+      // Факты такого проекта остаются в архиве до обычной недели удаления.
+      if (from < 11) await _detachImplicitHomeProjects();
     },
   );
 
@@ -173,6 +177,75 @@ class AppDatabase extends _$AppDatabase {
         [hostId, workspace],
       );
     }
+  }
+
+  /// Отвязывает чаты, которым папку подставил неявный дом.
+  ///
+  /// Папка хоста по умолчанию остаётся проектом: её задал пользователь. `~` и
+  /// домашний каталог этой машины — нет, если хост свою папку не задаёт. Чат,
+  /// который сознательно работает в доме, выбирает эту папку снова или ставит
+  /// её папкой хоста: архивный проект с фактами ещё неделю можно открыть.
+  Future<void> _detachImplicitHomeProjects() async {
+    final hasHosts = (await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'hosts'",
+    ).get()).isNotEmpty;
+    final home = expandHomePath('~');
+    final rows = await customSelect(
+      hasHosts
+          ? 'SELECT c.id AS chat_id, c.project_id AS project_id, '
+                'c.workspace AS workspace, h.default_workspace AS default_workspace '
+                'FROM chats c LEFT JOIN hosts h ON h.id = c.host_id'
+          : 'SELECT id AS chat_id, project_id, workspace, '
+                'NULL AS default_workspace FROM chats',
+    ).get();
+    final touched = <String>{};
+    for (final row in rows) {
+      final configured = row.read<String?>('default_workspace')?.trim();
+      if (configured != null && configured.isNotEmpty) continue;
+      if (!_implicitHomeWorkspace(row.read<String?>('workspace'), home)) {
+        continue;
+      }
+      final projectId = row.read<String?>('project_id');
+      if (projectId != null) touched.add(projectId);
+      await (update(
+        chats,
+      )..where((table) => table.id.equals(row.read<String>('chat_id')))).write(
+        const ChatsCompanion(projectId: Value(null), workspace: Value(null)),
+      );
+    }
+    final now = DateTime.now();
+    for (final projectId in touched) {
+      final count = chats.id.count();
+      final row =
+          await (selectOnly(chats)
+                ..addColumns([count])
+                ..where(chats.projectId.equals(projectId)))
+              .getSingle();
+      if ((row.read(count) ?? 0) > 0) continue;
+      final project = await (select(
+        projects,
+      )..where((table) => table.id.equals(projectId))).getSingleOrNull();
+      if (project == null || project.archivedAt != null) continue;
+      await (update(projects)..where((table) => table.id.equals(projectId)))
+          .write(ProjectsCompanion(archivedAt: Value(now)));
+    }
+  }
+
+  /// Пустая папка, `~` и раскрытый дом этой машины. Хвостовой разделитель не считается другой папкой.
+  bool _implicitHomeWorkspace(String? workspace, String home) {
+    final value = _trimTrailingSlash(workspace);
+    if (value == null || value == '~') return true;
+    final expanded = _trimTrailingSlash(home);
+    return expanded != null && expanded != '~' && value == expanded;
+  }
+
+  String? _trimTrailingSlash(String? path) {
+    final value = path?.trim();
+    if (value == null || value.isEmpty) return null;
+    if (value.length > 1 && (value.endsWith('/') || value.endsWith(r'\'))) {
+      return value.replaceFirst(RegExp(r'[/\\]$'), '');
+    }
+    return value;
   }
 
   /// FTS5-индекс для chat_history_search. Тело сообщения пишется вручную

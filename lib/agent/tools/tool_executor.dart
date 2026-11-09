@@ -24,6 +24,7 @@ import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/line_diff.dart';
 import 'package:probably_works/core/util/text_clip.dart';
+import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
@@ -293,7 +294,7 @@ class ToolExecutor {
     final cwdArg = args['cwd'] as String?;
     // Относительный cwd считается от workspace, как и пути остальных инструментов.
     final cwd = cwdArg == null || cwdArg.isEmpty
-        ? ctx.chat.workspace
+        ? _commandCwd(ctx)
         : _resolve(ctx, cwdArg);
     // Один id на всю жизнь команды: ожидание подтверждения и выполнение — одна строка в журнале.
     final runId = _uuid.v4();
@@ -1053,7 +1054,7 @@ class ToolExecutor {
     }
     final cwdArg = args['cwd'] as String?;
     final cwd = cwdArg == null || cwdArg.isEmpty
-        ? ctx.chat.workspace
+        ? _commandCwd(ctx)
         : _resolve(ctx, cwdArg);
     return _exec(
       ctx,
@@ -1245,8 +1246,12 @@ class ToolExecutor {
     pendingCard: pendingCard,
   );
 
+  /// Каталог команд. Папка чата, папка хоста или дом. Дом в проект не записывается.
+  String _commandCwd(ToolContext ctx) =>
+      commandWorkspace(ctx.host, ctx.chat.workspace);
+
   String _resolve(ToolContext ctx, String path) =>
-      hostToolPath(ctx.chat.workspace, path);
+      hostToolPath(_commandCwd(ctx), path);
 
   Future<String> _readOrEmpty(ToolContext ctx, String path) async {
     final read = await captureOp(ctx.runtime, ReadRawOp(path));

@@ -43,6 +43,14 @@ class ChatRepository {
   static ChatRow _withoutDraft(ChatRow row) =>
       row.copyWith(draft: '', draftAttachments: '[]');
 
+  /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
+  Stream<List<Chat>> watchByProject(String projectId) =>
+      (_db.select(_chatsTable)
+            ..where((t) => t.projectId.equals(projectId))
+            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+          .watch()
+          .map((rows) => rows.map(_chat).toList());
+
   /// Черновик пишется отдельно от записи чата: не трогает updatedAt, поэтому порядок списка не меняется.
   Future<void> saveDraft(String chatId, ChatDraft draft) =>
       (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(

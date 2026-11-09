@@ -1049,9 +1049,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state.unsaved) {
       final host = state.hosts.where((h) => h.id == event.hostId).firstOrNull;
       final workspace = host == null
-          ? chat.workspace
-          : _hub.projects.defaultWorkspaceFor(host);
-      final updated = chat.copyWith(hostId: event.hostId, workspace: workspace);
+          ? null
+          : _hub.projects.configuredWorkspace(host);
+      final updated = chat.copyWith(
+        hostId: event.hostId,
+        workspace: workspace,
+        clearWorkspace: workspace == null,
+        clearProjectId: true,
+      );
       emit(state.copyWith(chat: updated, clearProject: true));
       return;
     }
@@ -1067,13 +1072,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chat = state.chat;
     if (chat == null) return;
     if (state.unsaved) {
-      final updated = chat.copyWith(workspace: event.workspace);
+      final trimmed = event.workspace?.trim();
+      final workspace = trimmed == null || trimmed.isEmpty ? null : trimmed;
+      final updated = chat.copyWith(
+        workspace: workspace,
+        clearWorkspace: workspace == null,
+        clearProjectId: true,
+      );
       emit(state.copyWith(chat: updated, clearProject: true));
       return;
     }
     final updated = await _hub.projects.relocate(
       chat,
       workspace: event.workspace,
+      workspaceSpecified: true,
     );
     final project = await _hub.projectStore.forChat(updated.id);
     emit(state.copyWith(chat: updated, project: project, trustNeeded: false));

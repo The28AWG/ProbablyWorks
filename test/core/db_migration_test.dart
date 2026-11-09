@@ -2,6 +2,8 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/db/app_database.dart';
+import 'package:probably_works/core/util/home_path.dart';
+import 'package:probably_works/core/util/workspace_path.dart';
 
 /// Таблица chats в форме схемы v4: её есть в каждой базе старше v5.
 const _chatsV4 =
@@ -122,6 +124,59 @@ AppDatabase _openProjectsV9() => AppDatabase(
   ),
 );
 
+/// База v9: чаты без папки, чат в `~` и чат в раскрытом доме на хосте без своей папки.
+AppDatabase _openImplicitHomeV9() {
+  final home = expandHomePath('~').replaceAll("'", "''");
+  return AppDatabase(
+    NativeDatabase.memory(
+      setup: (raw) {
+        raw
+          ..execute(
+            'CREATE TABLE hosts ('
+            'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, '
+            'address TEXT, port INTEGER NOT NULL DEFAULT 22, username TEXT, '
+            "auth_type TEXT NOT NULL DEFAULT 'key', key_path TEXT, "
+            'host_key_fingerprint TEXT, os_family TEXT NOT NULL DEFAULT '
+            "'posix', default_workspace TEXT, shell_override TEXT, notes TEXT, "
+            'connect_timeout_seconds INTEGER, last_check_at INTEGER, '
+            'last_latency_ms INTEGER, last_check_error TEXT, '
+            'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+          )
+          ..execute(_chatsV4)
+          ..execute(_toolRunsBeforeV9)
+          ..execute(_savedModelsV4)
+          ..execute(
+            'INSERT INTO hosts (id, name, kind, os_family, created_at, updated_at) '
+            "VALUES ('plain', 'plain', 'local', 'posix', 0, 0), "
+            "('configured', 'configured', 'ssh', 'posix', 0, 0)",
+          )
+          ..execute(
+            "UPDATE hosts SET default_workspace = '/opt/app' WHERE id = 'configured'",
+          )
+          ..execute(
+            'INSERT INTO chats (id, host_id, title, created_at, updated_at) VALUES '
+            "('tilde', 'plain', 'tilde', 0, 0), "
+            "('expanded', 'plain', 'expanded', 0, 0), "
+            "('kept', 'plain', 'kept', 0, 0), "
+            "('explicit-tilde', 'configured', 'explicit', 0, 0), "
+            "('opted', 'configured', 'opted', 0, 0)",
+          )
+          ..execute("UPDATE chats SET workspace = '~' WHERE id = 'tilde'")
+          ..execute(
+            "UPDATE chats SET workspace = '$home' WHERE id = 'expanded'",
+          )
+          ..execute(
+            "UPDATE chats SET workspace = '/srv/keep' WHERE id = 'kept'",
+          )
+          ..execute(
+            "UPDATE chats SET workspace = '~' WHERE id = 'explicit-tilde'",
+          )
+          ..execute('PRAGMA user_version = 9');
+      },
+    ),
+  );
+}
+
 void main() {
   test(
     'v3 → v4 drops the full catalog cache and creates saved models',
@@ -155,7 +210,7 @@ void main() {
     final savedModels = db.savedModels;
     final rows = await db.select(savedModels).get();
     expect(rows, isEmpty);
-    expect(AppDatabase.currentSchemaVersion, 10);
+    expect(AppDatabase.currentSchemaVersion, 11);
   });
 
   test(
@@ -267,5 +322,45 @@ void main() {
       '/home/user',
       reason: 'чат без папки получает папку хоста по умолчанию',
     );
+  });
+
+  test('v10 → v11 detaches chats that only had the implicit home', () async {
+    final db = _openImplicitHomeV9();
+    addTearDown(db.close);
+
+    final chats = await db
+        .customSelect('SELECT id, project_id, workspace FROM chats ORDER BY id')
+        .get();
+    final byId = {for (final row in chats) row.read<String>('id'): row};
+    expect(byId['tilde']!.read<String?>('project_id'), null);
+    expect(byId['tilde']!.read<String?>('workspace'), null);
+    expect(byId['expanded']!.read<String?>('project_id'), null);
+    expect(byId['expanded']!.read<String?>('workspace'), null);
+    expect(byId['kept']!.read<String?>('project_id'), isNot(null));
+    expect(byId['kept']!.read<String?>('workspace'), '/srv/keep');
+    expect(byId['explicit-tilde']!.read<String?>('workspace'), '~');
+    expect(byId['explicit-tilde']!.read<String?>('project_id'), isNot(null));
+    expect(byId['opted']!.read<String?>('workspace'), '/opt/app');
+    expect(byId['opted']!.read<String?>('project_id'), isNot(null));
+
+    final homeKey = normalizeWorkspacePath(expandHomePath('~'), windows: false);
+    final archived = await db
+        .customSelect(
+          'SELECT workspace_key, archived_at FROM projects '
+          "WHERE host_id = 'plain' AND workspace_key IN ('~', ?)",
+          variables: [Variable.withString(homeKey)],
+        )
+        .get();
+    expect(archived, isNotEmpty);
+    for (final row in archived) {
+      expect(row.read<int?>('archived_at'), isNot(null));
+    }
+    final explicit = await db
+        .customSelect(
+          'SELECT archived_at FROM projects '
+          "WHERE host_id = 'configured' AND workspace_key = '~'",
+        )
+        .getSingle();
+    expect(explicit.read<int?>('archived_at'), null);
   });
 }

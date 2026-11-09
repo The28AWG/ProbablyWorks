@@ -110,7 +110,7 @@ class AgentHub {
   static const _uuid = Uuid();
 
   /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
-  /// Чат получает проект по эффективной рабочей папке хоста.
+  /// Проект появляется только вместе с явной папкой чата или папкой хоста.
   Future<Chat> newChat({required String hostId}) async {
     final host = await hosts.byId(hostId);
     var chat = draftChat(hostId: hostId, host: host);
@@ -122,7 +122,8 @@ class AgentHub {
   /// Чат на Host, который ещё не записан в БД: появится в списке с первым сообщением.
   /// Политика берётся из памяти настроек, поэтому чат создаётся синхронно (см. [SettingsRepository.preload]).
   ///
-  /// Рабочая папка сразу равна папке хоста по умолчанию: чат без папки всё равно получит проект.
+  /// Рабочая папка — только та, что задана хосту. Дом сюда не подставляется:
+  /// иначе каждый новый чат входил бы в домашний проект.
   Chat draftChat({required String hostId, Host? host}) {
     final now = DateTime.now();
     final policy = PolicyMode.values.byName(
@@ -131,7 +132,7 @@ class AgentHub {
     return Chat(
       id: _uuid.v4(),
       hostId: hostId,
-      workspace: host == null ? null : projects.defaultWorkspaceFor(host),
+      workspace: host == null ? null : projects.configuredWorkspace(host),
       title: '',
       createdAt: now,
       updatedAt: now,

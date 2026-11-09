@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
@@ -10,6 +11,7 @@ import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/policy_profile_repository.dart';
 import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
@@ -60,11 +62,7 @@ class ProjectPage extends StatelessWidget {
               title: l10n.projectsNotFound,
             );
           }
-          return _ProjectBody(
-            project: project,
-            host: state.hostOf(project),
-            chatCount: state.chatCountOf(project),
-          );
+          return _ProjectBody(project: project, host: state.hostOf(project));
         },
       ),
     );
@@ -72,15 +70,10 @@ class ProjectPage extends StatelessWidget {
 }
 
 class _ProjectBody extends StatelessWidget {
-  const _ProjectBody({
-    required this.project,
-    required this.host,
-    required this.chatCount,
-  });
+  const _ProjectBody({required this.project, required this.host});
 
   final Project project;
   final Host? host;
-  final int chatCount;
 
   @override
   Widget build(BuildContext context) {
@@ -178,14 +171,6 @@ class _ProjectBody extends StatelessWidget {
                   ),
                 ),
               ),
-              const Divider(height: AppSpacing.xl),
-              SettingsFormRow(
-                title: l10n.projectsChatsLabel,
-                child: Text(
-                  l10n.projectsChatCount(chatCount),
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
             ],
           ),
         ),
@@ -205,6 +190,8 @@ class _ProjectBody extends StatelessWidget {
             ),
           ),
         ],
+        const SizedBox(height: AppSpacing.xl),
+        _ProjectChats(projectId: project.id),
         const SizedBox(height: AppSpacing.xl),
         _PolicySection(project: project),
         const SizedBox(height: AppSpacing.xl),
@@ -242,6 +229,76 @@ class _ProjectBody extends StatelessWidget {
     if (!ok) return;
     await cubit.deleteProject(project);
     if (context.mounted) await context.router.maybePop();
+  }
+}
+
+/// Чаты проекта. Число на карточке списка само по себе чат не открывает:
+/// здесь каждая строка ведёт в чат.
+class _ProjectChats extends StatelessWidget {
+  const _ProjectChats({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return AppSection(
+      title: l10n.projectsChatsLabel,
+      description: l10n.projectsChatsHint,
+      children: [
+        StreamBuilder<List<Chat>>(
+          stream: getIt<ChatRepository>().watchByProject(projectId),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Text(
+                l10n.projectsChatsError,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final chats = snapshot.data!;
+            if (chats.isEmpty) {
+              return Text(
+                l10n.projectsChatsEmpty,
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              );
+            }
+            return Column(
+              spacing: AppSpacing.md,
+              children: [
+                for (final chat in chats)
+                  AppCard(
+                    onTap: () => openChat(context, chat.id),
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            chat.title.isEmpty ? l10n.chatsNew : chat.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right, color: muted),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
   }
 }
 

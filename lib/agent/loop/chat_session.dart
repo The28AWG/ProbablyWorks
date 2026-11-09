@@ -26,6 +26,7 @@ import 'package:probably_works/core/notify/app_notifier.dart';
 import 'package:probably_works/core/util/cancel_token.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
+import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
@@ -561,25 +562,62 @@ class ChatSession {
   }
 
   /// Контекст инструмента без сборки запроса к модели: карточка уже задана, ход ещё не у модели.
+  /// Проект и профиль политики те же, что у живого хода: иначе подтверждённый после
+  /// перезапуска факт некуда писать, а остальные команды батча классифицируются
+  /// глобальным профилем и без доверия skills.
   Future<ToolContext?> _toolContext(String messageId) async {
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return null;
     final host = await _hub.hosts.byId(chat.hostId);
     if (host == null) return null;
+    final bound = await _executionContext(chat);
     final limits = await _hub.limits();
-    final denylist = await _hub.settings.readDenylist();
-    final profile = await _hub.settings.readSecurityProfile();
     return ToolContext(
-      chat: chat,
+      chat: bound.chat,
       messageId: messageId,
       host: host,
       runtime: _hub.runtimes.forHost(host),
       limits: limits,
-      policy: PolicyEngine(
-        classifier: CommandClassifier(denylist: denylist, profile: profile),
-        mode: chat.policyMode,
-      ),
+      policy: bound.policy,
       onBackgroundDone: _onBackgroundDone,
+      project: bound.project,
+    );
+  }
+
+  /// Проект и политика хода. Общие для живого шага и возобновления, чтобы
+  /// профиль проекта и доверие skills не зависели от того, перезапускали приложение или нет.
+  Future<({Chat chat, Project? project, PolicyEngine policy})>
+  _executionContext(Chat chat) async {
+    var current = chat;
+    var project = current.projectId == null
+        ? null
+        : await _hub.projectStore.byId(current.projectId!);
+    if (project == null) {
+      project = await _hub.projects.ensureForChat(current);
+      if (project != null) {
+        current = await _hub.chats.chat(chatId) ?? current;
+      }
+    }
+    return (
+      chat: current,
+      project: project,
+      policy: await _policyFor(current, project),
+    );
+  }
+
+  /// Профиль проекта заменяет глобальный. Без проекта остаётся глобальный:
+  /// у чата без папки своего профиля нет.
+  Future<PolicyEngine> _policyFor(Chat chat, Project? project) async {
+    final denylist = await _hub.settings.readDenylist();
+    var profile = await _hub.settings.readSecurityProfile();
+    final profileId = project?.policyProfileId;
+    if (profileId != null) {
+      final custom = await _hub.policyProfiles.byId(profileId);
+      if (custom != null) profile = custom.profile;
+    }
+    return PolicyEngine(
+      classifier: CommandClassifier(denylist: denylist, profile: profile),
+      mode: chat.policyMode,
     );
   }
 
@@ -668,7 +706,7 @@ class ChatSession {
   }) async {
     final end = await ToolScheduler.run(
       calls: calls,
-      workspace: ctx.chat.workspace,
+      workspace: commandWorkspace(ctx.host, ctx.chat.workspace),
       policy: ctx.policy,
       hostKind: ctx.host.kind,
       cancel: turn,
@@ -704,14 +742,12 @@ class ChatSession {
       );
     }
     final runtime = _hub.runtimes.forHost(host);
-    var project = chat.projectId == null
-        ? null
-        : await _hub.projectStore.byId(chat.projectId!);
-    if (project == null) {
-      project = await _hub.projects.ensureForChat(chat);
-      chat = await _hub.chats.chat(chatId) ?? chat;
-    }
-    final trustedSkills = await _hub.projectStore.trustedSkillNames(project.id);
+    final bound = await _executionContext(chat);
+    chat = bound.chat;
+    var project = bound.project;
+    final trustedSkills = project == null
+        ? const <String>{}
+        : await _hub.projectStore.trustedSkillNames(project.id);
     final snapshot = await _hub.workspace.load(
       chat,
       runtime,
@@ -723,7 +759,8 @@ class ChatSession {
       for (final skill in [...snapshot.skills, ...snapshot.untrustedSkills])
         skill.name,
     ];
-    if (await _hub.projectStore.syncSkills(project.id, foundSkills) &&
+    if (project != null &&
+        await _hub.projectStore.syncSkills(project.id, foundSkills) &&
         !project.skillsInitialized) {
       project = project.copyWith(skillsInitialized: true);
       await _hub.projectStore.save(project);
@@ -740,7 +777,9 @@ class ChatSession {
 
     final state = await _hub.state.current(chat);
     final messages = await _hub.chats.messages(chatId);
-    final projectFacts = await _hub.projectStore.facts(project.id);
+    final projectFacts = project == null
+        ? const <ProjectFact>[]
+        : await _hub.projectStore.facts(project.id);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
     ContextInput inputFor(
@@ -771,17 +810,7 @@ class ChatSession {
       AgentUsageUpdated(chatId, ContextCompactor.estimate(llmMessages), limit),
     );
 
-    final denylist = await _hub.settings.readDenylist();
-    var profile = await _hub.settings.readSecurityProfile();
-    final profileId = project.policyProfileId;
-    if (profileId != null) {
-      final custom = await _hub.policyProfiles.byId(profileId);
-      if (custom != null) profile = custom.profile;
-    }
-    final policy = PolicyEngine(
-      classifier: CommandClassifier(denylist: denylist, profile: profile),
-      mode: chat.policyMode,
-    );
+    final policy = bound.policy;
     return _Prepared(
       chat: chat,
       host: host,
@@ -1217,7 +1246,7 @@ class _Prepared {
   final PolicyEngine policy;
   final int limit;
 
-  /// Проект чата. Инвариант приложения: у сохранённого чата он есть.
+  /// Проект чата. Null, пока у чата нет явной папки: дом общим проектом не становится.
   final Project? project;
 
   /// Сообщения, чьи файлы входят в этот запрос; после ответа модели их байты освобождаются.

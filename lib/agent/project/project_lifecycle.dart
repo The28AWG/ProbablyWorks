@@ -7,7 +7,6 @@ import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/db/app_database.dart';
 import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/util/home_path.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
@@ -15,10 +14,11 @@ import 'package:probably_works/host/host_runtime_factory.dart';
 import 'package:uuid/uuid.dart';
 
 /// Жизненный цикл проекта. Проект не создаётся кнопкой: он появляется из пары
-/// «хост + рабочая папка» при первом сохранении чата.
+/// «хост + явная рабочая папка» при первом сохранении чата.
 ///
-/// Инвариант приложения: у каждого сохранённого чата есть проект. Если папка не задана,
-/// берётся папка хоста по умолчанию, а для локального хоста — домашний каталог машины.
+/// Явная папка — та, что выбрана в чате, либо папка, заданная хосту. Неявный домашний
+/// каталог проектом не становится: иначе чаты без папки делили бы факты и доверие
+/// к `~/AGENTS.md`. Команды при этом всё равно идут из дома, см. [commandWorkspace].
 /// Когда у проекта не остаётся чатов, он уходит в архив и удаляется окончательно через
 /// [purgeAfter]. Факты и доверие skills переживают удаление последнего чата.
 @lazySingleton
@@ -41,23 +41,15 @@ class ProjectLifecycleService {
   static const _uuid = Uuid();
   final _log = Logger('ProjectLifecycle');
 
-  /// Эффективная рабочая папка чата: явная, затем папка хоста по умолчанию, затем домашняя.
-  ///
-  /// Для удалённого Host домашняя папка неизвестна до подключения, поэтому остаётся `~`:
-  /// это стабильный ключ, который [canonicalKey] уточнит при первом успешном `realpath`.
-  String effectiveWorkspace(Chat chat, Host host) {
-    final explicit = chat.workspace?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    return defaultWorkspaceFor(host);
-  }
+  /// Папка, которую пользователь задал хосту. Null — дом в проект не подставляется.
+  String? configuredWorkspace(Host host) => configuredHostWorkspace(host);
 
-  /// Папка хоста по умолчанию: явная настройка, иначе домашний каталог (для локального хоста
-  /// он известен приложению, для удалённого остаётся `~`).
-  String defaultWorkspaceFor(Host host) {
-    final fallback = host.defaultWorkspace?.trim();
-    if (fallback != null && fallback.isNotEmpty) return fallback;
-    return host.kind == HostKind.local ? expandHomePath('~') : '~';
-  }
+  /// Папка проекта для чата. Null — у чата нет проекта.
+  String? projectWorkspace(Chat chat, Host host) =>
+      explicitProjectWorkspace(host, chat.workspace);
+
+  /// Каталог команд: явная папка, папка хоста или дом. Дом проектом не является.
+  String defaultWorkspaceFor(Host host) => commandWorkspace(host, null);
 
   /// Канонический ключ папки на конкретном хосте.
   ///
@@ -131,13 +123,15 @@ class ProjectLifecycleService {
     return saved;
   }
 
-  /// Проект для уже сохранённого чата; чинит чат без проекта.
-  Future<Project> ensureForChat(Chat chat) async {
+  /// Проект для уже сохранённого чата. Null, если явной папки нет: чат без папки
+  /// не присоединяется к домашнему проекту.
+  Future<Project?> ensureForChat(Chat chat) async {
     final host = await _hosts.byId(chat.hostId);
     if (host == null) {
       throw ArgumentError.value(chat.hostId, 'hostId', 'host not found');
     }
-    final workspace = effectiveWorkspace(chat, host);
+    final workspace = projectWorkspace(chat, host);
+    if (workspace == null) return null;
     final project = await ensureProject(
       hostId: chat.hostId,
       workspace: workspace,
@@ -154,13 +148,16 @@ class ProjectLifecycleService {
     return project;
   }
 
-  /// Готовит новый чат к сохранению: подставляет рабочую папку и проект.
+  /// Готовит новый чат к сохранению. Без явной папки проект не создаётся.
   Future<Chat> attach(Chat chat) async {
     final host = await _hosts.byId(chat.hostId);
     if (host == null) {
       throw ArgumentError.value(chat.hostId, 'hostId', 'host not found');
     }
-    final workspace = effectiveWorkspace(chat, host);
+    final workspace = projectWorkspace(chat, host);
+    if (workspace == null) {
+      return chat.copyWith(clearProjectId: true, clearWorkspace: true);
+    }
     final project = await ensureProject(
       hostId: chat.hostId,
       workspace: workspace,
@@ -169,17 +166,33 @@ class ProjectLifecycleService {
   }
 
   /// Переносит чат в проект новой пары «хост + папка». Старый проект архивируется,
-  /// если в нём не осталось чатов. Возвращает обновлённый чат; записывает его вызывающий.
-  Future<Chat> relocate(Chat chat, {String? hostId, String? workspace}) async {
+  /// если в нём не осталось чатов.
+  ///
+  /// [workspaceSpecified] отличает очистку папки от смены хоста: пустая папка
+  /// отвязывает чат, если у хоста нет своей. Смена хоста не переносит чужой путь
+  /// и берёт папку нового хоста. Возвращает обновлённый чат; если чат уже в базе,
+  /// записывает его сам.
+  Future<Chat> relocate(
+    Chat chat, {
+    String? hostId,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
     final nextHostId = hostId ?? chat.hostId;
     final host = await _hosts.byId(nextHostId);
     if (host == null) {
       throw ArgumentError.value(nextHostId, 'hostId', 'host not found');
     }
-    final explicit = workspace?.trim();
-    final nextWorkspace = explicit == null || explicit.isEmpty
-        ? _defaultWorkspace(host)
-        : explicit;
+    final nextWorkspace = _nextWorkspace(
+      chat,
+      host,
+      hostChanged: hostId != null && hostId != chat.hostId,
+      workspace: workspace,
+      workspaceSpecified: workspaceSpecified,
+    );
+    if (nextWorkspace == null) {
+      return _clearProject(chat, hostId: nextHostId);
+    }
     final project = await ensureProject(
       hostId: nextHostId,
       workspace: nextWorkspace,
@@ -213,10 +226,13 @@ class ProjectLifecycleService {
   }
 
   /// Существующий проект для пары чата, без создания. Нужен чипу «будет создан новый проект».
+  /// Null, если явной папки нет: дом существующим проектом не показывается.
   Future<Project?> findForChat(Chat chat) async {
     final host = await _hosts.byId(chat.hostId);
     if (host == null) return null;
-    final key = await canonicalKey(host, effectiveWorkspace(chat, host));
+    final workspace = projectWorkspace(chat, host);
+    if (workspace == null) return null;
+    final key = await canonicalKey(host, workspace);
     return _projects.find(chat.hostId, key);
   }
 
@@ -250,7 +266,8 @@ class ProjectLifecycleService {
     }
   }
 
-  /// Чинит чаты, оставшиеся без проекта после миграции или сбоя.
+  /// Чинит чаты с явной папкой, оставшиеся без проекта после миграции или сбоя.
+  /// Чат без папки не получает домашний проект.
   Future<void> repairOrphans() async {
     final chatsTable = _db.chats;
     final rows = await (chatsTable.select()..where((t) => t.projectId.isNull()))
@@ -258,7 +275,8 @@ class ProjectLifecycleService {
     for (final row in rows) {
       final host = await _hosts.byId(row.hostId);
       if (host == null) continue;
-      final workspace = row.workspace ?? _defaultWorkspace(host);
+      final workspace = explicitProjectWorkspace(host, row.workspace);
+      if (workspace == null) continue;
       final project = await ensureProject(
         hostId: row.hostId,
         workspace: workspace,
@@ -276,7 +294,49 @@ class ProjectLifecycleService {
   Future<void> trustWorkspace(String projectId) =>
       _projects.trustWorkspace(projectId);
 
-  String _defaultWorkspace(Host host) => defaultWorkspaceFor(host);
+  String? _nextWorkspace(
+    Chat chat,
+    Host host, {
+    required bool hostChanged,
+    required String? workspace,
+    required bool workspaceSpecified,
+  }) {
+    if (workspaceSpecified) {
+      final explicit = workspace?.trim();
+      if (explicit != null && explicit.isNotEmpty) return explicit;
+      return configuredWorkspace(host);
+    }
+    if (hostChanged) return configuredWorkspace(host);
+    return projectWorkspace(chat, host);
+  }
+
+  /// Снимает чат с проекта. Сохранённую строку обновляет сразу, чтобы старый
+  /// проект увидел, что чата больше нет, и ушёл в архив.
+  Future<Chat> _clearProject(Chat chat, {required String hostId}) async {
+    final previous = chat.projectId;
+    final updated = chat.copyWith(
+      hostId: hostId,
+      clearWorkspace: true,
+      clearProjectId: true,
+      updatedAt: DateTime.now(),
+    );
+    final chatsTable = _db.chats;
+    final saved =
+        await (chatsTable.select()..where((t) => t.id.equals(chat.id)))
+            .getSingleOrNull();
+    if (saved != null) {
+      await (_db.update(chatsTable)..where((t) => t.id.equals(chat.id))).write(
+        ChatsCompanion(
+          hostId: Value(hostId),
+          workspace: const Value(null),
+          projectId: const Value(null),
+          updatedAt: Value(updated.updatedAt),
+        ),
+      );
+    }
+    if (previous != null) await releaseIfEmpty(previous);
+    return updated;
+  }
 
   Future<Project> _revive(Project project, DateTime now) async {
     if (!project.isArchived) return project;

@@ -140,7 +140,8 @@ class Chat {
   final String id;
   final String hostId;
 
-  /// Проект чата. Null только у чата, который ещё не записан или ждёт починки после миграции.
+  /// Проект чата. Null, пока папка не выбрана и хост не задаёт свою:
+  /// неявный домашний каталог общим проектом не становится.
   final String? projectId;
   final String title;
   final ChatTitleSource titleSource;
@@ -163,11 +164,13 @@ class Chat {
     String? id,
     String? hostId,
     String? projectId,
+    bool clearProjectId = false,
     String? title,
     ChatTitleSource? titleSource,
     String? model,
     PolicyMode? policyMode,
     String? workspace,
+    bool clearWorkspace = false,
     int? lastPromptTokens,
     int? lastCompletionTokens,
     int? contextLength,
@@ -181,12 +184,12 @@ class Chat {
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
-    projectId: projectId ?? this.projectId,
+    projectId: clearProjectId ? null : (projectId ?? this.projectId),
     title: title ?? this.title,
     titleSource: titleSource ?? this.titleSource,
     model: model ?? this.model,
     policyMode: policyMode ?? this.policyMode,
-    workspace: workspace ?? this.workspace,
+    workspace: clearWorkspace ? null : (workspace ?? this.workspace),
     lastPromptTokens: lastPromptTokens ?? this.lastPromptTokens,
     lastCompletionTokens: lastCompletionTokens ?? this.lastCompletionTokens,
     contextLength: contextLength ?? this.contextLength,
