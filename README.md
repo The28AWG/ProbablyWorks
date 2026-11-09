@@ -73,15 +73,7 @@
 
 ## Установка и запуск
 
-Пакет `openrouter` объявлен в `pubspec.yaml` как git-зависимость на тег `dist-v1.0.1`. Для разработки
-файл `pubspec_overrides.yaml` (не коммитится) подменяет её локальной копией `../openrouter`, поэтому её
-репозиторий должен лежать рядом с этим проектом. Freezed- и json-файлы пакета не лежат в репозитории, их
-генерирует сам пакет, поэтому перед первой сборкой запустите `build_runner` в нём. Чтобы собрать без локальной
-копии, удалите `pubspec_overrides.yaml`: pub возьмёт пакет из git-тега.
-
 ```bash
-ls ..            # должна быть папка openrouter рядом с ProbablyWorks
-(cd ../openrouter && dart run build_runner build --delete-conflicting-outputs)
 flutter pub get
 flutter gen-l10n   # обычно выполняется сам при сборке
 dart run build_runner build --delete-conflicting-outputs
