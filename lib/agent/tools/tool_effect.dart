@@ -10,10 +10,11 @@ import 'package:probably_works/providers/ai/llm_port.dart';
 /// вызовы, чьи эффекты не пересекаются: запись и следующее чтение того же пути
 /// остаются в порядке модели, а два чтения — нет.
 ///
-/// Пути сравниваются лексически, без обращения к Host: `a/../b` и `b` — один
-/// файл. Симлинки и `~` не раскрываются, поэтому `~/a` и абсолютный домашний
-/// путь планировщик считает разными. Это тот же предел, что у записи: Host
-/// тоже получает путь как его прислала модель.
+/// До [bindPaths] путь лексический: `a/../b` и `b` — один файл, но `~/a`,
+/// абсолютный домашний путь и симлинк — разные строки. Host так не считает:
+/// он раскрывает `~` и идёт по симлинку. Планировщик вызывает [bindPaths]
+/// до графа и снова после команды, которая могла создать ссылку. Путь, который
+/// не удалось сопоставить одному файлу, поднимает эффект до всего хоста.
 class ToolEffect {
   const ToolEffect({
     this.fileReads = const {},
@@ -24,6 +25,7 @@ class ToolEffect {
     this.hostWrite = false,
     this.sessionRead = false,
     this.sessionWrite = false,
+    this.projectWrite = false,
     this.hostsRead = false,
     this.hostsWrite = false,
     this.settingsRead = false,
@@ -37,8 +39,9 @@ class ToolEffect {
   /// Корни деревьев: чтение видит любой файл внутри (grep, каталог skills).
   final Set<String> treeReads;
 
-  /// Каталоги, чей список имён вызов читает. Запись файла задевает только
-  /// непосредственного родителя, не всех предков.
+  /// Каталоги, чей список имён вызов читает. Запись файла задевает любой
+  /// предок: `ls -la` показывает mtime дочернего каталога, а `mkdir -p`
+  /// добавляет имя на каждом созданном уровне.
   final Set<String> dirReads;
 
   /// Файлы, которые вызов перезаписывает. Две записи разных файлов не
@@ -46,10 +49,13 @@ class ToolEffect {
   /// у обоих, но читателя этого списка между ними нет.
   final Set<String> fileWrites;
 
-  /// Команда читает хост, но не сообщает какие файлы. Конфликтует с любой записью.
+  /// Чтение хоста без конкретного файла: `which`, `host_info` или путь,
+  /// который не удалось канонизировать. Конфликтует с любой записью хоста.
   final bool hostRead;
 
-  /// Команда может изменить хост. Барьер для остальных операций этого хоста.
+  /// Может изменить хост. Барьер для остальных операций этого хоста.
+  /// Сюда же попадает `run_command`, даже если классификатор сказал auto:
+  /// ошибка классификатора иначе стала бы гонкой с чтением.
   final bool hostWrite;
 
   /// Чтение запечатанных ревизий состояния задачи.
@@ -57,6 +63,10 @@ class ToolEffect {
 
   /// Запись текущей ревизии. `mutate` читает и сохраняет её без своего замка.
   final bool sessionWrite;
+
+  /// Общие факты проекта. Две записи упорядочиваются между собой и не
+  /// занимают файлы хоста.
+  final bool projectWrite;
 
   /// Реестр хостов приложения.
   final bool hostsRead;
@@ -76,7 +86,39 @@ class ToolEffect {
   /// Есть ли пересечение записи одной стороны с чтением или записью другой.
   bool conflictsWith(ToolEffect other) =>
       _hits(this, other) || _hits(other, this);
+
+  /// Подменяет пути на канонические. [canonicalize] возвращает абсолютный путь
+  /// одного файла или null, если сопоставить нельзя (`~` без дома, оборванный
+  /// симлинк, хост не ответил). null у чтения включает [hostRead], у записи —
+  /// [hostWrite]: лучше ждать весь хост, чем пропустить тот же файл под другим именем.
+  Future<ToolEffect> bindPaths(PathCanonicalizer canonicalize) async {
+    final reads = await _bindPaths(fileReads, canonicalize);
+    final trees = await _bindPaths(treeReads, canonicalize);
+    final dirs = await _bindPaths(dirReads, canonicalize);
+    final writes = await _bindPaths(fileWrites, canonicalize);
+    return ToolEffect(
+      fileReads: reads.paths,
+      treeReads: trees.paths,
+      dirReads: dirs.paths,
+      fileWrites: writes.paths,
+      hostRead:
+          hostRead || reads.ambiguous || trees.ambiguous || dirs.ambiguous,
+      hostWrite: hostWrite || writes.ambiguous,
+      sessionRead: sessionRead,
+      sessionWrite: sessionWrite,
+      projectWrite: projectWrite,
+      hostsRead: hostsRead,
+      hostsWrite: hostsWrite,
+      settingsRead: settingsRead,
+      settingsWrite: settingsWrite,
+      transcriptRead: transcriptRead,
+    );
+  }
 }
+
+/// Канонический абсолютный путь для [ToolEffect.bindPaths]. null — путь
+/// нельзя считать одним файлом.
+typedef PathCanonicalizer = Future<String?> Function(String path);
 
 /// Путь так, как его получит Host. Относительный считается от workspace,
 /// абсолютный и `~` не переписываются.
@@ -95,9 +137,10 @@ String toolPathKey(String? workspace, String path) =>
     _lexical(hostToolPath(workspace, path.trim()));
 
 /// Эффект вызова до запуска. Битый JSON эффекта не даёт: исполнитель отвергнет
-/// аргументы, не трогая Host. Неизвестная команда с риском deny тоже ничего не
-/// меняет. Команда с риском ask — запись всего хоста, даже если политика ещё
-/// спросит: карточку можно показать сразу, а зависимый вызов подождёт решение.
+/// аргументы, не трогая Host. Неизвестное имя тоже ничего не делает: исполнитель
+/// ответит ошибкой. Команда, которая дойдёт до Host, — запись всего хоста,
+/// включая риск auto. Deny до Host не доходит. Карточку ask можно показать
+/// сразу, а зависимый вызов подождёт решение.
 ToolEffect toolEffectFor(
   LlmToolCall call, {
   required String? workspace,
@@ -107,6 +150,7 @@ ToolEffect toolEffectFor(
   final args = _decodeArgs(call.arguments);
   if (args == null) return const ToolEffect();
   return switch (call.name) {
+    ToolNames.hostInfo || ToolNames.which => const ToolEffect(hostRead: true),
     ToolNames.readFile => _fileRead(workspace, args),
     ToolNames.listDir => _dirRead(workspace, args),
     ToolNames.grep => _treeRead(workspace, args),
@@ -116,6 +160,8 @@ ToolEffect toolEffectFor(
     ToolNames.updatePlan ||
     ToolNames.pinFact ||
     ToolNames.unpinFact => const ToolEffect(sessionWrite: true),
+    ToolNames.pinProjectFact ||
+    ToolNames.unpinProjectFact => const ToolEffect(projectWrite: true),
     ToolNames.listStateRevisions ||
     ToolNames.getStateRevision => const ToolEffect(sessionRead: true),
     ToolNames.chatHistorySearch => const ToolEffect(transcriptRead: true),
@@ -170,8 +216,10 @@ ToolEffect _fileWrite(String? workspace, Map<String, dynamic> args) {
   return ToolEffect(fileWrites: {path});
 }
 
-/// Виртуальный Host отвергает фон до запуска: эффекта нет. Deny-команда тоже
-/// не запускается. Остальной фон и обычная мутирующая команда — запись хоста.
+/// Виртуальный Host отвергает фон до запуска: эффекта нет. Deny тоже не
+/// запускается. Всё, что дойдёт до процесса, — запись хоста. Классификатор
+/// называет auto только для решения политики; для графа этого мало, потому
+/// что ложный auto выполнился бы рядом с чтением того же файла.
 ToolEffect _command(
   Map<String, dynamic> args,
   PolicyEngine policy,
@@ -182,9 +230,8 @@ ToolEffect _command(
   final command = args['command'];
   final text = command is String ? command : '';
   return switch (policy.classifier.classify(text).risk) {
-    CommandRisk.auto => const ToolEffect(hostRead: true),
-    CommandRisk.ask => const ToolEffect(hostWrite: true),
     CommandRisk.deny => const ToolEffect(),
+    CommandRisk.auto || CommandRisk.ask => const ToolEffect(hostWrite: true),
   };
 }
 
@@ -210,6 +257,7 @@ bool _hits(ToolEffect writer, ToolEffect other) {
   if (writer.sessionWrite && (other.sessionRead || other.sessionWrite)) {
     return true;
   }
+  if (writer.projectWrite && other.projectWrite) return true;
   if (writer.hostsWrite && (other.hostsRead || other.hostsWrite)) return true;
   if (writer.settingsWrite && (other.settingsRead || other.settingsWrite)) {
     return true;
@@ -222,9 +270,8 @@ bool _hits(ToolEffect writer, ToolEffect other) {
     for (final tree in other.treeReads) {
       if (_covers(tree, path)) return true;
     }
-    final parent = _parent(path);
     for (final dir in other.dirReads) {
-      if (dir == path || parent != null && dir == parent) return true;
+      if (_covers(dir, path)) return true;
     }
   }
   return false;
@@ -243,15 +290,44 @@ bool _covers(String root, String child) {
   return child == root || child.startsWith('$root/');
 }
 
-String? _parent(String path) {
-  if (path == '/' || path == '.' || path.isEmpty) return null;
-  final parts = path.split('/');
-  if (parts.length < 2) return null;
-  parts.removeLast();
-  if (parts.length == 1 && parts.single.isEmpty) return '/';
-  final parent = parts.join('/');
-  if (parent.isEmpty) return null;
-  return parent;
+/// Пути одного множества после канонизации. [ambiguous] — хотя бы один путь
+/// не удалось связать с файлом, и набор его больше не содержит.
+Future<_BoundPaths> _bindPaths(
+  Set<String> paths,
+  PathCanonicalizer canonicalize,
+) async {
+  final bound = <String>{};
+  var ambiguous = false;
+  for (final path in paths) {
+    final key = _absoluteKey(await canonicalize(path));
+    if (key == null) {
+      ambiguous = true;
+      continue;
+    }
+    bound.add(key);
+  }
+  return _BoundPaths(bound, ambiguous: ambiguous);
+}
+
+/// Абсолютный ключ. Относительный ответ и нераскрытый `~` не принимают:
+/// их нельзя сравнить с уже раскрытым путём.
+String? _absoluteKey(String? raw) {
+  if (raw == null) return null;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty || trimmed.contains('\n') || trimmed.startsWith('~')) {
+    return null;
+  }
+  final key = toolPathKey(null, trimmed);
+  if (key.startsWith('~') || key == '.') return null;
+  if (key.startsWith('/') || _windowsDrive.hasMatch(key)) return key;
+  return null;
+}
+
+class _BoundPaths {
+  const _BoundPaths(this.paths, {required this.ambiguous});
+
+  final Set<String> paths;
+  final bool ambiguous;
 }
 
 String _lexical(String path) {

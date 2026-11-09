@@ -26,7 +26,9 @@ enum ToolScheduleEnd {
 /// запрашивается внутри [ToolExecutor.execute], и чужой ответ её не держит.
 /// Конфликт по [ToolEffect] сохраняет порядок модели, поэтому запись и чтение
 /// того же пути не накладываются, а diff зависимой записи считается уже после
-/// предыдущей. `finish` ждёт предшественников и не даёт стартовать хвосту.
+/// предыдущей. Пути перед графом приводятся к канонической форме хоста и
+/// обновляются снова, когда завершается команда: она могла создать симлинк.
+/// `finish` ждёт предшественников и не даёт стартовать хвосту.
 ///
 /// Результат пишется в ленту в исходном порядке, даже если вызовы завершились
 /// иначе. Фоновый процесс отпускает зависимые операции хоста только когда
@@ -39,6 +41,7 @@ class ToolScheduler {
     required this.workspace,
     required this.policy,
     required this.hostKind,
+    required this.canonicalize,
     required this.cancel,
     required this.alreadyAnswered,
     required this.resumed,
@@ -50,6 +53,10 @@ class ToolScheduler {
   final String? workspace;
   final PolicyEngine policy;
   final HostKind hostKind;
+
+  /// Раскрывает `~` и симлинки. null оставляет лексические ключи: так устроены
+  /// тесты без Host. Сессия передаёт операцию хоста.
+  final PathCanonicalizer? canonicalize;
   final CancelToken cancel;
   final Set<String> alreadyAnswered;
   final Map<String, Future<ToolResult> Function()> resumed;
@@ -64,6 +71,7 @@ class ToolScheduler {
     required PolicyEngine policy,
     required HostKind hostKind,
     required CancelToken cancel,
+    PathCanonicalizer? canonicalize,
     required Future<ToolResult> Function(LlmToolCall call) execute,
     required Future<void> Function(LlmToolCall call, ToolResult result) commit,
     Set<String> alreadyAnswered = const {},
@@ -74,6 +82,7 @@ class ToolScheduler {
       workspace: workspace,
       policy: policy,
       hostKind: hostKind,
+      canonicalize: canonicalize,
       cancel: cancel,
       alreadyAnswered: alreadyAnswered,
       resumed: resumed,
@@ -86,10 +95,17 @@ class ToolScheduler {
   final List<_Slot> _slots = [];
   final Map<int, Future<void>> _running = {};
   Future<void> _flushChain = Future<void>.value();
+  Future<void> _launchMutex = Future<void>.value();
   Object? _failure;
+  int? _finishAt;
+  bool _pathsDirty = false;
+  bool _boundOnce = false;
 
   Future<ToolScheduleEnd> _run() async {
-    _wire();
+    _createSlots();
+    _wireFixed();
+    _pathsDirty = canonicalize != null;
+    if (canonicalize == null) _rewireEffects();
     try {
       while (true) {
         await _flush();
@@ -102,7 +118,7 @@ class ToolScheduler {
           await _flush();
           break;
         }
-        _launch();
+        await _launch();
         if (_running.isEmpty) {
           if (_slots.any((slot) => slot.phase == _Phase.pending)) {
             _skipPending('not executed: internal scheduling error');
@@ -132,20 +148,22 @@ class ToolScheduler {
     return ToolScheduleEnd.done;
   }
 
-  void _wire() {
+  void _createSlots() {
     for (var i = 0; i < calls.length; i++) {
       final call = calls[i];
       final answered = alreadyAnswered.contains(call.id);
+      final effect = toolEffectFor(
+        call,
+        workspace: workspace,
+        policy: policy,
+        hostKind: hostKind,
+      );
       _slots.add(
         _Slot(
           index: i,
           call: call,
-          effect: toolEffectFor(
-            call,
-            workspace: workspace,
-            policy: policy,
-            hostKind: hostKind,
-          ),
+          rawEffect: effect,
+          effect: effect,
           phase: answered ? _Phase.settled : _Phase.pending,
           textReady: answered,
           committed: answered,
@@ -153,28 +171,77 @@ class ToolScheduler {
         ),
       );
     }
-    var finishAt = -1;
+  }
+
+  /// Зависимости, которые не меняются при смене пути: поиск по ленте и `finish`.
+  void _wireFixed() {
     for (var i = 0; i < _slots.length; i++) {
       final slot = _slots[i];
-      if (finishAt < 0 && slot.call.name == ToolNames.finish) finishAt = i;
+      if (_finishAt == null && slot.call.name == ToolNames.finish) {
+        _finishAt = i;
+      }
+      if (!slot.effect.transcriptRead) continue;
+      for (var j = 0; j < i; j++) {
+        slot.transcriptDeps.add(j);
+      }
+    }
+  }
+
+  /// Граф путей заново: канонические ключи могли смениться после команды.
+  void _rewireEffects() {
+    for (final slot in _slots) {
+      if (slot.phase == _Phase.pending) slot.effectDeps.clear();
+    }
+    for (var i = 0; i < _slots.length; i++) {
+      final slot = _slots[i];
+      if (slot.phase != _Phase.pending) continue;
       for (var j = 0; j < i; j++) {
         if (slot.effect.conflictsWith(_slots[j].effect)) {
           slot.effectDeps.add(j);
         }
-        if (slot.effect.transcriptRead) slot.transcriptDeps.add(j);
       }
     }
-    if (finishAt < 0) return;
-    for (var j = 0; j < finishAt; j++) {
-      _slots[finishAt].effectDeps.add(j);
+    final finishAt = _finishAt;
+    if (finishAt == null) return;
+    final finish = _slots[finishAt];
+    if (finish.phase == _Phase.pending) {
+      for (var j = 0; j < finishAt; j++) {
+        finish.effectDeps.add(j);
+      }
     }
     for (var i = finishAt + 1; i < _slots.length; i++) {
-      _slots[i].effectDeps.add(finishAt);
+      final slot = _slots[i];
+      if (slot.phase == _Phase.pending) slot.effectDeps.add(finishAt);
     }
   }
 
-  void _launch() {
+  /// Один заход за раз. Канонизация ждёт Host, и два захода иначе стартовали
+  /// бы один и тот же вызов. Ошибка захода остаётся у его вызывающего, а
+  /// следующий заход всё равно получает очередь.
+  Future<void> _launch() async {
+    final previous = _launchMutex;
+    final gate = Completer<void>();
+    _launchMutex = gate.future;
+    try {
+      await previous;
+      await _startWave();
+    } finally {
+      gate.complete();
+    }
+  }
+
+  Future<void> _startWave() async {
     if (cancel.isCancelled || _failure != null) return;
+    if (_pathsDirty) {
+      while (_pathsDirty) {
+        _pathsDirty = false;
+        final first = !_boundOnce;
+        await _rebind(includeSettled: first);
+        _boundOnce = true;
+        if (cancel.isCancelled || _failure != null) return;
+      }
+      _rewireEffects();
+    }
     for (final slot in _slots) {
       if (slot.phase != _Phase.pending || !_ready(slot)) continue;
       slot.phase = _Phase.running;
@@ -220,6 +287,24 @@ class ToolScheduler {
     } finally {
       slot.effectSettled = true;
       if (slot.phase == _Phase.running) slot.phase = _Phase.settled;
+      // Команда могла создать симлинк. Следующий запуск пересоберёт ключи
+      // ещё не начатых вызовов. Запись файла ссылку не создаёт.
+      if (canonicalize != null && slot.effect.hostWrite) _pathsDirty = true;
+    }
+  }
+
+  /// [includeSettled] — первый проход: уже отвеченные вызовы тоже держат пути.
+  /// Позже их ключ не трогают: команда этого батча не меняет то, что уже записано.
+  Future<void> _rebind({required bool includeSettled}) async {
+    final resolve = canonicalize;
+    if (resolve == null) return;
+    final cache = <String, Future<String?>>{};
+    Future<String?> cached(String path) =>
+        cache.putIfAbsent(path, () => resolve(path));
+    for (final slot in _slots) {
+      if (slot.phase == _Phase.running) continue;
+      if (slot.phase == _Phase.settled && !includeSettled) continue;
+      slot.effect = await slot.rawEffect.bindPaths(cached);
     }
   }
 
@@ -295,7 +380,7 @@ class ToolScheduler {
     }
     // Поиск по ленте становится готов, как только предыдущие результаты
     // записаны, не дожидаясь фонового процесса, который их породил.
-    _launch();
+    await _launch();
   }
 }
 
@@ -305,6 +390,7 @@ class _Slot {
   _Slot({
     required this.index,
     required this.call,
+    required this.rawEffect,
     required this.effect,
     required this.phase,
     required this.textReady,
@@ -314,7 +400,11 @@ class _Slot {
 
   final int index;
   final LlmToolCall call;
-  final ToolEffect effect;
+
+  /// Эффект по аргументам вызова, до канонизации. Повторный проход идёт от него,
+  /// иначе уже отброшенный неразрешённый путь некуда вернуть.
+  final ToolEffect rawEffect;
+  ToolEffect effect;
   final Set<int> effectDeps = {};
   final Set<int> transcriptDeps = {};
   _Phase phase;

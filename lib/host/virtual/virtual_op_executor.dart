@@ -87,6 +87,7 @@ final class VirtualOpExecutor {
         WhichOp(:final name) => _which(name),
         StatOp(:final path) => _stat(path, dir),
         RealpathOp(:final path) => _realpath(path, dir),
+        CanonicalPathOp(:final path) => _canonical(path, dir),
         FirstFileOp(:final paths) => _firstFile(paths, dir),
         WriteFileOp(:final path, :final backupPath, :final expectedMtime) =>
           _writeFile(
@@ -188,6 +189,11 @@ final class VirtualOpExecutor {
     final canonical = await _fs.realpath(_expand(path), cwd: dir);
     return VirtualOpResult.text('$canonical\n');
   }
+
+  /// Тот же путь, что [_realpath], для ключа конфликта. Недостающие каталоги
+  /// не ошибка: `mkdir -p` создаст их, а симлинки уже существующих компонентов раскрыты.
+  Future<VirtualOpResult> _canonical(String path, String dir) =>
+      _realpath(path, dir);
 
   /// Первый существующий файл из списка, в порядке списка. Печатает путь как его раскрыл бы shell.
   Future<VirtualOpResult> _firstFile(List<String> paths, String dir) async {

@@ -44,6 +44,8 @@ void main() {
       const GrepOp('x', '/tmp'),
       const WhichOp('ls'),
       const StatOp('/tmp/a'),
+      const RealpathOp('/tmp'),
+      const CanonicalPathOp('/tmp/a'),
       const FirstFileOp(['/tmp/a', '/tmp/b']),
       WriteFileOp('/tmp/a', backupPath: '/tmp/a.bak', expectedMtime: '1'),
     ];
@@ -120,6 +122,32 @@ void main() {
         expect(run.stdout.trim(), '${dir.path}/second');
       },
     );
+
+    test('CanonicalPathOp раскрывает симлинк и отсутствующий хвост', () async {
+      final real = Directory('${dir.path}/real')..createSync();
+      File('${real.path}/a.txt').writeAsStringSync('x');
+      Link('${dir.path}/link').createSync(real.path);
+      final found = await captureOp(
+        runtime,
+        CanonicalPathOp('${dir.path}/link/a.txt'),
+      );
+      expect(found.ok, isTrue, reason: found.stderr);
+      expect(found.stdout.trim(), endsWith('/real/a.txt'));
+      expect(found.stdout.contains('/link/'), isFalse);
+
+      final missing = await captureOp(
+        runtime,
+        CanonicalPathOp('${dir.path}/link/new/file.txt'),
+      );
+      expect(missing.ok, isTrue, reason: missing.stderr);
+      expect(missing.stdout.trim(), endsWith('/real/new/file.txt'));
+    });
+
+    test('CanonicalPathOp раскрывает тильду в абсолютный путь', () async {
+      final home = await captureOp(runtime, const CanonicalPathOp('~'));
+      expect(home.ok, isTrue, reason: home.stderr);
+      expect(home.stdout.trim(), startsWith('/'));
+    });
 
     test('ReadRawOp возвращает содержимое файла', () async {
       File('${dir.path}/a.txt').writeAsStringSync('payload');

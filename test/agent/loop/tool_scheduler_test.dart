@@ -152,34 +152,31 @@ void main() {
     },
   );
 
-  test(
-    'a mutating command is a host barrier and a read-only one is not',
-    () async {
-      final entered = <String>[];
-      final command = Completer<ToolResult>();
-      final done = ToolScheduler.run(
-        calls: [
-          call('c', ToolNames.runCommand, {'command': 'mkdir build'}),
-          call('r', ToolNames.readFile, {'path': 'a'}),
-        ],
-        workspace: '/ws',
-        policy: policy,
-        hostKind: HostKind.local,
-        cancel: CancelToken(),
-        execute: (tool) {
-          entered.add(tool.id);
-          if (tool.id == 'c') return command.future;
-          return Future.value(const ToolResult('file'));
-        },
-        commit: drop,
-      );
-      await idle();
-      expect(entered, ['c']);
-      command.complete(const ToolResult('made'));
-      expect(await done, ToolScheduleEnd.done);
-      expect(entered, ['c', 'r']);
-    },
-  );
+  test('a command is a host barrier for a later file read', () async {
+    final entered = <String>[];
+    final command = Completer<ToolResult>();
+    final done = ToolScheduler.run(
+      calls: [
+        call('c', ToolNames.runCommand, {'command': 'mkdir build'}),
+        call('r', ToolNames.readFile, {'path': 'a'}),
+      ],
+      workspace: '/ws',
+      policy: policy,
+      hostKind: HostKind.local,
+      cancel: CancelToken(),
+      execute: (tool) {
+        entered.add(tool.id);
+        if (tool.id == 'c') return command.future;
+        return Future.value(const ToolResult('file'));
+      },
+      commit: drop,
+    );
+    await idle();
+    expect(entered, ['c']);
+    command.complete(const ToolResult('made'));
+    expect(await done, ToolScheduleEnd.done);
+    expect(entered, ['c', 'r']);
+  });
 
   test(
     'background settlement holds later host reads but not the tool text',
@@ -310,6 +307,49 @@ void main() {
       expect(committed, ['w:wrote', 'r:cancelled by the user']);
     },
   );
+
+  test('a command refreshes path keys before later tools start', () async {
+    final entered = <String>[];
+    final command = Completer<ToolResult>();
+    final write = Completer<ToolResult>();
+    var linked = false;
+    final done = ToolScheduler.run(
+      calls: [
+        call('c', ToolNames.runCommand, {'command': 'ls'}),
+        call('w', ToolNames.writeFile, {'path': 'link/a.txt', 'content': 'x'}),
+        call('r', ToolNames.readFile, {'path': '/real/a.txt'}),
+      ],
+      workspace: '/ws',
+      policy: policy,
+      hostKind: HostKind.local,
+      cancel: CancelToken(),
+      canonicalize: (path) async {
+        if (!linked) return path;
+        if (path == '/ws/link/a.txt' || path == '/real/a.txt') {
+          return '/real/a.txt';
+        }
+        return path;
+      },
+      execute: (tool) {
+        entered.add(tool.id);
+        if (tool.id == 'c') return command.future;
+        if (tool.id == 'w') return write.future;
+        return Future.value(const ToolResult('file'));
+      },
+      commit: drop,
+    );
+    await idle();
+    expect(entered, ['c']);
+
+    linked = true;
+    command.complete(const ToolResult('listed'));
+    await idle();
+    expect(entered, ['c', 'w']);
+
+    write.complete(const ToolResult('wrote'));
+    expect(await done, ToolScheduleEnd.done);
+    expect(entered, ['c', 'w', 'r']);
+  });
 
   test('session mutations run one after another', () async {
     final entered = <String>[];

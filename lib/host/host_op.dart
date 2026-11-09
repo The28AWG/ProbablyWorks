@@ -135,6 +135,21 @@ final class RealpathOp extends HostOp {
   String get label => 'realpath $path';
 }
 
+/// Канонический путь файла для графа инструментов.
+///
+/// В отличие от [RealpathOp], последний компонент и ещё не созданные каталоги
+/// могут отсутствовать: запись делает `mkdir -p`, а ключ конфликта нужен раньше.
+/// Существующие симлинки раскрываются, `~` тоже. Ошибка — ненулевой код:
+/// планировщик тогда считает путь всем хостом, а не чужим файлом.
+final class CanonicalPathOp extends HostOp {
+  const CanonicalPathOp(this.path);
+
+  final String path;
+
+  @override
+  String get label => 'canonical $path';
+}
+
 /// Первый существующий файл из списка путей, в порядке списка. Вывод — путь найденного файла.
 final class FirstFileOp extends HostOp {
   const FirstFileOp(this.paths);

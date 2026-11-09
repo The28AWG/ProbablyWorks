@@ -47,6 +47,7 @@ class ShellAdapter {
     WhichOp(:final name) => which(name),
     StatOp(:final path) => stat(path),
     RealpathOp(:final path) => realpath(path),
+    CanonicalPathOp(:final path) => canonicalPath(path),
     FirstFileOp(:final paths) => firstFile(paths),
     WriteFileOp(:final path, :final backupPath, :final expectedMtime) =>
       writeFile(path, backupPath: backupPath, expectedMtime: expectedMtime),
@@ -66,6 +67,75 @@ class ShellAdapter {
       'if [ -d $p ]; then echo "dir \$(${_posixMtime(p)})"; '
       'elif [ -e $p ]; then echo "file \$(${_posixMtime(p)})"; '
       'else false; fi';
+
+  /// Канонический путь файла или каталога. `~` и существующие симлинки раскрываются.
+  /// Хвоста может не быть: от существующего предка остаётся его каноническая форма,
+  /// недостающие компоненты дописываются как есть. Так `link/new` и цель ссылки
+  /// получают один ключ ещё до `mkdir`.
+  String canonicalPath(String path) => _windows
+      ? powershell(
+          '$_consoleUtf8${_canonicalPs.replaceAll('__PATH__', psQuote(path))}',
+        )
+      : _posixCanonical.replaceAll('__PATH__', quotePath(path));
+
+  /// `readlink -f` требует существующий путь, кроме последнего компонента.
+  /// Цикл поднимается, пока не найдёт узел или симлинк, и дописывает снятый хвост.
+  static const _posixCanonical = r'''
+set -f
+p=__PATH__
+suffix=
+while true; do
+  if [ -e "$p" ] || [ -L "$p" ]; then
+    base=$(readlink -f -- "$p") || exit 1
+    printf '%s%s\n' "$base" "$suffix"
+    exit 0
+  fi
+  case "$p" in
+    */*) ;;
+    *) printf '%s%s\n' "$p" "$suffix"; exit 0 ;;
+  esac
+  name=${p##*/}
+  parent=${p%/*}
+  if [ -z "$parent" ]; then parent=/; fi
+  if [ "$parent" = "$p" ]; then
+    printf '%s%s\n' "$p" "$suffix"
+    exit 0
+  fi
+  suffix="/$name$suffix"
+  p=$parent
+done
+''';
+
+  static const _canonicalPs = r'''
+$ErrorActionPreference = 'Stop'
+$p = __PATH__
+if ($p -eq '~') {
+  if (-not $env:USERPROFILE) { exit 1 }
+  $p = $env:USERPROFILE
+} elseif ($p.StartsWith('~/') -or $p.StartsWith('~\')) {
+  if (-not $env:USERPROFILE) { exit 1 }
+  $p = Join-Path $env:USERPROFILE $p.Substring(2)
+}
+if (-not [IO.Path]::IsPathRooted($p)) {
+  $p = Join-Path (Get-Location).ProviderPath $p
+}
+$suffix = ''
+while ($true) {
+  if (Test-Path -LiteralPath $p) {
+    $base = (Resolve-Path -LiteralPath $p).ProviderPath
+    [Console]::Out.WriteLine((($base + $suffix) -replace '\\', '/'))
+    exit 0
+  }
+  $parent = Split-Path -Path $p -Parent
+  if ([string]::IsNullOrEmpty($parent) -or $parent -eq $p) {
+    [Console]::Out.WriteLine((($p + $suffix) -replace '\\', '/'))
+    exit 0
+  }
+  $name = Split-Path -Path $p -Leaf
+  $suffix = '/' + $name + $suffix
+  $p = $parent
+}
+''';
 
   /// Канонический путь существующего каталога. `cd` и `pwd -P` раскрывают `~` и симлинки.
   /// Для отсутствующего пути команда завершается ошибкой: вызывающий берёт лексическую форму.

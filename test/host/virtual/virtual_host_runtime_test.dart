@@ -134,6 +134,26 @@ void main() {
     },
   );
 
+  test('канонический путь раскрывает тильду и симлинк, хвост может отсутствовать', () async {
+    final runtime = await _runtime();
+    await runtime
+        .run(
+          'mkdir -p real && echo x > real/a.txt && ln -s /home/agent/real link',
+        )
+        .drain<void>();
+
+    final viaHome = await runtime
+        .perform(const CanonicalPathOp('~/link/a.txt'))
+        .toList();
+    expect(_done(viaHome).exitCode, 0);
+    expect(_stdout(viaHome).trim(), '/home/agent/real/a.txt');
+
+    final missing = await runtime
+        .perform(const CanonicalPathOp('~/link/new/file.txt'))
+        .toList();
+    expect(_stdout(missing).trim(), '/home/agent/real/new/file.txt');
+  });
+
   test('host_info называет профиль и доступные апплеты', () async {
     final runtime = await _runtime();
 

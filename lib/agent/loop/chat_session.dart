@@ -704,12 +704,15 @@ class ChatSession {
     Set<String> alreadyAnswered = const {},
     Map<String, Future<ToolResult> Function()> resumed = const {},
   }) async {
+    final workspace = commandWorkspace(ctx.host, ctx.chat.workspace);
     final end = await ToolScheduler.run(
       calls: calls,
-      workspace: commandWorkspace(ctx.host, ctx.chat.workspace),
+      workspace: workspace,
       policy: ctx.policy,
       hostKind: ctx.host.kind,
       cancel: turn,
+      canonicalize: (path) =>
+          _canonicalToolPath(ctx.runtime, path, cwd: workspace),
       alreadyAnswered: alreadyAnswered,
       resumed: resumed,
       execute: (call) => _hub.tools.execute(call, ctx),
@@ -720,6 +723,24 @@ class ChatSession {
       ToolScheduleEnd.finish => TurnEnd.completed,
       ToolScheduleEnd.cancelled => TurnEnd.stopped,
     };
+  }
+
+  /// Ключ файла на этом Host: `~` и симлинки раскрыты. null — планировщик
+  /// не отличает путь от остальных файлов и не пускает запись рядом с ним.
+  Future<String?> _canonicalToolPath(
+    HostRuntime runtime,
+    String path, {
+    required String cwd,
+  }) async {
+    try {
+      final run = await captureOp(runtime, CanonicalPathOp(path), cwd: cwd);
+      if (!run.ok) return null;
+      final text = run.stdout.trim();
+      if (text.isEmpty || text.contains('\n')) return null;
+      return text;
+    } on Object {
+      return null;
+    }
   }
 
   Future<void> _appendTool(String callId, ToolResult result) => _append(

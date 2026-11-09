@@ -59,7 +59,7 @@ void main() {
   });
 
   test(
-    'a file write conflicts with the parent listing and an ancestor grep',
+    'a file write conflicts with every ancestor listing and an ancestor grep',
     () {
       final write = effect(ToolNames.writeFile, {'path': 'src/app.dart'});
       expect(
@@ -68,6 +68,14 @@ void main() {
       );
       expect(
         write.conflictsWith(effect(ToolNames.listDir, {'path': '.'})),
+        isTrue,
+      );
+      expect(
+        write.conflictsWith(effect(ToolNames.listDir, {'path': '/'})),
+        isTrue,
+      );
+      expect(
+        write.conflictsWith(effect(ToolNames.listDir, {'path': 'other'})),
         isFalse,
       );
       expect(
@@ -79,15 +87,58 @@ void main() {
     },
   );
 
-  test('commands use the whole host, and a denied command has no effect', () {
+  test('a command is a host barrier even when classified as read-only', () {
     final read = effect(ToolNames.readFile, {'path': 'a'});
     final listing = effect(ToolNames.runCommand, {'command': 'ls'});
     final make = effect(ToolNames.runCommand, {'command': 'mkdir build'});
     final sudo = effect(ToolNames.runCommand, {'command': 'sudo ls'});
-    expect(listing.conflictsWith(read), isFalse);
+    expect(listing.conflictsWith(read), isTrue);
     expect(listing.conflictsWith(make), isTrue);
     expect(make.conflictsWith(read), isTrue);
     expect(sudo.conflictsWith(read), isFalse);
+  });
+
+  test('which and host_info wait for a write and not for a read', () {
+    final write = effect(ToolNames.writeFile, {'path': 'a'});
+    final read = effect(ToolNames.readFile, {'path': 'a'});
+    final which = effect(ToolNames.which, {'name': 'git'});
+    final info = effect(ToolNames.hostInfo, {});
+    expect(which.conflictsWith(write), isTrue);
+    expect(info.conflictsWith(write), isTrue);
+    expect(which.conflictsWith(read), isFalse);
+    expect(info.conflictsWith(read), isFalse);
+  });
+
+  test('project fact writes share one resource and ignore host files', () {
+    final pin = effect(ToolNames.pinProjectFact, {'text': 'keep'});
+    final unpin = effect(ToolNames.unpinProjectFact, {'id': '1'});
+    expect(pin.conflictsWith(unpin), isTrue);
+    expect(
+      pin.conflictsWith(effect(ToolNames.readFile, {'path': 'a'})),
+      isFalse,
+    );
+  });
+
+  test('bindPaths treats a tilde and its absolute path as one file', () async {
+    Future<String?> home(String path) async =>
+        path == '~/a' || path == '/home/agent/a' ? '/home/agent/a' : path;
+    final write = await effect(ToolNames.writeFile, {
+      'path': '~/a',
+    }).bindPaths(home);
+    final read = await effect(ToolNames.readFile, {
+      'path': '/home/agent/a',
+    }).bindPaths(home);
+    expect(write.conflictsWith(read), isTrue);
+  });
+
+  test('an unresolved write path blocks every host read', () async {
+    final write = await effect(ToolNames.writeFile, {
+      'path': 'a',
+    }).bindPaths((_) async => null);
+    expect(
+      write.conflictsWith(effect(ToolNames.readFile, {'path': 'b'})),
+      isTrue,
+    );
   });
 
   test('background on a virtual host is refused before it touches the fs', () {
