@@ -115,6 +115,45 @@ class TurnChangesetService {
   Future<TurnChangeset?> get(String chatId, String turnId) =>
       _store.load(chatId, turnId);
 
+  /// Откатывает учтённые файлы по цепочке: сначала более новые ответы агента.
+  Future<TurnRollbackChainResult> rollbackTurnsNewestFirst({
+    required String chatId,
+    required List<String> turnIdsNewestFirst,
+    required HostRuntime runtime,
+    required HostKind hostKind,
+    String? cwd,
+  }) async {
+    final failures = <TurnRollbackFailure>[];
+    for (final turnId in turnIdsNewestFirst) {
+      final cs = await get(chatId, turnId);
+      if (cs == null || !cs.canRollback) continue;
+      try {
+        await rollback(
+          changeset: cs,
+          runtime: runtime,
+          hostKind: hostKind,
+          cwd: cwd,
+        );
+      } on StateError catch (error) {
+        failures.add(TurnRollbackFailure(path: turnId, message: error.message));
+        return TurnRollbackChainResult(failures: failures);
+      }
+    }
+    return const TurnRollbackChainResult();
+  }
+
+  /// Пользователь продолжил без отката: снимки не предлагаются снова.
+  Future<void> markKeptOnEdit(String chatId, Iterable<String> turnIds) async {
+    for (final turnId in turnIds) {
+      final cs = await get(chatId, turnId);
+      if (cs == null || cs.rolledBack) continue;
+      final saved = await _store.save(
+        cs.copyWith(keptOnEdit: true, updatedAt: DateTime.now()),
+      );
+      _emit(saved);
+    }
+  }
+
   /// Откатывает изменения хода на [runtime].
   Future<TurnChangeset> rollback({
     required TurnChangeset changeset,

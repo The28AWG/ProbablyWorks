@@ -12,7 +12,6 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_column.da
 import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
-import 'package:probably_works/features/chat/presentation/widgets/turn_changeset_card.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -254,15 +253,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
             turnElapsed: taskTimes[message.id],
           ),
         );
-      }
-      if (message.role == MessageRole.user) {
-        final cs = state.turnChangesets[message.id];
-        if (cs != null && !cs.isEmpty) {
-          item(
-            'changeset:${message.id}',
-            TurnChangesetCard(changeset: cs, enabled: !state.isRunning),
-          );
-        }
       }
       for (final run in runsByMessage[message.id] ?? const <ToolRun>[]) {
         if (display.tools != ToolsVisibility.active || run.isActive) {

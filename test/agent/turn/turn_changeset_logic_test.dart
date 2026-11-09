@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/agent/turn/turn_file_kind.dart';
@@ -57,15 +58,33 @@ void main() {
     expect((action as RollbackRemove).path, '/new.txt');
   });
 
-  test('rollback blocked when a newer turn touched the same path', () {
-    final older = _empty().copyWith(
-      turnId: 'user-old',
+  test('pending file changes for rewind includes later user messages', () {
+    final messages = [
+      ChatMessage(
+        id: 'u1',
+        chatId: 'c',
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: DateTime(2020),
+        text: 'a',
+      ),
+      ChatMessage(
+        id: 'u2',
+        chatId: 'c',
+        seq: 3,
+        role: MessageRole.user,
+        createdAt: DateTime(2020),
+        text: 'b',
+      ),
+    ];
+    final first = _empty().copyWith(
+      turnId: 'u1',
       files: {
         '/f.txt': TurnFileChange(path: '/f.txt', kind: TurnFileKind.created),
       },
     );
-    final newer = _empty().copyWith(
-      turnId: 'user-new',
+    final second = _empty().copyWith(
+      turnId: 'u2',
       files: {
         '/f.txt': TurnFileChange(
           path: '/f.txt',
@@ -74,13 +93,15 @@ void main() {
         ),
       },
     );
-    final blocked = turnChangesetRollbackBlocked(
-      changeset: older,
-      turnUserSeq: 1,
-      allTurns: {'user-old': older, 'user-new': newer},
-      userSeqByMessageId: const {'user-old': 1, 'user-new': 3},
+    final ids = turnIdsWithPendingFileChanges(
+      messages: messages,
+      allTurns: {'u1': first, 'u2': second},
+      anchorSeq: 1,
+      afterOnly: false,
     );
-    expect(blocked, '/f.txt');
+    expect(ids, ['u1', 'u2']);
+    final sorted = turnIdsNewestFirst(messages: messages, turnIds: ids);
+    expect(sorted, ['u2', 'u1']);
   });
 
   test('shell mutation marks non-recoverable', () {

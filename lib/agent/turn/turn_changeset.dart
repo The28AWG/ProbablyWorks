@@ -54,6 +54,7 @@ final class TurnChangeset extends Equatable {
     this.nonRecoverable = false,
     this.shellMutationToolRunIds = const [],
     this.rolledBack = false,
+    this.keptOnEdit = false,
     required this.updatedAt,
   });
 
@@ -74,6 +75,7 @@ final class TurnChangeset extends Equatable {
           id as String,
       ],
       rolledBack: json['rolledBack'] as bool? ?? false,
+      keptOnEdit: json['keptOnEdit'] as bool? ?? false,
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
@@ -89,12 +91,15 @@ final class TurnChangeset extends Equatable {
   final bool nonRecoverable;
   final List<String> shellMutationToolRunIds;
   final bool rolledBack;
+
+  /// Пользователь продолжил правку истории без отката файлов на Host.
+  final bool keptOnEdit;
   final DateTime updatedAt;
 
   bool get isEmpty => files.isEmpty && !nonRecoverable;
 
   /// Откат файлов write_file/edit_file возможен, даже если shell помечен частично.
-  bool get canRollback => !rolledBack && files.isNotEmpty;
+  bool get canRollback => !rolledBack && !keptOnEdit && files.isNotEmpty;
 
   TurnChangeset copyWith({
     String? chatId,
@@ -103,6 +108,7 @@ final class TurnChangeset extends Equatable {
     bool? nonRecoverable,
     List<String>? shellMutationToolRunIds,
     bool? rolledBack,
+    bool? keptOnEdit,
     DateTime? updatedAt,
   }) => TurnChangeset(
     chatId: chatId ?? this.chatId,
@@ -112,6 +118,7 @@ final class TurnChangeset extends Equatable {
     shellMutationToolRunIds:
         shellMutationToolRunIds ?? this.shellMutationToolRunIds,
     rolledBack: rolledBack ?? this.rolledBack,
+    keptOnEdit: keptOnEdit ?? this.keptOnEdit,
     updatedAt: updatedAt ?? this.updatedAt,
   );
 
@@ -122,6 +129,7 @@ final class TurnChangeset extends Equatable {
     'nonRecoverable': nonRecoverable,
     'shellMutationToolRunIds': shellMutationToolRunIds,
     'rolledBack': rolledBack,
+    'keptOnEdit': keptOnEdit,
     'updatedAt': updatedAt.toIso8601String(),
   };
 
@@ -135,6 +143,7 @@ final class TurnChangeset extends Equatable {
     nonRecoverable,
     shellMutationToolRunIds,
     rolledBack,
+    keptOnEdit,
     updatedAt,
   ];
 }

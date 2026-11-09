@@ -6,6 +6,7 @@ import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
@@ -365,57 +366,19 @@ class ChatSession {
     unawaited(_runTurn());
   }
 
-  /// Откатывает изменения файлов хода, начатого сообщением [userMessageId].
-  ///
-  /// Более новый ход, затронувший те же пути, блокирует откат старых — сначала
-  /// откатывайте последние ходы.
-  Future<void> rollbackTurn(String userMessageId) async {
-    if (_running) {
-      throw StateError('cannot rollback while the agent is running');
-    }
-    final chat = await _hub.chats.chat(chatId);
-    if (chat == null) return;
-    final host = await _hub.hosts.byId(chat.hostId);
-    if (host == null) return;
-    final cs = await _hub.turnChangesets.get(chatId, userMessageId);
-    if (cs == null || !cs.canRollback) return;
-    final messages = await _hub.chats.messages(chatId);
-    final userSeqById = {
-      for (final message in messages)
-        if (message.role == MessageRole.user) message.id: message.seq,
-    };
-    final turnSeq = userSeqById[userMessageId];
-    if (turnSeq != null) {
-      final allTurns = await _hub.turnChangesets.forChat(chatId);
-      final blocked = turnChangesetRollbackBlocked(
-        changeset: cs,
-        turnUserSeq: turnSeq,
-        allTurns: allTurns,
-        userSeqByMessageId: userSeqById,
-      );
-      if (blocked != null) {
-        throw StateError(
-          'rollback blocked: a later turn changed $blocked; '
-          'roll back newer turns first',
-        );
-      }
-    }
-    final runtime = _hub.runtimes.forHost(host);
-    final cwd = commandWorkspace(host, chat.workspace);
-    await _hub.turnChangesets.rollback(
-      changeset: cs,
-      runtime: runtime,
-      hostKind: host.kind,
-      cwd: cwd,
-    );
-    _emit(AgentStateChanged(chatId));
-  }
-
   /// Edit N: восстанавливает состояние «ДО» N, удаляет N и всё после, отправляет новый текст.
+  ///
+  /// Если агент менял файлы в этом сообщении или позже, спрашивает об откате на Host.
   Future<void> editUserMessage(String messageId, String newText) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);
     if (message == null || message.role != MessageRole.user) return;
+    if (!await _confirmFileChangesBeforeRewind(
+      anchor: message,
+      afterOnly: false,
+    )) {
+      return;
+    }
     await _truncate(message, fromSelf: true, restoreBefore: true);
     await submit(newText, attachments: message.attachments);
   }
@@ -424,9 +387,79 @@ class ChatSession {
   Future<void> deleteAfter(String messageId) async {
     if (_running) throw StateError('cannot delete while the agent is running');
     final message = await _find(messageId);
-    if (message == null) return;
+    if (message == null || message.role != MessageRole.user) return;
+    if (!await _confirmFileChangesBeforeRewind(
+      anchor: message,
+      afterOnly: true,
+    )) {
+      return;
+    }
     await _truncate(message, fromSelf: false, restoreBefore: false);
     _emit(AgentStateChanged(chatId));
+  }
+
+  /// Спрашивает об откате файлов на Host. false — пользователь отменил или откат не удался.
+  Future<bool> _confirmFileChangesBeforeRewind({
+    required ChatMessage anchor,
+    required bool afterOnly,
+  }) async {
+    final messages = await _hub.chats.messages(chatId);
+    final allTurns = await _hub.turnChangesets.forChat(chatId);
+    final turnIds = turnIdsWithPendingFileChanges(
+      messages: messages,
+      allTurns: allTurns,
+      anchorSeq: anchor.seq,
+      afterOnly: afterOnly,
+    );
+    if (turnIds.isEmpty) return true;
+
+    final newestFirst = turnIdsNewestFirst(
+      messages: messages,
+      turnIds: turnIds,
+    );
+    final oldestFirst = List<String>.of(newestFirst.reversed);
+    final shellWarning = turnIds.any(
+      (turnId) => allTurns[turnId]?.nonRecoverable ?? false,
+    );
+    final choice = await _hub.broker.requestEditFileChanges(
+      EditFileChangesRequest(
+        id: _uuid.v4(),
+        chatId: chatId,
+        files: aggregateEditFileChanges(
+          allTurns: allTurns,
+          turnIdsOldestFirst: oldestFirst,
+        ),
+        shellMayHaveChangedFiles: shellWarning,
+      ),
+    );
+    if (choice == EditFileChangesChoice.cancel) return false;
+
+    if (choice == EditFileChangesChoice.continueWithoutRollback) {
+      await _hub.turnChangesets.markKeptOnEdit(chatId, turnIds);
+      return true;
+    }
+
+    final chat = await _hub.chats.chat(chatId);
+    if (chat == null) return false;
+    final host = await _hub.hosts.byId(chat.hostId);
+    if (host == null) return false;
+    final runtime = _hub.runtimes.forHost(host);
+    final cwd = commandWorkspace(host, chat.workspace);
+    final result = await _hub.turnChangesets.rollbackTurnsNewestFirst(
+      chatId: chatId,
+      turnIdsNewestFirst: newestFirst,
+      runtime: runtime,
+      hostKind: host.kind,
+      cwd: cwd,
+    );
+    if (!result.ok) {
+      throw StateError(
+        'file rollback failed: ${result.describe()}; '
+        'history was not changed',
+      );
+    }
+    _emit(AgentStateChanged(chatId));
+    return true;
   }
 
   // ---- turn loop ---------------------------------------------------------

@@ -2,6 +2,8 @@
 library;
 
 import 'package:characters/characters.dart';
+import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_file_kind.dart';
 import 'package:probably_works/core/util/char_substring.dart';
@@ -106,25 +108,63 @@ List<RollbackFileAction> turnChangesetRollbackPlan(TurnChangeset changeset) => [
   for (final change in changeset.files.values) turnChangesetActionFor(change),
 ];
 
-/// Путь, из‑за которого нельзя откатить более ранний ход: поздний ход трогал тот же файл.
+/// Id пользовательских сообщений, для которых ещё можно откатить файлы при rewind.
 ///
-/// Откатывайте сначала более новые ходы (больший [userSeqByMessageId]).
-String? turnChangesetRollbackBlocked({
-  required TurnChangeset changeset,
-  required int turnUserSeq,
+/// [afterOnly] — только сообщения строго после [anchorSeq] (удаление хвоста).
+List<String> turnIdsWithPendingFileChanges({
+  required List<ChatMessage> messages,
   required Map<String, TurnChangeset> allTurns,
-  required Map<String, int> userSeqByMessageId,
+  required int anchorSeq,
+  required bool afterOnly,
 }) {
-  final paths = changeset.files.keys.toSet();
-  for (final other in allTurns.values) {
-    if (other.turnId == changeset.turnId || other.rolledBack) continue;
-    final seq = userSeqByMessageId[other.turnId];
-    if (seq == null || seq <= turnUserSeq) continue;
-    for (final path in other.files.keys) {
-      if (paths.contains(path)) return path;
+  final ids = <String>[];
+  for (final message in messages) {
+    if (message.role != MessageRole.user) continue;
+    final inRange = afterOnly
+        ? message.seq > anchorSeq
+        : message.seq >= anchorSeq;
+    if (!inRange) continue;
+    final cs = allTurns[message.id];
+    if (cs == null || cs.rolledBack || cs.keptOnEdit) continue;
+    if (cs.files.isEmpty && !cs.nonRecoverable) continue;
+    ids.add(message.id);
+  }
+  return ids;
+}
+
+/// Сортирует id ответов агента от нового к старому (для цепочки отката).
+List<String> turnIdsNewestFirst({
+  required List<ChatMessage> messages,
+  required List<String> turnIds,
+}) {
+  final seqById = {
+    for (final message in messages)
+      if (message.role == MessageRole.user) message.id: message.seq,
+  };
+  return List<String>.of(turnIds)..sort((a, b) {
+    final seqA = seqById[a] ?? 0;
+    final seqB = seqById[b] ?? 0;
+    return seqB.compareTo(seqA);
+  });
+}
+
+/// Сводка путей для диалога: при конфликте побеждает более поздний ответ агента.
+List<EditFileChangesEntry> aggregateEditFileChanges({
+  required Map<String, TurnChangeset> allTurns,
+  required List<String> turnIdsOldestFirst,
+}) {
+  final byPath = <String, TurnFileKind>{};
+  for (final turnId in turnIdsOldestFirst) {
+    final cs = allTurns[turnId];
+    if (cs == null) continue;
+    for (final change in cs.files.values) {
+      byPath[change.path] = change.kind;
     }
   }
-  return null;
+  return [
+    for (final entry in byPath.entries)
+      EditFileChangesEntry(path: entry.key, kind: entry.value),
+  ]..sort((a, b) => a.path.compareTo(b.path));
 }
 
 /// Одно файловое действие при откате хода.
@@ -141,4 +181,25 @@ final class RollbackRestore extends RollbackFileAction {
   const RollbackRestore(this.path, {required this.backupName});
   final String path;
   final String backupName;
+}
+
+/// Сбой отката одного пути или ответа агента.
+final class TurnRollbackFailure {
+  const TurnRollbackFailure({required this.path, required this.message});
+
+  final String path;
+  final String message;
+}
+
+/// Итог цепочки отката (сначала более новые ответы агента).
+final class TurnRollbackChainResult {
+  const TurnRollbackChainResult({this.failures = const []});
+
+  final List<TurnRollbackFailure> failures;
+
+  bool get ok => failures.isEmpty;
+
+  String describe() =>
+      [for (final failure in failures) '${failure.path}: ${failure.message}']
+          .join('; ');
 }
