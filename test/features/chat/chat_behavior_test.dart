@@ -521,14 +521,40 @@ void main() {
     expect(tester.getCenter(find.byType(ChatComposer)).dy, greaterThan(600));
   });
 
-  testWidgets('copy under an answer exists only for the last answer', (
+  testWidgets('each finished turn keeps a copy button on its closing answer', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final start = DateTime(2026);
+    final messages = [
+      for (var i = 0; i < 2; i++) ...[
+        ChatMessage(
+          id: 'u$i',
+          chatId: 'c',
+          seq: i * 2 + 1,
+          role: MessageRole.user,
+          createdAt: start.add(Duration(minutes: i)),
+          text: 'Question $i',
+        ),
+        ChatMessage(
+          id: 'a$i',
+          chatId: 'c',
+          seq: i * 2 + 2,
+          role: MessageRole.assistant,
+          createdAt: start.add(Duration(minutes: i, seconds: 5)),
+          text: 'Answer $i',
+        ),
+      ],
+    ];
     await tester.pumpWidget(
       _TestApp(
-        SizedBox(height: 500, child: ChatTimeline(state: _state(count: 3))),
+        SizedBox(
+          height: 500,
+          child: ChatTimeline(
+            state: ChatState(chatId: 'c', messages: messages),
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -539,9 +565,107 @@ void main() {
       ),
       matching: find.byIcon(Icons.copy_outlined),
     );
-    // Ответ агента: кнопка только у последнего ответа, без резерва места у остальных.
-    expect(copyIn('m1'), findsNothing);
-    expect(copyIn('m3'), findsOneWidget);
+    expect(copyIn('u0'), findsNothing);
+    expect(copyIn('a0'), findsOneWidget);
+    expect(copyIn('a1'), findsOneWidget);
+  });
+
+  testWidgets('copy follows the closing answer of the last finished turn', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final start = DateTime(2026);
+    ChatMessage at(
+      String id,
+      int seq,
+      MessageRole role,
+      int seconds, {
+      String text = '',
+      List<ToolCallRef> calls = const [],
+    }) => ChatMessage(
+      id: id,
+      chatId: 'c',
+      seq: seq,
+      role: role,
+      createdAt: start.add(Duration(seconds: seconds)),
+      text: text,
+      toolCalls: calls,
+    );
+    // Первый ход закрыт текстом. Второй: промежуточный текст с командой и закрытие через finish.
+    final messages = [
+      at('u1', 1, MessageRole.user, 0, text: 'First'),
+      at(
+        'a1',
+        2,
+        MessageRole.assistant,
+        1,
+        text: 'Reading',
+        calls: const [
+          ToolCallRef(id: 'c1', name: 'run_command', arguments: '{}'),
+        ],
+      ),
+      at('t1', 3, MessageRole.tool, 2, text: 'ok'),
+      at('a2', 4, MessageRole.assistant, 5, text: 'First answer'),
+      at('u2', 5, MessageRole.user, 60, text: 'Second'),
+      at(
+        'a3',
+        6,
+        MessageRole.assistant,
+        61,
+        text: 'Still working',
+        calls: const [
+          ToolCallRef(id: 'c2', name: 'run_command', arguments: '{}'),
+        ],
+      ),
+      at('t2', 7, MessageRole.tool, 62, text: 'ok'),
+      at(
+        'a4',
+        8,
+        MessageRole.assistant,
+        63,
+        text: 'Second answer',
+        calls: const [ToolCallRef(id: 'c3', name: 'finish', arguments: '{}')],
+      ),
+      at('t3', 9, MessageRole.tool, 64, text: 'summary'),
+    ];
+
+    Future<void> pump({required bool running}) => tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          height: 500,
+          child: ChatTimeline(
+            state: ChatState(
+              chatId: 'c',
+              messages: messages,
+              isRunning: running,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    List<String> copiedIds() {
+      final ids = <String>[];
+      for (final element in find.byType(ChatMessageTile).evaluate()) {
+        final tile = element.widget as ChatMessageTile;
+        final copy = find.descendant(
+          of: find.byWidget(tile),
+          matching: find.byIcon(Icons.copy_outlined),
+        );
+        if (copy.evaluate().isNotEmpty) ids.add(tile.message.id);
+      }
+      return ids;
+    }
+
+    await pump(running: false);
+    await tester.pumpAndSettle();
+    expect(copiedIds(), ['a2', 'a4']);
+
+    // Второй ход ещё идёт: его сообщения не ответ, кнопка первого хода остаётся.
+    await pump(running: true);
+    await tester.pumpAndSettle();
+    expect(copiedIds(), ['a2']);
   });
 
   testWidgets('each finished task shows its own time under its final answer', (

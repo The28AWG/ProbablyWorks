@@ -167,7 +167,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
     }
     final boundary = _compactionBoundary(chat, visible);
     final lastUser = visible.lastIndexWhere((m) => m.role == MessageRole.user);
-    final lastAnswerId = _lastAnswerId(visible);
+    final answerIds = _answerIds(state.messages, running: state.isRunning);
     final taskTimes = _taskDurations(state.messages, running: state.isRunning);
 
     // Строки собираем от старого к новому: лента сверху вниз.
@@ -270,7 +270,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
           key: const ValueKey('bubble'),
           message: message,
           editable: !state.isRunning,
-          isLastAnswer: message.id == lastAnswerId,
+          isLastAnswer: answerIds.contains(message.id),
           turnElapsed: taskTimes[message.id],
           onEdit: message.role == MessageRole.user && edit != null
               ? () => edit(message)
@@ -435,16 +435,34 @@ class _ChatTimelineState extends State<ChatTimeline> {
     );
   }
 
-  /// Id последнего ответа агента, который виден в ленте. Кнопка «Копировать» показывается только у него.
-  static String? _lastAnswerId(List<ChatMessage> visible) {
-    for (var i = visible.length - 1; i >= 0; i--) {
-      final message = visible[i];
-      if (message.role == MessageRole.assistant &&
-          message.text.trim().isNotEmpty) {
-        return message.id;
+  /// Id ответов, под которыми стоит «Копировать»: закрывающее сообщение каждого законченного хода.
+  ///
+  /// Ход — сообщение пользователя и всё до следующего такого сообщения. У каждого законченного хода
+  /// свой ответ. Пока агент отвечает, у текущего хода ответа нет: это процесс, он ещё может дописать
+  /// текст и инструменты, и уже показанное сообщение не последнее. Ответы прошлых ходов при этом остаются.
+  /// Внутри хода ответ — последнее сообщение ассистента, и только если после него действие не продолжается
+  /// ([_isFinalAnswer]): есть текст и нет вызовов, кроме `finish`. Более ранний текст того же хода,
+  /// за которым идут инструменты, — шаг, а не ответ.
+  static Set<String> _answerIds(
+    List<ChatMessage> messages, {
+    required bool running,
+  }) {
+    final starts = <int>[
+      for (var i = 0; i < messages.length; i++)
+        if (messages[i].role == MessageRole.user) i,
+    ];
+    final ids = <String>{};
+    for (var k = 0; k < starts.length; k++) {
+      if (running && k == starts.length - 1) break;
+      final end = k + 1 < starts.length ? starts[k + 1] : messages.length;
+      ChatMessage? answer;
+      for (var i = starts[k] + 1; i < end; i++) {
+        final message = messages[i];
+        if (message.role == MessageRole.assistant) answer = message;
       }
+      if (answer != null && _isFinalAnswer(answer)) ids.add(answer.id);
     }
-    return null;
+    return ids;
   }
 
   /// Время каждого задания: от сообщения пользователя до последнего шага его хода (ответа ассистента или
