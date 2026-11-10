@@ -148,25 +148,9 @@ class _UserMessageState extends State<_UserMessage> {
         alignment: AlignmentDirectional.centerEnd,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          child: _HoverActions(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            actions: [
-              _ActionIcon(
-                tooltip: l10n.commonCopy,
-                icon: Icons.copy_outlined,
-                onPressed: () => _copy(context, text, l10n),
-              ),
-              if (editable && edit != null)
-                _ActionIcon(
-                  tooltip: l10n.messageEdit,
-                  icon: Icons.edit_outlined,
-                  onPressed: edit,
-                ),
-            ],
-            child: pending == null
-                ? bubble
-                : Semantics(hint: l10n.messageEditDraft, child: bubble),
-          ),
+          child: pending == null
+              ? bubble
+              : Semantics(hint: l10n.messageEditDraft, child: bubble),
         ),
       ),
     );
