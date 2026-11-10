@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
@@ -276,8 +277,10 @@ class _ChatTimelineState extends State<ChatTimeline> {
               : null,
           editText: widget.editDraftTexts[message.id],
         );
-        // Пузырь пользователя и композер правки меняют высоту: обёртка сглаживает этот переход.
-        // У остальных строк её нет, чтобы первое появление ленты не анимировало каждую высоту.
+        // Смена пузыря и композера правки меняет высоту: слот сглаживает только этот переход.
+        // Сворачивание текста анимировать нельзя: пузырь уже короткий, а слот ещё держит
+        // прежнюю высоту, и под сообщением остаётся пустота. У остальных строк слота нет,
+        // чтобы первое появление ленты не анимировало каждую высоту.
         final editor = widget.messageEditor;
         final editing =
             message.role == MessageRole.user &&
@@ -286,10 +289,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
         item(
           message.id,
           message.role == MessageRole.user
-              ? AnimatedSize(
-                  duration: AppDurations.normal,
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
+              ? _UserBubbleSlot(
+                  editing: editing,
                   child: AnimatedSwitcher(
                     duration: AppDurations.fast,
                     child: editing
@@ -496,6 +497,245 @@ class _ChatTimelineState extends State<ChatTimeline> {
     if (until <= 0) return -1;
     final index = visible.indexWhere((m) => m.seq > until);
     return index > 0 ? index : -1;
+  }
+}
+
+/// Слот сообщения пользователя. Высоту анимирует только смена пузыря и композера правки.
+///
+/// Раскрытие и сворачивание текста живут внутри пузыря и родителя не перестраивают. [AnimatedSize]
+/// здесь не подходит: он всегда догоняет ребёнка отдельной анимацией, поэтому при сворачивании пузырь
+/// уже короткий, а слот ещё держит прежнюю высоту — под сообщением остаётся пустая полоса.
+class _UserBubbleSlot extends StatefulWidget {
+  const _UserBubbleSlot({required this.editing, required this.child});
+
+  /// Сейчас вместо пузыря показан композер правки.
+  final bool editing;
+  final Widget child;
+
+  @override
+  State<_UserBubbleSlot> createState() => _UserBubbleSlotState();
+}
+
+class _UserBubbleSlotState extends State<_UserBubbleSlot>
+    with SingleTickerProviderStateMixin {
+  /// Плавная смена высоты включена на время перехода в правку и обратно.
+  var _animate = false;
+
+  @override
+  void didUpdateWidget(covariant _UserBubbleSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.editing != widget.editing) _animate = true;
+  }
+
+  void _animationEnded() {
+    if (!_animate || !mounted) return;
+    setState(() => _animate = false);
+  }
+
+  @override
+  Widget build(BuildContext context) => _SnapSize(
+    animate: _animate,
+    duration: AppDurations.normal,
+    curve: Curves.easeOutCubic,
+    vsync: this,
+    onEnd: _animationEnded,
+    child: widget.child,
+  );
+}
+
+/// Размер ребёнка. Пока [animate] ложно, слот равен ребёнку в том же кадре.
+/// Когда [animate] истинно, слот догоняет новую высоту от размера прошлого кадра.
+class _SnapSize extends SingleChildRenderObjectWidget {
+  const _SnapSize({
+    required this.animate,
+    required this.duration,
+    required this.curve,
+    required this.vsync,
+    required this.onEnd,
+    required super.child,
+  });
+
+  final bool animate;
+  final Duration duration;
+  final Curve curve;
+  final TickerProvider vsync;
+  final VoidCallback onEnd;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderSnapSize(
+    animate: animate,
+    duration: duration,
+    curve: curve,
+    vsync: vsync,
+    onEnd: onEnd,
+    textDirection: Directionality.maybeOf(context),
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderSnapSize renderObject) {
+    renderObject
+      ..animate = animate
+      ..duration = duration
+      ..curve = curve
+      ..vsync = vsync
+      ..onEnd = onEnd
+      ..textDirection = Directionality.maybeOf(context);
+  }
+}
+
+class _RenderSnapSize extends RenderAligningShiftedBox {
+  _RenderSnapSize({
+    required TickerProvider vsync,
+    required this._animate,
+    required Duration duration,
+    required Curve curve,
+    required this._onEnd,
+    required super.textDirection,
+  }) : _vsync = vsync,
+       super(alignment: Alignment.topCenter) {
+    _controller = AnimationController(vsync: vsync, duration: duration)
+      ..addListener(_handleTick)
+      ..addStatusListener(_handleStatus);
+    _animation = CurvedAnimation(parent: _controller, curve: curve);
+  }
+
+  late final AnimationController _controller;
+  late final CurvedAnimation _animation;
+  final SizeTween _tween = SizeTween();
+
+  /// Размер, к которому сейчас идём. Null, пока ребёнок ни разу не разложен.
+  Size? _end;
+  double _lastTick = 0;
+  bool _animate;
+  TickerProvider _vsync;
+  VoidCallback _onEnd;
+  final LayerHandle<ClipRectLayer> _clip = LayerHandle<ClipRectLayer>();
+
+  bool get animate => _animate;
+
+  set animate(bool value) {
+    if (value == _animate) return;
+    _animate = value;
+    markNeedsLayout();
+  }
+
+  Duration get duration => _controller.duration!;
+
+  set duration(Duration value) {
+    if (value == _controller.duration) return;
+    _controller.duration = value;
+  }
+
+  Curve get curve => _animation.curve;
+
+  set curve(Curve value) {
+    if (value == _animation.curve) return;
+    _animation.curve = value;
+  }
+
+  TickerProvider get vsync => _vsync;
+
+  set vsync(TickerProvider value) {
+    if (value == _vsync) return;
+    _vsync = value;
+    _controller.resync(value);
+  }
+
+  VoidCallback get onEnd => _onEnd;
+
+  set onEnd(VoidCallback value) {
+    if (identical(value, _onEnd)) return;
+    _onEnd = value;
+  }
+
+  void _handleTick() {
+    if (_controller.value != _lastTick) markNeedsLayout();
+  }
+
+  void _handleStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _onEnd();
+  }
+
+  /// Копия размера, которую можно хранить: чужой [Size] из layout менять нельзя.
+  Size _adopt(Size value) {
+    var adopted = value;
+    assert(() {
+      adopted = debugAdoptSize(value);
+      return true;
+    }());
+    return adopted;
+  }
+
+  void _go(Size target) {
+    _tween.begin = hasSize ? _adopt(size) : _adopt(target);
+    _tween.end = _end = _adopt(target);
+    _lastTick = 0;
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void detach() {
+    _controller.stop();
+    super.detach();
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(constraints, parentUsesSize: true);
+    final target = child.size;
+    if (!_animate) {
+      // Не трогаем value контроллера: присваивание из layout снова пометит объект грязным.
+      if (_controller.isAnimating) _controller.stop();
+      _end = _adopt(target);
+      size = constraints.constrain(target);
+    } else if (_end != target) {
+      _go(target);
+      size = constraints.constrain(_tween.evaluate(_animation)!);
+    } else {
+      // Слот уходил из дерева на середине перехода: тикер остановлен в detach, здесь его продолжаем.
+      if (!_controller.isAnimating && _controller.value < 1) {
+        _lastTick = _controller.value;
+        _controller.forward();
+      }
+      final animated = _tween.evaluate(_animation) ?? target;
+      size = constraints.constrain(animated);
+    }
+    alignChild();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final child = this.child;
+    if (child == null) return;
+    final overflows =
+        size.width < child.size.width || size.height < child.size.height;
+    if (!overflows) {
+      _clip.layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    _clip.layer = context.pushClipRect(
+      needsCompositing,
+      offset,
+      Offset.zero & size,
+      super.paint,
+      oldLayer: _clip.layer,
+    );
+  }
+
+  @override
+  void dispose() {
+    _clip.layer = null;
+    _controller
+      ..removeListener(_handleTick)
+      ..removeStatusListener(_handleStatus)
+      ..dispose();
+    super.dispose();
   }
 }
 
