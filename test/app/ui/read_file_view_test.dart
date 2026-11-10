@@ -1,20 +1,63 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/host/read_file_output.dart';
+import 'package:probably_works/test_support/golden_fonts.dart';
 
-Future<void> _pump(WidgetTester tester, ReadFileOutput output) =>
-    tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.light,
-        localizationsDelegates: appLocalizationsDelegates,
-        home: Scaffold(
-          body: SizedBox(width: 600, child: ReadFileView(output: output)),
-        ),
+Future<void> _pump(
+  WidgetTester tester,
+  ReadFileOutput output, {
+  double width = 600,
+  TextScaler textScaler = TextScaler.noScaling,
+}) => tester.pumpWidget(
+  MaterialApp(
+    theme: AppTheme.light,
+    localizationsDelegates: appLocalizationsDelegates,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+      child: child ?? const SizedBox.shrink(),
+    ),
+    home: Scaffold(
+      body: SizedBox(
+        width: width,
+        child: ReadFileView(output: output),
       ),
-    );
+    ),
+  ),
+);
+
+/// Правый край двух последних знаков и граница, левее которой они должны лежать.
+///
+/// Граница отступает на толщину вертикального скроллбара: он рисуется поверх края колонки.
+({double tailRight, double clearOfScrollbar}) _tailEdge(
+  WidgetTester tester,
+  String line,
+) {
+  final horizontal = find.byWidgetPredicate(
+    (widget) =>
+        widget is SingleChildScrollView &&
+        widget.scrollDirection == Axis.horizontal,
+  );
+  final viewport = tester.getRect(
+    find.descendant(of: horizontal, matching: find.byType(Scrollable)).first,
+  );
+  final paragraph = tester.renderObject<RenderParagraph>(
+    find.descendant(of: find.text(line), matching: find.byType(RichText)),
+  );
+  final boxes = paragraph.getBoxesForSelection(
+    TextSelection(baseOffset: line.length - 2, extentOffset: line.length),
+  );
+  expect(boxes, isNotEmpty);
+  final tail = MatrixUtils.transformRect(
+    paragraph.getTransformTo(null),
+    boxes.last.toRect(),
+  );
+  expect(tail.left, greaterThanOrEqualTo(viewport.left));
+  return (tailRight: tail.right, clearOfScrollbar: viewport.right - 8 + 1);
+}
 
 void main() {
   testWidgets('строки показываются с номерами, без служебного заголовка', (
@@ -310,4 +353,72 @@ void main() {
     expect(find.text('red'), findsOneWidget);
     expect(find.textContaining('\x1b'), findsNothing);
   });
+
+  testWidgets('хвост длинной строки виден целиком после прокрутки', (
+    tester,
+  ) async {
+    await GoldenFonts.load();
+    const line =
+        'Это тестовый файл, созданный с помощью инструмента write_file.';
+    await _pump(
+      tester,
+      const ReadFileText(
+        totalLines: 2,
+        totalBytes: 80,
+        lines: [
+          ReadFileLine(number: 1, text: line),
+          ReadFileLine(number: 2, text: 'short'),
+        ],
+        footer: ReadFileEndOfFile(),
+      ),
+      width: 320,
+    );
+    _scrollTextToEnd(tester);
+    await tester.pump();
+
+    final edge = _tailEdge(tester, line);
+    expect(edge.tailRight, lessThanOrEqualTo(edge.clearOfScrollbar));
+    expect(find.text('short'), findsOneWidget);
+  });
+
+  testWidgets('хвост длинной строки виден и при увеличенном масштабе текста', (
+    tester,
+  ) async {
+    await GoldenFonts.load();
+    const line =
+        'Это тестовый файл, созданный с помощью инструмента write_file.';
+    await _pump(
+      tester,
+      const ReadFileText(
+        totalLines: 1,
+        totalBytes: 70,
+        lines: [ReadFileLine(number: 1, text: line)],
+        footer: ReadFileEndOfFile(),
+      ),
+      width: 320,
+      textScaler: const TextScaler.linear(1.3),
+    );
+    _scrollTextToEnd(tester);
+    await tester.pump();
+
+    final edge = _tailEdge(tester, line);
+    expect(edge.tailRight, lessThanOrEqualTo(edge.clearOfScrollbar));
+  });
+}
+
+void _scrollTextToEnd(WidgetTester tester) {
+  final horizontal = find.byWidgetPredicate(
+    (widget) =>
+        widget is SingleChildScrollView &&
+        widget.scrollDirection == Axis.horizontal,
+  );
+  final position = tester
+      .state<ScrollableState>(
+        find
+            .descendant(of: horizontal, matching: find.byType(Scrollable))
+            .first,
+      )
+      .position;
+  final extent = position.maxScrollExtent;
+  position.jumpTo(extent);
 }

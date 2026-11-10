@@ -7,6 +7,7 @@ import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/anchored_sliver_list.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
@@ -177,6 +178,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
               expandThoughts: display.thoughts == ThoughtsVisibility.expanded,
               expandTools: display.tools == ToolsVisibility.expanded,
               expandWhileActive: display.expandWhileActive,
+              workspace: _projectWorkspace(state),
+              windows: _hostWindows(state),
             ),
           ),
         ),
@@ -768,4 +771,23 @@ class _AppearState extends State<_Appear> with SingleTickerProviderStateMixin {
       ),
     ),
   );
+}
+
+/// Рабочая папка проекта для подписи файла. Дом сюда не попадает: без выбранной папки путь полный.
+String? _projectWorkspace(ChatState state) {
+  final project = state.project?.workspace.trim();
+  if (project != null && project.isNotEmpty) return project;
+  final folder = state.chat?.workspace?.trim();
+  if (folder != null && folder.isNotEmpty) return folder;
+  return null;
+}
+
+/// Windows-хост сравнивает пути без регистра. Чужой хост не найден — сравнение как у POSIX.
+bool _hostWindows(ChatState state) {
+  final hostId = state.chat?.hostId;
+  if (hostId == null) return false;
+  for (final host in state.hosts) {
+    if (host.id == hostId) return host.os == HostOs.windows;
+  }
+  return false;
 }

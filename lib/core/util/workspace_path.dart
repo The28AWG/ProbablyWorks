@@ -90,3 +90,43 @@ String projectNameFor(String workspace) {
       .toList();
   return parts.isEmpty ? workspace : parts.last;
 }
+
+/// Подпись файла в заголовке read/write/edit.
+///
+/// Внутри [workspace] показывается только имя файла: полный путь в шапке не нужен,
+/// папка и так известна. Снаружи папки путь остаётся целиком, иначе чужой файл
+/// выглядит как свой. Относительный путь считается от папки, как его разрешает инструмент.
+/// `..`, выходящий из папки, снаружи. Без папки путь не сокращается: дом проектом не является.
+String projectFileLabel(
+  String path, {
+  String? workspace,
+  bool windows = false,
+}) {
+  final trimmed = path.trim();
+  if (trimmed.isEmpty) return path;
+  final root = workspace?.trim();
+  if (root == null || root.isEmpty) return trimmed;
+  if (!_insideWorkspace(trimmed, root, windows: windows)) return trimmed;
+  final name = projectNameFor(trimmed);
+  return name.isEmpty ? trimmed : name;
+}
+
+/// [path] — сам [workspace] или файл внутри него. Сравнение лексическое, без симлинков.
+bool _insideWorkspace(String path, String workspace, {required bool windows}) {
+  final root = normalizeWorkspacePath(workspace, windows: windows);
+  if (root.isEmpty || root == '/') return false;
+  final full = _underWorkspace(path, root, windows: windows);
+  if (full == root) return true;
+  final prefix = root.endsWith('/') ? root : '$root/';
+  return full.startsWith(prefix);
+}
+
+/// Абсолютный путь и `~` нормализуются как есть. Относительный дописывается к папке.
+String _underWorkspace(String path, String root, {required bool windows}) {
+  var file = path.trim();
+  if (windows) file = file.replaceAll(r'\', '/');
+  final drive = windows && RegExp(r'^[A-Za-z]:').hasMatch(file);
+  final absolute = file.startsWith('/') || file.startsWith('~') || drive;
+  if (absolute) return normalizeWorkspacePath(file, windows: windows);
+  return normalizeWorkspacePath('$root/$file', windows: windows);
+}

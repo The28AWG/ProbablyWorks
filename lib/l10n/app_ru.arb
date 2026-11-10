@@ -1136,6 +1136,22 @@
   "@readFileBinary": {
     "description": "Вид read_file: файл содержит NUL-байты и не читается как текст."
   },
+  "fileChangeReplaceAll": "Все вхождения в файле",
+  "@fileChangeReplaceAll": {
+    "description": "Подпись над diff edit_file, если замена применена ко всем вхождениям."
+  },
+  "fileChangeTruncated": "Показаны первые {shown} из {total} строк.",
+  "@fileChangeTruncated": {
+    "description": "Подвал вида изменения файла, если строк больше, чем рисуется в ленте.",
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "runPid": "pid {pid}",
   "@runPid": {
     "description": "Tool card header: process id of the command.",

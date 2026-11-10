@@ -29,10 +29,19 @@ class ReadFileView extends StatelessWidget {
   final double maxHeight;
 
   /// Шрифт совпадает с [CodeBlock] и выводом команд, чтобы код выглядел одинаково везде.
+  ///
+  /// [Text.rich] кладёт спан внутрь стиля темы. У движка незаданный [TextStyle.letterSpacing]
+  /// не сбрасывает уже заданный, поэтому 0.25 из body-стиля остаётся на моноширинной строке.
+  /// Строка становится шире [TextPainter], и хвост самой длинной обрезается колонкой.
+  /// Поэтому интервалы и насыщенность заданы явно, а `inherit` выключен.
   static const _style = TextStyle(
+    inherit: false,
     fontFamily: AppTheme.monoFamily,
     fontSize: 12.5,
+    fontWeight: FontWeight.w400,
     height: 1.5,
+    letterSpacing: 0,
+    wordSpacing: 0,
   );
 
   @override
@@ -105,8 +114,13 @@ class _ReadFileBody extends StatefulWidget {
     ReadFileText text,
     TextStyle textStyle,
     TextStyle numberStyle,
+    TextScaler textScaler,
   ) {
-    final painter = TextPainter(textDirection: TextDirection.ltr);
+    // Тот же масштаб, что у [Text]: иначе увеличенный текст шире колонки и обрезается.
+    final painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+    );
     try {
       painter
         ..text = TextSpan(
@@ -187,9 +201,17 @@ class _ReadFileBodyState extends State<_ReadFileBody> {
       color: colors.codeText.withValues(alpha: 0.5),
     );
     final textStyle = ReadFileView._style.copyWith(color: colors.codeText);
-    final measure = _ReadFileBody._measure(widget.text, textStyle, numberStyle);
+    final measure = _ReadFileBody._measure(
+      widget.text,
+      textStyle,
+      numberStyle,
+      MediaQuery.textScalerOf(context),
+    );
     // Округляем вверх: измерение дробное, а колонка должна вместить строку целиком.
-    final textColumnWidth = measure.textWidth.ceilToDouble();
+    // Запас справа — толщина вертикального скроллбара: он рисуется поверх края,
+    // и без запаса последний знак уезжает под полосу.
+    final textColumnWidth =
+        measure.textWidth.ceilToDouble() + _ReadFileBody._scrollbarThickness;
     final naturalHeight = lines.length * measure.rowHeight;
     // Высота видимой части: все строки, но не больше предела с учётом отступов.
     final visibleHeight = math.max(
@@ -278,6 +300,9 @@ class _ReadFileBodyState extends State<_ReadFileBody> {
                                                   plainTerminalText(line.text),
                                                   textStyle,
                                                 ),
+                                                // Тот же стиль, что у спана: иначе корень спана
+                                                // остаётся темой и её интервал протекает в строку.
+                                                style: textStyle,
                                                 softWrap: false,
                                               ),
                                             ),

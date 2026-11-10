@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -39,6 +40,44 @@ ToolRun _run(String id, ToolRunStatus status, {String? output}) {
         : start.add(const Duration(seconds: 3)),
     outputText: output,
   );
+}
+
+ToolRun _fileRun({
+  required String tool,
+  required String args,
+  String? command,
+  String? output,
+  String id = 'file',
+  ToolRunStatus status = ToolRunStatus.done,
+}) {
+  final start = DateTime(2026, 1, 1, 12);
+  return ToolRun(
+    id: id,
+    chatId: 'c',
+    messageId: 'a1',
+    toolName: tool,
+    argsJson: args,
+    command: command,
+    status: status,
+    startedAt: start,
+    finishedAt: start.add(const Duration(seconds: 1)),
+    outputText: output,
+  );
+}
+
+/// Зазор от правого края [left] до подписи на той же строке. Несколько длительностей
+/// не мешают: берётся та, что стоит напротив счётчика.
+double _gap(WidgetTester tester, String left, String right) {
+  final leftBox = tester.getRect(find.text(left));
+  final matches = find.text(right);
+  final count = tester.widgetList(matches).length;
+  var gap = double.negativeInfinity;
+  for (var index = 0; index < count; index++) {
+    final box = tester.getRect(matches.at(index));
+    if ((box.center.dy - leftBox.center.dy).abs() > 4) continue;
+    gap = box.left - leftBox.right;
+  }
+  return gap;
 }
 
 void main() {
@@ -313,5 +352,262 @@ void main() {
       expect(position(tester).pixels, greaterThan(0));
       expect(position(tester).extentAfter, lessThan(1));
     });
+  });
+
+  testWidgets('write_file opens as a new file, not an empty command', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 640,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(
+                _fileRun(
+                  tool: 'write_file',
+                  args: '{"path":"lib/a.dart","content":"alpha\\nbeta"}',
+                  command: 'write /work/lib/a.dart',
+                ),
+              ),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('write /work/lib/a.dart'), findsOneWidget);
+    expect(find.text('New file'), findsNothing);
+    expect(find.text('+2'), findsOneWidget);
+    expect(find.byType(FileChangeView), findsNothing);
+
+    await tester.tap(find.text('write /work/lib/a.dart'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FileChangeView), findsOneWidget);
+    expect(find.byType(CommandOutput), findsNothing);
+    expect(find.text('alpha'), findsOneWidget);
+    expect(find.text('beta'), findsOneWidget);
+    expect(find.text('@@ -0,0 +1,2 @@'), findsOneWidget);
+    expect(find.text('-'), findsNothing);
+  });
+
+  testWidgets('edit_file opens as a diff and not as a new file', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 640,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(
+                _fileRun(
+                  tool: 'edit_file',
+                  args: '{"path":"lib/a.dart","old_string":"alpha\\nbeta","new_string":"alpha\\ngamma"}',
+                  command: 'write /work/lib/a.dart',
+                ),
+              ),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('edit /work/lib/a.dart'), findsOneWidget);
+    expect(find.text('write /work/lib/a.dart'), findsNothing);
+    expect(find.text('New file'), findsNothing);
+    expect(find.text('+1'), findsOneWidget);
+    expect(find.text('-1'), findsOneWidget);
+    expect(find.byType(FileChangeView), findsNothing);
+
+    await tester.tap(find.text('edit /work/lib/a.dart'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CommandOutput), findsNothing);
+    expect(find.text('@@ -1,2 +1,2 @@'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
+    expect(find.text('beta'), findsOneWidget);
+    expect(find.text('gamma'), findsOneWidget);
+  });
+
+  testWidgets(
+    'файл проекта подписан именем, счётчик не слипается со временем',
+    (tester) async {
+      final steps = [
+        RunStep(
+          _fileRun(
+            tool: 'write_file',
+            args: '{"path":"lib/a.dart","content":"alpha\\nbeta"}',
+            command: 'write /work/lib/a.dart',
+          ),
+        ),
+        RunStep(
+          ToolRun(
+            id: 'read',
+            chatId: 'c',
+            messageId: 'a1',
+            toolName: 'read_file',
+            argsJson: '{}',
+            command: 'read /work/test_write.txt',
+            status: ToolRunStatus.done,
+            startedAt: DateTime(2026, 1, 1, 12),
+            finishedAt: DateTime(2026, 1, 1, 12, 0, 1),
+            outputText: '[file: 1 lines, 1 bytes]\n1: a\n[end of file]\n',
+          ),
+        ),
+        RunStep(
+          _fileRun(
+            tool: 'write_file',
+            args: '{"path":"/etc/hosts","content":"x"}',
+            command: 'write /etc/hosts',
+            id: 'outside',
+          ),
+        ),
+      ];
+      await tester.pumpWidget(
+        _TestApp(
+          SizedBox(
+            width: 640,
+            child: ChatStepLedger(
+              workspace: '/work',
+              steps: steps,
+              live: const {},
+              expandTools: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('write a.dart'), findsOneWidget);
+      expect(find.text('read test_write.txt'), findsOneWidget);
+      expect(find.text('write /etc/hosts'), findsOneWidget);
+
+      // Раскрытая узкая карточка: свободное место в шапке кончается, зазор остаётся.
+      await tester.pumpWidget(
+        _TestApp(
+          SizedBox(
+            width: 220,
+            child: ChatStepLedger(
+              workspace: '/work',
+              steps: steps,
+              live: const {},
+              expandTools: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(_gap(tester, '+2', '1 s'), greaterThanOrEqualTo(AppSpacing.sm));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('a failed write still shows the new file and the host error', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 640,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(
+                _fileRun(
+                  tool: 'write_file',
+                  args: '{"content":"alpha"}',
+                  command: 'write /work/a.txt',
+                  status: ToolRunStatus.failed,
+                  output: 'file changed after it was read; nothing was written',
+                ),
+              ),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('write /work/a.txt'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('alpha'), findsOneWidget);
+    expect(
+      find.text('file changed after it was read; nothing was written'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('шапка не переполняется на узкой карточке', (tester) async {
+    const read =
+        '[file: 3 lines, 20 bytes]\n1: alpha\n2: beta\n3: gamma\n[end of file]\n';
+    const path = 'read /home/the28awg/Development/ProbablyWorks/test_write.txt';
+    final start = DateTime(2026, 1, 1, 12);
+    final steps = [
+      RunStep(
+        _fileRun(
+          tool: 'write_file',
+          args: '{"path":"lib/a.dart","content":"alpha\\nbeta"}',
+          command: 'write /home/the28awg/Development/ProbablyWorks/lib/a.dart',
+        ),
+      ),
+      RunStep(
+        ToolRun(
+          id: 'read',
+          chatId: 'c',
+          messageId: 'a1',
+          toolName: 'read_file',
+          argsJson: '{}',
+          command: path,
+          status: ToolRunStatus.done,
+          startedAt: start,
+          finishedAt: start.add(const Duration(seconds: 1)),
+          outputText: read,
+        ),
+      ),
+      RunStep(
+        ToolRun(
+          id: 'live',
+          chatId: 'c',
+          messageId: 'a1',
+          toolName: 'run_command',
+          argsJson: '{}',
+          command: 'flutter test --reporter expanded',
+          status: ToolRunStatus.running,
+          startedAt: start,
+          background: true,
+        ),
+      ),
+    ];
+
+    Future<void> pump(double width) => tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: width,
+          child: ChatStepLedger(steps: steps, live: const {'live': 'ok'}),
+        ),
+      ),
+    );
+
+    await pump(170);
+    await tester.pump();
+    expect(find.text('New file'), findsNothing);
+    expect(find.text('+2'), findsOneWidget);
+    expect(find.text(path), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text(path));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    await pump(120);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }

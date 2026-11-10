@@ -1136,6 +1136,22 @@
   "@readFileBinary": {
     "description": "read_file view: the file contains NUL bytes and is not read as text."
   },
+  "fileChangeReplaceAll": "Every match in the file",
+  "@fileChangeReplaceAll": {
+    "description": "Caption above an edit_file diff when the replacement applies to every match."
+  },
+  "fileChangeTruncated": "Showing the first {shown} of {total} lines.",
+  "@fileChangeTruncated": {
+    "description": "Footer of a file change when more lines exist than the ledger draws.",
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "runPid": "pid {pid}",
   "@runPid": {
     "description": "Tool card header: process id of the command.",

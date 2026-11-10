@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
@@ -207,6 +209,10 @@ class _StepHeader extends StatelessWidget {
   /// при раскрытии не меняет высоту заголовка: текст и шеврон остаются на месте.
   static const _actionSize = 24.0;
 
+  /// Иконка статуса, зазор и шеврон. Этот кусок строки не отдаём кнопкам: иначе на узкой карточке
+  /// резерв кнопок шире остатка и строка переполняется.
+  static const _statusWidth = AppSpacing.sm + 16.0 + 18.0;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -223,35 +229,51 @@ class _StepHeader extends StatelessWidget {
           onPressed: onToggleFullHeight,
         ),
     ];
-    // Место под кнопки резервируем справа, чтобы текст заголовка не лез под них.
-    final actionsWidth = actions.length * _actionSize;
-    return Stack(
-      children: [
-        Padding(
-          padding: EdgeInsets.only(
-            left: padding.left,
-            top: padding.top,
-            right: padding.right + actionsWidth,
-            bottom: padding.bottom,
-          ),
-          child: header(palette),
-        ),
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.only(right: padding.right),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final action in actions)
-                    SizedBox.square(dimension: _actionSize, child: action),
-                ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wanted = actions.length * _actionSize;
+        final room = math.max(
+          0.0,
+          constraints.maxWidth - padding.horizontal - _statusWidth,
+        );
+        // Место под кнопки резервируем справа, чтобы текст заголовка не лез под них.
+        // На узкой карточке резерв не забирает иконку и шеврон: кнопки тогда уменьшаются.
+        final actionsWidth = math.min(wanted.toDouble(), room);
+        return Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(
+                left: padding.left,
+                top: padding.top,
+                right: padding.right + actionsWidth,
+                bottom: padding.bottom,
+              ),
+              child: header(palette),
+            ),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: padding.right),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final action in actions)
+                          SizedBox.square(
+                            dimension: _actionSize,
+                            child: action,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
