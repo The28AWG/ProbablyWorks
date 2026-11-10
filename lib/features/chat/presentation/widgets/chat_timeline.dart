@@ -14,7 +14,6 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_message_t
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
 import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Лента чата: сообщения, журнал шагов и текст, который сейчас печатается.
 ///
@@ -65,7 +64,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
   late final ScrollController _scroll;
   var _follow = true;
-  var _showJump = false;
 
   /// Сообщение пользователя, после которого ход только что начался: его ход выезжает снизу к верху окна.
   String? _sentId;
@@ -94,7 +92,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
     // Перестроение уже идёт: достаточно поменять поля, setState здесь не нужен.
     _sentId = messages.last.id;
     _follow = true;
-    _showJump = false;
   }
 
   @override
@@ -112,21 +109,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
     if (atEnd == _follow) return;
     setState(() {
       _follow = atEnd;
-      _showJump = !atEnd;
     });
-  }
-
-  Future<void> _jumpToLatest() async {
-    setState(() {
-      _follow = true;
-      _showJump = false;
-    });
-    if (!_scroll.hasClients) return;
-    await _scroll.animateTo(
-      _scroll.position.maxScrollExtent,
-      duration: AppDurations.normal,
-      curve: Curves.easeOutCubic,
-    );
   }
 
   /// Элемент новый, если его ещё не было в ленте. Первую отрисовку не анимируем: чат открывается сразу.
@@ -134,7 +117,6 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final state = widget.state;
     final visible = [
       for (final m in state.messages)
@@ -149,16 +131,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
           : LayoutBuilder(
               key: const ValueKey('timeline'),
               builder: (context, constraints) =>
-                  _buildTimeline(visible, l10n, constraints.maxHeight),
+                  _buildTimeline(visible, constraints.maxHeight),
             ),
     );
   }
 
-  Widget _buildTimeline(
-    List<ChatMessage> visible,
-    AppLocalizations l10n,
-    double viewportHeight,
-  ) {
+  Widget _buildTimeline(List<ChatMessage> visible, double viewportHeight) {
     final state = widget.state;
     final chat = state.chat;
     final runsByMessage = <String, List<ToolRun>>{};
@@ -382,53 +360,15 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     return ChatViewport(
       height: viewportHeight,
-      child: Stack(
-        children: [
-          CustomScrollView(
-            controller: _scroll,
-            slivers: [
-              AnchoredSliverList(
-                following: _follow,
-                delegate: SliverChildListDelegate([
-                  const SizedBox(height: AppSpacing.md),
-                  ...children,
-                ]),
-              ),
-            ],
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: AppSpacing.md,
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: AppDurations.fast,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: animation.drive(
-                      Tween<Offset>(
-                        begin: const Offset(0, 0.5),
-                        end: Offset.zero,
-                      ),
-                    ),
-                    child: child,
-                  ),
-                ),
-                child: _showJump
-                    ? FilledButton.tonalIcon(
-                        key: const ValueKey('jump'),
-                        onPressed: _jumpToLatest,
-                        icon: const Icon(Icons.arrow_downward, size: 16),
-                        label: Text(
-                          l10n.chatScrollToLatest,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    : const SizedBox.shrink(key: ValueKey('none')),
-              ),
-            ),
+      child: CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          AnchoredSliverList(
+            following: _follow,
+            delegate: SliverChildListDelegate([
+              const SizedBox(height: AppSpacing.md),
+              ...children,
+            ]),
           ),
         ],
       ),
