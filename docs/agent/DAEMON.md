@@ -48,6 +48,10 @@ dart run packages/pw_server/bin/pw_server.dart --print-token
 ```
 GET    /api/v1/health
 GET    /api/v1/hosts
+PUT    /api/v1/hosts/{id}
+DELETE /api/v1/hosts/{id}
+POST   /api/v1/hosts/{id}/test
+PUT    /api/v1/hosts/{id}/trust
 GET    /api/v1/chats
 POST   /api/v1/chats                 {"hostId": "local"}
 GET    /api/v1/chats/{id}
@@ -72,6 +76,21 @@ GET    /api/v1/chats/{id}/events     Server-Sent Events по чату
 PUT    /api/v1/approvals/{id}/decision         {"action": "allowOnce|allowTurn|allowChat|deny"}
 PUT    /api/v1/questions/{id}/answer           {"answer": "..."}
 PUT    /api/v1/edit-file-changes/{id}/decision {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
+
+GET    /api/v1/projects
+GET    /api/v1/projects/counts
+PUT    /api/v1/projects/{id}
+DELETE /api/v1/projects/{id}
+GET    /api/v1/projects/{id}/chats
+GET    /api/v1/projects/{id}/facts
+POST   /api/v1/projects/{id}/facts
+DELETE /api/v1/projects/{id}/facts/{factId}
+GET    /api/v1/projects/{id}/skills
+PUT    /api/v1/projects/{id}/skills/{name}
+POST   /api/v1/projects/{id}/trust
+GET    /api/v1/policy-profiles
+PUT    /api/v1/policy-profiles/{id}
+DELETE /api/v1/policy-profiles/{id}
 
 GET    /api/v1/schedules
 POST   /api/v1/schedules              {"chatId": "...", "prompt": "...", "dueAt": "ISO-8601"}

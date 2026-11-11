@@ -17,6 +17,8 @@ import 'agent/api/hosts_api.dart' as _i907;
 import 'agent/api/local_agent_api.dart' as _i269;
 import 'agent/api/local_chat_api.dart' as _i866;
 import 'agent/api/local_hosts_api.dart' as _i915;
+import 'agent/api/local_projects_api.dart' as _i623;
+import 'agent/api/projects_api.dart' as _i346;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
 import 'agent/exec/active_exec_registry.dart' as _i1048;
@@ -198,6 +200,15 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i518.ProjectRepository>(),
         gh<_i985.HostRepository>(),
         gh<_i611.HostRuntimeFactory>(),
+      ),
+    );
+    gh.lazySingleton<_i346.ProjectsApi>(
+      () => _i623.LocalProjectsApi(
+        gh<_i518.ProjectRepository>(),
+        gh<_i906.ChatRepository>(),
+        gh<_i985.HostRepository>(),
+        gh<_i215.PolicyProfileRepository>(),
+        gh<_i384.SettingsRepository>(),
       ),
     );
     gh.lazySingleton<_i907.HostsApi>(

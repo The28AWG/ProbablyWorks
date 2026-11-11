@@ -2,9 +2,8 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
-import 'package:pw_agent/core/data/host_repository.dart';
-import 'package:pw_agent/core/data/project_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:uuid/uuid.dart';
 
@@ -60,20 +59,19 @@ class ProjectsState extends Equatable {
 /// Раздел проектов. Проекты не создаются здесь: они появляются из чатов, а этот блок
 /// показывает их список, переименовывает, меняет доверие и общую память.
 class ProjectsCubit extends Cubit<ProjectsState> {
-  ProjectsCubit(this._projects, this._hosts) : super(const ProjectsState()) {
-    _projectsSub = _projects.watchAll().listen(
+  ProjectsCubit(this._api) : super(const ProjectsState()) {
+    _projectsSub = _api.watchProjects().listen(
       (projects) => emit(state.copyWith(projects: projects, loading: false)),
     );
-    _hostsSub = _hosts.watchAll().listen(
+    _hostsSub = _api.watchHosts().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
     );
-    _countsSub = _projects.watchChatCounts().listen(
+    _countsSub = _api.watchChatCounts().listen(
       (counts) => emit(state.copyWith(chatCounts: counts)),
     );
   }
 
-  final ProjectRepository _projects;
-  final HostRepository _hosts;
+  final ProjectsApi _api;
 
   static const _uuid = Uuid();
 
@@ -85,12 +83,12 @@ class ProjectsCubit extends Cubit<ProjectsState> {
   Future<void> rename(Project project, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty || trimmed == project.name) return;
-    await _projects.save(project.copyWith(name: trimmed));
+    await _api.saveProject(project.copyWith(name: trimmed));
   }
 
   /// Профиль политики проекта. Null — используется глобальный профиль из настроек.
   Future<void> setPolicyProfile(Project project, String? profileId) =>
-      _projects.save(
+      _api.saveProject(
         project.copyWith(
           policyProfileId: profileId,
           clearPolicyProfile: profileId == null,
@@ -99,18 +97,18 @@ class ProjectsCubit extends Cubit<ProjectsState> {
 
   /// Доверие к AGENTS.md. Skills доверяются отдельно, по одному.
   Future<void> setAgentsTrust(Project project, {required bool trusted}) =>
-      _projects.setTrustAgentsMd(project.id, trusted);
+      _api.setTrustAgentsMd(project.id, trusted);
 
   Future<void> setSkillTrusted(
     String projectId,
     String name, {
     required bool trusted,
-  }) => _projects.setSkillTrusted(projectId, name, trusted: trusted);
+  }) => _api.setSkillTrusted(projectId, name, trusted: trusted);
 
   Future<void> addFact(Project project, String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    await _projects.addFact(
+    await _api.addFact(
       ProjectFact(
         id: _uuid.v4(),
         projectId: project.id,
@@ -120,13 +118,14 @@ class ProjectsCubit extends Cubit<ProjectsState> {
     );
   }
 
-  Future<void> deleteFact(String id) => _projects.deleteFact(id);
+  Future<void> deleteFact(String projectId, String factId) =>
+      _api.deleteFact(projectId, factId);
 
   /// Окончательное удаление архивного проекта. Активный проект удалять нельзя:
   /// сначала должны исчезнуть его чаты, иначе чаты остались бы без проекта.
   Future<void> deleteProject(Project project) async {
     if (!project.isArchived || state.chatCountOf(project) > 0) return;
-    await _projects.delete(project.id);
+    await _api.deleteProject(project.id);
   }
 
   @override

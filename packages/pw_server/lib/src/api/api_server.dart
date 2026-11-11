@@ -5,12 +5,14 @@ import 'dart:io';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
@@ -29,9 +31,11 @@ final class ApiServer {
     this._port = 7787,
     ChatApi? chat,
     HostsApi? hosts,
+    ProjectsApi? projects,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
-       _hostsApi = hosts;
+       _hostsApi = hosts,
+       _projectsApi = projects;
 
   static const _maxBodyBytes = 1 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
@@ -39,6 +43,7 @@ final class ApiServer {
   final AgentApi _backend;
   final ChatApi? _chatApi;
   final HostsApi? _hostsApi;
+  final ProjectsApi? _projectsApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -132,6 +137,21 @@ final class ApiServer {
         }
         if (rest.length == 2 && rest[1] == 'trust' && request.method == 'PUT') {
           return _trustHost(request, rest.first);
+        }
+      case 'projects':
+        return _routeProjects(request, rest);
+      case 'policy-profiles':
+        if (rest.isEmpty && request.method == 'GET') {
+          return _policyProfiles(request);
+        }
+        if (rest.length == 1) {
+          if (request.method == 'PUT') {
+            return _savePolicyProfile(request, rest.first);
+          }
+          if (request.method == 'DELETE') {
+            await _requireProjectsApi().deletePolicyProfile(rest.first);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
         }
       case 'settings':
         if (rest.isEmpty && request.method == 'GET') return _settings(request);
@@ -285,6 +305,112 @@ final class ApiServer {
       'not_found',
       'unknown chat endpoint',
     );
+  }
+
+  ProjectsApi _requireProjectsApi() {
+    final projects = _projectsApi;
+    if (projects == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'projects API is not available',
+      );
+    }
+    return projects;
+  }
+
+  Future<void> _routeProjects(HttpRequest request, List<String> rest) async {
+    final api = _requireProjectsApi();
+    if (rest.isEmpty && request.method == 'GET') {
+      final projects = await api.watchProjects().first;
+      return _json(request.response, HttpStatus.ok, {
+        'projects': [for (final project in projects) _projectJson(project)],
+      });
+    }
+    if (rest.length == 1 && rest.first == 'counts' && request.method == 'GET') {
+      final counts = await api.watchChatCounts().first;
+      return _json(request.response, HttpStatus.ok, {'counts': counts});
+    }
+    if (rest.length == 1) {
+      final id = rest.first;
+      if (request.method == 'PUT' || request.method == 'PATCH') {
+        final body = await _body(request);
+        await api.saveProject(_projectFromJson(id, body));
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+      if (request.method == 'DELETE') {
+        await api.deleteProject(id);
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+    }
+    if (rest.length == 2) {
+      final id = rest.first;
+      if (rest[1] == 'chats' && request.method == 'GET') {
+        final chats = await api.watchProjectChats(id).first;
+        return _json(request.response, HttpStatus.ok, {
+          'chats': [
+            for (final chat in chats)
+              _chatJson(
+                chat,
+                running: _backend.runningChatIds.contains(chat.id),
+                waiting: _backend.waitingChatIds.contains(chat.id),
+              ),
+          ],
+        });
+      }
+      if (rest[1] == 'facts' && request.method == 'GET') {
+        final facts = await api.watchFacts(id).first;
+        return _json(request.response, HttpStatus.ok, {
+          'facts': [for (final fact in facts) _factJson(fact)],
+        });
+      }
+      if (rest[1] == 'skills' && request.method == 'GET') {
+        final skills = await api.watchSkills(id).first;
+        return _json(request.response, HttpStatus.ok, {
+          'skills': [for (final skill in skills) _skillJson(skill)],
+        });
+      }
+      if (rest[1] == 'facts' && request.method == 'POST') {
+        final body = await _body(request);
+        await api.addFact(_factFromJson(id, body));
+        return _json(request.response, HttpStatus.created, {});
+      }
+      if (rest[1] == 'trust' && request.method == 'POST') {
+        await api.trustWorkspace(id);
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+    }
+    if (rest.length == 3 && rest[1] == 'skills' && request.method == 'PUT') {
+      final body = await _body(request);
+      await api.setSkillTrusted(
+        rest.first,
+        rest[2],
+        trusted: body['trusted'] != false,
+      );
+      return _json(request.response, HttpStatus.noContent, {});
+    }
+    if (rest.length == 3 && rest[1] == 'facts' && request.method == 'DELETE') {
+      await api.deleteFact(rest.first, rest[2]);
+      return _json(request.response, HttpStatus.noContent, {});
+    }
+    throw const AgentApiException(
+      HttpStatus.notFound,
+      'not_found',
+      'unknown project endpoint',
+    );
+  }
+
+  Future<void> _policyProfiles(HttpRequest request) async {
+    final profiles = await _requireProjectsApi().watchPolicyProfiles().first;
+    _json(request.response, HttpStatus.ok, {
+      'profiles': [for (final profile in profiles) _policyJson(profile)],
+    });
+  }
+
+  Future<void> _savePolicyProfile(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _requireProjectsApi().savePolicyProfile(_policyFromJson(id, body));
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _hosts(HttpRequest request) async {
@@ -450,6 +576,9 @@ final class ApiServer {
       'pinnedModels': await chat.settings.readPinnedModels(),
       'steps': _stepsJson(await chat.settings.readStepsDisplay()),
       'limits': (await chat.limits()).toMap(),
+      'denylist': await _requireProjectsApi().readDenylist(),
+      'securityProfile': (await _requireProjectsApi().readSecurityProfile())
+          .encode(),
     });
   }
 
@@ -858,6 +987,62 @@ final class ApiServer {
     });
   }
 }
+
+Project _projectFromJson(String id, Map<String, dynamic> json) {
+  final now = DateTime.now();
+  return Project(
+    id: id,
+    hostId: '${json['hostId'] ?? ''}',
+    name: '${json['name'] ?? ''}',
+    workspace: '${json['workspace'] ?? ''}',
+    workspaceKey: '${json['workspaceKey'] ?? ''}',
+    policyProfileId: json['policyProfileId'] as String?,
+    trustAgentsMd: json['trustAgentsMd'] == true,
+    skillsInitialized: json['skillsInitialized'] == true,
+    archivedAt: _date(json['archivedAt']),
+    createdAt: _date(json['createdAt']) ?? now,
+    updatedAt: _date(json['updatedAt']) ?? now,
+  );
+}
+
+ProjectFact _factFromJson(String projectId, Map<String, dynamic> json) =>
+    ProjectFact(
+      id: '${json['id'] ?? ''}',
+      projectId: projectId,
+      text: '${json['text'] ?? ''}',
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+    );
+
+Map<String, Object?> _factJson(ProjectFact fact) => {
+  'id': fact.id,
+  'projectId': fact.projectId,
+  'text': fact.text,
+  'createdAt': fact.createdAt.toUtc().toIso8601String(),
+};
+
+Map<String, Object?> _skillJson(ProjectSkill skill) => {
+  'name': skill.name,
+  'trusted': skill.trusted,
+};
+
+PolicyProfile _policyFromJson(String id, Map<String, dynamic> json) =>
+    PolicyProfile(
+      id: id,
+      name: '${json['name'] ?? ''}',
+      description: json['description'] as String?,
+      profile: SecurityProfile.decode('${json['profile'] ?? '{}'}'),
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      updatedAt: _date(json['updatedAt']) ?? DateTime.now(),
+    );
+
+Map<String, Object?> _policyJson(PolicyProfile profile) => {
+  'id': profile.id,
+  'name': profile.name,
+  'description': profile.description,
+  'profile': profile.profile.encode(),
+  'createdAt': profile.createdAt.toUtc().toIso8601String(),
+  'updatedAt': profile.updatedAt.toUtc().toIso8601String(),
+};
 
 Host _hostFromJson(String id, Map<String, dynamic> json) {
   final now = DateTime.now();

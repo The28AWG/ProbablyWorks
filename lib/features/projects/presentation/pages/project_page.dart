@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
@@ -15,9 +15,6 @@ import 'package:probably_works/features/workspace/presentation/widgets/workspace
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
-import 'package:pw_agent/core/data/chat_repository.dart';
-import 'package:pw_agent/core/data/policy_profile_repository.dart';
-import 'package:pw_agent/core/data/project_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 
 /// Карточка проекта: имя, неизменяемые хост и папка, профиль политики, доверие,
@@ -246,7 +243,8 @@ class _ProjectChats extends StatelessWidget {
       description: l10n.projectsChatsHint,
       children: [
         StreamBuilder<List<Chat>>(
-          stream: getIt<ChatRepository>().watchByProject(projectId),
+          stream: ProfileScope.of(context).projectsApi
+              .watchProjectChats(projectId),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Text(
@@ -318,7 +316,7 @@ class _PolicySection extends StatelessWidget {
             horizontal: AppSpacing.lg,
           ),
           child: StreamBuilder<List<PolicyProfile>>(
-            stream: getIt<PolicyProfileRepository>().watchAll(),
+            stream: ProfileScope.of(context).projectsApi.watchPolicyProfiles(),
             builder: (context, snapshot) {
               final profiles = snapshot.data ?? const <PolicyProfile>[];
               final selected = profiles
@@ -521,7 +519,8 @@ class _TrustSection extends StatelessWidget {
               Text(l10n.projectsSkillsTitle, style: theme.textTheme.titleSmall),
               const SizedBox(height: AppSpacing.lg),
               StreamBuilder<List<ProjectSkill>>(
-                stream: getIt<ProjectRepository>().watchSkills(project.id),
+                stream: ProfileScope.of(context).projectsApi
+                    .watchSkills(project.id),
                 builder: (context, snapshot) {
                   final skills = snapshot.data ?? const <ProjectSkill>[];
                   if (skills.isEmpty) {
@@ -581,7 +580,7 @@ class _FactsSection extends StatelessWidget {
       ),
       children: [
         StreamBuilder<List<ProjectFact>>(
-          stream: getIt<ProjectRepository>().watchFacts(project.id),
+          stream: ProfileScope.of(context).projectsApi.watchFacts(project.id),
           builder: (context, snapshot) {
             final facts = snapshot.data ?? const <ProjectFact>[];
             if (facts.isEmpty) {
@@ -662,7 +661,7 @@ class _FactsSection extends StatelessWidget {
       destructive: true,
     );
     if (ok && context.mounted) {
-      await context.read<ProjectsCubit>().deleteFact(fact.id);
+      await context.read<ProjectsCubit>().deleteFact(project.id, fact.id);
     }
   }
 }
@@ -683,7 +682,11 @@ class _PolicyActions extends StatelessWidget {
         IconButton(
           tooltip: l10n.projectsPolicyCreate,
           icon: const Icon(Icons.add),
-          onPressed: () => showPolicyProfileDialog(context, project: project),
+          onPressed: () => showPolicyProfileDialog(
+            context,
+            project: project,
+            api: ProfileScope.of(context).projectsApi,
+          ),
         ),
         if (selected != null)
           IconButton(
@@ -693,6 +696,7 @@ class _PolicyActions extends StatelessWidget {
               context,
               project: project,
               existing: selected,
+              api: ProfileScope.of(context).projectsApi,
             ),
           )
         else

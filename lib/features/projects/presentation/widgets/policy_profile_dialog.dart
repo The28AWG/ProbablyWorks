@@ -1,13 +1,10 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
-import 'package:pw_agent/core/data/policy_profile_repository.dart';
-import 'package:pw_agent/core/data/project_repository.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:uuid/uuid.dart';
 
 /// Открывает редактор именованного профиля политики для проекта.
@@ -17,16 +14,23 @@ import 'package:uuid/uuid.dart';
 Future<void> showPolicyProfileDialog(
   BuildContext context, {
   required Project project,
+  required ProjectsApi api,
   PolicyProfile? existing,
 }) => showDialog<void>(
   context: context,
-  builder: (_) => _PolicyProfileDialog(project: project, existing: existing),
+  builder: (_) =>
+      _PolicyProfileDialog(project: project, existing: existing, api: api),
 );
 
 class _PolicyProfileDialog extends StatefulWidget {
-  const _PolicyProfileDialog({required this.project, this.existing});
+  const _PolicyProfileDialog({
+    required this.project,
+    required this.api,
+    this.existing,
+  });
 
   final Project project;
+  final ProjectsApi api;
   final PolicyProfile? existing;
 
   @override
@@ -50,9 +54,8 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
   }
 
   Future<void> _load() async {
-    final settings = getIt<SettingsRepository>();
-    final denylist = await settings.readDenylist();
-    final global = await settings.readSecurityProfile();
+    final denylist = await widget.api.readDenylist();
+    final global = await widget.api.readSecurityProfile();
     if (!mounted) return;
     setState(() {
       _denylist = denylist.join('\n');
@@ -161,9 +164,9 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
         createdAt: widget.existing?.createdAt ?? now,
         updatedAt: now,
       );
-      await getIt<PolicyProfileRepository>().save(profile);
+      await widget.api.savePolicyProfile(profile);
       if (!mounted) return;
-      await getIt<ProjectRepository>().save(
+      await widget.api.saveProject(
         widget.project.copyWith(policyProfileId: profile.id),
       );
       if (!mounted) return;
@@ -190,9 +193,9 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
     if (!ok || !mounted) return;
     setState(() => _saving = true);
     try {
-      await getIt<PolicyProfileRepository>().delete(existing.id);
+      await widget.api.deletePolicyProfile(existing.id);
       if (!mounted) return;
-      await getIt<ProjectRepository>().save(
+      await widget.api.saveProject(
         widget.project.copyWith(clearPolicyProfile: true),
       );
       if (!mounted) return;

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -14,6 +15,7 @@ import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
@@ -28,7 +30,7 @@ import 'package:uuid/uuid.dart';
 ///
 /// Используется для удалённых профилей. Локальный профиль работает через
 /// `LocalAgentApi` без транспорта.
-class RemoteAgentApi implements AgentApi, ChatApi, HostsApi {
+class RemoteAgentApi implements AgentApi, ChatApi, HostsApi, ProjectsApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -607,6 +609,170 @@ class RemoteAgentApi implements AgentApi, ChatApi, HostsApi {
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();
 
+  @override
+  Stream<List<Project>> watchProjects() =>
+      _pollList('/projects', 'projects', _project, const Duration(seconds: 2));
+
+  @override
+  Stream<Map<String, int>> watchChatCounts() async* {
+    while (!_disposed) {
+      try {
+        final json = await _get('/projects/counts');
+        yield {
+          for (final entry in (json['counts'] as Map? ?? const {}).entries)
+            '${entry.key}': entry.value is num
+                ? (entry.value as num).toInt()
+                : 0,
+        };
+      } on AgentApiException {
+        // Следующий тик попробует снова.
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+  }
+
+  @override
+  Stream<List<PolicyProfile>> watchPolicyProfiles() => _pollList(
+    '/policy-profiles',
+    'profiles',
+    _policy,
+    const Duration(seconds: 5),
+  );
+
+  @override
+  Stream<List<ProjectFact>> watchFacts(String projectId) => _pollList(
+    '/projects/$projectId/facts',
+    'facts',
+    _fact,
+    const Duration(seconds: 2),
+  );
+
+  @override
+  Stream<List<ProjectSkill>> watchSkills(String projectId) => _pollList(
+    '/projects/$projectId/skills',
+    'skills',
+    _skill,
+    const Duration(seconds: 5),
+  );
+
+  @override
+  Stream<List<Chat>> watchProjectChats(String projectId) => _pollList(
+    '/projects/$projectId/chats',
+    'chats',
+    _chat,
+    const Duration(seconds: 2),
+  );
+
+  @override
+  Future<void> saveProject(Project project) async {
+    await _send('PUT', '/projects/${project.id}', body: _projectBody(project));
+  }
+
+  @override
+  Future<void> deleteProject(String id) async {
+    await _send('DELETE', '/projects/$id');
+  }
+
+  @override
+  Future<void> setTrustAgentsMd(String projectId, bool trusted) async {
+    final project = await _projectById(projectId);
+    await saveProject(project.copyWith(trustAgentsMd: trusted));
+  }
+
+  @override
+  Future<void> setSkillTrusted(
+    String projectId,
+    String name, {
+    required bool trusted,
+  }) async {
+    await _send(
+      'PUT',
+      '/projects/$projectId/skills/$name',
+      body: {'trusted': trusted},
+    );
+  }
+
+  @override
+  Future<void> trustWorkspace(String projectId) async {
+    await _send('POST', '/projects/$projectId/trust');
+  }
+
+  @override
+  Future<void> addFact(ProjectFact fact) async {
+    await _send(
+      'POST',
+      '/projects/${fact.projectId}/facts',
+      body: _factBody(fact),
+    );
+  }
+
+  @override
+  Future<void> deleteFact(String projectId, String factId) async {
+    await _send('DELETE', '/projects/$projectId/facts/$factId');
+  }
+
+  @override
+  Future<void> savePolicyProfile(PolicyProfile profile) async {
+    await _send(
+      'PUT',
+      '/policy-profiles/${profile.id}',
+      body: _policyBody(profile),
+    );
+  }
+
+  @override
+  Future<void> deletePolicyProfile(String id) async {
+    await _send('DELETE', '/policy-profiles/$id');
+  }
+
+  @override
+  Future<List<String>> readDenylist() async {
+    await _loadGlobalSettings();
+    return [
+      for (final item in (_globalSettings?['denylist'] as List? ?? const []))
+        if (item is String) item,
+    ];
+  }
+
+  @override
+  Future<SecurityProfile> readSecurityProfile() async {
+    await _loadGlobalSettings();
+    final raw = _globalSettings?['securityProfile'];
+    return raw is String
+        ? SecurityProfile.decode(raw)
+        : const SecurityProfile();
+  }
+
+  Future<Project> _projectById(String id) async {
+    final json = await _get('/projects');
+    for (final item in (json['projects'] as List? ?? const [])) {
+      if (item is Map && item['id'] == id) {
+        return _project(Map<String, dynamic>.from(item));
+      }
+    }
+    throw AgentApiException(404, 'project_not_found', 'project $id not found');
+  }
+
+  Stream<List<T>> _pollList<T>(
+    String path,
+    String key,
+    T Function(Map<String, dynamic>) parse,
+    Duration interval,
+  ) async* {
+    while (!_disposed) {
+      try {
+        final json = await _get(path);
+        yield [
+          for (final item in (json[key] as List? ?? const []))
+            if (item is Map) parse(Map<String, dynamic>.from(item)),
+        ];
+      } on AgentApiException {
+        // Следующий тик попробует снова.
+      }
+      await Future<void>.delayed(interval);
+    }
+  }
+
   Future<Map<String, dynamic>> _get(String path) async =>
       _asMap(await _send('GET', path));
 
@@ -846,13 +1012,6 @@ class RemoteAgentApi implements AgentApi, ChatApi, HostsApi {
   }
 }
 
-StepsDisplay _steps(Map<String, dynamic> json) => StepsDisplay(
-  group: json['group'] != false,
-  expandWhileActive: json['expandWhileActive'] != false,
-  thoughts: ThoughtsVisibility.values.byName('${json['thoughts'] ?? 'all'}'),
-  tools: ToolsVisibility.values.byName('${json['tools'] ?? 'all'}'),
-);
-
 Project _project(Map<String, dynamic> json) => Project(
   id: _string(json, 'id'),
   hostId: _string(json, 'hostId'),
@@ -865,6 +1024,59 @@ Project _project(Map<String, dynamic> json) => Project(
   archivedAt: _date(json['archivedAt']),
   createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
   updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
+
+Map<String, Object?> _projectBody(Project project) => {
+  'hostId': project.hostId,
+  'name': project.name,
+  'workspace': project.workspace,
+  'workspaceKey': project.workspaceKey,
+  'policyProfileId': project.policyProfileId,
+  'trustAgentsMd': project.trustAgentsMd,
+  'skillsInitialized': project.skillsInitialized,
+  'archivedAt': project.archivedAt?.toUtc().toIso8601String(),
+  'createdAt': project.createdAt.toUtc().toIso8601String(),
+  'updatedAt': project.updatedAt.toUtc().toIso8601String(),
+};
+
+ProjectFact _fact(Map<String, dynamic> json) => ProjectFact(
+  id: _string(json, 'id'),
+  projectId: _string(json, 'projectId'),
+  text: _string(json, 'text'),
+  createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
+
+Map<String, Object?> _factBody(ProjectFact fact) => {
+  'id': fact.id,
+  'text': fact.text,
+  'createdAt': fact.createdAt.toUtc().toIso8601String(),
+};
+
+ProjectSkill _skill(Map<String, dynamic> json) =>
+    ProjectSkill(name: _string(json, 'name'), trusted: json['trusted'] == true);
+
+PolicyProfile _policy(Map<String, dynamic> json) => PolicyProfile(
+  id: _string(json, 'id'),
+  name: _string(json, 'name'),
+  description: json['description'] as String?,
+  profile: SecurityProfile.decode('${json['profile'] ?? '{}'}'),
+  createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+  updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
+
+Map<String, Object?> _policyBody(PolicyProfile profile) => {
+  'name': profile.name,
+  'description': profile.description,
+  'profile': profile.profile.encode(),
+  'createdAt': profile.createdAt.toUtc().toIso8601String(),
+  'updatedAt': profile.updatedAt.toUtc().toIso8601String(),
+};
+
+StepsDisplay _steps(Map<String, dynamic> json) => StepsDisplay(
+  group: json['group'] != false,
+  expandWhileActive: json['expandWhileActive'] != false,
+  thoughts: ThoughtsVisibility.values.byName('${json['thoughts'] ?? 'all'}'),
+  tools: ToolsVisibility.values.byName('${json['tools'] ?? 'all'}'),
 );
 
 ModelCatalogState _catalogFrom(Map<String, dynamic> json) => ModelCatalogState(

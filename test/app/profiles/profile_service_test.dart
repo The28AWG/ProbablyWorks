@@ -4,6 +4,7 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
@@ -29,6 +30,7 @@ void main() {
     _FakeAgentApi(),
     _FakeChatApi(),
     _FakeHostsApi(),
+    _FakeProjectsApi(),
   );
 
   test('loads local profile and persists remote profiles', () async {
@@ -93,4 +95,10 @@ final class _FakeHostsApi implements HostsApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('HostsApi is not used in profile tests');
+}
+
+final class _FakeProjectsApi implements ProjectsApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ProjectsApi is not used in profile tests');
 }

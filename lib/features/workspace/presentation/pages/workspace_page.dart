@@ -11,8 +11,6 @@ import 'package:probably_works/features/projects/presentation/bloc/projects_cubi
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
-import 'package:pw_agent/core/data/host_repository.dart';
-import 'package:pw_agent/core/data/project_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 
 /// Рабочая область: оболочка с вкладками «Чаты», «Хосты», «Настройки». Вкладки — вложенные маршруты,
@@ -34,6 +32,7 @@ class WorkspacePage extends StatelessWidget {
       agentApi: agentApi,
       chatApi: service.chatApiFor(profile),
       hostsApi: service.hostsApiFor(profile),
+      projectsApi: service.projectsApiFor(profile),
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
@@ -46,10 +45,7 @@ class WorkspacePage extends StatelessWidget {
             ),
           ),
           BlocProvider(
-            create: (_) => ProjectsCubit(
-              getIt<ProjectRepository>(),
-              getIt<HostRepository>(),
-            ),
+            create: (_) => ProjectsCubit(service.projectsApiFor(profile)),
           ),
           BlocProvider(
             create: (_) => SidebarCubit(
