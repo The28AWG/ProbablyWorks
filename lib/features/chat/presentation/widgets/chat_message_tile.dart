@@ -24,6 +24,7 @@ class ChatMessageTile extends StatelessWidget {
     this.isLastAnswer = false,
     this.turnElapsed,
     this.onRegenerate,
+    this.onFork,
     super.key,
   });
 
@@ -49,6 +50,9 @@ class ChatMessageTile extends StatelessWidget {
   /// Перезапускает последний ход без изменения текста сообщения. Null — действие недоступно.
   final VoidCallback? onRegenerate;
 
+  /// Создаёт новый чат с историей до этого ответа включительно.
+  final VoidCallback? onFork;
+
   @override
   Widget build(BuildContext context) => switch (message.role) {
     MessageRole.user => _UserMessage(
@@ -62,6 +66,7 @@ class ChatMessageTile extends StatelessWidget {
       isLastAnswer: isLastAnswer,
       elapsed: turnElapsed,
       onRegenerate: onRegenerate,
+      onFork: onFork,
     ),
     MessageRole.event => _EventLine(text: message.text),
     MessageRole.tool => const SizedBox.shrink(),
@@ -230,6 +235,7 @@ class _AssistantMessage extends StatelessWidget {
     required this.isLastAnswer,
     this.elapsed,
     this.onRegenerate,
+    this.onFork,
   });
 
   final ChatMessage message;
@@ -238,6 +244,7 @@ class _AssistantMessage extends StatelessWidget {
   /// Время всего задания; `null`, если у этого ответа его не показываем.
   final Duration? elapsed;
   final VoidCallback? onRegenerate;
+  final VoidCallback? onFork;
 
   @override
   Widget build(BuildContext context) {
@@ -270,18 +277,24 @@ class _AssistantMessage extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (isLastAnswer && onRegenerate != null)
-                              _ActionIcon(
-                                tooltip: l10n.messageRegenerate,
-                                icon: Icons.refresh,
-                                onPressed: onRegenerate!,
-                              ),
                             if (isLastAnswer)
                               _ActionIcon(
                                 tooltip: l10n.commonCopy,
                                 icon: Icons.copy_outlined,
                                 onPressed: () =>
                                     _copy(context, message.text, l10n),
+                              ),
+                            if (isLastAnswer && onRegenerate != null)
+                              _ActionIcon(
+                                tooltip: l10n.messageRegenerate,
+                                icon: Icons.refresh,
+                                onPressed: onRegenerate!,
+                              ),
+                            if (onFork != null)
+                              _ActionIcon(
+                                tooltip: l10n.messageFork,
+                                icon: Icons.call_split,
+                                onPressed: onFork!,
                               ),
                             if (elapsed case final time?) ...[
                               if (isLastAnswer)

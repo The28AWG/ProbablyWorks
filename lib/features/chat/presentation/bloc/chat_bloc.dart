@@ -104,6 +104,16 @@ final class ChatRegenerateRequested extends ChatEvent {
   const ChatRegenerateRequested();
 }
 
+final class ChatForkRequested extends ChatEvent {
+  const ChatForkRequested(this.messageId, {this.title});
+
+  final String messageId;
+  final String? title;
+
+  @override
+  List<Object?> get props => [messageId, title];
+}
+
 final class ChatApprovalAnswered extends ChatEvent {
   const ChatApprovalAnswered(this.requestId, this.decision);
 
@@ -567,6 +577,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatRegenerateRequested>((_, _) async {
       await _session?.regenerateLast();
     });
+    on<ChatForkRequested>(_onFork);
     on<ChatApprovalAnswered>(_onApproval);
     on<ChatQuestionAnswered>(_onQuestion);
     on<ChatMessageEdited>(_onEdited);
@@ -993,6 +1004,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       ),
     );
     _saveDraft();
+  }
+
+  Future<void> _onFork(ChatForkRequested event, Emitter<ChatState> emit) async {
+    final chatId = state.chatId;
+    if (chatId == null || state.isRunning) return;
+    try {
+      final forked = await _hub.forkChat(
+        chatId,
+        untilMessageId: event.messageId,
+        title: event.title,
+      );
+      onChatCreated?.call(forked.id);
+    } on Object {
+      // Форк не должен ломать открытый чат: ошибка остаётся без навигации.
+    }
   }
 
   void _onApproval(ChatApprovalAnswered event, Emitter<ChatState> emit) {

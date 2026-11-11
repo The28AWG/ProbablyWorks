@@ -1409,6 +1409,10 @@
   "@messageRegenerate": {
     "description": "Tooltip of the action that reruns the last turn."
   },
+  "messageFork": "Fork from here",
+  "@messageFork": {
+    "description": "Tooltip of the action that copies the chat up to this answer."
+  },
   "commonMore": "More",
   "@commonMore": {
     "description": "Generic tooltip of the overflow menu button."

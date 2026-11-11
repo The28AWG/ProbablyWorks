@@ -616,65 +616,79 @@ void main() {
     expect(tester.getCenter(find.byType(ChatComposer)).dy, greaterThan(600));
   });
 
-  testWidgets('each finished turn keeps a copy button on its closing answer', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(800, 500));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final start = DateTime(2026);
-    final messages = [
-      for (var i = 0; i < 2; i++) ...[
-        ChatMessage(
-          id: 'u$i',
-          chatId: 'c',
-          seq: i * 2 + 1,
-          role: MessageRole.user,
-          createdAt: start.add(Duration(minutes: i)),
-          text: 'Question $i',
-        ),
-        ChatMessage(
-          id: 'a$i',
-          chatId: 'c',
-          seq: i * 2 + 2,
-          role: MessageRole.assistant,
-          createdAt: start.add(Duration(minutes: i, seconds: 5)),
-          text: 'Answer $i',
-        ),
-      ],
-    ];
-    var regenerated = false;
-    await tester.pumpWidget(
-      _TestApp(
-        SizedBox(
-          height: 500,
-          child: ChatTimeline(
-            state: ChatState(chatId: 'c', messages: messages),
-            onRegenerate: () => regenerated = true,
+  testWidgets(
+    'finished turns keep copy, regenerate and fork actions in order',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 500));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final start = DateTime(2026);
+      final messages = [
+        for (var i = 0; i < 2; i++) ...[
+          ChatMessage(
+            id: 'u$i',
+            chatId: 'c',
+            seq: i * 2 + 1,
+            role: MessageRole.user,
+            createdAt: start.add(Duration(minutes: i)),
+            text: 'Question $i',
+          ),
+          ChatMessage(
+            id: 'a$i',
+            chatId: 'c',
+            seq: i * 2 + 2,
+            role: MessageRole.assistant,
+            createdAt: start.add(Duration(minutes: i, seconds: 5)),
+            text: 'Answer $i',
+          ),
+        ],
+      ];
+      var regenerated = false;
+      String? forkedId;
+      await tester.pumpWidget(
+        _TestApp(
+          SizedBox(
+            height: 500,
+            child: ChatTimeline(
+              state: ChatState(chatId: 'c', messages: messages),
+              onRegenerate: () => regenerated = true,
+              onForkMessage: (message) => forkedId = message.id,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    Finder copyIn(String id) => find.descendant(
-      of: find.byWidgetPredicate(
-        (w) => w is ChatMessageTile && w.message.id == id,
-      ),
-      matching: find.byIcon(Icons.copy_outlined),
-    );
-    Finder regenerateIn(String id) => find.descendant(
-      of: find.byWidgetPredicate(
-        (w) => w is ChatMessageTile && w.message.id == id,
-      ),
-      matching: find.byIcon(Icons.refresh),
-    );
-    expect(copyIn('u0'), findsNothing);
-    expect(copyIn('a0'), findsOneWidget);
-    expect(copyIn('a1'), findsOneWidget);
-    expect(regenerateIn('a0'), findsNothing);
-    expect(regenerateIn('a1'), findsOneWidget);
-    expect(regenerated, isFalse);
-  });
+      Finder copyIn(String id) => find.descendant(
+        of: find.byWidgetPredicate(
+          (w) => w is ChatMessageTile && w.message.id == id,
+        ),
+        matching: find.byIcon(Icons.copy_outlined),
+      );
+      Finder importIn(String id, IconData icon) => find.descendant(
+        of: find.byWidgetPredicate(
+          (w) => w is ChatMessageTile && w.message.id == id,
+        ),
+        matching: find.byIcon(icon),
+      );
+      Finder regenerateIn(String id) => importIn(id, Icons.refresh);
+      Finder forkIn(String id) => importIn(id, Icons.call_split);
+      expect(copyIn('u0'), findsNothing);
+      expect(copyIn('a0'), findsOneWidget);
+      expect(copyIn('a1'), findsOneWidget);
+      expect(regenerateIn('a0'), findsNothing);
+      expect(regenerateIn('a1'), findsOneWidget);
+      expect(forkIn('a0'), findsOneWidget);
+      expect(forkIn('a1'), findsOneWidget);
+
+      final copyX = tester.getCenter(copyIn('a1')).dx;
+      final refreshX = tester.getCenter(regenerateIn('a1')).dx;
+      final forkX = tester.getCenter(forkIn('a1')).dx;
+      expect(copyX, lessThan(refreshX));
+      expect(refreshX, lessThan(forkX));
+      expect(regenerated, isFalse);
+      expect(forkedId, isNull);
+    },
+  );
 
   testWidgets('copy follows the closing answer of the last finished turn', (
     tester,

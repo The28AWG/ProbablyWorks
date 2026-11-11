@@ -210,6 +210,7 @@ class _ChatBodyState extends State<ChatBody> {
         // а при загрузке ленты меняется только её область.
         if (chat == null) return _ChatLoadingBody(leading: widget.leading);
         final bloc = context.read<ChatBloc>();
+        final forkTitle = chat.title.isEmpty ? l10n.chatsNew : chat.title;
         // Пустой чат (в том числе новый): композер по центру под приветствием. Как только появилось
         // сообщение или ход начался, композер уходит вниз. Переход сохраняет состояние композера (фокус, текст).
         final empty =
@@ -296,6 +297,12 @@ class _ChatBodyState extends State<ChatBody> {
                                 onEditMessage: _startEdit,
                                 onRegenerate: () =>
                                     bloc.add(const ChatRegenerateRequested()),
+                                onForkMessage: (message) => bloc.add(
+                                  ChatForkRequested(
+                                    message.id,
+                                    title: l10n.chatForkTitle(forkTitle),
+                                  ),
+                                ),
                               ),
                       ),
                       if (empty)

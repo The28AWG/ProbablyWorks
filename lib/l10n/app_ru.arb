@@ -1409,6 +1409,10 @@
   "@messageRegenerate": {
     "description": "Подсказка действия, которое перезапускает последний ход."
   },
+  "messageFork": "Ответвить отсюда",
+  "@messageFork": {
+    "description": "Подсказка действия, которое копирует чат до этого ответа."
+  },
   "commonMore": "Ещё",
   "@commonMore": {
     "description": "Generic tooltip of the overflow menu button."

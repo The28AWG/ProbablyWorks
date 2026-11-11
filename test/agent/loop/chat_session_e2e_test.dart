@@ -1502,6 +1502,46 @@ void main() {
     },
   );
 
+  test('forkChat can stop at a completed answer', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    final messages = [
+      ('u1', MessageRole.user, 'first question'),
+      ('a1', MessageRole.assistant, 'first answer'),
+      ('u2', MessageRole.user, 'second question'),
+      ('a2', MessageRole.assistant, 'second answer'),
+    ];
+    for (var i = 0; i < messages.length; i++) {
+      final (id, role, text) = messages[i];
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: id,
+          chatId: chatId,
+          seq: i + 1,
+          role: role,
+          createdAt: now,
+          text: text,
+        ),
+      );
+    }
+
+    final forked = await hub.forkChat(
+      chatId,
+      untilMessageId: 'a1',
+      title: 'First branch',
+    );
+    final copied = await hub.chats.messages(forked.id);
+
+    expect(
+      [for (final message in copied) message.text],
+      ['first question', 'first answer'],
+    );
+    expect(copied.map((message) => message.role), [
+      MessageRole.user,
+      MessageRole.assistant,
+    ]);
+  });
+
   test('list_runs and read_run_output expose stored output by pages', () async {
     final chatId = await createChat();
     final now = DateTime.now();

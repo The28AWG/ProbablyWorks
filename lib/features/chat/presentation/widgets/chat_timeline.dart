@@ -32,6 +32,7 @@ class ChatTimeline extends StatefulWidget {
     this.messageEditor,
     this.onEditMessage,
     this.onRegenerate,
+    this.onForkMessage,
     this.editDraftTexts = const {},
     super.key,
   });
@@ -52,6 +53,9 @@ class ChatTimeline extends StatefulWidget {
 
   /// Перезапуск последнего ответа. Null — действие недоступно.
   final VoidCallback? onRegenerate;
+
+  /// Форк истории до завершённого ответа. Null — действие недоступно.
+  final ValueChanged<ChatMessage>? onForkMessage;
 
   /// Неотправленный текст правки по id сообщения. Пузырь показывает его вместо исходного и окрашен.
   final Map<String, String> editDraftTexts;
@@ -265,6 +269,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
               : null,
           onRegenerate: i == lastAnswer && !state.isRunning
               ? widget.onRegenerate
+              : null,
+          onFork:
+              answerIds.contains(message.id) &&
+                  !state.isRunning &&
+                  widget.onForkMessage != null
+              ? () => widget.onForkMessage!(message)
               : null,
           editText: widget.editDraftTexts[message.id],
         );

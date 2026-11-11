@@ -113,19 +113,48 @@ class AgentHub {
 
   static const _uuid = Uuid();
 
-  /// Форк текущего чата: копия истории и состояния на текущий момент.
+  /// Форк чата до завершённого ответа [untilMessageId].
   ///
-  /// Файлы на Host не копируются и не откатываются: оба чата смотрят на одну
-  /// рабочую папку, а исходный чат остаётся неизменным. Поэтому форк имеет
-  /// смысл только от текущего состояния, а не от старого сообщения.
-  Future<Chat> forkChat(String chatId, {String? title}) async {
+  /// Без [untilMessageId] копируется вся история. С ним — только сообщения до
+  /// указанного ответа включительно; состояние берётся из ревизии последнего
+  /// пользовательского сообщения этого отрезка. Файлы на Host не копируются
+  /// и не откатываются: оба чата смотрят на текущую рабочую папку.
+  Future<Chat> forkChat(
+    String chatId, {
+    String? title,
+    String? untilMessageId,
+  }) async {
     final source = await chats.chat(chatId);
     if (source == null) {
       throw ArgumentError.value(chatId, 'chatId', 'chat not found');
     }
-    final messages = await chats.messages(chatId);
+    var messages = await chats.messages(chatId);
+    if (untilMessageId != null) {
+      final index = messages.indexWhere(
+        (message) => message.id == untilMessageId,
+      );
+      if (index < 0) {
+        throw ArgumentError.value(
+          untilMessageId,
+          'untilMessageId',
+          'message not found in this chat',
+        );
+      }
+      messages = messages.sublist(0, index + 1);
+    }
+    final messageIds = <String, String>{
+      for (final message in messages) message.id: _uuid.v4(),
+    };
     final runs = await chats.toolRunsForChat(chatId);
-    final sourceState = await state.current(source);
+    ChatMessage? lastUser;
+    for (final message in messages) {
+      if (message.role == MessageRole.user) lastUser = message;
+    }
+    final sourceRevisionId = lastUser?.openedRevisionId;
+    final savedRevision = sourceRevisionId == null
+        ? null
+        : await chats.revision(sourceRevisionId);
+    final sourceState = savedRevision ?? await state.current(source);
     final id = _uuid.v4();
     final revisionId = _uuid.v4();
     final now = DateTime.now();
@@ -158,10 +187,8 @@ class AgentHub {
       ),
     );
 
-    final messageIds = <String, String>{};
     for (final message in messages) {
-      final messageId = _uuid.v4();
-      messageIds[message.id] = messageId;
+      final messageId = messageIds[message.id]!;
       await chats.insertMessage(
         ChatMessage(
           id: messageId,
