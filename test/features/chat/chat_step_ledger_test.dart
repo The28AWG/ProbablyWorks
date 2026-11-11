@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
@@ -81,6 +82,35 @@ double _gap(WidgetTester tester, String left, String right) {
 }
 
 void main() {
+  testWidgets('delegate card offers opening the subagent chat', (tester) async {
+    final run = ToolRun(
+      id: 'd1',
+      chatId: 'c',
+      messageId: 'a1',
+      toolName: ToolNames.delegateTask,
+      argsJson: '{"task":"child"}',
+      command: 'delegate: child',
+      status: ToolRunStatus.done,
+      startedAt: DateTime(2026, 1, 1, 12),
+      finishedAt: DateTime(2026, 1, 1, 12, 1),
+      outputText: 'subagent started: 550e8400-e29b-41d4-a716-446655440000',
+    );
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(steps: [RunStep(run)], live: const {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('delegate: child'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('open-subagent')), findsOneWidget);
+    expect(find.byKey(const ValueKey('step-copy')), findsNothing);
+  });
+
   testWidgets('command card fills the full width of the ledger', (
     tester,
   ) async {

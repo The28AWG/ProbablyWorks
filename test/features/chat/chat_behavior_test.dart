@@ -57,6 +57,7 @@ ChatMessage _msg(int i) => ChatMessage(
 ChatState _state({
   int count = 20,
   bool running = false,
+  ChatKind kind = ChatKind.main,
   int compactedUntilSeq = 0,
   String? summary,
   List<ToolRun> runs = const [],
@@ -67,6 +68,7 @@ ChatState _state({
     id: 'c',
     hostId: 'local',
     title: 'Chat',
+    kind: kind,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
     compactedUntilSeq: compactedUntilSeq,
@@ -593,6 +595,17 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     },
   );
+
+  testWidgets('subagent chat hides the composer', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final bloc = SeededChatBloc(_state(count: 2, kind: ChatKind.subagent));
+    addTearDown(bloc.close);
+    await tester.pumpWidget(_TestApp(const ChatBody(), bloc: bloc));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ChatComposer), findsNothing);
+  });
 
   testWidgets('chat with messages keeps the composer at the bottom', (
     tester,
