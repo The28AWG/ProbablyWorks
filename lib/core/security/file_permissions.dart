@@ -3,9 +3,12 @@ import 'dart:io';
 /// Права на файлы приложения.
 ///
 /// Dart не умеет задавать права в момент создания: `FileMode` описывает только
-/// чтение/запись. Поэтому после создания вызывается системная утилита:
-/// `chmod` на POSIX и `icacls` на Windows. На macOS дополнительно снимаются
-/// унаследованные ACL: `chmod` меняет только mode bits.
+/// чтение/запись. Поэтому на десктопе после создания вызывается системная
+/// утилита: `chmod` на POSIX и `icacls` на Windows. На macOS дополнительно
+/// снимаются унаследованные ACL: `chmod` меняет только mode bits.
+///
+/// На мобильных режимы не трогаются: private storage приложения уже изолирован
+/// отдельным UID и песочницей ОС, а на iOS нельзя порождать процессы.
 abstract final class FilePermissions {
   const FilePermissions._();
 
@@ -16,9 +19,9 @@ abstract final class FilePermissions {
   static void directory(Directory dir) => _set(dir.path, directory: true);
 
   static void _set(String path, {required bool directory}) {
-    // На iOS нельзя порождать процессы, а каталог приложения и так закрыт
-    // песочницей ОС.
-    if (Platform.isIOS) return;
+    // На мобильных каталог приложения закрыт песочницей ОС и отдельным UID,
+    // поэтому chmod не добавляет защиты. На iOS процессы вообще запрещены.
+    if (Platform.isAndroid || Platform.isIOS) return;
     try {
       if (Platform.isWindows) {
         _setWindowsAcl(path, directory: directory);
