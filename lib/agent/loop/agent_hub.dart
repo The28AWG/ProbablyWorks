@@ -108,6 +108,7 @@ class AgentHub {
   /// чата. Вызов, которому карточка не нужна, выполняется сразу. Прерванный
   /// процесс заново не запускается.
   Future<void> resumeAfterRestart() async {
+    await subagents.restore();
     for (final id in await chats.chatIds()) {
       if (!await ChatSession.hasUnfinishedStep(chats, id)) continue;
       await session(id).resumeAfterRestart();

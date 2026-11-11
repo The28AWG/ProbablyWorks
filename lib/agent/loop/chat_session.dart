@@ -850,6 +850,7 @@ class ChatSession {
           }
           await _append(MessageRole.event, text: _lengthFinalText);
         }
+        await _notifyActiveSubagents();
         return TurnEnd.completed;
       }
 
@@ -876,8 +877,23 @@ class ChatSession {
         project: prepared.project,
       );
       final scheduled = await _scheduleCalls(step.toolCalls, toolCtx, turn);
-      if (scheduled != null) return scheduled;
+      if (scheduled != null) {
+        if (scheduled == TurnEnd.completed) await _notifyActiveSubagents();
+        return scheduled;
+      }
     }
+  }
+
+  /// Мягко напоминает, что часть работы ещё идёт в фоне. Ход не блокируем.
+  Future<void> _notifyActiveSubagents() async {
+    final active = _hub.subagents.activeFor(chatId);
+    if (active.isEmpty) return;
+    await _append(
+      MessageRole.event,
+      text:
+          '${active.length} subagent(s) are still running; '
+          'their results will arrive as events.',
+    );
   }
 
   /// Батч вызовов одного шага. null — все результаты записаны, цикл модели продолжается.

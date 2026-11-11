@@ -4,6 +4,7 @@ import 'package:logging/logging.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:uuid/uuid.dart';
@@ -64,6 +65,31 @@ final class SubagentManager {
   final _subscriptions = <String, StreamSubscription<AgentEvent>>{};
 
   SubagentRun? run(String id) => _runs[id];
+
+  /// Поднимает незавершённых и недоставленных субагентов после перезапуска.
+  Future<void> restore() async {
+    final chats = await _hub.chats.allChats();
+    for (final chat in chats) {
+      if (!chat.isSubagent || _runs.containsKey(chat.id)) continue;
+      if (await _hub.settings.read(_deliveredKey(chat.id)) == 'yes') continue;
+      final run = SubagentRun(
+        id: chat.id,
+        parentChatId: chat.parentChatId ?? chat.id,
+        rootChatId: chat.rootChatId ?? chat.id,
+        task: await _firstUserText(chat.id) ?? chat.title,
+        model: chat.model ?? '',
+      );
+      _runs[chat.id] = run;
+      _subscriptions[chat.id] = _hub.session(chat.id).events.listen((event) {
+        if (event is AgentTurnFinished && event.chatId == chat.id) {
+          unawaited(_complete(run, event.end));
+        }
+      });
+      if (!await ChatSession.hasUnfinishedStep(_hub.chats, chat.id)) {
+        await _complete(run, TurnEnd.completed);
+      }
+    }
+  }
 
   /// Активные субагенты, запущенные из [chatId].
   List<SubagentRun> activeFor(String chatId) => [
@@ -133,7 +159,9 @@ final class SubagentManager {
     final run = _runs[runId];
     if (run == null) throw StateError('unknown subagent: $runId');
     run.awaited = true;
-    return run.completer.future;
+    final result = await run.completer.future;
+    await _markDelivered(run);
+    return result;
   }
 
   /// Останавливает субагента.
@@ -200,11 +228,27 @@ final class SubagentManager {
     if (!run.completer.isCompleted) run.completer.complete(result);
     await _subscriptions.remove(run.id)?.cancel();
     await _aggregateUsage(run);
-    if (!run.awaited) {
+    if (!run.awaited && !run.delivered) {
       run.delivered = true;
       await _hub.session(run.rootChatId).deliverEvent(_eventText(run, result));
     }
+    await _markDelivered(run);
   }
+
+  Future<String?> _firstUserText(String chatId) async {
+    final messages = await _hub.chats.messages(chatId);
+    for (final message in messages) {
+      if (message.role == MessageRole.user && message.text.trim().isNotEmpty) {
+        return message.text.trim();
+      }
+    }
+    return null;
+  }
+
+  static String _deliveredKey(String id) => 'subagent.$id.delivered';
+
+  Future<void> _markDelivered(SubagentRun run) =>
+      _hub.settings.write(_deliveredKey(run.id), 'yes');
 
   Future<String> _lastAssistantText(String chatId) async {
     final messages = await _hub.chats.messages(chatId);

@@ -83,6 +83,12 @@ class ChatRepository {
     return [for (final row in rows) row.id];
   }
 
+  /// Все чаты, включая скрытых субагентов. Нужно восстановлению.
+  Future<List<Chat>> allChats() async {
+    final rows = await _db.select(_chatsTable).get();
+    return [for (final row in rows) _chat(row)];
+  }
+
   Future<Chat?> chat(String id) async {
     final row = await (_db.select(
       _chatsTable,
