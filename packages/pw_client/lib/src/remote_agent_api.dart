@@ -69,6 +69,8 @@ class RemoteAgentApi
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
+  final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
+  final _pinnedChanges = StreamController<List<String>>.broadcast();
 
   static const _uuid = Uuid();
 
@@ -177,6 +179,8 @@ class RemoteAgentApi
     await _approvals.close();
     await _questions.close();
     await _editChanges.close();
+    await _catalogChanges.close();
+    await _pinnedChanges.close();
     _client.close();
     _eventsClient.close(force: true);
   }
@@ -423,7 +427,7 @@ class RemoteAgentApi
 
   Future<void> _loadModels() async {
     try {
-      _catalog = _catalogFrom(await _get('/models'));
+      _publishCatalog(_catalogFrom(await _get('/models')));
     } on AgentApiException {
       // Каталог не критичен для журнала.
     }
@@ -628,32 +632,39 @@ class RemoteAgentApi
   Future<AgentSettingsSnapshot> load() async {
     final json = await _get('/settings');
     _snapshot = _snapshotFrom(json);
+    _publishCatalog(_snapshot!.catalog);
     return _snapshot!;
+  }
+
+  void _publishCatalog(ModelCatalogState catalog) {
+    _catalog = catalog;
+    if (!_catalogChanges.isClosed) _catalogChanges.add(catalog);
   }
 
   @override
   Stream<ModelCatalogState> watchCatalog() async* {
-    while (!_disposed) {
+    if (_snapshot == null) {
       try {
-        final snapshot = await load();
-        yield snapshot.catalog;
+        await load();
       } on AgentApiException {
-        // Следующий тик попробует снова.
+        // Каталог обновится при следующем открытии или запросе.
       }
-      await Future<void>.delayed(const Duration(seconds: 30));
     }
+    yield _catalog ?? const ModelCatalogState();
+    yield* _catalogChanges.stream;
   }
 
   @override
   Stream<List<String>> watchPinnedModels() async* {
-    while (!_disposed) {
+    if (_snapshot == null) {
       try {
-        yield (await load()).pinnedModels;
+        await load();
       } on AgentApiException {
-        // Следующий тик попробует снова.
+        // Закрепления обновятся при следующем открытии или запросе.
       }
-      await Future<void>.delayed(const Duration(seconds: 3));
     }
+    yield _snapshot?.pinnedModels ?? const [];
+    yield* _pinnedChanges.stream;
   }
 
   @override
@@ -678,6 +689,7 @@ class RemoteAgentApi
   @override
   Future<void> savePinnedModels(List<String> ids) async {
     await _send('PUT', '/settings/pinned', body: {'pinnedModels': ids});
+    if (!_pinnedChanges.isClosed) _pinnedChanges.add(ids);
   }
 
   @override
@@ -719,6 +731,7 @@ class RemoteAgentApi
   @override
   Future<void> refreshModels() async {
     await _send('POST', '/models/refresh');
+    await _loadModels();
   }
 
   @override
@@ -1675,11 +1688,9 @@ final class _RemoteModels implements ModelStore {
 
   @override
   Stream<ModelCatalogState> watch() async* {
-    while (true) {
-      await _api._loadModels();
-      yield state;
-      await Future<void>.delayed(const Duration(seconds: 30));
-    }
+    if (_api._catalog == null) await _api._loadModels();
+    yield state;
+    yield* _api._catalogChanges.stream;
   }
 
   @override

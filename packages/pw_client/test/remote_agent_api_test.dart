@@ -157,6 +157,27 @@ void main() {
     expect(settings.savedKey, isNull);
   });
 
+  test('streams catalog and pin updates without polling', () async {
+    await remote.load();
+    final catalogs = <ModelCatalogState>[];
+    final pins = <List<String>>[];
+    final catalogSub = remote.watchCatalog().listen(catalogs.add);
+    final pinsSub = remote.watchPinnedModels().listen(pins.add);
+    addTearDown(catalogSub.cancel);
+    addTearDown(pinsSub.cancel);
+
+    await Future<void>.delayed(Duration.zero);
+    expect(catalogs, isNotEmpty);
+    expect(pins, isNotEmpty);
+
+    await remote.refreshModels();
+    await remote.savePinnedModels(['b']);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(catalogs.length, greaterThan(1));
+    expect(pins.last, ['b']);
+  });
+
   test('streams SSE events into typed streams', () async {
     final events = <AgentEvent>[];
     final approvals = <ApprovalRequest>[];
