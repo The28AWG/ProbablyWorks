@@ -11,6 +11,27 @@ import 'package:probably_works/core/data/mcp_server_repository.dart';
 import 'package:probably_works/core/domain/mcp_server.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 
+/// Итог ручного импорта `mcp.json`.
+enum McpImportStatus { imported, missing, error }
+
+/// Результат импорта: что произошло и с каким файлом.
+final class McpImportResult {
+  const McpImportResult.imported(this.path)
+    : status = McpImportStatus.imported,
+      error = null;
+
+  const McpImportResult.missing(this.path)
+    : status = McpImportStatus.missing,
+      error = null;
+
+  const McpImportResult.error(this.error, this.path)
+    : status = McpImportStatus.error;
+
+  final McpImportStatus status;
+  final String? path;
+  final String? error;
+}
+
 /// Связывает настройки MCP, подключения и общий реестр инструментов.
 ///
 /// Серверы подключаются лениво: [ensureReady] вызывается перед первым запросом
@@ -36,6 +57,9 @@ class McpService {
 
   /// Ошибка последнего импорта `mcp.json`, если она была.
   String? get configError => _configError;
+
+  /// Путь к файлу конфигурации, если сервис его знает.
+  String? get configFilePath => _configFile?.file.path;
 
   /// Импортирует `mcp.json` и начинает следить за файлом.
   ///
@@ -85,13 +109,24 @@ class McpService {
   }
 
   /// Перечитывает `mcp.json` по запросу пользователя и обновляет подключения.
-  Future<void> importConfig() async {
+  Future<McpImportResult> importConfig() async {
+    final file = _configFile;
+    if (file == null) return const McpImportResult.missing(null);
+    final path = file.file.path;
+    if (!file.file.existsSync()) {
+      _configError = null;
+      return McpImportResult.missing(path);
+    }
     await _importConfig();
-    if (_configError == null) await refresh();
+    if (_configError case final error?) {
+      return McpImportResult.error(error, path);
+    }
+    await refresh();
+    return McpImportResult.imported(path);
   }
 
-  /// Экспортирует текущие настройки в `mcp.json`.
-  Future<void> exportConfig() async {
+  /// Экспортирует текущие настройки в `mcp.json` и возвращает путь.
+  Future<String> exportConfig() async {
     final file = _configFile;
     if (file == null) {
       throw StateError('MCP config file is not configured');
@@ -99,6 +134,7 @@ class McpService {
     _suppressWatch = true;
     try {
       await file.export();
+      return file.file.path;
     } finally {
       _suppressWatch = false;
     }

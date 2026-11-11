@@ -53,17 +53,22 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
                   label: Text(l10n.mcpAddServer),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _cubit.importConfig(),
+                  onPressed: state.busy ? null : () => _import(context),
                   icon: const Icon(Icons.file_download_outlined),
                   label: Text(l10n.mcpImportConfig),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => _export(context),
+                  onPressed: state.busy ? null : () => _export(context),
                   icon: const Icon(Icons.file_upload_outlined),
                   label: Text(l10n.mcpExportConfig),
                 ),
               ],
             ),
+            if (state.busy)
+              const Padding(
+                padding: EdgeInsets.only(top: AppSpacing.sm),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
             const SizedBox(height: AppSpacing.md),
             if (state.configError case final error?)
               AppBanner(
@@ -131,12 +136,24 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
     await _cubit.delete(server);
   }
 
+  Future<void> _import(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final result = await _cubit.importConfig();
+    if (!context.mounted) return;
+    final message = switch (result.status) {
+      McpImportStatus.imported => l10n.mcpImportDone,
+      McpImportStatus.missing => l10n.mcpImportMissing(result.path ?? ''),
+      McpImportStatus.error => l10n.mcpConfigError(result.error ?? ''),
+    };
+    AppSnackBar.show(context, message);
+  }
+
   Future<void> _export(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     try {
-      await _cubit.exportConfig();
+      final path = await _cubit.exportConfig();
       if (!context.mounted) return;
-      AppSnackBar.show(context, l10n.mcpExportDone);
+      AppSnackBar.show(context, l10n.mcpExportDone(path));
     } on Object catch (error) {
       if (!context.mounted) return;
       AppSnackBar.show(context, l10n.commonError('$error'));

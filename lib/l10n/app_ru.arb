@@ -1640,9 +1640,27 @@
   "@mcpExportConfig": {
     "description": "Button that exports the MCP server list to mcp.json."
   },
-  "mcpExportDone": "mcp.json экспортирован",
+  "mcpImportDone": "mcp.json перечитан",
+  "@mcpImportDone": {
+    "description": "Snackbar after reloading mcp.json."
+  },
+  "mcpImportMissing": "mcp.json не найден: {path}",
+  "@mcpImportMissing": {
+    "description": "Snackbar when mcp.json does not exist.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpExportDone": "mcp.json экспортирован: {path}",
   "@mcpExportDone": {
-    "description": "Snackbar after exporting mcp.json."
+    "description": "Snackbar after exporting mcp.json.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
   },
   "mcpEmptyTitle": "MCP-серверов нет",
   "@mcpEmptyTitle": {

@@ -13,6 +13,7 @@ class McpState extends Equatable {
     this.servers = const [],
     this.states = const {},
     this.loading = false,
+    this.busy = false,
     this.error,
     this.configError,
   });
@@ -20,6 +21,9 @@ class McpState extends Equatable {
   final List<McpServerConfig> servers;
   final Map<String, McpServerState> states;
   final bool loading;
+
+  /// Идёт ручной импорт или экспорт `mcp.json`.
+  final bool busy;
   final String? error;
   final String? configError;
 
@@ -30,6 +34,7 @@ class McpState extends Equatable {
     List<McpServerConfig>? servers,
     Map<String, McpServerState>? states,
     bool? loading,
+    bool? busy,
     String? error,
     String? configError,
     bool clearError = false,
@@ -38,12 +43,20 @@ class McpState extends Equatable {
     servers: servers ?? this.servers,
     states: states ?? this.states,
     loading: loading ?? this.loading,
+    busy: busy ?? this.busy,
     error: clearError ? null : (error ?? this.error),
     configError: clearConfigError ? null : (configError ?? this.configError),
   );
 
   @override
-  List<Object?> get props => [servers, states, loading, error, configError];
+  List<Object?> get props => [
+    servers,
+    states,
+    loading,
+    busy,
+    error,
+    configError,
+  ];
 }
 
 /// Загружает MCP-серверы и управляет их подключениями из настроек.
@@ -109,12 +122,25 @@ class McpCubit extends Cubit<McpState> {
     await _reloadStates();
   }
 
-  Future<void> importConfig() async {
-    await _service.importConfig();
-    await _reloadStates();
+  Future<McpImportResult> importConfig() async {
+    emit(state.copyWith(busy: true));
+    try {
+      final result = await _service.importConfig();
+      await _reloadStates();
+      return result;
+    } finally {
+      emit(state.copyWith(busy: false));
+    }
   }
 
-  Future<void> exportConfig() => _service.exportConfig();
+  Future<String> exportConfig() async {
+    emit(state.copyWith(busy: true));
+    try {
+      return await _service.exportConfig();
+    } finally {
+      emit(state.copyWith(busy: false));
+    }
+  }
 
   Future<void> _reloadStates() async {
     final servers = await _repository.all();
