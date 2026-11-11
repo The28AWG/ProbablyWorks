@@ -1613,9 +1613,15 @@ class ToolExecutor {
   /// Снова показывает карточку незавершённого запуска. Регистрация синхронная:
   /// открытие чата может сразу отдать список карточек, не дожидаясь ответа.
   /// Бросает [ArgumentError], если статус не waiting*.
-  ReopenedWait reopenWaiting(ToolRun run) {
+  Future<ReopenedWait> reopenWaiting(ToolRun run) async {
+    final chat = await _chats.chat(run.chatId);
+    final approvalChatId = chat?.rootChatId ?? run.chatId;
     if (run.status == ToolRunStatus.waitingUser) {
-      final pending = _broker.askUser(run.chatId, run.id, _questionText(run));
+      final pending = _broker.askUser(
+        approvalChatId,
+        run.id,
+        _questionText(run),
+      );
       return ReopenedWait(run, _asQuestion(pending));
     }
     if (run.status == ToolRunStatus.waitingApproval) {
@@ -1623,7 +1629,7 @@ class ToolExecutor {
       final pending = _broker.requestApproval(
         ApprovalRequest(
           id: run.id,
-          chatId: run.chatId,
+          chatId: approvalChatId,
           toolName: run.toolName,
           summary: card?.summary ?? run.command ?? run.toolName,
           reason: card?.reason ?? '',

@@ -219,7 +219,10 @@ class ChatSession {
       if (runs.isEmpty || _running) return;
       _running = true;
       final turn = _turnCancel = CancelToken();
-      final reopened = [for (final run in runs) _hub.tools.reopenWaiting(run)];
+      final reopened = <ReopenedWait>[];
+      for (final run in runs) {
+        reopened.add(await _hub.tools.reopenWaiting(run));
+      }
       unawaited(_finishTurn(() => _resumeThenLoop(reopened, turn)));
     } finally {
       if (!gate.isCompleted) gate.complete();
@@ -320,10 +323,14 @@ class ChatSession {
   void _showParkedCards() {
     for (final card in _parked.values) {
       if (card.shown) continue;
-      final reopened = _hub.tools.reopenWaiting(card.run);
       card.shown = true;
-      unawaited(_forwardDecision(reopened.decision, card.decision));
+      unawaited(_showParkedCard(card));
     }
+  }
+
+  Future<void> _showParkedCard(_ParkedCard card) async {
+    final reopened = await _hub.tools.reopenWaiting(card.run);
+    unawaited(_forwardDecision(reopened.decision, card.decision));
   }
 
   /// Ответ брокера завершает будущее, которого планировщик ждёт с момента старта.
