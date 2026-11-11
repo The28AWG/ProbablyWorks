@@ -77,6 +77,20 @@ PUT    /api/v1/approvals/{id}/decision         {"action": "allowOnce|allowTurn|a
 PUT    /api/v1/questions/{id}/answer           {"answer": "..."}
 PUT    /api/v1/edit-file-changes/{id}/decision {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
 
+GET    /api/v1/settings
+PUT    /api/v1/settings/{key}                 {"value": "..." | null}
+PUT    /api/v1/settings/pinned                {"pinnedModels": ["..."]}
+PUT    /api/v1/settings/steps                 {"group": true, "expandWhileActive": true, "thoughts": "...", "tools": "..."}
+PUT    /api/v1/settings/limits                {"limits": {...}}
+PUT    /api/v1/settings/denylist              {"denylist": ["..."]}
+PUT    /api/v1/settings/security-profile      {"profile": "{...}"}
+POST   /api/v1/settings/api-key               {"key": "..."}
+DELETE /api/v1/settings/api-key
+POST   /api/v1/settings/api-key/check
+GET    /api/v1/models
+POST   /api/v1/models/refresh
+POST   /api/v1/models/remember                {"ids": ["..."]}
+
 GET    /api/v1/projects
 GET    /api/v1/projects/counts
 PUT    /api/v1/projects/{id}
@@ -99,6 +113,12 @@ DELETE /api/v1/schedules/{id}
 
 GET    /api/v1/events?chatId=...      SSE по всем чатам или одному
 ```
+
+`GET /settings` отдаёт снимок настроек агента и каталога моделей; язык и тема
+интерфейса остаются настройками клиента и в API не входят. Ключ OpenRouter
+принимается только тем же `SecretStore`, что использует демон, и никогда не
+возвращается: клиент видит лишь последние три символа. Тело запросов ограничено
+8 MiB, чтобы несколько вложений помещались в одно сообщение.
 
 `GET /chats/{id}` отдаёт чат, сообщения, запуски инструментов и текущие
 карточки (`approvals`, `questions`, `editFileChanges`). `PUT /chats/{id}/presence`
