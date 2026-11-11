@@ -22,8 +22,8 @@
 
 ## 2. Токены
 
-Все числа оформления берутся из `lib/app/theme/app_tokens.dart`. Литералы `EdgeInsets`,
-`BorderRadius` и длительности анимаций в экранах не пишутся.
+Все числа оформления берутся из токенов `package:app_ui` (`app_tokens.dart`). Литералы
+`EdgeInsets`, `BorderRadius` и длительности анимаций в экранах не пишутся.
 
 | Группа | Значения | Использование |
 | --- | --- | --- |
@@ -88,7 +88,7 @@
 
 - Палитра строится от seed `0xFF3B5BDB` через `ColorScheme.fromSeed`. Markdown ответов агента
   выводится только через `AppMarkdown`, который берёт цвета из этой же палитры. Светлая и тёмная темы
-  определены в `lib/app/theme/app_theme.dart` (`AppTheme.light`, `AppTheme.dark`).
+  определены в `packages/app_ui/lib/src/theme/app_theme.dart` (`AppTheme.light`, `AppTheme.dark`).
 - Семантические цвета (`success`, `warning`, `running`, `waiting`, `info`, `diffAdd`,
   `diffRemove`, `codeSurface` и др.) лежат в `AppColors` (`ThemeExtension`). Доступ:
   `context.appColors`.
@@ -210,7 +210,9 @@
 
 ## 13. Код экранов
 
-- Экран собирается из виджетов `lib/app/ui/ui.dart`. Импорт этого файла достаточен.
+- Экран собирается из виджетов `lib/app/ui/ui.dart`. Импорт этого файла достаточен: он
+  реэкспортирует общий набор из `package:app_ui` и добавляет виджеты, которым нужны
+  доменные модели или локализация приложения.
 - Не использовать стандартные `Card`, `SnackBar` и `TextField` напрямую: для них есть замена
   (см. WIDGET_BOOK). Подтверждения и ввод текста в диалоге — только `ConfirmDialog`.
   Диалог с произвольной формой (редактирование хоста) строится на `AlertDialog`, но его стиль

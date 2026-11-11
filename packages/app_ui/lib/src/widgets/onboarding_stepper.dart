@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Прогресс мастера: сегменты по числу шагов, текущий подсвечен, рядом подпись «Шаг N из M».
 /// Заменяет стандартный `Stepper`, который не умеет компактно показывать текущий шаг.

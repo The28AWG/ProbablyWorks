@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/app/ui/command_prompt.dart';
 
 final _escape = RegExp(r'\x1B\[[0-9;]*m');
 

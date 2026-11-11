@@ -1,27 +1,14 @@
-/// Точка входа библиотеки компонентов. Экраны импортируют только этот файл.
-/// Список компонентов и правила их применения: docs/ui/WIDGET_BOOK.md.
+/// Точка входа компонентов приложения.
+///
+/// Общие компоненты и токены живут в `package:app_ui`; здесь остаются виджеты,
+/// которым нужны доменные модели или локализация приложения.
 library;
 
-export 'action_card.dart';
-export 'app_banner.dart';
-export 'app_card.dart';
-export 'app_choice_group.dart';
-export 'app_empty_state.dart';
-export 'app_markdown.dart';
-export 'app_scaffold.dart';
-export 'app_section.dart';
-export 'app_snack_bar.dart';
-export 'app_svg_icon.dart';
-export 'app_text_field.dart';
-export 'app_tone.dart';
+export 'package:app_ui/app_ui.dart';
+
 export 'code_block.dart';
 export 'command_output.dart';
-export 'confirm_dialog.dart';
-export 'context_usage_bar.dart';
 export 'copy_button.dart';
-export 'dashed_border.dart';
-export 'diff_view.dart';
 export 'file_change_view.dart';
-export 'onboarding_stepper.dart';
+export 'local_host_presentation.dart';
 export 'read_file_view.dart';
-export 'status_dot.dart';

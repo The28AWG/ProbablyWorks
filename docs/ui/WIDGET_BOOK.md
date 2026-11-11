@@ -1,7 +1,8 @@
 # Каталог виджетов ProbablyWorks
 
-Каталог описывает собственные виджеты в `lib/app/ui/` и правило замены стандартных виджетов Material.
-Экраны импортируют один файл:
+Каталог описывает собственные виджеты в `packages/app_ui/lib/src/widgets/` и `lib/app/ui/`,
+а также правило замены стандартных виджетов Material. Общие компоненты живут в `package:app_ui`,
+прикладные — в `lib/app/ui/`. Экраны импортируют один файл:
 
 ```dart
 import 'package:probably_works/app/ui/ui.dart';
@@ -53,7 +54,7 @@ import 'package:probably_works/app/ui/ui.dart';
 
 | Элемент | Назначение |
 | --- | --- |
-| `AppSpacing`, `AppRadius`, `AppDurations`, `AppBreakpoints`, `AppLayout` | Числовые константы (`lib/app/theme/app_tokens.dart`) |
+| `AppSpacing`, `AppRadius`, `AppDurations`, `AppBreakpoints`, `AppLayout` | Числовые константы (`packages/app_ui/lib/src/theme/app_tokens.dart`) |
 | `AppTone` | Смысл элемента: `neutral`, `progress`, `waiting`, `success`, `warning`, `danger`, `info` |
 | `AppToneColors` (`toneColors(context, tone)`) | Пара цветов `foreground` и `background` для тона |
 | `AppColors` / `context.appColors` | Семантические цвета (`ThemeExtension`) |
@@ -348,7 +349,7 @@ AppMarkdown(data: message.text)
   `surfaceContainerHigh`, маркеры списков в `onSurfaceVariant`.
 
 Не менять `MarkdownConfig` в экранах. Новые правила оформления Markdown добавляются в
-`lib/app/ui/app_markdown.dart`, чтобы все места ленты выглядели одинаково.
+`packages/app_ui/lib/src/widgets/app_markdown.dart`, чтобы все места ленты выглядели одинаково.
 `markdown_widget` всё ещё на `package:flutter/material.dart`: компонент оборачивает блок
 в `MaterialUiCompatibilityBridge` и прозрачный `Material` того пакета, иначе `InkWell`
 ссылки или картинки не находит предка (`Scaffold` приложения — это `Material` из `material_ui`).
@@ -419,7 +420,8 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 
 ## 7. Добавление нового компонента
 
-1. Положить файл в `lib/app/ui/` и экспортировать его из `ui.dart`.
+1. Общий компонент положить в `packages/app_ui/lib/src/widgets/` и экспортировать из
+   `app_ui.dart`; прикладной — в `lib/app/ui/` и экспортировать из `ui.dart`.
 2. Все цвета брать из `AppTone` или `context.appColors`, все размеры из токенов.
 3. Все тексты передавать параметрами или брать из `AppLocalizations`.
 4. Добавить widget-тест в `test/app/ui/` (состояния, колбэки). Если компонент визуально

@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Вариант выбора для [AppChoiceGroup]: значение, заголовок, пояснение и необязательный значок.
 class AppChoiceOption<T> {

@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:flutter/widgets.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Плотность чата по ширине его области: от неё зависят отступы колонки, композера, число строк поля
 /// и вид строки настроек.

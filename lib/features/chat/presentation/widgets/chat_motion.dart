@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Раскрытие содержимого по высоте. Содержимое плавно раскрывается и сворачивается, а не пропадает
 /// мгновенно, поэтому соседние элементы не прыгают. Свёрнутое содержимое не монтируется: скрытый текст

@@ -1,7 +1,7 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
+import 'package:app_ui/src/widgets/app_card.dart';
+import 'package:app_ui/src/widgets/app_tone.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
-import 'package:probably_works/app/ui/app_card.dart';
-import 'package:probably_works/app/ui/app_tone.dart';
 
 /// Карточка, которая ждёт решения пользователя: approve, ответ, очередь.
 /// Заголовок с иконкой и тоном, тело и полоса действий внизу. Тон задаёт цвет акцентной полосы.

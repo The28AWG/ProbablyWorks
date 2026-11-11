@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Заголовок пустого чата: значок, приветствие и хост, на котором будет работать агент.

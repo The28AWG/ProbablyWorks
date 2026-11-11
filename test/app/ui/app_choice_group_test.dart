@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
 
 /// Пояснение заведомо длиннее двух строк: проверяет обрезку и одинаковую высоту карточек.

@@ -1,8 +1,8 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';

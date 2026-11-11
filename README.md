@@ -175,7 +175,8 @@ dart analyze lib test
 
 ## UI
 
-Оформление строится на собственной теме (`lib/app/theme/`) и наборе виджетов `lib/app/ui/`:
+Оформление строится на собственной теме и общем наборе виджетов в `packages/app_ui/`;
+прикладные виджеты остаются в `lib/app/ui/`:
 
 - [docs/ui/RULEBOOK.md](docs/ui/RULEBOOK.md) — правила UI/UX: токены, раскладка, состояния, клавиатура, доступность.
 - [docs/ui/WIDGET_BOOK.md](docs/ui/WIDGET_BOOK.md) — каталог собственных виджетов и таблица замен стандартных виджетов Material.

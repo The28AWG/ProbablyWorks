@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Тонкий индикатор заполнения окна контекста модели. Цвет меняется при приближении к пределу.
 class ContextUsageBar extends StatelessWidget {

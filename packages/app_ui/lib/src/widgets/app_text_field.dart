@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_theme.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
 
 /// Поле ввода приложения. Оформление берётся из темы (заливка, без обводки, акцент при фокусе),
 /// поэтому везде выглядит одинаково. [mono] — моноширинный шрифт для путей, ключей, JSON.

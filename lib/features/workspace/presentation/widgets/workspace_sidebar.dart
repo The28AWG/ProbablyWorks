@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';

@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_colors.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_colors.dart';
 
 /// Смысловой тон элемента: статус агента, предупреждение, ошибка. Цвет берётся только отсюда,
 /// поэтому один и тот же смысл всегда выглядит одинаково (см. docs/ui/RULEBOOK.md, раздел «Статусы»).

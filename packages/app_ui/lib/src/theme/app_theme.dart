@@ -1,6 +1,6 @@
+import 'package:app_ui/src/theme/app_colors.dart';
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_colors.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Тема приложения: Material 3 с собственной палитрой поверхностей, шрифтами Inter и JetBrains Mono
 /// и переопределёнными компонентами. Правила использования описаны в docs/ui/RULEBOOK.md.

@@ -1,0 +1,21 @@
+name: app_ui
+description: "Общие токены, тема и визуальные компоненты ProbablyWorks."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_svg: ^2.3.0
+  markdown: ^7.3.1
+  markdown_widget: ^2.3.2+8
+  material_ui: ^1.9.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

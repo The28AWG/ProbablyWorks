@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Группа полей или действий с заголовком, необязательным описанием и действием справа.
 /// Заменяет разрозненные карточки в настройках и формах.

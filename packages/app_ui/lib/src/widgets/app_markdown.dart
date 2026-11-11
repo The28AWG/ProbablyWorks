@@ -1,10 +1,10 @@
+import 'package:app_ui/src/theme/app_colors.dart';
+import 'package:app_ui/src/theme/app_theme.dart';
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:flutter/material.dart' as legacy;
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_colors.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Markdown ответа агента в цветах и типографике текущей темы.
 ///

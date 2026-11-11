@@ -11,8 +11,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/policy/command_catalog.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 

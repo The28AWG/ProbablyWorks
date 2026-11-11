@@ -4,7 +4,6 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/router/app_router.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/projects/presentation/widgets/project_card.dart';

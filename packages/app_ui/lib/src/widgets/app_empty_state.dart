@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Пустое состояние: иконка, заголовок, пояснение и необязательное действие.
 /// Используется вместо голого текста там, где в списке ещё ничего нет.

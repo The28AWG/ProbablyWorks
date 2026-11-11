@@ -1,5 +1,5 @@
+import 'package:app_ui/src/theme/app_tokens.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Тональная карточка без тени. [accent] — цветная полоса слева для акцента (ожидание, ошибка).
 /// С [onTap] карточка кликабельна: получает hover и focus от Material.

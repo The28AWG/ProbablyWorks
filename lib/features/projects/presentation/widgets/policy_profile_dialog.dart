@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/di/injection.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/data/policy_profile_repository.dart';
 import 'package:probably_works/core/data/project_repository.dart';

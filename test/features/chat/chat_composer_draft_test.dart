@@ -1,9 +1,9 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/domain/host.dart';

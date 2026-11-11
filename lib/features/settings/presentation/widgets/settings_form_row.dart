@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 
 /// Строка формы настроек: слева название и пояснение, справа поля и действия.
 ///

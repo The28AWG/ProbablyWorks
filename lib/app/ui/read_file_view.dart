@@ -1,9 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_colors.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';

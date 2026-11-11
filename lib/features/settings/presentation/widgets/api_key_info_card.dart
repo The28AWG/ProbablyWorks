@@ -1,6 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';

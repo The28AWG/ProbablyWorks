@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';

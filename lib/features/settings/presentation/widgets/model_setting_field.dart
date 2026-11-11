@@ -1,7 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';

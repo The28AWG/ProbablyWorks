@@ -1,5 +1,5 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 
 /// Центральная колонка чата. Лента, шапка, док внимания и композер делят одну ширину [AppLayout.chatMaxWidth],

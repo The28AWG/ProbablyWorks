@@ -1,9 +1,8 @@
+import 'package:app_ui/app_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
-import 'package:probably_works/app/ui/app_tone.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';

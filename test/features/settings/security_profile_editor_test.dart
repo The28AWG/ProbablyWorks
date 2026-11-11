@@ -3,7 +3,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/policy/command_risk.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
