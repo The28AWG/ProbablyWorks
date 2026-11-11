@@ -283,6 +283,69 @@ void main() {
     expect(failures.single.message, contains('daily spending limit'));
   });
 
+  test('model not found switches to the fallback model', () async {
+    final chatId = await createChat();
+    llm.models = const [
+      LlmModelInfo(id: 'fake/model', name: 'Primary', supportsTools: true),
+      LlmModelInfo(id: 'fallback/model', name: 'Fallback', supportsTools: true),
+    ];
+    await hub.models.refresh();
+    await hub.settings.write(
+      SettingsRepository.keyFallbackModel,
+      'fallback/model',
+    );
+    llm.nextFailure = const LlmFailure(
+      'model not found',
+      statusCode: 404,
+      modelNotFound: true,
+    );
+    llm.script.add([
+      const LlmTextDelta('fallback answer'),
+      const LlmCompleted(),
+    ]);
+
+    final session = hub.session(chatId);
+    await runTurn(session, 'hello');
+
+    final messages = await hub.chats.messages(chatId);
+    expect(
+      messages.any(
+        (message) =>
+            message.role == MessageRole.assistant &&
+            message.text.contains('fallback answer'),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) =>
+            message.role == MessageRole.event &&
+            message.text.contains('fallback/model'),
+      ),
+      isTrue,
+    );
+    expect(llm.requests.last.model, 'fallback/model');
+  });
+
+  test('model without tools is rejected before the request', () async {
+    final chatId = await createChat();
+    llm.models = const [
+      LlmModelInfo(id: 'fake/model', name: 'No tools', supportsTools: false),
+    ];
+    await hub.models.refresh();
+    final failures = <AppFailure>[];
+    final session = hub.session(chatId);
+    final sub = session.events.listen((event) {
+      if (event is AgentFailureRaised) failures.add(event.failure);
+    });
+    addTearDown(sub.cancel);
+
+    await runTurn(session, 'hello');
+
+    expect(failures.single.message, contains('does not support tools'));
+    expect(llm.requests, isEmpty);
+  });
+
   test('context length failure retries once with a rebuilt request', () async {
     final chatId = await createChat();
     final session = hub.session(chatId);

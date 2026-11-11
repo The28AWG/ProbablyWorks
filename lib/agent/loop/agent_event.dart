@@ -126,6 +126,7 @@ class StepResult {
     this.finishReason,
     this.interruptedBySendNow = false,
     this.stopped = false,
+    this.model,
   });
 
   final String text;
@@ -138,4 +139,7 @@ class StepResult {
   final String? finishReason;
   final bool interruptedBySendNow;
   final bool stopped;
+
+  /// Фактически использованная модель, если она отличается от запрошенной.
+  final String? model;
 }

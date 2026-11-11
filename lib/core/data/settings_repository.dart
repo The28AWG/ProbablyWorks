@@ -25,6 +25,9 @@ class SettingsRepository {
 
   /// Модель субагентов. Пусто — использовать модель родительского чата.
   static const keySubagentModel = 'subagentModel';
+
+  /// Запасная модель на случай 429/5xx/404 основной. Пусто — без fallback.
+  static const keyFallbackModel = 'fallbackModel';
   static const keyLanguage = 'language';
   static const keyThemeMode = 'themeMode';
   static const keyDefaultPolicy = 'defaultPolicy';

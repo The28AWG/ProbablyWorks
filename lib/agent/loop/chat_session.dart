@@ -87,6 +87,9 @@ class ChatSession {
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
 
+  /// Модель, на которую ход переключился из-за fallback. Сбрасывается на новом ходе.
+  String? _modelOverride;
+
   late final StreamSubscription _changesetSub;
 
   /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
@@ -799,6 +802,7 @@ class ChatSession {
   }
 
   Future<TurnEnd> _loop(CancelToken turn) async {
+    _modelOverride = null;
     final limits = await _hub.limits();
     var steps = 0;
     var lengthContinues = 0;
@@ -838,10 +842,13 @@ class ChatSession {
       if (step.usage != null) {
         await _recordUsage(
           prepared.chat,
-          prepared.model,
+          step.model ?? prepared.model,
           step.usage!,
           prepared.limit,
         );
+      }
+      if (step.model != null && step.model != prepared.model) {
+        await _append(MessageRole.event, text: 'model fallback: ${step.model}');
       }
       if (step.stopped || turn.isCancelled) return TurnEnd.stopped;
       if (step.interruptedBySendNow) continue;
@@ -997,11 +1004,13 @@ class ChatSession {
       _emit(AgentTrustNeeded(chatId, snapshot.workspace));
     }
     final model =
+        _modelOverride ??
         chat.model ??
         await _hub.settings.read(SettingsRepository.keyDefaultModel);
     if (model == null || model.isEmpty) {
       throw const LlmFailure('model is not selected');
     }
+    _ensureModelSupportsTools(model);
 
     final state = await _hub.state.current(chat);
     final messages = await _hub.chats.messages(chatId);
@@ -1097,7 +1106,7 @@ class ChatSession {
     final buffer = StringBuffer('Active subagents started in this chat:');
     for (final run in runs) {
       buffer
-        ..write('\n- ${run.id}: ${run.task} (model ${run.model})')
+        ..write('\n- ${run.id}: ${run.title} (model ${run.model})')
         ..write(' [running]');
     }
     buffer.write(
@@ -1105,6 +1114,19 @@ class ChatSession {
       'Use wait_subagent(runId) if you need a result now.',
     );
     return buffer.toString();
+  }
+
+  /// Не отправляет инструменты модели, про которую каталог точно знает, что
+  /// tool calling она не поддерживает.
+  void _ensureModelSupportsTools(String model) {
+    final live = _hub.models.state.modelOf(model);
+    final saved = _hub.models.state.saved[model];
+    if (live == null && saved == null) return;
+    if (!(live?.supportsTools ?? saved?.supportsTools ?? false)) {
+      throw LlmFailure(
+        'model $model does not support tools; choose another model',
+      );
+    }
   }
 
   /// Файлы в запросе допустимы только для модели, которая принимает их тип (см. [ModelCatalogState.acceptsFile]).
@@ -1124,18 +1146,36 @@ class ChatSession {
   }
 
   Future<StepResult> _streamWithRetry(
-    LlmRequest request,
+    LlmRequest initial,
     CancelToken turn,
     AppLimits limits,
   ) async {
+    var request = initial;
     var attempt = 0;
+    var fallbackUsed = false;
     while (true) {
       try {
         return await _streamOnce(request, turn, limits);
       } on LlmFailure catch (failure) {
-        if (!failure.retryable || attempt >= _maxRetries || turn.isCancelled) {
-          rethrow;
+        if (turn.isCancelled) return const StepResult(text: '', stopped: true);
+        final canFallback = failure.modelNotFound || failure.statusCode == 404;
+        final retriesExhausted = failure.retryable && attempt >= _maxRetries;
+        if (!fallbackUsed && (canFallback || retriesExhausted)) {
+          final fallback = await _fallbackModel(request.model);
+          if (fallback != null) {
+            _log.warning(
+              'switching to fallback model $fallback: ${failure.message}',
+            );
+            _emit(AgentTextDelta(chatId, '', reset: true));
+            _emit(AgentReasoningDelta(chatId, '', reset: true));
+            _modelOverride = fallback;
+            request = _withModel(request, fallback);
+            fallbackUsed = true;
+            attempt = 0;
+            continue;
+          }
         }
+        if (!failure.retryable || attempt >= _maxRetries) rethrow;
         attempt++;
         _log.warning(
           'retrying model request (attempt $attempt): ${failure.message}',
@@ -1150,6 +1190,32 @@ class ChatSession {
       }
     }
   }
+
+  Future<String?> _fallbackModel(String primary) async {
+    final configured =
+        await _hub.settings.read(SettingsRepository.keyFallbackModel) ?? '';
+    if (configured.isEmpty || configured == primary) return null;
+    final live = _hub.models.state.modelOf(configured);
+    final saved = _hub.models.state.saved[configured];
+    if (live == null && saved == null) {
+      _log.warning('fallback model is unavailable: $configured');
+      return null;
+    }
+    if (!(live?.supportsTools ?? saved?.supportsTools ?? false)) {
+      _log.warning('fallback model has no tool calling: $configured');
+      return null;
+    }
+    return configured;
+  }
+
+  static LlmRequest _withModel(LlmRequest request, String model) => LlmRequest(
+    model: model,
+    messages: request.messages,
+    tools: request.tools,
+    maxTokens: request.maxTokens,
+    temperature: request.temperature,
+    skipReasoning: request.skipReasoning,
+  );
 
   Future<StepResult> _streamOnce(
     LlmRequest request,
@@ -1224,6 +1290,7 @@ class ChatSession {
       finishReason: finishReason,
       interruptedBySendNow: step.isCancelled && !turn.isCancelled,
       stopped: turn.isCancelled,
+      model: request.model,
     );
   }
 

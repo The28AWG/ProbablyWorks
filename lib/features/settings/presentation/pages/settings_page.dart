@@ -359,6 +359,18 @@ class _SettingsViewState extends State<_SettingsView> {
           ),
         ],
       ),
+      AppSection(
+        title: l10n.settingsFallbackModel,
+        description: l10n.settingsFallbackModelHint,
+        children: [
+          ModelSettingField(
+            modelId: state.fallbackModel,
+            catalog: catalog,
+            pinned: state.pinnedModels,
+            onSelected: cubit.saveFallbackModel,
+          ),
+        ],
+      ),
       Row(
         children: [
           OutlinedButton.icon(

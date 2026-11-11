@@ -617,6 +617,14 @@
   "@settingsSubagentModelHint": {
     "description": "Hint under the subagent model setting."
   },
+  "settingsFallbackModel": "Fallback model",
+  "@settingsFallbackModel": {
+    "description": "Setting: model used when the main model is unavailable or rate-limited."
+  },
+  "settingsFallbackModelHint": "Used on 429, 5xx or 404. Empty disables fallback.",
+  "@settingsFallbackModelHint": {
+    "description": "Hint under the fallback model setting."
+  },
   "settingsModelsRefresh": "Refresh models",
   "@settingsModelsRefresh": {
     "description": "Button that reloads the model list from OpenRouter."

@@ -617,6 +617,14 @@
   "@settingsSubagentModelHint": {
     "description": "Подсказка под настройкой модели субагентов."
   },
+  "settingsFallbackModel": "Запасная модель",
+  "@settingsFallbackModel": {
+    "description": "Настройка: модель на случай недоступности или лимита основной."
+  },
+  "settingsFallbackModelHint": "Используется при 429, 5xx или 404. Пусто — без fallback.",
+  "@settingsFallbackModelHint": {
+    "description": "Подсказка под настройкой запасной модели."
+  },
   "settingsModelsRefresh": "Обновить список моделей",
   "@settingsModelsRefresh": {
     "description": "Кнопка перезагрузки списка моделей из OpenRouter."
