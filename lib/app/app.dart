@@ -10,7 +10,7 @@ import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 
 class ProbablyWorksApp extends StatefulWidget {
@@ -32,7 +32,7 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
   void initState() {
     super.initState();
     // Android: сервис на время ходов. iOS: ходы останавливаются при сворачивании (см. BackgroundRunGuard).
-    _runGuard = BackgroundRunGuard(getIt<AgentHub>(), _locale)..start();
+    _runGuard = BackgroundRunGuard(getIt<AgentApi>(), _locale)..start();
     // Черновики пишутся в БД с задержкой: при сворачивании и выходе из приложения сохраняем их сразу.
     _lifecycle = AppLifecycleListener(
       onInactive: _saveDrafts,

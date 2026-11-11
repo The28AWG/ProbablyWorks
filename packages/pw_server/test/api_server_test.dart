@@ -435,6 +435,9 @@ final class _FakeBackend implements AgentApi {
   }
 
   @override
+  Set<String> get runningChatIds => const {};
+
+  @override
   Future<List<Host>> hosts() async => [
     Host(
       id: 'local',
@@ -501,7 +504,7 @@ final class _FakeBackend implements AgentApi {
   }
 
   @override
-  Future<void> stop(String chatId) async {
+  Future<void> stop(String chatId, {String? reason}) async {
     stopped++;
   }
 

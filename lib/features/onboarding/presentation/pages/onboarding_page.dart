@@ -10,7 +10,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/onboarding/presentation/bloc/onboarding_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
@@ -30,7 +30,7 @@ class OnboardingPage extends StatelessWidget {
       getIt<ModelCatalogService>(),
       getIt<SettingsRepository>(),
       getIt<HostRepository>(),
-      getIt<AgentHub>(),
+      getIt<AgentApi>(),
     ),
     child: const _OnboardingView(),
   );

@@ -34,6 +34,9 @@ abstract interface class AgentApi {
   Stream<UserQuestion> get questions;
   Stream<EditFileChangesRequest> get editChanges;
 
+  /// Чаты с идущим ходом агента. Нужно для бейджей и фонового режима.
+  Set<String> get runningChatIds;
+
   Future<List<Host>> hosts();
 
   Future<List<Chat>> chats();
@@ -47,7 +50,7 @@ abstract interface class AgentApi {
   Future<void> openChat(String chatId);
 
   Future<void> send(String chatId, String text, {bool sendNow = false});
-  Future<void> stop(String chatId);
+  Future<void> stop(String chatId, {String? reason});
 
   Future<void> resolveApproval(
     String id,

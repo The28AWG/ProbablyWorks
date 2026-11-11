@@ -147,6 +147,9 @@ final class _FakeAgent implements AgentApi {
   }
 
   @override
+  Set<String> get runningChatIds => const {};
+
+  @override
   Stream<AgentEvent> get events => _events.stream;
 
   @override
@@ -212,7 +215,7 @@ final class _FakeAgent implements AgentApi {
   }
 
   @override
-  Future<void> stop(String chatId) => Future<void>.value();
+  Future<void> stop(String chatId, {String? reason}) => Future<void>.value();
 
   @override
   Future<void> resolveApproval(

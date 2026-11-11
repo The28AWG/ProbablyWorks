@@ -5,8 +5,8 @@ import 'package:logging/logging.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 
 /// Работа агента и фон. Фоновых команд у приложения нет, поэтому:
 ///
@@ -15,12 +15,12 @@ import 'package:pw_agent/agent/loop/agent_hub.dart';
 /// - iOS: фоновой работы нет. При сворачивании активные ходы останавливаются через Stop,
 ///   чтобы команды не оставались на сервере без контроля. В чат пишется причина.
 class BackgroundRunGuard {
-  BackgroundRunGuard(this._hub, this._locale, {AppPlatform? platform})
+  BackgroundRunGuard(this._api, this._locale, {AppPlatform? platform})
     : _platform = platform ?? AppPlatform.current;
 
   static const _channel = MethodChannel('probably_works/run_service');
 
-  final AgentHub _hub;
+  final AgentApi _api;
   final LocaleController _locale;
   final AppPlatform _platform;
   final _log = Logger('BackgroundRunGuard');
@@ -30,7 +30,7 @@ class BackgroundRunGuard {
 
   void start() {
     if (!_platform.isAndroid) return;
-    _sub = _hub.allEvents.listen((event) {
+    _sub = _api.events.listen((event) {
       if (event is AgentTurnStarted || event is AgentTurnFinished) {
         unawaited(_syncService());
       }
@@ -45,16 +45,16 @@ class BackgroundRunGuard {
   /// Приложение ушло с экрана (iOS: сворачивание). Ход на iOS не переживёт фон, поэтому останавливаем.
   Future<void> onHidden() async {
     if (!_platform.isIOS) return;
-    final running = _hub.runningChatIds;
+    final running = _api.runningChatIds;
     if (running.isEmpty) return;
     final reason = _strings().runStoppedInBackground;
     for (final chatId in running) {
-      await _hub.session(chatId).stop(reason: reason);
+      await _api.stop(chatId, reason: reason);
     }
   }
 
   Future<void> _syncService() async {
-    final running = _hub.runningChatIds.isNotEmpty;
+    final running = _api.runningChatIds.isNotEmpty;
     if (running == _serviceOn) return;
     try {
       if (running) {

@@ -4,7 +4,7 @@ import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 
 PluginUi? _uiOf(Plugin plugin) => plugin is PluginUi ? plugin : null;
@@ -45,7 +45,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
 
   Future<void> _toggle(Plugin plugin, bool value) async {
     final l10n = AppLocalizations.of(context);
-    if (getIt<AgentHub>().runningChatIds.isNotEmpty) {
+    if (getIt<AgentApi>().runningChatIds.isNotEmpty) {
       AppSnackBar.show(context, l10n.pluginsRunning);
       return;
     }

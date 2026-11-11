@@ -16,7 +16,7 @@ import 'package:pw_agent/core/domain/host.dart';
 ///
 /// Никакого транспорта, сериализации и токенов. Используется встроенным
 /// агентом клиента и HTTP-сервером демона.
-@lazySingleton
+@LazySingleton(as: AgentApi)
 final class LocalAgentApi implements AgentApi {
   LocalAgentApi(this._hub, this._tasks, this._scheduler);
 
@@ -36,6 +36,9 @@ final class LocalAgentApi implements AgentApi {
   @override
   Stream<EditFileChangesRequest> get editChanges =>
       _hub.broker.editFileChangesRequests;
+
+  @override
+  Set<String> get runningChatIds => _hub.runningChatIds;
 
   @override
   Future<List<Host>> hosts() => _hub.hosts.all();
@@ -88,9 +91,9 @@ final class LocalAgentApi implements AgentApi {
   }
 
   @override
-  Future<void> stop(String chatId) async {
+  Future<void> stop(String chatId, {String? reason}) async {
     await _requireChat(chatId);
-    await _hub.session(chatId).stop();
+    await _hub.session(chatId).stop(reason: reason);
   }
 
   @override

@@ -35,6 +35,7 @@ final class RemoteAgentApi implements AgentApi {
   final http.Client _client;
   final io.HttpClient _eventsClient;
 
+  final _running = <String>{};
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -43,6 +44,9 @@ final class RemoteAgentApi implements AgentApi {
   var _eventsStarted = false;
   var _disposed = false;
   final _eventsReady = Completer<void>();
+
+  @override
+  Set<String> get runningChatIds => Set.unmodifiable(_running);
 
   @override
   Stream<AgentEvent> get events => _events.stream;
@@ -89,17 +93,24 @@ final class RemoteAgentApi implements AgentApi {
   @override
   Future<List<Chat>> chats() async {
     final json = await _get('/chats');
-    return [
-      for (final item in (json['chats'] as List? ?? const []))
-        _chat(Map<String, dynamic>.from(item as Map)),
-    ];
+    final chats = <Chat>[];
+    for (final item in (json['chats'] as List? ?? const [])) {
+      final map = Map<String, dynamic>.from(item as Map);
+      final chat = _chat(map);
+      chats.add(chat);
+      _trackRunning(chat.id, map);
+    }
+    return chats;
   }
 
   @override
   Future<Chat?> chat(String id) async {
     try {
       final json = await _get('/chats/$id');
-      return _chat(Map<String, dynamic>.from(json['chat'] as Map));
+      final map = Map<String, dynamic>.from(json['chat'] as Map);
+      final chat = _chat(map);
+      _trackRunning(chat.id, map);
+      return chat;
     } on AgentApiException catch (error) {
       if (error.status == 404) return null;
       rethrow;
@@ -145,8 +156,11 @@ final class RemoteAgentApi implements AgentApi {
   }
 
   @override
-  Future<void> stop(String chatId) async {
-    await _send('DELETE', '/chats/$chatId/turn');
+  Future<void> stop(String chatId, {String? reason}) async {
+    final query = reason == null || reason.isEmpty
+        ? ''
+        : '?reason=${Uri.encodeQueryComponent(reason)}';
+    await _send('DELETE', '/chats/$chatId/turn$query');
   }
 
   @override
@@ -344,6 +358,14 @@ final class RemoteAgentApi implements AgentApi {
     }
   }
 
+  void _trackRunning(String chatId, Map<String, dynamic> json) {
+    if (json['running'] == true) {
+      _running.add(chatId);
+    } else {
+      _running.remove(chatId);
+    }
+  }
+
   void _dispatch(String event, String raw) {
     final decoded = jsonDecode(raw);
     if (decoded is! Map) return;
@@ -356,11 +378,15 @@ final class RemoteAgentApi implements AgentApi {
       case 'editFileChanges':
         _editChanges.add(_editChangesRequest(json));
       case 'turnStarted':
-        _events.add(AgentTurnStarted(_string(json, 'chatId')));
+        final chatId = _string(json, 'chatId');
+        _running.add(chatId);
+        _events.add(AgentTurnStarted(chatId));
       case 'turnFinished':
+        final chatId = _string(json, 'chatId');
+        _running.remove(chatId);
         _events.add(
           AgentTurnFinished(
-            _string(json, 'chatId'),
+            chatId,
             TurnEnd.values.byName(_string(json, 'end')),
           ),
         );

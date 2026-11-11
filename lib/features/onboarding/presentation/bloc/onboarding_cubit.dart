@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -87,7 +87,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
     this._catalog,
     this._settings,
     this._hosts,
-    this._hub, {
+    this._api, {
     AppPlatform? platform,
   }) : platform = platform ?? AppPlatform.current,
        super(const OnboardingState());
@@ -96,7 +96,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
   final ModelCatalogService _catalog;
   final SettingsRepository _settings;
   final HostRepository _hosts;
-  final AgentHub _hub;
+  final AgentApi _api;
 
   final AppPlatform platform;
 
@@ -183,7 +183,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
         ? await _ensureLocal()
         : await _firstRemoteHostId();
     if (hostId == null) return;
-    final chat = await _hub.newChat(hostId: hostId);
+    final chat = await _api.createChat(hostId);
     emit(state.copyWith(created: chat.id));
   }
 

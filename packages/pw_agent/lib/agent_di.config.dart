@@ -13,6 +13,7 @@
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 
+import 'agent/api/agent_api.dart' as _i884;
 import 'agent/api/local_agent_api.dart' as _i269;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
@@ -266,7 +267,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i453.ScheduledTaskRepository>(),
       ),
     );
-    gh.lazySingleton<_i269.LocalAgentApi>(
+    gh.lazySingleton<_i884.AgentApi>(
       () => _i269.LocalAgentApi(
         gh<_i712.AgentHub>(),
         gh<_i453.ScheduledTaskRepository>(),

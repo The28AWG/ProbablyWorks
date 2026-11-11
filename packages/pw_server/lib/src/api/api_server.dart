@@ -173,7 +173,10 @@ final class ApiServer {
           }
         case 'turn':
           if (request.method == 'DELETE') {
-            await _backend.stop(chatId);
+            await _backend.stop(
+              chatId,
+              reason: request.uri.queryParameters['reason'],
+            );
             return _json(request.response, HttpStatus.noContent, {});
           }
       }
@@ -195,14 +198,21 @@ final class ApiServer {
   Future<void> _chats(HttpRequest request) async {
     final chats = await _backend.chats();
     _json(request.response, HttpStatus.ok, {
-      'chats': [for (final chat in chats) _chatJson(chat)],
+      'chats': [
+        for (final chat in chats)
+          _chatJson(chat, running: _backend.runningChatIds.contains(chat.id)),
+      ],
     });
   }
 
   Future<void> _createChat(HttpRequest request) async {
     final body = await _body(request);
     final chat = await _backend.createChat(_string(body, 'hostId'));
-    _json(request.response, HttpStatus.created, _chatJson(chat));
+    _json(
+      request.response,
+      HttpStatus.created,
+      _chatJson(chat, running: _backend.runningChatIds.contains(chat.id)),
+    );
   }
 
   Future<void> _chat(HttpRequest request, String id) async {
@@ -220,7 +230,10 @@ final class ApiServer {
     final questions = await _backend.pendingQuestions(id);
     final edits = await _backend.pendingEditFileChanges(id);
     _json(request.response, HttpStatus.ok, {
-      'chat': _chatJson(chat),
+      'chat': _chatJson(
+        chat,
+        running: _backend.runningChatIds.contains(chat.id),
+      ),
       'messages': [for (final message in messages) _messageJson(message)],
       'runs': [for (final run in runs) _runJson(run)],
       'approvals': [for (final approval in approvals) _approvalJson(approval)],
@@ -471,7 +484,8 @@ Map<String, Object?> _hostJson(Host host) => {
   'notes': host.notes,
 };
 
-Map<String, Object?> _chatJson(Chat chat) => {
+Map<String, Object?> _chatJson(Chat chat, {required bool running}) => {
+  'running': running,
   'id': chat.id,
   'hostId': chat.hostId,
   'projectId': chat.projectId,
