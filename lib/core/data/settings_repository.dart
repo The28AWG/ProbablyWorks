@@ -40,6 +40,9 @@ class SettingsRepository {
   static const keyStepsThoughts = 'stepsThoughts';
   static const keyStepsTools = 'stepsTools';
   static const keySidebarWidth = 'sidebarWidth';
+
+  /// Одноразовая миграция прав файлов, созданных до их ужесточения.
+  static const keyPermissionsMigrated = 'permissionsMigrated';
   static const keyLastUsageContextPrefix = 'contextLength:';
   static const keyDailyBudgetPrefix = 'dailyBudget:';
   static const keyDailyUsagePrefix = 'dailyUsage:';

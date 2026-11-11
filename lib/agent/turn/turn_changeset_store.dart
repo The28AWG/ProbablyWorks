@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:probably_works/agent/turn/turn_changeset.dart';
+import 'package:probably_works/core/security/file_permissions.dart';
 
 /// Файлы снимков и manifest ходов агента.
 ///
@@ -36,7 +37,10 @@ class TurnChangesetStore {
   /// Каталог staging создаётся отдельно от [save]/[writeBackup]: Host делает `cp`
   /// в этот путь только при перезаписи существующего файла.
   Future<void> ensureStagingDir(String chatId, String turnId) async {
-    await stagingDir(chatId, turnId).create(recursive: true);
+    final dir = stagingDir(chatId, turnId);
+    final created = !dir.existsSync();
+    await dir.create(recursive: true);
+    if (created) FilePermissions.directory(dir);
   }
 
   File backupFile(String chatId, String turnId, String backupName) =>
@@ -51,15 +55,17 @@ class TurnChangesetStore {
 
   Future<TurnChangeset> save(TurnChangeset changeset) async {
     final dir = turnDir(changeset.chatId, changeset.turnId);
+    final createdDir = !dir.existsSync();
     await dir.create(recursive: true);
-    await backupsDir(
-      changeset.chatId,
-      changeset.turnId,
-    ).create(recursive: true);
-    await manifestFile(
-      changeset.chatId,
-      changeset.turnId,
-    ).writeAsString(changeset.encode());
+    if (createdDir) FilePermissions.directory(dir);
+    final backups = backupsDir(changeset.chatId, changeset.turnId);
+    final createdBackups = !backups.existsSync();
+    await backups.create(recursive: true);
+    if (createdBackups) FilePermissions.directory(backups);
+    final manifest = manifestFile(changeset.chatId, changeset.turnId);
+    final createdManifest = !manifest.existsSync();
+    await manifest.writeAsString(changeset.encode());
+    if (createdManifest) FilePermissions.file(manifest);
     return changeset;
   }
 
@@ -70,12 +76,13 @@ class TurnChangesetStore {
     Uint8List bytes,
   ) async {
     final dir = backupsDir(chatId, turnId);
+    final createdDir = !dir.existsSync();
     await dir.create(recursive: true);
-    await backupFile(
-      chatId,
-      turnId,
-      backupName,
-    ).writeAsBytes(bytes, flush: true);
+    if (createdDir) FilePermissions.directory(dir);
+    final file = backupFile(chatId, turnId, backupName);
+    final createdFile = !file.existsSync();
+    await file.writeAsBytes(bytes, flush: true);
+    if (createdFile) FilePermissions.file(file);
   }
 
   Future<Uint8List?> readBackup(

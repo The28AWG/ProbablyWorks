@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:probably_works/agent/mcp/mcp_json_config.dart';
 import 'package:probably_works/core/data/mcp_server_repository.dart';
 import 'package:probably_works/core/domain/mcp_server.dart';
+import 'package:probably_works/core/security/file_permissions.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 
 /// Синхронизация `mcp.json` с таблицей серверов.
@@ -46,6 +47,8 @@ final class McpConfigFile {
     if (!parent.existsSync()) await parent.create(recursive: true);
     final temp = File('${target.path}.tmp');
     await temp.writeAsString(McpJsonConfig.encode(servers), flush: true);
+    // Режим переносится вместе с файлом при rename.
+    FilePermissions.file(temp);
     await temp.rename(target.path);
     return target.path;
   }

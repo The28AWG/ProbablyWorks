@@ -4,6 +4,7 @@ import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
+import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
@@ -31,6 +32,8 @@ Future<bool> bootstrap() async {
   await configureDependencies();
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();
+  // До чтения mcp.json: старые версии оставили 0644, и аудит считал бы это изменением.
+  await migrateFilePermissions(paths, getIt<SettingsRepository>());
   final language = await getIt<SettingsRepository>().read(
     SettingsRepository.keyLanguage,
   );

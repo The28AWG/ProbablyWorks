@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:probably_works/core/security/file_permissions.dart';
 import 'package:probably_works/core/util/redactor.dart';
 
 /// Файлы логов запусков — временный буфер на время выполнения.
@@ -23,8 +24,15 @@ class ExecLogStore {
   /// Открывает файл лога перед стартом команды.
   Future<String> open(String chatId, String toolCallId) async {
     final path = logPath(chatId, toolCallId);
-    await Directory(p.dirname(path)).create(recursive: true);
-    _sinks[toolCallId] = File(path).openWrite(mode: FileMode.write);
+    final dir = Directory(p.dirname(path));
+    final createdDir = !dir.existsSync();
+    await dir.create(recursive: true);
+    if (createdDir) FilePermissions.directory(dir);
+    final file = File(path);
+    final createdFile = !file.existsSync();
+    if (createdFile) file.createSync(recursive: true);
+    if (createdFile) FilePermissions.file(file);
+    _sinks[toolCallId] = file.openWrite(mode: FileMode.write);
     return path;
   }
 

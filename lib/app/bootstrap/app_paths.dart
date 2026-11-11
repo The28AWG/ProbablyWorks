@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:probably_works/core/security/file_permissions.dart';
 
 /// Каталоги данных приложения. Всё, что не в secure storage, живёт здесь.
 class AppPaths {
@@ -28,7 +29,9 @@ class AppPaths {
   static Future<AppPaths> resolve() async {
     final dir = await getApplicationSupportDirectory();
     final support = Directory(p.join(dir.path, 'ProbablyWorks'));
+    final created = !support.existsSync();
     await support.create(recursive: true);
+    if (created) FilePermissions.directory(support);
     return AppPaths._(support);
   }
 }
