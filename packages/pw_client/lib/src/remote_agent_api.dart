@@ -20,6 +20,7 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
@@ -59,6 +60,7 @@ class RemoteAgentApi
   final _editChats = <String, String>{};
   final _queues = <String, List<QueuedPrompt>>{};
   Map<String, dynamic>? _globalSettings;
+  Future<void>? _settingsLoading;
   final _usageByChat = <String, Map<String, dynamic>>{};
   final _projectsByChat = <String, Project?>{};
   ModelCatalogState? _catalog;
@@ -71,6 +73,7 @@ class RemoteAgentApi
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _pinnedChanges = StreamController<List<String>>.broadcast();
+  final _settingsChanges = StreamController<void>.broadcast();
 
   static const _uuid = Uuid();
 
@@ -181,6 +184,7 @@ class RemoteAgentApi
     await _editChanges.close();
     await _catalogChanges.close();
     await _pinnedChanges.close();
+    await _settingsChanges.close();
     _client.close();
     _eventsClient.close(force: true);
   }
@@ -403,12 +407,27 @@ class RemoteAgentApi
     await _loadModels();
   }
 
-  Future<void> _loadGlobalSettings() async {
+  Future<void> _loadGlobalSettings() {
+    if (_globalSettings != null) return Future<void>.value();
+    return _settingsLoading ??= _fetchGlobalSettings().whenComplete(
+      () => _settingsLoading = null,
+    );
+  }
+
+  Future<void> _fetchGlobalSettings() async {
     try {
-      _globalSettings ??= await _get('/settings');
+      _globalSettings = await _get('/settings');
+      if (!_settingsChanges.isClosed) _settingsChanges.add(null);
     } on AgentApiException {
       // Настройки не критичны для чтения чата.
     }
+  }
+
+  void _publishSettings([Map<String, dynamic>? patch]) {
+    if (patch != null) {
+      _globalSettings = {...?_globalSettings, ...patch};
+    }
+    if (!_settingsChanges.isClosed) _settingsChanges.add(null);
   }
 
   Future<void> _loadChatState(String chatId) async {
@@ -670,45 +689,50 @@ class RemoteAgentApi
   @override
   Future<void> writeSetting(String key, String? value) async {
     await _send('PUT', '/settings/$key', body: {'value': value});
+    _publishSettings({key: value});
   }
 
   @override
   Future<void> saveStepsDisplay(StepsDisplay value) async {
-    await _send(
-      'PUT',
-      '/settings/steps',
-      body: {
-        'group': value.group,
-        'expandWhileActive': value.expandWhileActive,
-        'thoughts': value.thoughts.name,
-        'tools': value.tools.name,
-      },
-    );
+    final json = {
+      'group': value.group,
+      'expandWhileActive': value.expandWhileActive,
+      'thoughts': value.thoughts.name,
+      'tools': value.tools.name,
+    };
+    await _send('PUT', '/settings/steps', body: json);
+    _publishSettings({'steps': json});
   }
 
   @override
   Future<void> savePinnedModels(List<String> ids) async {
     await _send('PUT', '/settings/pinned', body: {'pinnedModels': ids});
+    _publishSettings({'pinnedModels': ids});
     if (!_pinnedChanges.isClosed) _pinnedChanges.add(ids);
   }
 
   @override
   Future<void> saveDenylist(List<String> patterns) async {
     await _send('PUT', '/settings/denylist', body: {'denylist': patterns});
+    _publishSettings({'denylist': patterns});
   }
 
   @override
   Future<void> saveSecurityProfile(SecurityProfile profile) async {
+    final encoded = profile.encode();
     await _send(
       'PUT',
       '/settings/security-profile',
-      body: {'profile': profile.encode()},
+      body: {'profile': encoded},
     );
+    _publishSettings({'securityProfile': encoded});
   }
 
   @override
   Future<void> saveLimits(AppLimits limits) async {
-    await _send('PUT', '/settings/limits', body: {'limits': limits.toMap()});
+    final json = limits.toMap();
+    await _send('PUT', '/settings/limits', body: {'limits': json});
+    _publishSettings({'limits': json});
   }
 
   @override
@@ -1511,17 +1535,31 @@ final class _RemoteSettings implements SettingsStore {
 
   @override
   Stream<String?> watch(String key) async* {
-    while (true) {
-      yield await read(key);
-      await Future<void>.delayed(const Duration(seconds: 3));
-    }
+    yield await read(key);
+    yield* _api._settingsChanges.stream.map((_) => _value(key));
   }
 
   @override
   Future<String?> read(String key) async {
     await _api._loadGlobalSettings();
+    return _value(key);
+  }
+
+  /// Значение ключа из кэша. Журналу шагов и закреплениям важно только
+  /// изменение, но ключи возвращаются в том же виде, что и локальное хранилище.
+  String? _value(String key) {
+    final settings = _api._globalSettings;
+    if (settings == null) return null;
     return switch (key) {
-      'defaultModel' => _api._globalSettings?['defaultModel'] as String?,
+      SettingsRepository.keyDefaultModel => settings['defaultModel'] as String?,
+      SettingsRepository.keyPinnedModels =>
+        settings['pinnedModels'] == null
+            ? null
+            : jsonEncode(settings['pinnedModels']),
+      SettingsRepository.keyStepsGroup ||
+      SettingsRepository.keyStepsExpandWhileActive ||
+      SettingsRepository.keyStepsThoughts ||
+      SettingsRepository.keyStepsTools => jsonEncode(settings['steps']),
       _ => null,
     };
   }
@@ -1539,7 +1577,7 @@ final class _RemoteSettings implements SettingsStore {
   @override
   Future<void> savePinnedModels(List<String> ids) async {
     await _api.sendJson('PUT', '/settings/pinned', body: {'pinnedModels': ids});
-    _api._globalSettings = {...?_api._globalSettings, 'pinnedModels': ids};
+    _api._publishSettings({'pinnedModels': ids});
   }
 
   @override

@@ -10,6 +10,7 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -176,6 +177,35 @@ void main() {
 
     expect(catalogs.length, greaterThan(1));
     expect(pins.last, ['b']);
+  });
+
+  test('settings watchers reuse one snapshot and see saves', () async {
+    final defaults = <String?>[];
+    final steps = <String?>[];
+    final defaultSub = remote.settings
+        .watch(SettingsRepository.keyDefaultModel)
+        .listen(defaults.add);
+    final stepsSub = remote.settings
+        .watch(SettingsRepository.keyStepsGroup)
+        .listen(steps.add);
+    addTearDown(defaultSub.cancel);
+    addTearDown(stepsSub.cancel);
+
+    await remote.settings.read(SettingsRepository.keyPinnedModels);
+    await remote.settings.readStepsDisplay();
+    expect(defaults, ['openai/gpt-4o']);
+    expect(steps, isNotEmpty);
+
+    await remote.writeSetting(
+      SettingsRepository.keyDefaultModel,
+      'openai/gpt-4o-mini',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(defaults.last, 'openai/gpt-4o-mini');
+    expect(settings.loads, 1);
+    await defaultSub.cancel();
+    await stepsSub.cancel();
   });
 
   test('streams SSE events into typed streams', () async {
@@ -467,8 +497,13 @@ final class _FakeSettings implements AgentSettingsApi {
     ),
   );
 
+  var loads = 0;
+
   @override
-  Future<AgentSettingsSnapshot> load() async => _snapshot;
+  Future<AgentSettingsSnapshot> load() async {
+    loads++;
+    return _snapshot;
+  }
 
   @override
   Stream<ModelCatalogState> watchCatalog() => Stream.value(_snapshot.catalog);
