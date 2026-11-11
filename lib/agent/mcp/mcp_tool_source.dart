@@ -1,4 +1,5 @@
 import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
+import 'package:probably_works/agent/tools/tool_name.dart';
 import 'package:probably_works/agent/tools/tool_source.dart';
 import 'package:probably_works/agent/tools/tool_types.dart';
 import 'package:probably_works/core/domain/mcp_server.dart';
@@ -72,7 +73,7 @@ final class McpToolSource extends ToolSource {
     String toolName,
     Set<String> used,
   ) {
-    final base = 'mcp_${_slug(server.id)}_${_slug(toolName)}';
+    final base = fitToolName('mcp_${_slug(server.id)}_${_slug(toolName)}');
     var name = base;
     var index = 2;
     while (!used.add(name)) {

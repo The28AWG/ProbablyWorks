@@ -1,6 +1,7 @@
 import 'package:plugin_api/plugin_api.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/exec/command_executor.dart';
+import 'package:probably_works/agent/tools/tool_name.dart';
 import 'package:probably_works/agent/tools/tool_source.dart';
 import 'package:probably_works/agent/tools/tool_types.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
@@ -71,7 +72,7 @@ final class PluginToolSource extends ToolSource {
     String toolName,
     Set<String> used,
   ) {
-    final base = 'plugin_${_slug(pluginId)}_${_slug(toolName)}';
+    final base = fitToolName('plugin_${_slug(pluginId)}_${_slug(toolName)}');
     var name = base;
     var index = 2;
     while (!used.add(name)) {
