@@ -1632,13 +1632,13 @@
   "@mcpAddServer": {
     "description": "Tooltip of the button that opens the MCP server editor."
   },
-  "mcpImportConfig": "Перечитать mcp.json",
+  "mcpImportConfig": "Импортировать mcp.json…",
   "@mcpImportConfig": {
-    "description": "Button that re-imports mcp.json."
+    "description": "Button that imports a selected mcp.json file."
   },
-  "mcpExportConfig": "Экспортировать mcp.json",
+  "mcpExportConfig": "Экспортировать mcp.json…",
   "@mcpExportConfig": {
-    "description": "Button that exports the MCP server list to mcp.json."
+    "description": "Button that exports the MCP server list to a selected file."
   },
   "mcpImportDone": "mcp.json перечитан",
   "@mcpImportDone": {

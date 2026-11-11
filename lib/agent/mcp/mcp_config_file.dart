@@ -22,7 +22,11 @@ final class McpConfigFile {
   /// Импортирует файл, если он существует. Отсутствие файла — не ошибка.
   Future<void> import() async {
     if (!file.existsSync()) return;
-    final raw = await file.readAsString();
+    await importRaw(await file.readAsString());
+  }
+
+  /// Импортирует текст `mcp.json` из выбранного пользователем файла.
+  Future<void> importRaw(String raw) async {
     final parsed = McpJsonConfig.parse(raw);
     final secured = <McpServerConfig>[
       for (final server in parsed) await _secure(server),
@@ -32,12 +36,18 @@ final class McpConfigFile {
 
   /// Экспортирует все серверы, включая пользовательские.
   Future<void> export() async {
+    await exportTo(file);
+  }
+
+  /// Экспортирует все серверы в [target] и возвращает путь.
+  Future<String> exportTo(File target) async {
     final servers = await _repository.all();
-    final parent = file.parent;
+    final parent = target.parent;
     if (!parent.existsSync()) await parent.create(recursive: true);
-    final temp = File('${file.path}.tmp');
+    final temp = File('${target.path}.tmp');
     await temp.writeAsString(McpJsonConfig.encode(servers), flush: true);
-    await temp.rename(file.path);
+    await temp.rename(target.path);
+    return target.path;
   }
 
   Future<McpServerConfig> _secure(McpServerConfig server) async =>

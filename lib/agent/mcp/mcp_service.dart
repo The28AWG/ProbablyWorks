@@ -125,16 +125,48 @@ class McpService {
     return McpImportResult.imported(path);
   }
 
+  /// Импортирует текст, выбранный пользователем через файловый диалог.
+  Future<McpImportResult> importConfigText(
+    String raw, {
+    String? sourcePath,
+  }) async {
+    final file = _configFile;
+    if (file == null) {
+      return const McpImportResult.error(
+        'MCP config file is not configured',
+        null,
+      );
+    }
+    try {
+      await file.importRaw(raw);
+      _configError = null;
+    } on Object catch (error) {
+      _configError = '$error';
+      _log.warning('cannot import selected mcp.json', error);
+      return McpImportResult.error('$error', sourcePath);
+    }
+    await refresh();
+    return McpImportResult.imported(sourcePath);
+  }
+
   /// Экспортирует текущие настройки в `mcp.json` и возвращает путь.
   Future<String> exportConfig() async {
     final file = _configFile;
     if (file == null) {
       throw StateError('MCP config file is not configured');
     }
+    return exportConfigTo(file.file.path);
+  }
+
+  /// Экспортирует текущие настройки в выбранный пользователем файл.
+  Future<String> exportConfigTo(String path) async {
+    final file = _configFile;
+    if (file == null) {
+      throw StateError('MCP config file is not configured');
+    }
     _suppressWatch = true;
     try {
-      await file.export();
-      return file.file.path;
+      return await file.exportTo(File(path));
     } finally {
       _suppressWatch = false;
     }

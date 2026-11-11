@@ -1632,13 +1632,13 @@
   "@mcpAddServer": {
     "description": "Tooltip of the button that opens the MCP server editor."
   },
-  "mcpImportConfig": "Reload mcp.json",
+  "mcpImportConfig": "Import mcp.json…",
   "@mcpImportConfig": {
-    "description": "Button that re-imports mcp.json."
+    "description": "Button that imports a selected mcp.json file."
   },
-  "mcpExportConfig": "Export mcp.json",
+  "mcpExportConfig": "Export mcp.json…",
   "@mcpExportConfig": {
-    "description": "Button that exports the MCP server list to mcp.json."
+    "description": "Button that exports the MCP server list to a selected file."
   },
   "mcpImportDone": "mcp.json reloaded",
   "@mcpImportDone": {

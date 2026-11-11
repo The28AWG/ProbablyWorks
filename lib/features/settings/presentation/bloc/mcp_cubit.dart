@@ -137,10 +137,36 @@ class McpCubit extends Cubit<McpState> {
     }
   }
 
+  Future<McpImportResult> importConfigText(
+    String raw, {
+    String? sourcePath,
+  }) async {
+    emit(state.copyWith(busyAction: McpBusyAction.import));
+    try {
+      final result = await _service.importConfigText(
+        raw,
+        sourcePath: sourcePath,
+      );
+      await _reloadStates();
+      return result;
+    } finally {
+      emit(state.copyWith(clearBusy: true));
+    }
+  }
+
   Future<String> exportConfig() async {
     emit(state.copyWith(busyAction: McpBusyAction.export));
     try {
       return await _service.exportConfig();
+    } finally {
+      emit(state.copyWith(clearBusy: true));
+    }
+  }
+
+  Future<String> exportConfigTo(String path) async {
+    emit(state.copyWith(busyAction: McpBusyAction.export));
+    try {
+      return await _service.exportConfigTo(path);
     } finally {
       emit(state.copyWith(clearBusy: true));
     }

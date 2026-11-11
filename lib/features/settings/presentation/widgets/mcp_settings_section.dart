@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
@@ -19,6 +20,12 @@ class McpSettingsSection extends StatefulWidget {
 }
 
 class _McpSettingsSectionState extends State<McpSettingsSection> {
+  static const _jsonType = XTypeGroup(
+    label: 'mcp.json',
+    extensions: ['json'],
+    mimeTypes: ['application/json'],
+  );
+
   late final McpCubit _cubit;
 
   @override
@@ -147,7 +154,11 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
 
   Future<void> _import(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
-    final result = await _cubit.importConfig();
+    final file = await openFile(acceptedTypeGroups: const [_jsonType]);
+    if (file == null || !context.mounted) return;
+    final raw = await file.readAsString();
+    if (!context.mounted) return;
+    final result = await _cubit.importConfigText(raw, sourcePath: file.path);
     if (!context.mounted) return;
     final message = switch (result.status) {
       McpImportStatus.imported => l10n.mcpImportDone,
@@ -159,8 +170,13 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
 
   Future<void> _export(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
+    final location = await getSaveLocation(
+      suggestedName: 'mcp.json',
+      acceptedTypeGroups: const [_jsonType],
+    );
+    if (location == null || !context.mounted) return;
     try {
-      final path = await _cubit.exportConfig();
+      final path = await _cubit.exportConfigTo(location.path);
       if (!context.mounted) return;
       AppSnackBar.show(context, l10n.mcpExportDone(path));
     } on Object catch (error) {
