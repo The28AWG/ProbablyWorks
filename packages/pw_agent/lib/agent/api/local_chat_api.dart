@@ -98,14 +98,33 @@ class LocalChatApi implements ChatApi {
     return _hub.newChat(hostId: hostId);
   }
 
-  Future<void> renameChat(String chatId, String title) async {
+  Future<void> renameChat(String chatId, String title) =>
+      updateChat(chatId, title: title);
+
+  Future<void> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
     final chat = await _hub.chats.chat(chatId);
-    final trimmed = title.trim();
-    if (chat == null || trimmed.isEmpty) {
+    if (chat == null) {
       throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
     }
+    final trimmed = title?.trim();
     await _hub.chats.saveChat(
-      chat.copyWith(title: trimmed, titleSource: ChatTitleSource.user),
+      chat.copyWith(
+        title: trimmed == null || trimmed.isEmpty ? null : trimmed,
+        titleSource: trimmed == null || trimmed.isEmpty
+            ? null
+            : ChatTitleSource.user,
+        model: model,
+        policyMode: policyMode,
+        workspace: workspaceSpecified ? workspace : null,
+        clearWorkspace: workspaceSpecified && workspace == null,
+      ),
     );
   }
 

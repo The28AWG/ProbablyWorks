@@ -234,7 +234,26 @@ final class ApiServer {
 
   Future<void> _renameChat(HttpRequest request, String id) async {
     final body = await _body(request);
-    await _backend.renameChat(id, _string(body, 'title'));
+    final policy = body['policyMode'] is String
+        ? PolicyMode.values.asNameMap()[body['policyMode'] as String]
+        : null;
+    if (body['policyMode'] != null && policy == null) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_policy',
+        'unknown policy mode',
+      );
+    }
+    await _backend.updateChat(
+      id,
+      title: body['title'] is String ? body['title'] as String : null,
+      model: body['model'] is String ? body['model'] as String : null,
+      policyMode: policy,
+      workspace: body['workspace'] is String
+          ? body['workspace'] as String
+          : null,
+      workspaceSpecified: body['workspaceSpecified'] == true,
+    );
     _json(request.response, HttpStatus.noContent, {});
   }
 

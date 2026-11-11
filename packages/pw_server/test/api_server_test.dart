@@ -134,6 +134,29 @@ void main() {
     expect((jsonDecode(body) as Map)['error'], contains('code'));
   });
 
+  test('updates chat model, policy and workspace', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'PATCH',
+      '/api/v1/chats/c1',
+      token: _token,
+      body: {
+        'title': 'Renamed',
+        'model': 'model/x',
+        'policyMode': 'yolo',
+        'workspace': '/work',
+        'workspaceSpecified': true,
+      },
+    );
+
+    expect(status, HttpStatus.noContent);
+    expect(backend.updatedTitle, 'Renamed');
+    expect(backend.updatedModel, 'model/x');
+    expect(backend.updatedPolicy, PolicyMode.yolo);
+    expect(backend.updatedWorkspace, '/work');
+  });
+
   test('returns chat journal and pending cards', () async {
     final (status, body) = await _request(
       client,
@@ -402,6 +425,10 @@ final class _FakeBackend implements AgentApi {
   final decisions = <ApprovalAction>[];
   final scheduled = <ScheduledTask>[];
   final answers = <String?>[];
+  String? updatedTitle;
+  String? updatedModel;
+  PolicyMode? updatedPolicy;
+  String? updatedWorkspace;
   final choices = <EditFileChangesChoice>[];
   var opened = 0;
   var stopped = 0;
@@ -462,6 +489,21 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Future<void> renameChat(String chatId, String title) => Future<void>.value();
+
+  @override
+  Future<void> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
+    updatedTitle = title;
+    updatedModel = model;
+    updatedPolicy = policyMode;
+    updatedWorkspace = workspace;
+  }
 
   @override
   Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;

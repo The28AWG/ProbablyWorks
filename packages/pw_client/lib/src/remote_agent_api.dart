@@ -246,8 +246,29 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   }
 
   @override
-  Future<void> renameChat(String chatId, String title) async {
-    await _send('PATCH', '/chats/$chatId', body: {'title': title});
+  Future<void> renameChat(String chatId, String title) =>
+      updateChat(chatId, title: title);
+
+  @override
+  Future<void> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
+    await _send(
+      'PATCH',
+      '/chats/$chatId',
+      body: {
+        'title': ?title,
+        'model': ?model,
+        'policyMode': ?policyMode?.name,
+        'workspace': ?workspace,
+        if (workspaceSpecified) 'workspaceSpecified': true,
+      },
+    );
   }
 
   @override

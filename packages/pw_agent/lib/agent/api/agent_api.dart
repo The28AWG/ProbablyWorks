@@ -50,6 +50,14 @@ abstract interface class AgentApi {
   Future<Chat?> chat(String id);
   Future<Chat> createChat(String hostId);
   Future<void> renameChat(String chatId, String title);
+  Future<void> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  });
   Future<Chat?> forkChat(String chatId, {String? title});
   Future<void> deleteChat(String chatId);
 

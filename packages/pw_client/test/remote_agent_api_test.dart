@@ -56,6 +56,12 @@ void main() {
     expect(backend.answers, ['yes']);
   });
 
+  test('updates chat fields through the remote API', () async {
+    await remote.updateChat('c1', model: 'vendor/model');
+
+    expect(backend.updatedModel, 'vendor/model');
+  });
+
   test('creates and reads a schedule', () async {
     final task = await remote.schedule(
       chatId: 'c1',
@@ -126,6 +132,7 @@ final class _FakeAgent implements AgentApi {
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
   final scheduled = <ScheduledTask>[];
+  String? updatedModel;
 
   final _chat = Chat(
     id: 'c1',
@@ -201,6 +208,18 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<void> renameChat(String chatId, String title) => Future<void>.value();
+
+  @override
+  Future<void> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
+    updatedModel = model;
+  }
 
   @override
   Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;
