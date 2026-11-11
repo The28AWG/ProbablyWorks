@@ -1,5 +1,6 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/profiles/profile_menu.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -56,14 +57,7 @@ class WorkspaceSidebar extends StatelessWidget {
               mainAxisSize: MainAxisSize.max,
               spacing: AppSpacing.sm,
               children: [
-                Expanded(
-                  child: Text(
-                    l10n.appTitle,
-                    style: theme.textTheme.titleSmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                const Expanded(child: ProfileMenu(expanded: true)),
                 IconButton(
                   tooltip: l10n.sidebarCollapse,
                   icon: const Icon(Icons.menu_open),
@@ -163,6 +157,7 @@ class WorkspaceRail extends StatelessWidget {
         child: Column(
           children: [
             const SizedBox(height: AppSpacing.sm),
+            const ProfileMenu(),
             IconButton(
               tooltip: l10n.sidebarExpand,
               icon: const Icon(Icons.menu),

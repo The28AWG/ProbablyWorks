@@ -1569,6 +1569,18 @@
   "@settingsGroupSafety": {
     "description": "Settings group: execution policy and denylist."
   },
+  "agentProfilesTitle": "Agents",
+  "@agentProfilesTitle": {
+    "description": "Agent profiles UI."
+  },
+  "agentProfileLocal": "This computer",
+  "@agentProfileLocal": {
+    "description": "Agent profiles UI."
+  },
+  "agentProfilesManage": "Manage connections…",
+  "@agentProfilesManage": {
+    "description": "Agent profiles UI."
+  },
   "settingsGroupSafetyHint": "Default policy, command risk levels, and commands that are always denied.",
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
@@ -1828,6 +1840,54 @@
   "securityAuditSingleRecommendation": "No action needed.",
   "@securityAuditSingleRecommendation": {
     "description": "Security finding recommendation: lock file."
+  },
+  "settingsGroupAgents": "Agents",
+  "@settingsGroupAgents": {
+    "description": "Agent profiles settings."
+  },
+  "settingsGroupAgentsHint": "Local and remote agents. Switch between them from the rail.",
+  "@settingsGroupAgentsHint": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesAdd": "Add remote agent",
+  "@agentProfilesAdd": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesEdit": "Edit",
+  "@agentProfilesEdit": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesRemove": "Remove",
+  "@agentProfilesRemove": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesName": "Name",
+  "@agentProfilesName": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesUrl": "Server URL",
+  "@agentProfilesUrl": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesToken": "API token",
+  "@agentProfilesToken": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesSave": "Save",
+  "@agentProfilesSave": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesCancel": "Cancel",
+  "@agentProfilesCancel": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesInvalid": "Enter a name, an http(s) URL and a token.",
+  "@agentProfilesInvalid": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesLocalHint": "Built-in agent on this computer.",
+  "@agentProfilesLocalHint": {
+    "description": "Agent profiles settings."
   },
   "settingsGroupAdvanced": "Advanced",
   "@settingsGroupAdvanced": {

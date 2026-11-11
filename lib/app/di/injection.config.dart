@@ -33,6 +33,7 @@ import '../../core/security/security_audit_service.dart' as _i388;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/appearance_port_adapter.dart' as _i395;
 import '../locale/locale_controller.dart' as _i675;
+import '../profiles/profile_service.dart' as _i740;
 import '../router/app_router.dart' as _i81;
 import '../theme/theme_controller.dart' as _i699;
 import 'core_module.dart' as _i154;
@@ -84,6 +85,14 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i641.AppNotifier>(
       () => _i238.PluginAppNotifier(gh<_i675.LocaleController>()),
+    );
+    gh.lazySingleton<_i740.ProfileService>(
+      () => _i740.ProfileService(
+        gh<_i370.SettingsRepository>(),
+        gh<_i564.SecretStore>(),
+        gh<_i144.AgentApi>(),
+        gh<_i891.ChatApi>(),
+      ),
     );
     return this;
   }

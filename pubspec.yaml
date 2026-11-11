@@ -67,6 +67,8 @@ dependencies:
   portable_pty: 0.0.7-beta.2
   pw_agent:
     path: packages/pw_agent
+  pw_client:
+    path: packages/pw_client
   sqlite3: ^3.6.0
   url_launcher: ^6.3.3
   uuid: ^4.5.3

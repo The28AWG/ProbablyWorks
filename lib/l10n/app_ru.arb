@@ -1569,6 +1569,18 @@
   "@settingsGroupSafety": {
     "description": "Settings group: execution policy and denylist."
   },
+  "agentProfilesTitle": "Агенты",
+  "@agentProfilesTitle": {
+    "description": "Agent profiles UI."
+  },
+  "agentProfileLocal": "Этот компьютер",
+  "@agentProfileLocal": {
+    "description": "Agent profiles UI."
+  },
+  "agentProfilesManage": "Управление подключениями…",
+  "@agentProfilesManage": {
+    "description": "Agent profiles UI."
+  },
   "settingsGroupSafetyHint": "Политика по умолчанию, уровни риска команд и команды, которые запрещены всегда.",
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
@@ -1828,6 +1840,54 @@
   "securityAuditSingleRecommendation": "Действий не требуется.",
   "@securityAuditSingleRecommendation": {
     "description": "Security finding recommendation: lock file."
+  },
+  "settingsGroupAgents": "Агенты",
+  "@settingsGroupAgents": {
+    "description": "Agent profiles settings."
+  },
+  "settingsGroupAgentsHint": "Локальный и удалённые агенты. Переключение — в боковой панели.",
+  "@settingsGroupAgentsHint": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesAdd": "Добавить удалённого агента",
+  "@agentProfilesAdd": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesEdit": "Изменить",
+  "@agentProfilesEdit": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesRemove": "Удалить",
+  "@agentProfilesRemove": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesName": "Название",
+  "@agentProfilesName": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesUrl": "URL сервера",
+  "@agentProfilesUrl": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesToken": "Токен API",
+  "@agentProfilesToken": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesSave": "Сохранить",
+  "@agentProfilesSave": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesCancel": "Отмена",
+  "@agentProfilesCancel": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesInvalid": "Укажите название, http(s)-URL и токен.",
+  "@agentProfilesInvalid": {
+    "description": "Agent profiles settings."
+  },
+  "agentProfilesLocalHint": "Встроенный агент на этом компьютере.",
+  "@agentProfilesLocalHint": {
+    "description": "Agent profiles settings."
   },
   "settingsGroupAdvanced": "Дополнительно",
   "@settingsGroupAdvanced": {

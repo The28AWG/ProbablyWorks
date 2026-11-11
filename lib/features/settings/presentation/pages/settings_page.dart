@@ -10,6 +10,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
@@ -53,7 +54,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 /// Группы настроек. На широком экране выбирается одна группа слева, на узком — все группы списком.
-enum _Group { account, interface, safety, plugins, mcp, advanced }
+enum _Group { account, agents, interface, safety, plugins, mcp, advanced }
 
 class _SettingsView extends StatefulWidget {
   const _SettingsView({this.initialGroup});
@@ -122,6 +123,7 @@ class _SettingsViewState extends State<_SettingsView> {
 
   static _Group? _groupFromName(String? name) => switch (name) {
     'account' => _Group.account,
+    'agents' => _Group.agents,
     'interface' => _Group.interface,
     'safety' => _Group.safety,
     'plugins' => _Group.plugins,
@@ -179,6 +181,7 @@ class _SettingsViewState extends State<_SettingsView> {
         final cubit = context.read<SettingsCubit>();
         final groups = <_Group, List<Widget>>{
           _Group.account: _accountSections(state, cubit, l10n),
+          _Group.agents: const [AgentProfilesSection()],
           _Group.interface: _interfaceSections(state, cubit, l10n),
           _Group.safety: _safetySections(state, cubit, l10n),
           _Group.plugins: _pluginSections(),
@@ -189,6 +192,10 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.account: (
             l10n.settingsGroupAccount,
             l10n.settingsGroupAccountHint,
+          ),
+          _Group.agents: (
+            l10n.settingsGroupAgents,
+            l10n.settingsGroupAgentsHint,
           ),
           _Group.interface: (
             l10n.settingsGroupInterface,
@@ -773,6 +780,7 @@ class _SettingsViewState extends State<_SettingsView> {
 
   static IconData _groupIcon(_Group group) => switch (group) {
     _Group.account => Icons.key_outlined,
+    _Group.agents => Icons.devices_other_outlined,
     _Group.interface => Icons.translate,
     _Group.safety => Icons.shield_outlined,
     _Group.plugins => Icons.extension_outlined,

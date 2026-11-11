@@ -14,11 +14,11 @@ class AppRouter extends RootStackRouter {
 
   @override
   List<AutoRoute> get routes => [
+    RedirectRoute(path: '/', redirectTo: '/a/local'),
     AutoRoute(page: OnboardingRoute.page, path: '/onboarding'),
     AutoRoute(
       page: WorkspaceRoute.page,
-      path: '/',
-      initial: true,
+      path: '/a/:profileId',
       guards: [apiKeyGuard],
       children: [
         AutoRoute(

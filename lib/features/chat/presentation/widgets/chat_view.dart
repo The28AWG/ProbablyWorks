@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
@@ -70,14 +71,23 @@ class ChatView extends StatefulWidget {
 
 class _ChatViewState extends State<ChatView> {
   final _drafts = getIt<ChatDraftStore>();
-  late final _bloc = ChatBloc(
-    getIt<ChatApi>(),
-    getIt<LiveOutputBus>(),
-    _drafts,
-    seedChat: widget.seedChat,
-    seedHosts: widget.seedHosts,
-    onChatCreated: (id) => widget.onCreated?.call(id),
-  )..add(_openEvent(widget.chatId));
+  ChatBloc? _bloc;
+
+  ChatBloc get _chat => _bloc!;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bloc != null) return;
+    _bloc = ChatBloc(
+      ProfileScope.maybeOf(context)?.chatApi ?? getIt<ChatApi>(),
+      getIt<LiveOutputBus>(),
+      _drafts,
+      seedChat: widget.seedChat,
+      seedHosts: widget.seedHosts,
+      onChatCreated: (id) => widget.onCreated?.call(id),
+    )..add(_openEvent(widget.chatId));
+  }
 
   @override
   void didUpdateWidget(ChatView oldWidget) {
@@ -85,8 +95,8 @@ class _ChatViewState extends State<ChatView> {
     final chatId = widget.chatId;
     if (chatId == oldWidget.chatId) return;
     // Новый чат, который только что записан после отправки: блок уже открыт на нём, второй раз не открываем.
-    if (chatId != null && chatId == _bloc.state.chatId) return;
-    _bloc.add(
+    if (chatId != null && chatId == _chat.state.chatId) return;
+    _chat.add(
       _openEvent(
         chatId,
         seedChat: widget.seedChat,
@@ -105,13 +115,13 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   void dispose() {
-    unawaited(_bloc.close());
+    unawaited(_chat.close());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => BlocProvider.value(
-    value: _bloc,
+    value: _chat,
     child: ChatBody(leading: widget.leading, drafts: _drafts),
   );
 }

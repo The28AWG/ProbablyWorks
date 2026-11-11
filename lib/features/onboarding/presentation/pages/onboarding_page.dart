@@ -156,6 +156,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
     unawaited(
       context.router.replaceAll([
         WorkspaceRoute(
+          profileId: 'local',
           children: [
             ChatsTabRoute(children: [ChatRoute(chatId: state.created!)]),
           ],
@@ -407,7 +408,10 @@ class _OnboardingViewState extends State<_OnboardingView> {
               overflow: TextOverflow.ellipsis,
             ),
             onPressed: () => context.router.push(
-              WorkspaceRoute(children: [const HostsRoute()]),
+              WorkspaceRoute(
+                profileId: 'local',
+                children: [const HostsRoute()],
+              ),
             ),
           ),
         if (skippable && step != OnboardingStep.ssh)
