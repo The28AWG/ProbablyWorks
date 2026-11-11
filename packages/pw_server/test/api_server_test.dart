@@ -603,6 +603,9 @@ final class _FakeBackend implements AgentApi {
   Future<void> cancelSchedule(String id) => Future<void>.value();
 
   @override
+  Future<void> resumeAfterRestart() => Future<void>.value();
+
+  @override
   Stream<AgentEvent> get events => _events.stream;
 
   @override

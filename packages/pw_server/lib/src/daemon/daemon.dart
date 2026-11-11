@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/recovery/startup_recovery.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 import 'package:pw_agent/agent_di.dart';
 import 'package:pw_agent/core/appearance/appearance_port.dart';
@@ -78,7 +77,7 @@ Future<int> runDaemon(List<String> args) async {
   await projects.repairOrphans();
   await projects.purgeExpired();
   await getIt<McpService>().start(configFile: paths.mcpConfig);
-  await getIt<AgentHub>().resumeAfterRestart();
+  await getIt<AgentApi>().resumeAfterRestart();
   await getIt<ModelCatalogService>().start(
     hasKey: () async {
       final key = await secrets.read(openRouterKeyName);
@@ -90,11 +89,7 @@ Future<int> runDaemon(List<String> args) async {
   final token = options.rotateToken
       ? await tokens.rotate()
       : await tokens.ensure();
-  final backend = LocalAgentApi(
-    getIt<AgentHub>(),
-    getIt<ScheduledTaskRepository>(),
-    getIt<TaskScheduler>(),
-  );
+  final backend = getIt<LocalAgentApi>();
   final server = ApiServer(
     backend,
     token,

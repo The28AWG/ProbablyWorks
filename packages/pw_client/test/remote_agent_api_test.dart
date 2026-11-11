@@ -299,4 +299,7 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<void> cancelSchedule(String id) => Future<void>.value();
+
+  @override
+  Future<void> resumeAfterRestart() => Future<void>.value();
 }

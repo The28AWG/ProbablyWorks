@@ -13,8 +13,8 @@
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 
-import 'agent/api/agent_api.dart' as _i884;
 import 'agent/api/local_agent_api.dart' as _i269;
+import 'agent/api/local_chat_api.dart' as _i866;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
 import 'agent/exec/active_exec_registry.dart' as _i1048;
@@ -22,7 +22,6 @@ import 'agent/exec/command_executor.dart' as _i993;
 import 'agent/exec/exec_log_store.dart' as _i473;
 import 'agent/exec/live_output_bus.dart' as _i378;
 import 'agent/interaction/interaction_broker.dart' as _i589;
-import 'agent/loop/agent_hub.dart' as _i712;
 import 'agent/mcp/mcp_client_manager.dart' as _i290;
 import 'agent/mcp/mcp_service.dart' as _i176;
 import 'agent/plugins/plugin_registry.dart' as _i408;
@@ -60,6 +59,7 @@ import 'host/pty_launcher.dart' as _i363;
 import 'host/ssh_connection_pool.dart' as _i414;
 import 'providers/ai/llm_port.dart' as _i179;
 import 'providers/ai/model_catalog.dart' as _i370;
+import 'src/agent/loop/agent_hub.dart' as _i667;
 
 extension GetItInjectableX on _i174.GetIt {
   // initializes the registration of main-scope dependencies inside of GetIt
@@ -236,8 +236,8 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i249.SecretStore>(),
       ),
     );
-    gh.singleton<_i712.AgentHub>(
-      () => _i712.AgentHub(
+    gh.singleton<_i667.AgentHub>(
+      () => _i667.AgentHub(
         gh<_i906.ChatRepository>(),
         gh<_i384.SettingsRepository>(),
         gh<_i985.HostRepository>(),
@@ -261,15 +261,18 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i215.PolicyProfileRepository>(),
       ),
     );
+    gh.lazySingleton<_i866.LocalChatApi>(
+      () => _i866.LocalChatApi(gh<_i667.AgentHub>()),
+    );
     gh.lazySingleton<_i778.TaskScheduler>(
       () => _i778.TaskScheduler(
-        gh<_i712.AgentHub>(),
+        gh<_i667.AgentHub>(),
         gh<_i453.ScheduledTaskRepository>(),
       ),
     );
-    gh.lazySingleton<_i884.AgentApi>(
+    gh.lazySingleton<_i269.LocalAgentApi>(
       () => _i269.LocalAgentApi(
-        gh<_i712.AgentHub>(),
+        gh<_i667.AgentHub>(),
         gh<_i453.ScheduledTaskRepository>(),
         gh<_i778.TaskScheduler>(),
       ),

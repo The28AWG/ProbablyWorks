@@ -21,10 +21,10 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.d
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/attachments/attachment_loader.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/live_output_bus.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -71,7 +71,7 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   final _drafts = getIt<ChatDraftStore>();
   late final _bloc = ChatBloc(
-    getIt<AgentHub>(),
+    getIt<ChatApi>(),
     getIt<LiveOutputBus>(),
     _drafts,
     seedChat: widget.seedChat,

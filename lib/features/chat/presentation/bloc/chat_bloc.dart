@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -11,8 +12,6 @@ import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
-import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
@@ -667,7 +666,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
   }
 
-  final AgentHub _hub;
+  final ChatApi _hub;
   final LiveOutputBus _bus;
   final ChatDraftStore _drafts;
 
@@ -678,7 +677,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   String _composerText = '';
 
   /// Подписки на сессию выбранного чата; меняются при смене чата.
-  ChatSession? _session;
+  ChatSessionApi? _session;
   StreamSubscription<AgentEvent>? _sessionSub;
   StreamSubscription<LiveChunk>? _liveSub;
   StreamSubscription<ApprovalRequest>? _approvalSub;
@@ -753,7 +752,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// Начальное состояние из уже известных данных (список чатов и каталог в памяти). Только чтения,
   /// без сети и без БД: блок стартует с правильной шапкой, черновиком и композером.
   static ChatState _seedState(
-    AgentHub hub,
+    ChatApi hub,
     ChatDraftStore drafts,
     Chat? chat,
     List<Host> hosts,
@@ -811,7 +810,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _sharedWatching = true;
     // Хосты общие для всех чатов: список в композере обновляется при любом изменении, в том числе
     // пока чат открыт. Первое значение пропускаем: открытие читает хосты само, после подписки.
-    _hostsSub = _hub.hosts
+    _hostsSub = _hub.hostStore
         .watchAll()
         .skip(1)
         .listen((hosts) => add(_HostsChanged(hosts)));
@@ -932,7 +931,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     })
   >
   _readShared() async => (
-    hosts: await _hub.hosts.all(),
+    hosts: await _hub.hostStore.all(),
     limits: await _hub.limits(),
     pinned: await _hub.settings.readPinnedModels(),
     stepsDisplay: await _hub.settings.readStepsDisplay(),
@@ -940,9 +939,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   );
 
   /// Состояние нового чата из настроек и хостов в памяти: без чтений БД и сети. Черновик в блоке пока
-  /// не записан: чат появится в БД с первым сообщением (см. [AgentHub.draftChat]).
+  /// не записан: чат появится в БД с первым сообщением (см. [ChatApi.draftChat]).
   static ChatState _newChatState(
-    AgentHub hub,
+    ChatApi hub,
     List<Host> hosts, {
     required int draftId,
   }) {
@@ -980,7 +979,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state.unsaved && from != null) {
       // Сначала хосты, потом подписки: их первые эмиты не должны опережать загрузку списка.
       if (state.hosts.isEmpty) {
-        emit(state.copyWith(hosts: await _hub.hosts.all()));
+        emit(state.copyWith(hosts: await _hub.hostStore.all()));
       }
       _watchShared();
       return;
@@ -988,7 +987,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final carried = from != null && !state.unsaved && !_drafts.of(from).isEmpty;
     await _detach();
     // Хосты из списка уже в памяти; блок, созданный без списка, читает их из БД.
-    final hosts = state.hosts.isEmpty ? await _hub.hosts.all() : state.hosts;
+    final hosts = state.hosts.isEmpty
+        ? await _hub.hostStore.all()
+        : state.hosts;
     final next = _newChatState(_hub, hosts, draftId: state.draftId);
     final chatId = next.chatId!;
     // Перенос меняет память синхронно; запись в БД уходит в фон, чтобы не задерживать первый кадр.
@@ -1024,7 +1025,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final now = DateTime.now();
     var chat = state.chat!.copyWith(createdAt: now, updatedAt: now);
     chat = await _hub.projects.attach(chat);
-    await _hub.chats.saveChat(chat);
+    await _hub.chatStore.saveChat(chat);
     await _attach(chat.id);
     final project = await _hub.projectStore.forChat(chat.id);
     emit(state.copyWith(chat: chat, project: project, unsaved: false));
@@ -1032,7 +1033,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   /// Изменения настроек нового чата остаются в памяти: запись появится с первой отправкой.
   Future<void> _persistChat(Chat chat) async {
-    if (!state.unsaved) await _hub.chats.saveChat(chat);
+    if (!state.unsaved) await _hub.chatStore.saveChat(chat);
   }
 
   void _onDraftEdited(ChatDraftEdited event, Emitter<ChatState> emit) {
@@ -1078,7 +1079,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         untilMessageId: event.messageId,
         title: event.title,
       );
-      onChatCreated?.call(forked.id);
+      if (forked != null) onChatCreated?.call(forked.id);
     } on Object {
       // Форк не должен ломать открытый чат: ошибка остаётся без навигации.
     }
@@ -1431,9 +1432,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// Чат, сообщения и запуски из БД. Без emit: вызывающий сам решает, когда перерисовать экран.
   Future<({Chat? chat, List<ChatMessage> messages, List<ToolRun> runs})>
   _readChat(String chatId) async {
-    final chat = await _hub.chats.chat(chatId);
-    final messages = await _hub.chats.messages(chatId);
-    final runs = await _hub.chats.toolRunsForChat(chatId);
+    final chat = await _hub.chatStore.chat(chatId);
+    final messages = await _hub.chatStore.messages(chatId);
+    final runs = await _hub.chatStore.toolRunsForChat(chatId);
     return (chat: chat, messages: messages, runs: runs);
   }
 

@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
+import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
 /// Отправляет созревшие отложенные задачи в их чаты.
 ///

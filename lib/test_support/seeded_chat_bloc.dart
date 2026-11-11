@@ -1,7 +1,7 @@
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/live_output_bus.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/host/host_terminal.dart';
@@ -28,10 +28,10 @@ class SeededChatBloc extends ChatBloc {
   HostTerminal? terminalFor(String runId) => null;
 }
 
-class _UnusedHub implements AgentHub {
+class _UnusedHub implements ChatApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('AgentHub is not available in widget tests');
+      throw UnsupportedError('ChatApi is not available in widget tests');
 }
 
 class _UnusedBus implements LiveOutputBus {

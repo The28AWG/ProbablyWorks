@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/api/local_chat_api.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -18,7 +19,6 @@ import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/agent/loop/chat_title.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
@@ -59,6 +59,7 @@ import 'package:pw_agent/host/read_file_output.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
 import '../../test_support/fake_appearance.dart';
 import '../../test_support/fake_url_opener.dart';
@@ -1070,7 +1071,7 @@ void main() {
           text: 'привет',
         ),
       );
-      final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+      final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
       addTearDown(bloc.close);
       final states = <ChatState>[];
       final sub = bloc.stream.listen(states.add);
@@ -1091,7 +1092,12 @@ void main() {
   test('a chat from the list is in the first state, so its header and composer never blank out', () async {
     final chatId = await createChat();
     final chat = (await hub.chats.chat(chatId))!;
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts, seedChat: chat);
+    final bloc = ChatBloc(
+      LocalChatApi(hub),
+      LiveOutputBus(),
+      drafts,
+      seedChat: chat,
+    );
     addTearDown(bloc.close);
 
     // До любого события: шапка и композер уже есть, лента ждёт загрузки.
@@ -1112,7 +1118,7 @@ void main() {
   test('switching to a chat not in the list keeps the previous chat settings until the new chat loads', () async {
     final first = await createChat();
     final second = await createChatWithId('chat-2');
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(first));
     await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
@@ -1134,7 +1140,7 @@ void main() {
       final first = await createChat();
       final second = await createChatWithId('chat-2');
       final secondChat = (await hub.chats.chat(second))!;
-      final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+      final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
       addTearDown(bloc.close);
       bloc.add(ChatOpened(first));
       await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
@@ -1149,7 +1155,7 @@ void main() {
 
   test('a host added while the chat is open reaches the composer without switching chats', () async {
     final chatId = await createChat();
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(chatId));
     await bloc.stream.firstWhere((s) => !s.loading);
@@ -1177,7 +1183,7 @@ void main() {
   test('each chat keeps its own draft: switching away and back restores it and saves it to the database', () async {
     final first = await createChat();
     final second = await createChatWithId('chat-2');
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(first));
     await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
@@ -1207,7 +1213,7 @@ void main() {
   test('attachments of a draft belong to their chat too', () async {
     final first = await createChat();
     final second = await createChatWithId('chat-2');
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(first));
     await bloc.stream.firstWhere((s) => !s.loading && s.chatId == first);
@@ -1243,7 +1249,7 @@ void main() {
   test('sending clears the draft of the chat right away', () async {
     final chatId = await createChat();
     llm.script.add([const LlmTextDelta('ок'), const LlmCompleted()]);
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(chatId));
     await bloc.stream.firstWhere((s) => !s.loading);
@@ -1259,7 +1265,7 @@ void main() {
   });
 
   test('a new chat opens ready: the default model is selected at once, without a loading state', () async {
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     final states = <ChatState>[];
     final sub = bloc.stream.listen(states.add);
@@ -1275,7 +1281,7 @@ void main() {
   });
 
   test('a new chat is ready in the very first state: no read is awaited before the body appears', () {
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
 
     // Сразу после создания блока (без await): чат, модель и хосты уже в состоянии первого кадра.
@@ -1288,7 +1294,7 @@ void main() {
   test('a new chat stays out of the database until the first send, then is saved and reported', () async {
     final created = <String>[];
     final bloc = ChatBloc(
-      hub,
+      LocalChatApi(hub),
       LiveOutputBus(),
       drafts,
       onChatCreated: created.add,
@@ -1314,7 +1320,7 @@ void main() {
 
   test('a new chat takes the draft of the chat it was opened from and clears that chat', () async {
     final first = await createChat();
-    final bloc = ChatBloc(hub, LiveOutputBus(), drafts);
+    final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
     addTearDown(bloc.close);
     bloc.add(ChatOpened(first));
     await bloc.stream.firstWhere((s) => !s.loading);

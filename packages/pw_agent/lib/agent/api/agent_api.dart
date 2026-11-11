@@ -62,6 +62,9 @@ abstract interface class AgentApi {
   Future<void> send(String chatId, String text, {bool sendNow = false});
   Future<void> stop(String chatId, {String? reason});
 
+  /// Продолжает незавершённые шаги после локального перезапуска.
+  Future<void> resumeAfterRestart();
+
   Future<void> resolveApproval(
     String id,
     ApprovalAction action, {

@@ -4,11 +4,11 @@ import 'package:characters/characters.dart';
 import 'package:logging/logging.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 import 'package:uuid/uuid.dart';
 
 /// Состояние фонового субагента.

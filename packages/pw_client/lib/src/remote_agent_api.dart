@@ -363,6 +363,9 @@ final class RemoteAgentApi implements AgentApi {
     await _send('DELETE', '/schedules/$id');
   }
 
+  @override
+  Future<void> resumeAfterRestart() => Future<void>.value();
+
   Future<Map<String, dynamic>> _get(String path) async =>
       _asMap(await _send('GET', path));
 

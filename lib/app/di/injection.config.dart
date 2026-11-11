@@ -13,6 +13,10 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart' as _i558;
 import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
+import 'package:pw_agent/agent/api/agent_api.dart' as _i144;
+import 'package:pw_agent/agent/api/chat_api.dart' as _i891;
+import 'package:pw_agent/agent/api/local_agent_api.dart' as _i995;
+import 'package:pw_agent/agent/api/local_chat_api.dart' as _i326;
 import 'package:pw_agent/agent/plugins/plugin_registry.dart' as _i1065;
 import 'package:pw_agent/core/appearance/appearance_port.dart' as _i598;
 import 'package:pw_agent/core/config/app_paths.dart' as _i515;
@@ -45,6 +49,12 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i1065.PluginRegistry>(() => coreModule.pluginRegistry());
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
+    gh.singleton<_i144.AgentApi>(
+      () => coreModule.agentApi(gh<_i995.LocalAgentApi>()),
+    );
+    gh.singleton<_i891.ChatApi>(
+      () => coreModule.chatApi(gh<_i326.LocalChatApi>()),
+    );
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
     );

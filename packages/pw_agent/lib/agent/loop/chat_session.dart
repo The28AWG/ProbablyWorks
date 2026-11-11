@@ -10,7 +10,6 @@ import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/loop/chat_title.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/loop/tool_scheduler.dart';
@@ -34,6 +33,7 @@ import 'package:pw_agent/host/host_capture.dart';
 import 'package:pw_agent/host/host_op.dart';
 import 'package:pw_agent/host/host_runtime.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 import 'package:uuid/uuid.dart';
 
 /// Ход агента одного чата: очередь ввода, цикл модели и инструментов, Stop, edit/delete-after.

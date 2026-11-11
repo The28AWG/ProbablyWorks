@@ -8,7 +8,7 @@ import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/recovery/startup_recovery.dart';
@@ -55,7 +55,7 @@ Future<bool> bootstrap() async {
   await getIt<McpService>().start(configFile: paths.mcpConfig);
   // Карточки здесь не показываются. Их регистрирует открытие чата.
   // Вызовы без карточки, чьи зависимости уже закрыты, продолжаются сразу.
-  await getIt<AgentHub>().resumeAfterRestart();
+  await getIt<AgentApi>().resumeAfterRestart();
   // Хосты тоже читаются здесь, чтобы список хостов был в первом кадре, а не появлялся после чтения БД.
   getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
   // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.
