@@ -1569,11 +1569,11 @@
   "@settingsGroupPluginsHint": {
     "description": "Description of the plugins settings group."
   },
-  "pluginsTitle": "Plugins",
+  "pluginsTitle": "Built-in",
   "@pluginsTitle": {
     "description": "Heading of the plugins section."
   },
-  "pluginsHint": "Plugins add tools to chats. Disabled plugins keep their settings.",
+  "pluginsHint": "Enable the features you need. Disabled plugins keep their settings.",
   "@pluginsHint": {
     "description": "Hint above the plugin list."
   },
@@ -1636,7 +1636,7 @@
   "@settingsGroupMcpHint": {
     "description": "Description of the MCP settings group."
   },
-  "mcpServersTitle": "MCP servers",
+  "mcpServersTitle": "Servers",
   "@mcpServersTitle": {
     "description": "Heading of the MCP servers section."
   },

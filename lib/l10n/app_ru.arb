@@ -1569,11 +1569,11 @@
   "@settingsGroupPluginsHint": {
     "description": "Description of the plugins settings group."
   },
-  "pluginsTitle": "Плагины",
+  "pluginsTitle": "Встроенные",
   "@pluginsTitle": {
     "description": "Heading of the plugins section."
   },
-  "pluginsHint": "Плагины добавляют инструменты в чаты. У выключенных плагинов настройки сохраняются.",
+  "pluginsHint": "Включайте нужные возможности. У выключенных плагинов настройки сохраняются.",
   "@pluginsHint": {
     "description": "Hint above the plugin list."
   },
@@ -1636,7 +1636,7 @@
   "@settingsGroupMcpHint": {
     "description": "Description of the MCP settings group."
   },
-  "mcpServersTitle": "MCP-серверы",
+  "mcpServersTitle": "Серверы",
   "@mcpServersTitle": {
     "description": "Heading of the MCP servers section."
   },
