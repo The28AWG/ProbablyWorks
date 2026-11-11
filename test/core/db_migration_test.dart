@@ -330,6 +330,17 @@ void main() {
     );
   });
 
+  test('v13 → v14 adds subagent chat metadata', () async {
+    final db = _openAtVersion(13);
+    addTearDown(db.close);
+
+    final columns = await db.customSelect('PRAGMA table_info(chats)').get();
+    expect(
+      columns.map((row) => row.read<String>('name')),
+      containsAll(['kind', 'parent_chat_id', 'root_chat_id', 'depth']),
+    );
+  });
+
   test('v9 → v10 creates one project per host and workspace', () async {
     final db = _openProjectsV9();
     addTearDown(db.close);

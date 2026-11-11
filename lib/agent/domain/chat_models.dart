@@ -163,6 +163,9 @@ Map<String, ChatDraft> decodeMessageEdits(String raw) {
   return result;
 }
 
+/// Роль чата: обычный пользовательский или скрытый чат субагента.
+enum ChatKind { main, subagent }
+
 class Chat {
   const Chat({
     required this.id,
@@ -170,6 +173,10 @@ class Chat {
     required this.title,
     required this.createdAt,
     required this.updatedAt,
+    this.kind = ChatKind.main,
+    this.parentChatId,
+    this.rootChatId,
+    this.depth = 0,
     this.projectId,
     this.titleSource = ChatTitleSource.none,
     this.model,
@@ -187,6 +194,18 @@ class Chat {
 
   final String id;
   final String hostId;
+  final ChatKind kind;
+
+  /// Непосредственный родитель для скрытого чата субагента.
+  final String? parentChatId;
+
+  /// Самый верхний пользовательский чат. Для обычного чата null.
+  final String? rootChatId;
+
+  /// Глубина вложенности субагента; у обычного чата 0.
+  final int depth;
+
+  bool get isSubagent => kind == ChatKind.subagent;
 
   /// Проект чата. Null, пока папка не выбрана и хост не задаёт свою:
   /// неявный домашний каталог общим проектом не становится.
@@ -215,6 +234,10 @@ class Chat {
   Chat copyWith({
     String? id,
     String? hostId,
+    ChatKind? kind,
+    String? parentChatId,
+    String? rootChatId,
+    int? depth,
     String? projectId,
     bool clearProjectId = false,
     String? title,
@@ -237,6 +260,10 @@ class Chat {
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
+    kind: kind ?? this.kind,
+    parentChatId: parentChatId ?? this.parentChatId,
+    rootChatId: rootChatId ?? this.rootChatId,
+    depth: depth ?? this.depth,
     projectId: clearProjectId ? null : (projectId ?? this.projectId),
     title: title ?? this.title,
     titleSource: titleSource ?? this.titleSource,

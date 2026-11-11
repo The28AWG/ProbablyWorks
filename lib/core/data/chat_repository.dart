@@ -27,6 +27,7 @@ class ChatRepository {
   /// Черновик пишется при паузах в наборе текста: такие записи не должны перестраивать список чатов.
   Stream<List<Chat>> watchChats() =>
       (_db.select(_chatsTable)
+            ..where((t) => t.kind.equals(ChatKind.main.name))
             ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
           .watch()
           .distinct(_sameChatsIgnoringDrafts)
@@ -46,7 +47,11 @@ class ChatRepository {
   /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
   Stream<List<Chat>> watchByProject(String projectId) =>
       (_db.select(_chatsTable)
-            ..where((t) => t.projectId.equals(projectId))
+            ..where(
+              (t) =>
+                  t.projectId.equals(projectId) &
+                  t.kind.equals(ChatKind.main.name),
+            )
             ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
           .watch()
           .map((rows) => rows.map(_chat).toList());
@@ -94,6 +99,10 @@ class ChatRepository {
           projectId: Value(chat.projectId),
           title: chat.title,
           titleSource: Value(chat.titleSource.name),
+          kind: Value(chat.kind.name),
+          parentChatId: Value(chat.parentChatId),
+          rootChatId: Value(chat.rootChatId),
+          depth: Value(chat.depth),
           model: Value(chat.model),
           policyMode: Value(chat.policyMode.name),
           workspace: Value(chat.workspace),
@@ -345,6 +354,10 @@ class ChatRepository {
   Chat _chat(ChatRow row) => Chat(
     id: row.id,
     hostId: row.hostId,
+    kind: ChatKind.values.byName(row.kind),
+    parentChatId: row.parentChatId,
+    rootChatId: row.rootChatId,
+    depth: row.depth,
     projectId: row.projectId,
     title: row.title,
     titleSource: ChatTitleSource.values.byName(row.titleSource),

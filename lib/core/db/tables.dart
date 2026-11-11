@@ -131,6 +131,14 @@ class Chats extends Table {
   )();
   TextColumn get title => text()();
   TextColumn get titleSource => text().withDefault(const Constant('none'))();
+
+  /// `main` или `subagent`. Скрытые чаты субагентов не попадают в список.
+  TextColumn get kind => text().withDefault(const Constant('main'))();
+
+  /// Родительский чат для субагента и самый верхний пользовательский чат.
+  TextColumn get parentChatId => text().nullable()();
+  TextColumn get rootChatId => text().nullable()();
+  IntColumn get depth => integer().withDefault(const Constant(0))();
   TextColumn get model => text().nullable()();
   TextColumn get policyMode => text().withDefault(const Constant('ask'))();
   TextColumn get workspace => text().nullable()();

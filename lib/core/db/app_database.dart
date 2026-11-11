@@ -27,7 +27,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 13;
+  static const currentSchemaVersion = 14;
 
   static const _uuid = Uuid();
 
@@ -102,6 +102,13 @@ class AppDatabase extends _$AppDatabase {
       if (from < 12) await m.addColumn(chats, chats.messageEdits);
       // Версия 13: настройки подключения MCP-серверов.
       if (from < 13) await m.createTable(mcpServers);
+      // Версия 14: скрытые чаты субагентов и их связь с root-чатом.
+      if (from < 14) {
+        await m.addColumn(chats, chats.kind);
+        await m.addColumn(chats, chats.parentChatId);
+        await m.addColumn(chats, chats.rootChatId);
+        await m.addColumn(chats, chats.depth);
+      }
     },
   );
 
