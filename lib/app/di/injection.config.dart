@@ -24,6 +24,8 @@ import '../../agent/interaction/interaction_broker.dart' as _i765;
 import '../../agent/loop/agent_hub.dart' as _i168;
 import '../../agent/mcp/mcp_client_manager.dart' as _i86;
 import '../../agent/mcp/mcp_service.dart' as _i593;
+import '../../agent/plugins/plugin_catalog.dart' as _i193;
+import '../../agent/plugins/plugin_service.dart' as _i927;
 import '../../agent/project/project_lifecycle.dart' as _i766;
 import '../../agent/recovery/startup_recovery.dart' as _i962;
 import '../../agent/state/session_state_service.dart' as _i622;
@@ -33,7 +35,7 @@ import '../../agent/turn/turn_changeset_service.dart' as _i594;
 import '../../agent/turn/turn_changeset_store.dart' as _i798;
 import '../../agent/workspace/workspace_context_loader.dart' as _i359;
 import '../../core/data/chat_draft_store.dart' as _i314;
-import '../../core/data/chat_repository.dart' as _i193;
+import '../../core/data/chat_repository.dart' as _i194;
 import '../../core/data/host_repository.dart' as _i250;
 import '../../core/data/mcp_server_repository.dart' as _i968;
 import '../../core/data/policy_profile_repository.dart' as _i538;
@@ -77,6 +79,7 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
     gh.lazySingleton<_i531.ContextBuilder>(() => _i531.ContextBuilder());
+    gh.lazySingleton<_i193.PluginCatalog>(() => const _i193.PluginCatalog());
     gh.lazySingleton<_i719.HostKeyConfirmations>(
       () => _i719.HostKeyConfirmations(),
     );
@@ -93,8 +96,8 @@ extension GetItInjectableX on _i174.GetIt {
       () => coreModule.database(gh<_i859.AppPaths>()),
       preResolve: true,
     );
-    gh.lazySingleton<_i193.ChatRepository>(
-      () => _i193.ChatRepository(gh<_i386.AppDatabase>()),
+    gh.lazySingleton<_i194.ChatRepository>(
+      () => _i194.ChatRepository(gh<_i386.AppDatabase>()),
     );
     gh.lazySingleton<_i968.McpServerRepository>(
       () => _i968.McpServerRepository(gh<_i386.AppDatabase>()),
@@ -119,7 +122,7 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i962.StartupRecovery>(
       () => _i962.StartupRecovery(
-        gh<_i193.ChatRepository>(),
+        gh<_i194.ChatRepository>(),
         gh<_i67.ExecLogStore>(),
         gh<_i913.SettingsRepository>(),
       ),
@@ -177,10 +180,10 @@ extension GetItInjectableX on _i174.GetIt {
       ),
     );
     gh.lazySingleton<_i622.SessionStateService>(
-      () => _i622.SessionStateService(gh<_i193.ChatRepository>()),
+      () => _i622.SessionStateService(gh<_i194.ChatRepository>()),
     );
     gh.lazySingleton<_i314.ChatDraftStore>(
-      () => _i314.ChatDraftStore(gh<_i193.ChatRepository>()),
+      () => _i314.ChatDraftStore(gh<_i194.ChatRepository>()),
     );
     gh.lazySingleton<_i766.ProjectLifecycleService>(
       () => _i766.ProjectLifecycleService(
@@ -200,7 +203,7 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i422.ContextCompactor>(
       () => _i422.ContextCompactor(
-        gh<_i193.ChatRepository>(),
+        gh<_i194.ChatRepository>(),
         gh<_i432.LlmProvider>(),
         gh<_i531.ContextBuilder>(),
       ),
@@ -220,7 +223,7 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i125.ToolExecutor>(
       () => _i125.ToolExecutor(
-        gh<_i193.ChatRepository>(),
+        gh<_i194.ChatRepository>(),
         gh<_i401.CommandExecutor>(),
         gh<_i765.InteractionBroker>(),
         gh<_i622.SessionStateService>(),
@@ -238,9 +241,17 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i617.SecretStore>(),
       ),
     );
+    gh.lazySingleton<_i927.PluginService>(
+      () => _i927.PluginService(
+        gh<_i193.PluginCatalog>(),
+        gh<_i913.SettingsRepository>(),
+        gh<_i125.ToolExecutor>(),
+        gh<_i401.CommandExecutor>(),
+      ),
+    );
     gh.singleton<_i168.AgentHub>(
       () => _i168.AgentHub(
-        gh<_i193.ChatRepository>(),
+        gh<_i194.ChatRepository>(),
         gh<_i913.SettingsRepository>(),
         gh<_i250.HostRepository>(),
         gh<_i559.HostRuntimeFactory>(),
@@ -250,6 +261,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i422.ContextCompactor>(),
         gh<_i125.ToolExecutor>(),
         gh<_i593.McpService>(),
+        gh<_i927.PluginService>(),
         gh<_i359.WorkspaceContextLoader>(),
         gh<_i622.SessionStateService>(),
         gh<_i765.InteractionBroker>(),

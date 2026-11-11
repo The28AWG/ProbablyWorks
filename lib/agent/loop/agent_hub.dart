@@ -11,6 +11,7 @@ import 'package:probably_works/agent/interaction/interaction_broker.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/mcp/mcp_service.dart';
+import 'package:probably_works/agent/plugins/plugin_service.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
@@ -44,6 +45,7 @@ class AgentHub {
     this.compactor,
     this.tools,
     this.mcp,
+    this.plugins,
     this.workspace,
     this.state,
     this.broker,
@@ -66,6 +68,7 @@ class AgentHub {
   final ContextCompactor compactor;
   final ToolExecutor tools;
   final McpService mcp;
+  final PluginService plugins;
   final WorkspaceContextLoader workspace;
   final SessionStateService state;
   final InteractionBroker broker;

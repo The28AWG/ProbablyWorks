@@ -21,6 +21,8 @@ import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
 import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
 import 'package:probably_works/agent/mcp/mcp_service.dart';
+import 'package:probably_works/agent/plugins/plugin_catalog.dart';
+import 'package:probably_works/agent/plugins/plugin_service.dart';
 import 'package:probably_works/agent/policy/command_risk.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
@@ -182,6 +184,12 @@ void main() {
       tools,
       secrets,
     );
+    final plugins = PluginService(
+      const PluginCatalog(),
+      settings,
+      tools,
+      commands,
+    );
     drafts = ChatDraftStore(chats);
     final projectStore = ProjectRepository(db);
     hub = AgentHub(
@@ -195,6 +203,7 @@ void main() {
       compactor,
       tools,
       mcp,
+      plugins,
       workspace,
       state,
       broker,

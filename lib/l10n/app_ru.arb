@@ -254,7 +254,7 @@
   "@approvalDenyReasonHint": {
     "description": "Подсказка поля причины отказа."
   },
-  "approvalBulkCount": "{count, plural, one{# действие ждёт подтверждения} few{# действия ждут подтверждения} many{# действий ждут подтверждения} other{# действия ждут подтверждения}}",
+  "approvalBulkCount": "{count, plural, one{{count} действие ждёт подтверждения} few{{count} действия ждут подтверждения} many{{count} действий ждут подтверждения} other{{count} действия ждут подтверждения}}",
   "@approvalBulkCount": {
     "description": "Сводка над несколькими карточками подтверждения.",
     "placeholders": {
@@ -1560,6 +1560,73 @@
   "settingsGroupAdvancedHint": "Лимиты вложений и рантайма в формате JSON.",
   "@settingsGroupAdvancedHint": {
     "description": "Description of the advanced settings group."
+  },
+  "settingsGroupPlugins": "Плагины",
+  "@settingsGroupPlugins": {
+    "description": "Settings group: optional built-in plugins."
+  },
+  "settingsGroupPluginsHint": "Включайте дополнительные возможности, собранные в приложении.",
+  "@settingsGroupPluginsHint": {
+    "description": "Description of the plugins settings group."
+  },
+  "pluginsTitle": "Плагины",
+  "@pluginsTitle": {
+    "description": "Heading of the plugins section."
+  },
+  "pluginsHint": "Плагины добавляют инструменты в чаты. У выключенных плагинов настройки сохраняются.",
+  "@pluginsHint": {
+    "description": "Hint above the plugin list."
+  },
+  "pluginSettings": "Настройки плагина",
+  "@pluginSettings": {
+    "description": "Tooltip of the plugin settings button."
+  },
+  "pluginDependsOn": "Требует: {names}",
+  "@pluginDependsOn": {
+    "description": "Plugin dependencies.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsMissingTitle": "Включить зависимости",
+  "@pluginsMissingTitle": {
+    "description": "Title of the dependency confirmation when enabling a plugin."
+  },
+  "pluginsMissingMessage": "Вместе с плагином будут включены: {names}.",
+  "@pluginsMissingMessage": {
+    "description": "Dependency confirmation message when enabling a plugin.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsDependentsTitle": "Отключить зависимые плагины",
+  "@pluginsDependentsTitle": {
+    "description": "Title of the confirmation when disabling a plugin with dependents."
+  },
+  "pluginsDependentsMessage": "Вместе с плагином будут отключены: {names}.",
+  "@pluginsDependentsMessage": {
+    "description": "Dependent confirmation message when disabling a plugin.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsEnableAll": "Включить всё",
+  "@pluginsEnableAll": {
+    "description": "Confirm enabling a plugin and its dependencies."
+  },
+  "pluginsDisableAll": "Отключить всё",
+  "@pluginsDisableAll": {
+    "description": "Confirm disabling a plugin and its dependents."
+  },
+  "pluginsRunning": "Дождитесь завершения текущего хода, чтобы менять плагины.",
+  "@pluginsRunning": {
+    "description": "Snackbar shown when plugins are toggled during an active turn."
   },
   "settingsGroupMcp": "MCP",
   "@settingsGroupMcp": {

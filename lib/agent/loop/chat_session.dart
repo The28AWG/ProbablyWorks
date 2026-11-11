@@ -1035,8 +1035,9 @@ class ChatSession {
     _checkFilesAccepted(model, inline);
     final llmMessages = _hub.builder.build(inputFor(chat, files: inline));
     final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
-    // Первый запрос подключает включённые MCP-серверы и добавляет их инструменты.
+    // Первый запрос подключает включённые MCP-серверы и плагины.
     await _hub.mcp.ensureReady();
+    await _hub.plugins.ensureReady();
     final tools = _hub.tools.specs;
     _emit(
       AgentUsageUpdated(

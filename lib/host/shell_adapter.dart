@@ -66,6 +66,16 @@ class ShellAdapter {
       writeFile(path, backupPath: backupPath, expectedMtime: expectedMtime),
   };
 
+  /// Запускает исполняемый файл с аргументами без shell-интерполяции.
+  /// Каждый аргумент квотируется отдельно: строка команды не склеивается из ввода модели.
+  String runArgv(String executable, List<String> args) {
+    if (_windows) {
+      final parts = [psQuote(executable), ...args.map(psQuote)].join(' ');
+      return powershell('& $parts');
+    }
+    return [shQuote(executable), ...args.map(shQuote)].join(' ');
+  }
+
   /// Тип и mtime пути: `file <mtime>` или `dir <mtime>` (см. [StatResult]). Пути нет — ненулевой код.
   String stat(String path) => _windows
       ? powershell(

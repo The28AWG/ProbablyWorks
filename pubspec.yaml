@@ -9,6 +9,8 @@ environment:
 
 workspace:
   - packages/app_ui
+  - packages/plugin_api
+  - packages/plugin_declarative_commands
   - packages/virtual_git
   - packages/virtual_host
 
@@ -48,6 +50,10 @@ dependencies:
     version: ^1.0.1
   path: ^1.9.1
   path_provider: ^2.1.6
+  plugin_api:
+    path: packages/plugin_api
+  plugin_declarative_commands:
+    path: packages/plugin_declarative_commands
   portable_pty: 0.0.7-beta.2
   sqlite3: ^3.6.0
   uuid: ^4.5.3

@@ -1,0 +1,112 @@
+{
+  "pluginTitle": "Declarative commands",
+  "@pluginTitle": {
+    "description": "Plugin title in the plugin list."
+  },
+  "pluginDescription": "Turn fixed commands into tools the model can call.",
+  "@pluginDescription": {
+    "description": "Plugin description in the plugin list."
+  },
+  "settingsTitle": "Commands",
+  "@settingsTitle": {
+    "description": "Heading of the declarative commands settings screen."
+  },
+  "settingsHint": "Each command becomes a tool. The model can call it, but cannot change the executable or fixed arguments.",
+  "@settingsHint": {
+    "description": "Hint above the command list."
+  },
+  "addCommand": "Add command",
+  "@addCommand": {
+    "description": "Button that opens the command editor."
+  },
+  "emptyTitle": "No commands",
+  "@emptyTitle": {
+    "description": "Empty state title."
+  },
+  "emptyMessage": "Add a command to make it available to the model.",
+  "@emptyMessage": {
+    "description": "Empty state message."
+  },
+  "editCommand": "Edit command",
+  "@editCommand": {
+    "description": "Title of the command editor when editing."
+  },
+  "newCommand": "New command",
+  "@newCommand": {
+    "description": "Title of the command editor when adding."
+  },
+  "name": "Name",
+  "@name": {
+    "description": "Command title field."
+  },
+  "description": "Description",
+  "@description": {
+    "description": "Command description field."
+  },
+  "executable": "Executable",
+  "@executable": {
+    "description": "Executable field."
+  },
+  "arguments": "Arguments",
+  "@arguments": {
+    "description": "Fixed arguments field."
+  },
+  "argumentsHint": "One argument per line",
+  "@argumentsHint": {
+    "description": "Fixed arguments hint."
+  },
+  "timeout": "Timeout, seconds",
+  "@timeout": {
+    "description": "Command timeout field."
+  },
+  "invalidName": "Enter a name.",
+  "@invalidName": {
+    "description": "Validation: empty command name."
+  },
+  "invalidExecutable": "Enter an executable.",
+  "@invalidExecutable": {
+    "description": "Validation: empty executable."
+  },
+  "invalidTimeout": "Enter a positive timeout.",
+  "@invalidTimeout": {
+    "description": "Validation: invalid timeout."
+  },
+  "deleteTitle": "Delete command",
+  "@deleteTitle": {
+    "description": "Delete confirmation title."
+  },
+  "deleteConfirm": "Delete “{name}”?",
+  "@deleteConfirm": {
+    "description": "Delete confirmation message.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete action."
+  },
+  "edit": "Edit",
+  "@edit": {
+    "description": "Edit action."
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel action."
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save action."
+  },
+  "commandCount": "{count} commands",
+  "@commandCount": {
+    "description": "Number of commands.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

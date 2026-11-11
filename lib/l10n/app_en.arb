@@ -1561,6 +1561,73 @@
   "@settingsGroupAdvancedHint": {
     "description": "Description of the advanced settings group."
   },
+  "settingsGroupPlugins": "Plugins",
+  "@settingsGroupPlugins": {
+    "description": "Settings group: optional built-in plugins."
+  },
+  "settingsGroupPluginsHint": "Enable optional features compiled into the app.",
+  "@settingsGroupPluginsHint": {
+    "description": "Description of the plugins settings group."
+  },
+  "pluginsTitle": "Plugins",
+  "@pluginsTitle": {
+    "description": "Heading of the plugins section."
+  },
+  "pluginsHint": "Plugins add tools to chats. Disabled plugins keep their settings.",
+  "@pluginsHint": {
+    "description": "Hint above the plugin list."
+  },
+  "pluginSettings": "Plugin settings",
+  "@pluginSettings": {
+    "description": "Tooltip of the plugin settings button."
+  },
+  "pluginDependsOn": "Requires: {names}",
+  "@pluginDependsOn": {
+    "description": "Plugin dependencies.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsMissingTitle": "Enable dependencies",
+  "@pluginsMissingTitle": {
+    "description": "Title of the dependency confirmation when enabling a plugin."
+  },
+  "pluginsMissingMessage": "These plugins will also be enabled: {names}.",
+  "@pluginsMissingMessage": {
+    "description": "Dependency confirmation message when enabling a plugin.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsDependentsTitle": "Disable dependent plugins",
+  "@pluginsDependentsTitle": {
+    "description": "Title of the confirmation when disabling a plugin with dependents."
+  },
+  "pluginsDependentsMessage": "These plugins will also be disabled: {names}.",
+  "@pluginsDependentsMessage": {
+    "description": "Dependent confirmation message when disabling a plugin.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "pluginsEnableAll": "Enable all",
+  "@pluginsEnableAll": {
+    "description": "Confirm enabling a plugin and its dependencies."
+  },
+  "pluginsDisableAll": "Disable all",
+  "@pluginsDisableAll": {
+    "description": "Confirm disabling a plugin and its dependents."
+  },
+  "pluginsRunning": "Wait for the current turn to finish before changing plugins.",
+  "@pluginsRunning": {
+    "description": "Snackbar shown when plugins are toggled during an active turn."
+  },
   "settingsGroupMcp": "MCP",
   "@settingsGroupMcp": {
     "description": "Settings group: MCP servers."

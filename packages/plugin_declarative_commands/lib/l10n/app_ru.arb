@@ -1,0 +1,112 @@
+{
+  "pluginTitle": "Декларативные команды",
+  "@pluginTitle": {
+    "description": "Plugin title in the plugin list."
+  },
+  "pluginDescription": "Превращает фиксированные команды в инструменты, которые может вызывать модель.",
+  "@pluginDescription": {
+    "description": "Plugin description in the plugin list."
+  },
+  "settingsTitle": "Команды",
+  "@settingsTitle": {
+    "description": "Heading of the declarative commands settings screen."
+  },
+  "settingsHint": "Каждая команда становится инструментом. Модель может вызвать её, но не может изменить исполняемый файл или фиксированные аргументы.",
+  "@settingsHint": {
+    "description": "Hint above the command list."
+  },
+  "addCommand": "Добавить команду",
+  "@addCommand": {
+    "description": "Button that opens the command editor."
+  },
+  "emptyTitle": "Команд нет",
+  "@emptyTitle": {
+    "description": "Empty state title."
+  },
+  "emptyMessage": "Добавьте команду, чтобы она стала доступна модели.",
+  "@emptyMessage": {
+    "description": "Empty state message."
+  },
+  "editCommand": "Изменить команду",
+  "@editCommand": {
+    "description": "Title of the command editor when editing."
+  },
+  "newCommand": "Новая команда",
+  "@newCommand": {
+    "description": "Title of the command editor when adding."
+  },
+  "name": "Название",
+  "@name": {
+    "description": "Command title field."
+  },
+  "description": "Описание",
+  "@description": {
+    "description": "Command description field."
+  },
+  "executable": "Исполняемый файл",
+  "@executable": {
+    "description": "Executable field."
+  },
+  "arguments": "Аргументы",
+  "@arguments": {
+    "description": "Fixed arguments field."
+  },
+  "argumentsHint": "По одному аргументу на строку",
+  "@argumentsHint": {
+    "description": "Fixed arguments hint."
+  },
+  "timeout": "Таймаут, секунды",
+  "@timeout": {
+    "description": "Command timeout field."
+  },
+  "invalidName": "Введите название.",
+  "@invalidName": {
+    "description": "Validation: empty command name."
+  },
+  "invalidExecutable": "Введите исполняемый файл.",
+  "@invalidExecutable": {
+    "description": "Validation: empty executable."
+  },
+  "invalidTimeout": "Введите положительный таймаут.",
+  "@invalidTimeout": {
+    "description": "Validation: invalid timeout."
+  },
+  "deleteTitle": "Удалить команду",
+  "@deleteTitle": {
+    "description": "Delete confirmation title."
+  },
+  "deleteConfirm": "Удалить «{name}»?",
+  "@deleteConfirm": {
+    "description": "Delete confirmation message.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "delete": "Удалить",
+  "@delete": {
+    "description": "Delete action."
+  },
+  "edit": "Изменить",
+  "@edit": {
+    "description": "Edit action."
+  },
+  "cancel": "Отмена",
+  "@cancel": {
+    "description": "Cancel action."
+  },
+  "save": "Сохранить",
+  "@save": {
+    "description": "Save action."
+  },
+  "commandCount": "Команд: {count}",
+  "@commandCount": {
+    "description": "Number of commands.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

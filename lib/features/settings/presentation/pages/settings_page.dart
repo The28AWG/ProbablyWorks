@@ -19,6 +19,7 @@ import 'package:probably_works/features/settings/presentation/bloc/settings_cubi
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
+import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
@@ -51,7 +52,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 /// Группы настроек. На широком экране выбирается одна группа слева, на узком — все группы списком.
-enum _Group { account, interface, safety, mcp, advanced }
+enum _Group { account, interface, safety, plugins, mcp, advanced }
 
 class _SettingsView extends StatefulWidget {
   const _SettingsView({this.initialGroup});
@@ -122,6 +123,7 @@ class _SettingsViewState extends State<_SettingsView> {
     'account' => _Group.account,
     'interface' => _Group.interface,
     'safety' => _Group.safety,
+    'plugins' => _Group.plugins,
     'mcp' => _Group.mcp,
     'advanced' => _Group.advanced,
     _ => null,
@@ -178,6 +180,7 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.account: _accountSections(state, cubit, l10n),
           _Group.interface: _interfaceSections(state, cubit, l10n),
           _Group.safety: _safetySections(state, cubit, l10n),
+          _Group.plugins: _pluginSections(),
           _Group.mcp: _mcpSections(),
           _Group.advanced: _advancedSections(state, cubit, l10n),
         };
@@ -193,6 +196,10 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.safety: (
             l10n.settingsGroupSafety,
             l10n.settingsGroupSafetyHint,
+          ),
+          _Group.plugins: (
+            l10n.settingsGroupPlugins,
+            l10n.settingsGroupPluginsHint,
           ),
           _Group.mcp: (l10n.settingsGroupMcp, l10n.settingsGroupMcpHint),
           _Group.advanced: (
@@ -667,6 +674,8 @@ class _SettingsViewState extends State<_SettingsView> {
     ),
   ];
 
+  List<Widget> _pluginSections() => const [PluginSettingsSection()];
+
   List<Widget> _mcpSections() => const [McpSettingsSection()];
 
   List<Widget> _advancedSections(
@@ -740,6 +749,7 @@ class _SettingsViewState extends State<_SettingsView> {
     _Group.account => Icons.key_outlined,
     _Group.interface => Icons.translate,
     _Group.safety => Icons.shield_outlined,
+    _Group.plugins => Icons.extension_outlined,
     _Group.mcp => Icons.cable_outlined,
     _Group.advanced => Icons.tune,
   };
