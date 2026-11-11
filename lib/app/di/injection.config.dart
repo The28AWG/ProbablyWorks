@@ -62,9 +62,6 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
     );
-    gh.lazySingleton<_i519.ApiKeyGuard>(
-      () => _i519.ApiKeyGuard(gh<_i564.SecretStore>()),
-    );
     gh.lazySingleton<_i740.ProfileService>(
       () => _i740.ProfileService(
         gh<_i370.SettingsRepository>(),
@@ -74,6 +71,12 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i358.HostsApi>(),
         gh<_i415.ProjectsApi>(),
         gh<_i246.AgentSettingsApi>(),
+      ),
+    );
+    gh.lazySingleton<_i519.ApiKeyGuard>(
+      () => _i519.ApiKeyGuard(
+        gh<_i564.SecretStore>(),
+        gh<_i740.ProfileService>(),
       ),
     );
     gh.lazySingleton<_i388.SecurityAuditService>(
