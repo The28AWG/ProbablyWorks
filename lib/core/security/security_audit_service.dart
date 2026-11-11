@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:injectable/injectable.dart';
+import 'package:path/path.dart' as p;
 import 'package:probably_works/agent/plugins/plugin_catalog.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
 import 'package:probably_works/core/data/mcp_server_repository.dart';
@@ -131,9 +132,11 @@ class SecurityAuditService {
         continue;
       }
       final stat = FileStat.statSync(path);
-      final other = stat.mode & 0x007;
-      final group = stat.mode & 0x070;
       final directory = FileSystemEntity.isDirectorySync(path);
+      // Если родительский каталог недоступен классу пользователей, биты файла
+      // для этого класса ничего не дают: до файла нельзя дойти.
+      final other = _classCanReach(path, 0x001) ? stat.mode & 0x007 : 0;
+      final group = _classCanReach(path, 0x010) ? stat.mode & 0x070 : 0;
       // Каталог с r-x для других — обычная ситуация; критична запись.
       // Файл с любым доступом для других — уже утечка.
       final critical = directory ? (other & 0x002) != 0 : other != 0;
@@ -208,6 +211,21 @@ class SecurityAuditService {
         },
       ),
     );
+  }
+
+  /// Может ли класс пользователей дойти до [path]: у всех каталогов от
+  /// support до родителя должен быть соответствующий execute-бит.
+  bool _classCanReach(String path, int executeBit) {
+    if (path == _paths.support.path) return true;
+    var directory = File(path).parent;
+    while (p.isWithin(_paths.support.path, directory.path) ||
+        directory.path == _paths.support.path) {
+      final stat = FileStat.statSync(directory.path);
+      if ((stat.mode & executeBit) == 0) return false;
+      if (directory.path == _paths.support.path) return true;
+      directory = directory.parent;
+    }
+    return true;
   }
 
   static bool _isRoot() {

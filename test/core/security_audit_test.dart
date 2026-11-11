@@ -88,6 +88,28 @@ void main() {
     );
   });
 
+  test('protected support directory hides file permission bits', () async {
+    if (Platform.isWindows) return;
+    final file = File('${tmp.path}/probably_works.db')
+      ..writeAsStringSync('test');
+    Process.runSync('chmod', ['644', file.path]);
+    Process.runSync('chmod', ['700', tmp.path]);
+
+    final report = await service(
+      FlutterSecretStore(const FlutterSecureStorage()),
+    ).run();
+
+    expect(report.status, SecurityStatus.baseline);
+    expect(
+      report.findings.any(
+        (finding) =>
+            finding.code == SecurityFindingCode.dataPermissions &&
+            finding.severity == SecuritySeverity.critical,
+      ),
+      isFalse,
+    );
+  });
+
   test('yolo policy is reported', () async {
     await settings.write(SettingsRepository.keyDefaultPolicy, 'yolo');
     final report = await service(
