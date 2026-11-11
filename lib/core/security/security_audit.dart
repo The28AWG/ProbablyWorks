@@ -35,6 +35,12 @@ final class SecurityFinding {
   final Map<String, String> params;
 }
 
+/// Сначала критичные находки, затем предупреждения, затем информация.
+List<SecurityFinding> sortFindingsBySeverity(
+  Iterable<SecurityFinding> findings,
+) =>
+    [...findings]..sort((a, b) => a.severity.index.compareTo(b.severity.index));
+
 /// Результат проверки, который показывает вкладка настроек.
 final class SecurityReport {
   const SecurityReport({

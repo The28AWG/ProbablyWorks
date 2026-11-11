@@ -37,6 +37,29 @@ void main() {
     const PluginCatalog(),
   );
 
+  test('findings are sorted from critical to info', () {
+    final sorted = sortFindingsBySeverity([
+      const SecurityFinding(
+        code: SecurityFindingCode.headlessApi,
+        severity: SecuritySeverity.info,
+      ),
+      const SecurityFinding(
+        code: SecurityFindingCode.policyYolo,
+        severity: SecuritySeverity.warning,
+      ),
+      const SecurityFinding(
+        code: SecurityFindingCode.rootUser,
+        severity: SecuritySeverity.critical,
+      ),
+    ]);
+
+    expect(sorted.map((finding) => finding.severity), [
+      SecuritySeverity.critical,
+      SecuritySeverity.warning,
+      SecuritySeverity.info,
+    ]);
+  });
+
   test('memory secret store is a critical finding', () async {
     final report = await service(MemorySecretStore()).run();
 

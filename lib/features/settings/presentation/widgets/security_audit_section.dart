@@ -76,8 +76,7 @@ class _ReportView extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final status = _status(l10n, report.status);
-    final findings = [...report.findings]
-      ..sort((a, b) => b.severity.index.compareTo(a.severity.index));
+    final findings = sortFindingsBySeverity(report.findings);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
