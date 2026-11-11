@@ -1,3 +1,4 @@
+import 'package:characters/characters.dart';
 import 'package:probably_works/agent/subagent/subagent_manager.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_source.dart';
@@ -22,14 +23,26 @@ final class DelegateTaskToolSource extends ToolSource {
       name: ToolNames.delegateTask,
       description:
           'Start a background subagent with its own context. The call returns immediately with a run id; '
-          'the final result is delivered as an event. Use wait_subagent to wait for it explicitly. '
+          'a short completion event is delivered later. Use wait_subagent to wait explicitly and '
+          'read_subagent_report to read a long report in chunks. The task is a full self-contained brief: '
+          'goal, constraints, context, acceptance criteria and output format; it may be very long. '
           'model may be "parent" or "default"; an arbitrary model id is not allowed.',
       parameters: {
         'type': 'object',
         'properties': {
+          'title': {
+            'type': 'string',
+            'description': 'Short one-line title for the card and reports.',
+          },
           'task': {
             'type': 'string',
-            'description': 'Complete task for the subagent.',
+            'description':
+                'Full self-contained brief: goal, constraints, steps, acceptance criteria and output format. '
+                'The subagent does not see the parent chat history, so include everything it needs. Long text is allowed.',
+          },
+          'context': {
+            'type': 'string',
+            'description': 'Optional additional context: facts, excerpts, file paths or prior findings.',
           },
           'model': {
             'type': 'string',
@@ -39,7 +52,7 @@ final class DelegateTaskToolSource extends ToolSource {
                 'or the parent model when no subagent model is set.',
           },
         },
-        'required': ['task'],
+        'required': ['title', 'task'],
       },
     ),
   ];
@@ -50,26 +63,34 @@ final class DelegateTaskToolSource extends ToolSource {
     Map<String, dynamic> arguments,
     ToolContext context,
   ) async {
+    final title = arguments['title'];
     final task = arguments['task'];
+    if (title is! String || title.trim().isEmpty) {
+      return const ToolResult('title is required', isError: true);
+    }
     if (task is! String || task.trim().isEmpty) {
       return const ToolResult('task is required', isError: true);
     }
     final model = arguments['model'];
+    final extra = arguments['context'];
     final run = await _manager.start(
       parent: context.chat,
+      title: title,
       task: task,
+      context: extra is String ? extra : null,
       modelStrategy: model is String ? model : null,
     );
     return ToolResult(
       'subagent started: ${run.id}\n'
+      'title: ${run.title}\n'
       'model: ${run.model}\n'
-      'Use wait_subagent with this id to wait for the result.',
+      'Use wait_subagent to wait and read_subagent_report to read the final report.',
     );
   }
 
   @override
   String summaryFor(LlmToolCall call, Map<String, dynamic> arguments) =>
-      'delegate: ${arguments['task'] ?? ''}';
+      'delegate: ${arguments['title'] ?? ''}';
 
   @override
   String reasonFor(LlmToolCall call) => 'start a background subagent';
@@ -105,6 +126,27 @@ final class WaitSubagentToolSource extends ToolSource {
         'required': ['runId'],
       },
     ),
+    LlmToolSpec(
+      name: ToolNames.readSubagentReport,
+      description:
+          'Read the final report of a subagent. Long reports are returned in chunks; '
+          'if the footer says there is more, call again with the returned offset.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'runId': {'type': 'string'},
+          'offset': {
+            'type': 'integer',
+            'description': 'Character offset to start from (default 0)',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': 'Max characters (default 20000, max 60000)',
+          },
+        },
+        'required': ['runId'],
+      },
+    ),
   ];
 
   @override
@@ -117,16 +159,29 @@ final class WaitSubagentToolSource extends ToolSource {
     if (runId is! String || runId.isEmpty) {
       return const ToolResult('runId is required', isError: true);
     }
+    if (call.name == ToolNames.readSubagentReport) {
+      final offset = arguments['offset'] is num
+          ? (arguments['offset'] as num).toInt()
+          : 0;
+      final limit = arguments['limit'] is num
+          ? (arguments['limit'] as num).toInt().clamp(1, 60000)
+          : 20000;
+      return ToolResult(
+        _manager.readReport(runId, offset: offset, limit: limit),
+      );
+    }
     final result = await _manager.wait(runId);
     return ToolResult(
-      'subagent ${result.status.name}\n${result.text}',
+      'subagent ${result.status.name}\n'
+      'report_chars: ${result.text.characters.length}\n'
+      'Use read_subagent_report with runId to read it.',
       isError: result.isError,
     );
   }
 
   @override
   String summaryFor(LlmToolCall call, Map<String, dynamic> arguments) =>
-      'wait for subagent ${arguments['runId'] ?? ''}';
+      '${call.name} ${arguments['runId'] ?? ''}';
 
   @override
   String reasonFor(LlmToolCall call) => 'wait for a background subagent';

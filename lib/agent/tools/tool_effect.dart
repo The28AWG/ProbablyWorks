@@ -184,7 +184,9 @@ ToolEffect toolEffectFor(
     ToolNames.hostUpdate => const ToolEffect(hostsWrite: true),
     ToolNames.settingsRead => const ToolEffect(settingsRead: true),
     ToolNames.settingsUpdate => const ToolEffect(settingsWrite: true),
-    ToolNames.delegateTask || ToolNames.waitSubagent => const ToolEffect(),
+    ToolNames.delegateTask ||
+    ToolNames.waitSubagent ||
+    ToolNames.readSubagentReport => const ToolEffect(),
     _ => const ToolEffect(),
   };
 }

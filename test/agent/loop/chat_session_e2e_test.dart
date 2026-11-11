@@ -370,10 +370,21 @@ void main() {
     llm.script.add([const LlmTextDelta('child result'), const LlmCompleted()]);
 
     final parent = (await hub.chats.chat(chatId))!;
-    final run = await hub.subagents.start(parent: parent, task: 'child task');
+    final run = await hub.subagents.start(
+      parent: parent,
+      title: 'Child',
+      task: 'child task',
+      context: 'parent context',
+    );
     final result = await hub.subagents.wait(run.id);
 
     expect(result.text, contains('child result'));
+    expect(run.title, 'Child');
+    final childMessages = await hub.chats.messages(run.id);
+    expect(childMessages.first.text, contains('parent context'));
+    expect(hub.subagents.readReport(run.id), contains('child result'));
+    final chunk = hub.subagents.readReport(run.id, offset: 0, limit: 5);
+    expect(chunk, contains('more: offset=5'));
     final child = await hub.chats.chat(run.id);
     expect(child?.kind, ChatKind.subagent);
     expect(child?.parentChatId, chatId);
@@ -405,6 +416,7 @@ void main() {
       llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
       final run = await hub.subagents.start(
         parent: parent,
+        title: 'Task',
         task: 'task',
         modelStrategy: strategy,
       );

@@ -35,6 +35,7 @@ class PolicyEngine {
     'read_run_output',
     'ask_user',
     ToolNames.waitSubagent,
+    ToolNames.readSubagentReport,
     // Self-инструменты только читают приложение или проверяют подключение.
     ToolNames.hostList,
     ToolNames.settingsRead,

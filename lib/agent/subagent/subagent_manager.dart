@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:characters/characters.dart';
 import 'package:logging/logging.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:uuid/uuid.dart';
 
@@ -18,6 +20,7 @@ final class SubagentRun {
     required this.id,
     required this.parentChatId,
     required this.rootChatId,
+    required this.title,
     required this.task,
     required this.model,
   });
@@ -25,6 +28,7 @@ final class SubagentRun {
   final String id;
   final String parentChatId;
   final String rootChatId;
+  final String title;
   final String task;
   final String model;
   final Completer<SubagentResult> completer = Completer();
@@ -76,6 +80,7 @@ final class SubagentManager {
         id: chat.id,
         parentChatId: chat.parentChatId ?? chat.id,
         rootChatId: chat.rootChatId ?? chat.id,
+        title: chat.title,
         task: await _firstUserText(chat.id) ?? chat.title,
         model: chat.model ?? '',
       );
@@ -101,11 +106,19 @@ final class SubagentManager {
   /// Создаёт скрытый чат и запускает в нём ход с [task].
   Future<SubagentRun> start({
     required Chat parent,
+    required String title,
     required String task,
+    String? context,
     String? modelStrategy,
   }) async {
+    final trimmedTitle = title.trim();
     final trimmed = task.trim();
+    if (trimmedTitle.isEmpty) throw ArgumentError('subagent title is empty');
     if (trimmed.isEmpty) throw ArgumentError('subagent task is empty');
+    final extra = context?.trim() ?? '';
+    final prompt = extra.isEmpty
+        ? trimmed
+        : 'Task:\n$trimmed\n\nContext:\n$extra';
     final root = parent.rootChatId ?? parent.id;
     final depth = parent.depth + 1;
     if (depth > _maxDepth) {
@@ -123,7 +136,7 @@ final class SubagentManager {
         rootChatId: root,
         depth: depth,
         projectId: parent.projectId,
-        title: TextClip.headTail(trimmed, maxChars: 80),
+        title: TextClip.headTail(trimmedTitle, maxChars: 80),
         titleSource: ChatTitleSource.user,
         model: model,
         policyMode: parent.policyMode,
@@ -136,7 +149,8 @@ final class SubagentManager {
       id: id,
       parentChatId: parent.id,
       rootChatId: root,
-      task: trimmed,
+      title: trimmedTitle,
+      task: prompt,
       model: model,
     );
     _runs[id] = run;
@@ -147,7 +161,7 @@ final class SubagentManager {
       }
     });
     try {
-      unawaited(session.submit(trimmed));
+      unawaited(session.submit(prompt));
     } on Object catch (error) {
       await _complete(run, TurnEnd.failed, error: '$error');
     }
@@ -277,9 +291,37 @@ final class SubagentManager {
     }
   }
 
+  /// Читает отчёт субагента страницами. Полный отчёт не возвращается сразу:
+  /// он может занимать всё окно контекста.
+  String readReport(String runId, {int offset = 0, int limit = 20000}) {
+    final run = _runs[runId];
+    if (run == null) throw StateError('unknown subagent: $runId');
+    final result = run.result;
+    if (result == null) {
+      return 'run_id: ${run.id}\n'
+          'title: ${run.title}\n'
+          'status: ${run.status.name}\n'
+          'report is not ready; use wait_subagent';
+    }
+    final text = result.text;
+    final chars = text.characters;
+    final length = chars.length;
+    if (offset >= length) {
+      return 'run_id: ${run.id}\nreport_chars: $length\nno more text at offset $offset';
+    }
+    final end = offset + limit < length ? offset + limit : length;
+    final chunk = charRange(text, offset, end);
+    final more = end < length ? '\n\n[more: offset=$end]' : '';
+    return 'run_id: ${run.id}\n'
+        'title: ${run.title}\n'
+        'status: ${result.status.name}\n'
+        'report_chars: $length\n\n'
+        '$chunk$more';
+  }
+
   static String _eventText(SubagentRun run, SubagentResult result) =>
-      'Subagent ${run.id} finished with status ${result.status.name}.\n'
-      'Task: ${run.task}\n'
-      'Model: ${run.model}\n'
-      '${TextClip.headTail(result.text, maxChars: 4000)}';
+      'Subagent "${run.title}" (${run.id}) finished with status '
+      '${result.status.name}.\n'
+      'Report: ${result.text.characters.length} chars. '
+      'Use read_subagent_report with this run id to read it.';
 }
