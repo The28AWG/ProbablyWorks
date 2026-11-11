@@ -117,8 +117,16 @@ class ChatRepository {
         ),
       );
 
-  Future<void> deleteChat(String id) =>
-      (_db.delete(_chatsTable)..where((t) => t.id.equals(id))).go();
+  /// Удаляет чат и всех его скрытых потомков-субагентов.
+  Future<void> deleteChat(String id) async {
+    final children = await (_db.select(
+      _chatsTable,
+    )..where((t) => t.parentChatId.equals(id))).get();
+    for (final child in children) {
+      await deleteChat(child.id);
+    }
+    await (_db.delete(_chatsTable)..where((t) => t.id.equals(id))).go();
+  }
 
   // ---- messages ----------------------------------------------------------
 

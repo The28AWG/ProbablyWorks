@@ -383,6 +383,9 @@ void main() {
       (await hub.chats.watchChats().first).map((chat) => chat.id),
       isNot(contains(run.id)),
     );
+
+    await hub.chats.deleteChat(chatId);
+    expect(await hub.chats.chat(run.id), isNull);
   });
 
   test('subagent model follows parent, setting and tool strategy', () async {
