@@ -60,6 +60,38 @@ final l10n = DeclarativeCommandsLocalizations.of(context);
 
 Модель не может подменить executable или фиксированные аргументы команды.
 
+## HTTP-инструменты
+
+Плагин `declarative_http` хранит инструменты в том же JSON-формате:
+
+```json
+{
+  "id": "weather",
+  "title": "Weather",
+  "description": "Current weather",
+  "method": "GET",
+  "url": "https://api.example.com/weather?city={{city}}",
+  "headers": {"Authorization": "Bearer ${secret:weather}"},
+  "inputSchema": {
+    "type": "object",
+    "properties": {"city": {"type": "string"}},
+    "required": ["city"]
+  },
+  "timeoutSeconds": 30,
+  "maxResponseChars": 20000,
+  "responseFormat": "json",
+  "jsonPath": "$.current.temperature"
+}
+```
+
+- `{{name}}` подставляется из аргументов: в URL — с percent-encoding,
+  в заголовках и теле — как строка.
+- `${secret:name}` в заголовках разрешается приложением через `SecretStore`.
+- `responseFormat`: `text`, `json` или `html`.
+- Для `json` можно указать `jsonPath`, для `html` — `htmlSelector`.
+- Ответ обрезается до `maxResponseChars`, ошибки HTTP возвращаются как
+  `isError` с кодом и телом.
+
 ## Настройки
 
 Настройки плагина хранятся в kv как JSON по ключу `pluginSettings.<id>`.
