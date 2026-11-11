@@ -37,6 +37,7 @@ pubspec_overrides.yaml
 /lib/l10n/generated/
 
 # Flutter/Dart/Pub related
+**/build/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
