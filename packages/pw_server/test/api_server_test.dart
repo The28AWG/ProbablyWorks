@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -174,7 +175,7 @@ void main() {
     );
 
     expect(status, HttpStatus.noContent);
-    expect(backend.approvals, [ApprovalAction.allowTurn]);
+    expect(backend.decisions, [ApprovalAction.allowTurn]);
   });
 
   test('exposes messages and runs as subresources', () async {
@@ -263,6 +264,42 @@ void main() {
     expect(status, HttpStatus.created);
     expect((jsonDecode(body) as Map)['prompt'], 'later');
     expect(backend.scheduled, hasLength(1));
+  });
+
+  test('streams more than one event on the same connection', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend
+      ..emit(const AgentTurnStarted('c1'))
+      ..emit(
+        const ApprovalRequest(
+          id: 'a1',
+          chatId: 'c1',
+          toolName: 'run_command',
+          summary: 'ls',
+          reason: 'ask',
+        ),
+      );
+
+    final data = <String>[];
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('data:')) data.add(lines.current);
+      if (data.length == 2) break;
+    }
+    await lines.cancel();
+    expect(data, hasLength(2));
   });
 
   test('serializes schedule timestamps as UTC', () async {
@@ -356,10 +393,13 @@ Future<(int, String)> _request(
   return (response.statusCode, await utf8.decoder.bind(response).join());
 }
 
-final class _FakeBackend implements ApiBackend {
-  final _events = StreamController<Object>.broadcast();
+final class _FakeBackend implements AgentApi {
+  final _events = StreamController<AgentEvent>.broadcast();
+  final _approvals = StreamController<ApprovalRequest>.broadcast();
+  final _questions = StreamController<UserQuestion>.broadcast();
+  final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final sent = <(String, String, bool)>[];
-  final approvals = <ApprovalAction>[];
+  final decisions = <ApprovalAction>[];
   final scheduled = <ScheduledTask>[];
   final answers = <String?>[];
   final choices = <EditFileChangesChoice>[];
@@ -374,9 +414,25 @@ final class _FakeBackend implements ApiBackend {
     updatedAt: DateTime(2026, 11, 11),
   );
 
-  void emit(Object event) => _events.add(event);
+  void emit(Object event) {
+    switch (event) {
+      case AgentEvent value:
+        _events.add(value);
+      case ApprovalRequest value:
+        _approvals.add(value);
+      case UserQuestion value:
+        _questions.add(value);
+      case EditFileChangesRequest value:
+        _editChanges.add(value);
+    }
+  }
 
-  Future<void> dispose() => _events.close();
+  Future<void> dispose() async {
+    await _events.close();
+    await _approvals.close();
+    await _questions.close();
+    await _editChanges.close();
+  }
 
   @override
   Future<List<Host>> hosts() async => [
@@ -395,7 +451,7 @@ final class _FakeBackend implements ApiBackend {
   @override
   Future<Chat> createChat(String hostId) async {
     if (hostId != 'local') {
-      throw ApiError(404, 'host_not_found', 'host $hostId not found');
+      throw AgentApiException(404, 'host_not_found', 'host $hostId not found');
     }
     return Chat(
       id: 'c2',
@@ -411,7 +467,9 @@ final class _FakeBackend implements ApiBackend {
 
   @override
   Future<List<ChatMessage>> messages(String id) async {
-    if (id != 'c1') throw ApiError(404, 'chat_not_found', 'chat $id not found');
+    if (id != 'c1') {
+      throw AgentApiException(404, 'chat_not_found', 'chat $id not found');
+    }
     return [
       ChatMessage(
         id: 'm1',
@@ -426,7 +484,9 @@ final class _FakeBackend implements ApiBackend {
 
   @override
   Future<List<ToolRun>> runs(String id) async {
-    if (id != 'c1') throw ApiError(404, 'chat_not_found', 'chat $id not found');
+    if (id != 'c1') {
+      throw AgentApiException(404, 'chat_not_found', 'chat $id not found');
+    }
     return const [];
   }
 
@@ -451,7 +511,7 @@ final class _FakeBackend implements ApiBackend {
     ApprovalAction action, {
     String? reason,
   }) async {
-    approvals.add(action);
+    decisions.add(action);
   }
 
   @override
@@ -468,7 +528,7 @@ final class _FakeBackend implements ApiBackend {
   }
 
   @override
-  List<ApprovalRequest> pendingApprovals(String chatId) => const [
+  Future<List<ApprovalRequest>> pendingApprovals(String chatId) async => const [
     ApprovalRequest(
       id: 'a1',
       chatId: 'c1',
@@ -479,13 +539,14 @@ final class _FakeBackend implements ApiBackend {
   ];
 
   @override
-  List<UserQuestion> pendingQuestions(String chatId) => const [
+  Future<List<UserQuestion>> pendingQuestions(String chatId) async => const [
     UserQuestion(id: 'q1', chatId: 'c1', text: 'continue?'),
   ];
 
   @override
-  List<EditFileChangesRequest> pendingEditFileChanges(String chatId) =>
-      const [];
+  Future<List<EditFileChangesRequest>> pendingEditFileChanges(
+    String chatId,
+  ) async => const [];
 
   @override
   Future<List<ScheduledTask>> schedules() async => scheduled;
@@ -521,5 +582,14 @@ final class _FakeBackend implements ApiBackend {
   Future<void> cancelSchedule(String id) => Future<void>.value();
 
   @override
-  Stream<Object> events() => _events.stream;
+  Stream<AgentEvent> get events => _events.stream;
+
+  @override
+  Stream<ApprovalRequest> get approvals => _approvals.stream;
+
+  @override
+  Stream<UserQuestion> get questions => _questions.stream;
+
+  @override
+  Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
 }

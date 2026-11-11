@@ -8,6 +8,11 @@ sealed class AppFailure implements Exception {
   String toString() => '$runtimeType: $message';
 }
 
+/// Ошибка без платформенной специфики: например, сообщение удалённого агента.
+final class GenericFailure extends AppFailure {
+  const GenericFailure(super.message);
+}
+
 /// Ошибка провайдера ИИ (OpenRouter и т.п.).
 final class LlmFailure extends AppFailure {
   const LlmFailure(

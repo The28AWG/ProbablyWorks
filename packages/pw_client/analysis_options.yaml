@@ -1,0 +1,103 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+  errors:
+    invalid_annotation_target: ignore
+
+linter:
+  rules:
+    avoid_types_on_closure_parameters: true
+    omit_local_variable_types: true
+    unnecessary_this: true
+    always_use_package_imports: true
+    avoid_print: true
+    collection_methods_unrelated_type: true
+    literal_only_boolean_expressions: true
+    no_adjacent_strings_in_list: true
+    no_duplicate_case_values: true
+    prefer_void_to_null: true
+    prefer_single_quotes: true
+    always_declare_return_types: true
+    annotate_overrides: true
+    avoid_annotating_with_dynamic: true
+    avoid_bool_literals_in_conditional_expressions: true
+    avoid_catches_without_on_clauses: true
+    avoid_classes_with_only_static_members: true
+    avoid_field_initializers_in_const_classes: true
+    prefer_expression_function_bodies: true
+    avoid_slow_async_io: true
+    avoid_returning_this: true
+    cascade_invocations: true
+    implicit_call_tearoffs: true
+    parameter_assignments: true
+    prefer_constructors_over_static_methods: true
+    prefer_null_aware_method_calls: true
+    unnecessary_overrides: true
+    use_to_and_as_if_applicable: true
+    use_super_parameters: true
+    sort_pub_dependencies: true
+    sort_constructors_first: true
+    sort_unnamed_constructors_first: true
+    matching_super_parameters: true
+    no_default_cases: true
+    directives_ordering: true
+    require_trailing_commas: true
+
+dcm:
+  exclude:
+    all:
+      - '**/*.g.dart'
+      - '**/*.freezed.dart'
+      - '**/*.config.dart'
+      - '**/*.gr.dart'
+      - '**/*.module.dart'
+  rules:
+    - avoid-top-level-members-in-tests
+    - avoid-assignments-as-conditions
+    - avoid-cascade-after-if-null
+    - avoid-casting-to-extension-type
+    - avoid-collection-methods-with-unrelated-types
+    - avoid-conditions-with-boolean-literals
+    - avoid-double-slash-imports
+    - avoid-duplicate-exports
+    - avoid-duplicate-mixins
+    - avoid-duplicate-named-imports
+    - avoid-duplicate-test-assertions
+    - avoid-empty-spread
+    - avoid-explicit-pattern-field-name
+    - avoid-generics-shadowing
+    - avoid-global-state
+    - avoid-missed-calls
+    - avoid-misused-set-literals
+    - avoid-nested-records
+    - avoid-nullable-tostring
+    - avoid-passing-self-as-argument
+    - avoid-redundant-async
+    - avoid-self-assignment
+    - avoid-self-compare
+    - avoid-substring
+    - avoid-throw-in-catch-block
+    - avoid-unnecessary-conditionals
+    - avoid-unnecessary-type-assertions
+    - avoid-unnecessary-type-casts
+    - avoid-unrelated-type-assertions
+    - avoid-unused-parameters
+    - binary-expression-operand-order
+    - double-literal-format
+    - missing-test-assertion
+    - no-boolean-literal-compare
+    - no-empty-block
+    - no-equal-then-else
+    - prefer-async-await
+    - prefer-commenting-analyzer-ignores
+    - prefer-conditional-expressions
+    - prefer-correct-test-file-name
+    - prefer-enums-by-name
+    - prefer-first
+    - prefer-immediate-return
+    - prefer-iterable-of
+    - prefer-last
+    - avoid-commented-out-code
+    - avoid-incomplete-copy-with

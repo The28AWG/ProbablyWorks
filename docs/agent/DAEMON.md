@@ -8,6 +8,7 @@ HTTP API. Клиент по-прежнему работает с агентом 
 
 ```
 packages/pw_agent   # агент, БД, Host, провайдеры; чистый Dart
+packages/pw_client  # HTTP/SSE клиент AgentApi для удалённых профилей
 packages/pw_server  # HTTP API и headless-запуск поверх pw_agent; чистый Dart
 ```
 

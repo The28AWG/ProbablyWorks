@@ -113,6 +113,7 @@ Dart-файлы с переводами генерируются командо�
 ```
 packages/
   pw_agent/      # агент, БД, Host и провайдеры без Flutter
+  pw_client/     # HTTP/SSE клиент AgentApi для удалённых профилей
   pw_server/     # HTTP API и headless-запуск поверх pw_agent
   virtual_git/   # git поверх файловой системы виртуального хоста и по HTTPS
   virtual_host/  # ядро виртуального хоста: файловая система, оболочка, апплеты
@@ -154,6 +155,7 @@ lib/
 ```bash
 flutter test
 (cd packages/pw_agent && dart test)
+(cd packages/pw_client && dart test)
 (cd packages/pw_server && dart test)
 (cd packages/virtual_host && dart test)
 (cd packages/virtual_git && dart test)

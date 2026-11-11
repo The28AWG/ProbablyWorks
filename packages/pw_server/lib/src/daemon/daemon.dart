@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
@@ -20,7 +21,6 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
-import 'package:pw_server/src/api/agent_api_backend.dart';
 import 'package:pw_server/src/api/api_server.dart';
 import 'package:pw_server/src/api/api_token.dart';
 import 'package:pw_server/src/daemon/daemon_options.dart';
@@ -90,7 +90,7 @@ Future<int> runDaemon(List<String> args) async {
   final token = options.rotateToken
       ? await tokens.rotate()
       : await tokens.ensure();
-  final backend = AgentApiBackend(
+  final backend = LocalAgentApi(
     getIt<AgentHub>(),
     getIt<ScheduledTaskRepository>(),
     getIt<TaskScheduler>(),

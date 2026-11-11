@@ -2,18 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_server/src/api/api_backend.dart';
 
 /// Локальный HTTP API поверх агента.
 ///
 /// По умолчанию слушает loopback. Авторизация — `Authorization: Bearer <token>`.
-/// API не запускает команды само: все действия идут через [ApiBackend], а значит
+/// API не запускает команды само: все действия идут через [AgentApi], а значит
 /// через policy и карточки подтверждения.
 final class ApiServer {
   ApiServer(
@@ -26,7 +26,7 @@ final class ApiServer {
   static const _maxBodyBytes = 1 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
 
-  final ApiBackend _backend;
+  final AgentApi _backend;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -75,7 +75,7 @@ final class ApiServer {
         return;
       }
       await _route(request);
-    } on ApiError catch (error) {
+    } on AgentApiException catch (error) {
       _error(response, error.status, error.code, error.message);
     } on FormatException catch (error) {
       _error(response, HttpStatus.badRequest, 'bad_json', error.message);
@@ -98,7 +98,7 @@ final class ApiServer {
   Future<void> _route(HttpRequest request) async {
     final path = request.uri.pathSegments;
     if (path.length < 3 || path.first != 'api' || path[1] != 'v1') {
-      throw const ApiError(
+      throw const AgentApiException(
         HttpStatus.notFound,
         'not_found',
         'unknown endpoint',
@@ -141,7 +141,11 @@ final class ApiServer {
       case 'events':
         if (rest.isEmpty && request.method == 'GET') return _events(request);
     }
-    throw const ApiError(HttpStatus.notFound, 'not_found', 'unknown endpoint');
+    throw const AgentApiException(
+      HttpStatus.notFound,
+      'not_found',
+      'unknown endpoint',
+    );
   }
 
   Future<void> _routeChats(HttpRequest request, List<String> rest) async {
@@ -174,7 +178,7 @@ final class ApiServer {
           }
       }
     }
-    throw const ApiError(
+    throw const AgentApiException(
       HttpStatus.notFound,
       'not_found',
       'unknown chat endpoint',
@@ -204,7 +208,7 @@ final class ApiServer {
   Future<void> _chat(HttpRequest request, String id) async {
     final chat = await _backend.chat(id);
     if (chat == null) {
-      throw ApiError(
+      throw AgentApiException(
         HttpStatus.notFound,
         'chat_not_found',
         'chat $id not found',
@@ -212,21 +216,16 @@ final class ApiServer {
     }
     final messages = await _backend.messages(id);
     final runs = await _backend.runs(id);
+    final approvals = await _backend.pendingApprovals(id);
+    final questions = await _backend.pendingQuestions(id);
+    final edits = await _backend.pendingEditFileChanges(id);
     _json(request.response, HttpStatus.ok, {
       'chat': _chatJson(chat),
       'messages': [for (final message in messages) _messageJson(message)],
       'runs': [for (final run in runs) _runJson(run)],
-      'approvals': [
-        for (final approval in _backend.pendingApprovals(id))
-          _approvalJson(approval),
-      ],
-      'questions': [
-        for (final question in _backend.pendingQuestions(id))
-          _questionJson(question),
-      ],
-      'editFileChanges': [
-        for (final edit in _backend.pendingEditFileChanges(id)) _editJson(edit),
-      ],
+      'approvals': [for (final approval in approvals) _approvalJson(approval)],
+      'questions': [for (final question in questions) _questionJson(question)],
+      'editFileChanges': [for (final edit in edits) _editJson(edit)],
     });
   }
 
@@ -258,7 +257,7 @@ final class ApiServer {
       'allowTurn' => ApprovalAction.allowTurn,
       'allowChat' => ApprovalAction.allowChat,
       'deny' => ApprovalAction.deny,
-      final value => throw ApiError(
+      final value => throw AgentApiException(
         HttpStatus.badRequest,
         'bad_action',
         'unknown approval action: $value',
@@ -286,7 +285,7 @@ final class ApiServer {
       'continueWithoutRollback' =>
         EditFileChangesChoice.continueWithoutRollback,
       'cancel' => EditFileChangesChoice.cancel,
-      final value => throw ApiError(
+      final value => throw AgentApiException(
         HttpStatus.badRequest,
         'bad_choice',
         'unknown choice: $value',
@@ -299,7 +298,7 @@ final class ApiServer {
   Future<void> _scheduleItem(HttpRequest request, String id) async {
     final task = await _backend.scheduledTask(id);
     if (task == null) {
-      throw ApiError(
+      throw AgentApiException(
         HttpStatus.notFound,
         'schedule_not_found',
         'schedule $id not found',
@@ -320,7 +319,7 @@ final class ApiServer {
     final dueAtRaw = _string(body, 'dueAt');
     final dueAt = DateTime.tryParse(dueAtRaw);
     if (dueAt == null) {
-      throw const ApiError(
+      throw const AgentApiException(
         HttpStatus.badRequest,
         'bad_due_at',
         'dueAt must be an ISO-8601 date',
@@ -339,7 +338,7 @@ final class ApiServer {
     final response = request.response;
     final filterChatId = chatId ?? request.uri.queryParameters['chatId'];
     if (filterChatId != null && await _backend.chat(filterChatId) == null) {
-      throw ApiError(
+      throw AgentApiException(
         HttpStatus.notFound,
         'chat_not_found',
         'chat $filterChatId not found',
@@ -354,22 +353,19 @@ final class ApiServer {
         charset: 'utf-8',
       )
       ..headers.set(HttpHeaders.cacheControlHeader, 'no-cache')
-      ..headers.set(HttpHeaders.connectionHeader, 'keep-alive')
-      ..write(': connected\n\n');
-    await response.flush();
+      ..headers.set(HttpHeaders.connectionHeader, 'keep-alive');
     _clients.add(response);
-
-    final subscription = _backend.events().listen((event) {
+    final subscription = _allEvents().listen((event) {
       if (!_matchesChat(event, filterChatId)) return;
       final encoded = _event(event);
       response.write(
         'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
       );
-      unawaited(response.flush());
     });
+    response.write(': connected\n\n');
+    await response.flush();
     final heartbeat = Timer.periodic(_eventHeartbeat, (_) {
       response.write(': ping\n\n');
-      unawaited(response.flush());
     });
     try {
       await response.done;
@@ -382,12 +378,29 @@ final class ApiServer {
     }
   }
 
+  /// Склеивает журнал и карточки в один поток для SSE.
+  Stream<Object> _allEvents() {
+    final controller = StreamController<Object>();
+    final subscriptions = <StreamSubscription<dynamic>>[
+      _backend.events.listen(controller.add),
+      _backend.approvals.listen(controller.add),
+      _backend.questions.listen(controller.add),
+      _backend.editChanges.listen(controller.add),
+    ];
+    controller.onCancel = () async {
+      for (final subscription in subscriptions) {
+        await subscription.cancel();
+      }
+    };
+    return controller.stream;
+  }
+
   Future<Map<String, dynamic>> _body(HttpRequest request) async {
     final bytes = <int>[];
     await for (final chunk in request) {
       bytes.addAll(chunk);
       if (bytes.length > _maxBodyBytes) {
-        throw const ApiError(
+        throw const AgentApiException(
           HttpStatus.requestEntityTooLarge,
           'body_too_large',
           'request body is too large',
@@ -397,7 +410,7 @@ final class ApiServer {
     if (bytes.isEmpty) return const {};
     final decoded = jsonDecode(utf8.decode(bytes));
     if (decoded is! Map) {
-      throw const ApiError(
+      throw const AgentApiException(
         HttpStatus.badRequest,
         'bad_json',
         'expected a JSON object',
@@ -421,7 +434,7 @@ final class ApiServer {
   static String _string(Map<String, dynamic> body, String key) {
     final value = body[key];
     if (value is String && value.isNotEmpty) return value;
-    throw ApiError(
+    throw AgentApiException(
       HttpStatus.badRequest,
       'missing_field',
       'expected non-empty string field "$key"',
