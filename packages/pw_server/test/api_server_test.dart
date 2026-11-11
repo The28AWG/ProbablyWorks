@@ -462,6 +462,15 @@ final class _FakeBackend implements AgentApi {
   }
 
   @override
+  AgentStatus get status => AgentStatus.online;
+
+  @override
+  Stream<AgentStatus> get statusChanges => const Stream<AgentStatus>.empty();
+
+  @override
+  Future<bool> checkConnection() async => true;
+
+  @override
   Set<String> get runningChatIds => const {};
 
   @override

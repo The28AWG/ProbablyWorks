@@ -44,6 +44,8 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   final http.Client _client;
   final io.HttpClient _eventsClient;
 
+  final _statusChanges = StreamController<AgentStatus>.broadcast();
+  var _status = AgentStatus.connecting;
   final _running = <String>{};
   final _waiting = <String>{};
   final _approvalChats = <String, String>{};
@@ -62,6 +64,27 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   var _eventsStarted = false;
   var _disposed = false;
   final _eventsReady = Completer<void>();
+
+  @override
+  AgentStatus get status => _status;
+
+  @override
+  Stream<AgentStatus> get statusChanges => _statusChanges.stream;
+
+  @override
+  Future<bool> checkConnection() async {
+    try {
+      final response = await _client
+          .get(_url('/health'))
+          .timeout(const Duration(seconds: 5));
+      final online = response.statusCode == 200;
+      _setStatus(online ? AgentStatus.online : AgentStatus.offline);
+      return online;
+    } on Object {
+      _setStatus(AgentStatus.offline);
+      return false;
+    }
+  }
 
   @override
   Set<String> get runningChatIds => Set.unmodifiable(_running);
@@ -132,11 +155,13 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   Future<void> startEvents() async {
     if (_eventsStarted || _disposed) return;
     _eventsStarted = true;
+    _setStatus(AgentStatus.connecting);
     unawaited(_listen());
   }
 
   Future<void> dispose() async {
     _disposed = true;
+    await _statusChanges.close();
     await _events.close();
     await _approvals.close();
     await _questions.close();
@@ -499,8 +524,21 @@ class RemoteAgentApi implements AgentApi, ChatApi {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
     }
-    final streamed = await _client.send(request).timeout(timeout);
-    final response = await http.Response.fromStream(streamed);
+    final http.Response response;
+    try {
+      final streamed = await _client.send(request).timeout(timeout);
+      response = await http.Response.fromStream(streamed);
+    } on http.ClientException {
+      _setStatus(AgentStatus.offline);
+      rethrow;
+    } on io.SocketException {
+      _setStatus(AgentStatus.offline);
+      rethrow;
+    } on TimeoutException {
+      _setStatus(AgentStatus.offline);
+      rethrow;
+    }
+    _setStatus(AgentStatus.online);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _error(response);
     }
@@ -541,6 +579,12 @@ class RemoteAgentApi implements AgentApi, ChatApi {
 
   Uri _url(String path) => baseUri.resolve('/api/v1$path');
 
+  void _setStatus(AgentStatus status) {
+    if (_status == status) return;
+    _status = status;
+    if (!_statusChanges.isClosed) _statusChanges.add(status);
+  }
+
   Future<void> _listen() async {
     while (!_disposed) {
       try {
@@ -554,9 +598,11 @@ class RemoteAgentApi implements AgentApi, ChatApi {
             'SSE connection failed',
           );
         }
+        _setStatus(AgentStatus.online);
         if (!_eventsReady.isCompleted) _eventsReady.complete();
         await _consume(response);
       } on Object {
+        _setStatus(AgentStatus.offline);
         // Ниже пауза и повторное подключение.
       }
       if (_disposed) break;

@@ -5,6 +5,9 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
 
+/// Состояние соединения с агентом.
+enum AgentStatus { online, offline, connecting }
+
 /// Ошибка единого клиентского API.
 ///
 /// Локальный адаптер берёт [status] из доменной ошибки или ставит 500,
@@ -26,6 +29,16 @@ final class AgentApiException implements Exception {
 /// Удалённая реализация ходит в `pw_server` по HTTP/SSE, но возвращает те же
 /// доменные модели и бросает тот же [AgentApiException].
 abstract interface class AgentApi {
+  /// Текущее состояние соединения. Локальный агент всегда online.
+  AgentStatus get status;
+
+  /// Поток изменений состояния соединения.
+  Stream<AgentStatus> get statusChanges;
+
+  /// Явная проверка доступности. Нужна при первом подключении и после
+  /// разрыва; в обычной работе статус обновляют запросы и SSE.
+  Future<bool> checkConnection();
+
   /// Журнал хода: сообщения, запуски, очередь.
   Stream<AgentEvent> get events;
 

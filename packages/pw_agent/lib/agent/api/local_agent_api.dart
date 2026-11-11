@@ -42,4 +42,13 @@ final class LocalAgentApi extends LocalChatApi implements AgentApi {
 
   @override
   Future<void> cancelSchedule(String id) => _tasks.cancel(id);
+
+  @override
+  AgentStatus get status => AgentStatus.online;
+
+  @override
+  Stream<AgentStatus> get statusChanges => const Stream<AgentStatus>.empty();
+
+  @override
+  Future<bool> checkConnection() async => true;
 }

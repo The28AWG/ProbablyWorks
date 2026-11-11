@@ -85,6 +85,11 @@ void main() {
     );
   });
 
+  test('checks connection and reports online', () async {
+    expect(await remote.checkConnection(), isTrue);
+    expect(remote.status, AgentStatus.online);
+  });
+
   test('exposes ChatApi for the remote chat screen', () async {
     final chat = await remote.chat('c1');
 
@@ -161,6 +166,15 @@ final class _FakeAgent implements AgentApi {
     await _questions.close();
     await _editChanges.close();
   }
+
+  @override
+  AgentStatus get status => AgentStatus.online;
+
+  @override
+  Stream<AgentStatus> get statusChanges => const Stream<AgentStatus>.empty();
+
+  @override
+  Future<bool> checkConnection() async => true;
 
   @override
   Set<String> get runningChatIds => const {};
