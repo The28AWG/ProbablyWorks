@@ -219,6 +219,11 @@ void main() {
 
     final mkdir = effect(ToolNames.makeDir, {'path': 'd'});
     expect(mkdir.hostWrite, isTrue);
+
+    final list = effect(ToolNames.listRuns, {});
+    expect(list.hostWrite, isFalse);
+    final stop = effect(ToolNames.stopRun, {'run_id': 'r'});
+    expect(stop.hostWrite, isTrue);
   });
 
   test('ask_user and a broken payload do not take a host resource', () {

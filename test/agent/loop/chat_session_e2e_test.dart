@@ -1301,6 +1301,52 @@ void main() {
     expect(runs.where((run) => run.status != ToolRunStatus.done), isEmpty);
   });
 
+  test('list_runs and read_run_output expose stored output by pages', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'seed',
+        chatId: chatId,
+        messageId: 'assistant',
+        toolName: ToolNames.runCommand,
+        argsJson: '{}',
+        command: 'printf abcdef',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText: 'abcdefghij',
+      ),
+    );
+    llm.script
+      ..add([
+        LlmCompleted(toolCalls: [_call('list', ToolNames.listRuns, '{}')]),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'read',
+              ToolNames.readRunOutput,
+              jsonEncode({'run_id': 'seed', 'limit': 5}),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'inspect runs');
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(tools.first.text, contains('seed | done'));
+    expect(tools[1].text, contains('total: 10 chars'));
+    expect(tools[1].text, contains('offset=5'));
+    expect(tools[1].text, contains('abcde'));
+  });
+
   Future<void> seedWaiting({
     required String chatId,
     required ToolRunStatus status,

@@ -67,6 +67,8 @@ class ContextBuilder {
     ToolNames.statPath,
     ToolNames.which,
     ToolNames.runCommand,
+    ToolNames.listRuns,
+    ToolNames.readRunOutput,
     ToolNames.listSkills,
     ToolNames.loadSkill,
     ToolNames.hostList,

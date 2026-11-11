@@ -26,6 +26,9 @@ abstract final class ToolNames {
   static const listStateRevisions = 'list_state_revisions';
   static const getStateRevision = 'get_state_revision';
   static const chatHistorySearch = 'chat_history_search';
+  static const listRuns = 'list_runs';
+  static const readRunOutput = 'read_run_output';
+  static const stopRun = 'stop_run';
   static const listSkills = 'list_skills';
   static const loadSkill = 'load_skill';
   static const askUser = 'ask_user';
@@ -350,6 +353,49 @@ abstract final class ToolCatalog {
           'query': {'type': 'string'},
         },
         'required': ['query'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.listRuns,
+      description:
+          'List tool runs of this chat: run id, status, tool, command and output availability. '
+          'Use it before reading a long output or stopping a background command.',
+      parameters: {'type': 'object', 'properties': <String, dynamic>{}},
+    ),
+    const LlmToolSpec(
+      name: ToolNames.readRunOutput,
+      description:
+          'Read stored output of a tool run. Omit offset for the first chunk; '
+          'if the footer says there is more, call again with the returned offset. '
+          'Running commands have no stored output yet.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'run_id': {'type': 'string'},
+          'offset': {
+            'type': 'integer',
+            'description': 'Character offset to start from (default 0)',
+          },
+          'limit': {
+            'type': 'integer',
+            'description':
+                'Maximum characters to return (default 20000, max 60000)',
+          },
+        },
+        'required': ['run_id'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.stopRun,
+      description:
+          'Stop a running command by run id. The run finishes as interrupted and the model '
+          'sees the usual tool result.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'run_id': {'type': 'string'},
+        },
+        'required': ['run_id'],
       },
     ),
     const LlmToolSpec(

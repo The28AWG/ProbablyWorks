@@ -249,6 +249,14 @@ class ChatRepository {
           .map(_toolRun)
           .toList();
 
+  /// Один запуск по id. Нужен чтению полного вывода и остановке фоновой команды.
+  Future<ToolRun?> toolRun(String id) async {
+    final row = await (_db.select(
+      _toolRunsTable,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    return row == null ? null : _toolRun(row);
+  }
+
   Future<List<ToolRun>> toolRunsForMessages(List<String> messageIds) async {
     if (messageIds.isEmpty) return const [];
     return (await (_db.select(

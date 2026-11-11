@@ -176,6 +176,15 @@ class CommandExecutor {
     );
   }
 
+  /// Останавливает запуск по id. false — запуск уже завершён или неизвестен.
+  /// Остановка идёт через реестр, поэтому результат придёт обычным `ExecOutcome`.
+  Future<bool> stopRun(String runId, {bool force = false}) async {
+    final exec = _registry.find(runId);
+    if (exec == null) return false;
+    await _registry.stop(exec, force: force);
+    return true;
+  }
+
   /// Открывает PTY и отдаёт его события. Ошибка открытия становится итогом запуска, а не исключением.
   Future<Stream<ExecEvent>> _terminalEvents(
     ActiveExec exec,

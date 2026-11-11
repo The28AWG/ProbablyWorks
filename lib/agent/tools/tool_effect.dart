@@ -173,6 +173,8 @@ ToolEffect toolEffectFor(
     ToolNames.listStateRevisions ||
     ToolNames.getStateRevision => const ToolEffect(sessionRead: true),
     ToolNames.chatHistorySearch => const ToolEffect(transcriptRead: true),
+    ToolNames.listRuns || ToolNames.readRunOutput => const ToolEffect(),
+    ToolNames.stopRun => const ToolEffect(hostWrite: true),
     ToolNames.listSkills || ToolNames.loadSkill => _skills(workspace),
     ToolNames.hostList => const ToolEffect(hostsRead: true),
     ToolNames.hostTest ||

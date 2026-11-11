@@ -31,6 +31,8 @@ class PolicyEngine {
     'list_state_revisions',
     'get_state_revision',
     'chat_history_search',
+    'list_runs',
+    'read_run_output',
     'ask_user',
     // Self-инструменты только читают приложение или проверяют подключение.
     ToolNames.hostList,
@@ -65,6 +67,7 @@ class PolicyEngine {
         toolName == 'move_path' ||
         toolName == 'copy_path' ||
         toolName == 'make_dir' ||
+        toolName == 'stop_run' ||
         _selfWriteTools.contains(toolName)) {
       return mode == PolicyMode.yolo
           ? PolicyDecision.allow
@@ -82,6 +85,7 @@ class PolicyEngine {
       return classifier.classify(args['command'] as String? ?? '').reason;
     }
     if (_selfWriteTools.contains(toolName)) return 'app settings change';
+    if (toolName == 'stop_run') return 'process control';
     return 'write operation';
   }
 
