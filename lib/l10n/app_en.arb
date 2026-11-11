@@ -605,6 +605,14 @@
   "@settingsTitleModel": {
     "description": "Setting: cheap model used to generate chat titles and summaries."
   },
+  "settingsSubagentModel": "Subagent model",
+  "@settingsSubagentModel": {
+    "description": "Setting: default model for subagents. Empty means the parent chat model."
+  },
+  "settingsSubagentModelHint": "Empty means the parent chat model.",
+  "@settingsSubagentModelHint": {
+    "description": "Hint under the subagent model setting."
+  },
   "settingsModelsRefresh": "Refresh models",
   "@settingsModelsRefresh": {
     "description": "Button that reloads the model list from OpenRouter."

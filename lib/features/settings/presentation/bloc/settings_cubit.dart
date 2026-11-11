@@ -25,6 +25,7 @@ class SettingsState extends Equatable {
     this.catalog = const ModelCatalogState(),
     this.defaultModel = '',
     this.titleModel = '',
+    this.subagentModel = '',
     this.language = 'system',
     this.themeMode = ThemeMode.system,
     this.defaultPolicy = PolicyMode.ask,
@@ -60,6 +61,7 @@ class SettingsState extends Equatable {
   final ModelCatalogState catalog;
   final String defaultModel;
   final String titleModel;
+  final String subagentModel;
   final String language;
 
   /// Тема: системная, светлая или тёмная.
@@ -91,6 +93,7 @@ class SettingsState extends Equatable {
     ModelCatalogState? catalog,
     String? defaultModel,
     String? titleModel,
+    String? subagentModel,
     String? language,
     ThemeMode? themeMode,
     PolicyMode? defaultPolicy,
@@ -114,6 +117,7 @@ class SettingsState extends Equatable {
     catalog: catalog ?? this.catalog,
     defaultModel: defaultModel ?? this.defaultModel,
     titleModel: titleModel ?? this.titleModel,
+    subagentModel: subagentModel ?? this.subagentModel,
     language: language ?? this.language,
     themeMode: themeMode ?? this.themeMode,
     defaultPolicy: defaultPolicy ?? this.defaultPolicy,
@@ -136,6 +140,7 @@ class SettingsState extends Equatable {
     catalog,
     defaultModel,
     titleModel,
+    subagentModel,
     language,
     themeMode,
     defaultPolicy,
@@ -183,6 +188,8 @@ class SettingsCubit extends Cubit<SettingsState> {
             await _settings.read(SettingsRepository.keyDefaultModel) ?? '',
         titleModel:
             await _settings.read(SettingsRepository.keyTitleModel) ?? '',
+        subagentModel:
+            await _settings.read(SettingsRepository.keySubagentModel) ?? '',
         language:
             await _settings.read(SettingsRepository.keyLanguage) ?? 'system',
         themeMode: ThemeController.modeFrom(
@@ -202,6 +209,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _catalog.remember([
       state.defaultModel,
       state.titleModel,
+      state.subagentModel,
       ...state.pinnedModels,
     ]);
     emit(state.copyWith(catalog: _catalog.state));
@@ -300,6 +308,12 @@ class SettingsCubit extends Cubit<SettingsState> {
         saved: state.saved + 1,
       ),
     );
+  }
+
+  Future<void> saveSubagentModel(String id) async {
+    await _settings.write(SettingsRepository.keySubagentModel, id);
+    await _catalog.remember([id]);
+    emit(state.copyWith(subagentModel: id, saved: state.saved + 1));
   }
 
   Future<void> saveLanguage(String code) async {

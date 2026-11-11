@@ -22,6 +22,9 @@ class SettingsRepository {
 
   static const keyDefaultModel = 'defaultModel';
   static const keyTitleModel = 'titleModel';
+
+  /// Модель субагентов. Пусто — использовать модель родительского чата.
+  static const keySubagentModel = 'subagentModel';
   static const keyLanguage = 'language';
   static const keyThemeMode = 'themeMode';
   static const keyDefaultPolicy = 'defaultPolicy';

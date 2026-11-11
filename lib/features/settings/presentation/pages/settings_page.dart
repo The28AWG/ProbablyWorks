@@ -347,6 +347,18 @@ class _SettingsViewState extends State<_SettingsView> {
           ),
         ],
       ),
+      AppSection(
+        title: l10n.settingsSubagentModel,
+        description: l10n.settingsSubagentModelHint,
+        children: [
+          ModelSettingField(
+            modelId: state.subagentModel,
+            catalog: catalog,
+            pinned: state.pinnedModels,
+            onSelected: cubit.saveSubagentModel,
+          ),
+        ],
+      ),
       Row(
         children: [
           OutlinedButton.icon(

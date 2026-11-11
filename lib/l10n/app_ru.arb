@@ -605,6 +605,14 @@
   "@settingsTitleModel": {
     "description": "Настройка: дешёвая модель для заголовков чатов и сводок."
   },
+  "settingsSubagentModel": "Модель субагентов",
+  "@settingsSubagentModel": {
+    "description": "Настройка: модель по умолчанию для субагентов. Пусто — модель родительского чата."
+  },
+  "settingsSubagentModelHint": "Пусто — модель родительского чата.",
+  "@settingsSubagentModelHint": {
+    "description": "Подсказка под настройкой модели субагентов."
+  },
   "settingsModelsRefresh": "Обновить список моделей",
   "@settingsModelsRefresh": {
     "description": "Кнопка перезагрузки списка моделей из OpenRouter."
