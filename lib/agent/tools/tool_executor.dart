@@ -78,9 +78,8 @@ class ToolExecutor {
     this._workspace,
     this._self,
     this._projects,
-    this._changesets, [
-    ToolRegistry? registry,
-  ]) : _registry = registry ?? ToolRegistry();
+    this._changesets,
+  ) : _registry = ToolRegistry();
 
   final ChatRepository _chats;
   final CommandExecutor _commands;
