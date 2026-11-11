@@ -14,6 +14,7 @@ import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
+import 'package:probably_works/agent/tools/tool_source.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/turn/turn_changeset_store.dart';
@@ -36,6 +37,58 @@ import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+
+final class _FakeToolSource extends ToolSource {
+  _FakeToolSource({this.mutatesHost = true});
+
+  int calls = 0;
+
+  @override
+  final bool mutatesHost;
+
+  @override
+  String get id => 'fake';
+
+  @override
+  List<LlmToolSpec> get specs => const [
+    LlmToolSpec(
+      name: 'fake_tool',
+      description: 'fake',
+      parameters: {'type': 'object'},
+    ),
+  ];
+
+  @override
+  Future<ToolResult> call(
+    LlmToolCall call,
+    Map<String, dynamic> arguments,
+    ToolContext context,
+  ) async {
+    calls++;
+    return const ToolResult('fake ok');
+  }
+
+  @override
+  String summaryFor(LlmToolCall call, Map<String, dynamic> arguments) =>
+      'fake summary';
+
+  @override
+  String reasonFor(LlmToolCall call) => 'fake reason';
+}
+
+final class _DenyPolicy extends PolicyEngine {
+  _DenyPolicy()
+    : super(
+        classifier: CommandClassifier(
+          denylist: SettingsRepository.defaultDenylist,
+        ),
+        mode: PolicyMode.ask,
+      );
+
+  @override
+  PolicyDecision decide(String toolName, Map<String, dynamic> args) =>
+      PolicyDecision.deny;
+}
 
 class _NoNetworkLlm implements LlmProvider {
   @override
@@ -159,6 +212,18 @@ void main() {
 
   Future<TurnChangeset?> turnCs() => turnChangesets.get(chatId, turnId);
 
+  ToolContext contextWith(PolicyEngine policy) => ToolContext(
+    chat: ctx.chat,
+    messageId: ctx.messageId,
+    turnUserMessageId: ctx.turnUserMessageId,
+    host: ctx.host,
+    runtime: ctx.runtime,
+    limits: ctx.limits,
+    policy: policy,
+    project: ctx.project,
+    onBackgroundDone: ctx.onBackgroundDone,
+  );
+
   test('rejected write_file leaves changeset empty', () async {
     final path = '${tmp.path}/rejected.txt';
     final pending = tools.execute(
@@ -187,5 +252,52 @@ void main() {
     expect(result.isError, isTrue);
     expect(await turnCs(), isNull);
     expect(File(path).readAsStringSync(), 'surprise');
+  });
+
+  test('external tool waits for approval and blocks rollback', () async {
+    final source = _FakeToolSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final pending = tools.execute(call('e', 'fake_tool', const {}), ctx);
+    final approval = await broker.approvalRequests.first;
+    expect(source.calls, 0);
+    expect(approval.toolName, 'fake_tool');
+    expect(approval.summary, 'fake summary');
+    expect(approval.reason, 'fake reason');
+
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+    final result = await pending;
+
+    expect(result.text, 'fake ok');
+    expect(source.calls, 1);
+    expect((await turnCs())?.nonRecoverable, isTrue);
+  });
+
+  test('external tool denied by policy never reaches the source', () async {
+    final source = _FakeToolSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final result = await tools.execute(
+      call('e', 'fake_tool', const {}),
+      contextWith(_DenyPolicy()),
+    );
+
+    expect(result.isError, isTrue);
+    expect(source.calls, 0);
+  });
+
+  test('read-only external tool does not block rollback', () async {
+    final source = _FakeToolSource(mutatesHost: false);
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final pending = tools.execute(call('e', 'fake_tool', const {}), ctx);
+    final approval = await broker.approvalRequests.first;
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+    await pending;
+
+    expect(await turnCs(), isNull);
   });
 }

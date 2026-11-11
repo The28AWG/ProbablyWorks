@@ -17,6 +17,9 @@ import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_effect.dart';
+import 'package:probably_works/agent/tools/tool_registry.dart';
+import 'package:probably_works/agent/tools/tool_source.dart';
+import 'package:probably_works/agent/tools/tool_types.dart';
 import 'package:probably_works/agent/turn/host_write_backup_path.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
@@ -35,62 +38,11 @@ import 'package:probably_works/core/util/unified_diff.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
-import 'package:probably_works/host/host_runtime.dart';
 import 'package:probably_works/host/shell_adapter.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 import 'package:uuid/uuid.dart';
 
-/// Контекст одного запуска инструмента: чат, Host с рантаймом и политика.
-class ToolContext {
-  const ToolContext({
-    required this.chat,
-    required this.messageId,
-    required this.host,
-    required this.runtime,
-    required this.limits,
-    required this.policy,
-    required this.onBackgroundDone,
-    this.project,
-    this.turnUserMessageId,
-  });
-
-  final Chat chat;
-  final String messageId;
-
-  /// Пользовательское сообщение, открывшее ход (для журнала изменений).
-  final String? turnUserMessageId;
-  final Host host;
-  final HostRuntime runtime;
-  final AppLimits limits;
-  final PolicyEngine policy;
-
-  /// Проект чата: нужен для доверия skills и общей памяти. Null только у чата без проекта.
-  final Project? project;
-
-  /// Вызывается, когда фоновая команда завершилась (после записи ToolRun).
-  final void Function(ToolRun run, ExecOutcome outcome) onBackgroundDone;
-}
-
-class ToolResult {
-  const ToolResult(
-    this.text, {
-    this.isError = false,
-    this.finish = false,
-    this.whenSettled,
-  });
-
-  /// Текст для модели (role tool).
-  final String text;
-  final bool isError;
-
-  /// `finish` завершает ход агента.
-  final bool finish;
-
-  /// Когда побочный эффект станет виден следующим вызовам. Пусто — эффект
-  /// уже виден в момент возврата. Фоновая команда отдаёт текст «запущено»
-  /// сразу, а это будущее завершается вместе с процессом.
-  final Future<void>? whenSettled;
-}
+export 'package:probably_works/agent/tools/tool_types.dart';
 
 /// Ответ на карточку, которую показали снова после перезапуска.
 class WaitingDecision {
@@ -126,8 +78,9 @@ class ToolExecutor {
     this._workspace,
     this._self,
     this._projects,
-    this._changesets,
-  );
+    this._changesets, [
+    ToolRegistry? registry,
+  ]) : _registry = registry ?? ToolRegistry();
 
   final ChatRepository _chats;
   final CommandExecutor _commands;
@@ -137,6 +90,16 @@ class ToolExecutor {
   final SelfToolHandler _self;
   final ProjectRepository _projects;
   final TurnChangesetService _changesets;
+  final ToolRegistry _registry;
+
+  /// Описания всех доступных инструментов: встроенные и внешние источники.
+  List<LlmToolSpec> get specs => _registry.specs;
+
+  /// Подключает внешний источник инструментов. Дубликаты имён запрещены.
+  void registerToolSource(ToolSource source) => _registry.register(source);
+
+  /// Отключает внешний источник и убирает его инструменты из следующих запросов.
+  void unregisterToolSource(String sourceId) => _registry.unregister(sourceId);
 
   /// Self-инструменты, которые только читают (выполняются сразу, без подтверждения).
   static const _selfReadTools = {
@@ -248,9 +211,7 @@ class ToolExecutor {
         ToolNames.hostDiagnose ||
         ToolNames.settingsRead ||
         ToolNames.settingsUpdate => _selfTool(ctx, call, args),
-        _ => Future.value(
-          ToolResult('unknown tool: ${call.name}', isError: true),
-        ),
+        _ => _externalTool(ctx, call, args),
       };
     } on ArgumentError catch (error) {
       return ToolResult('invalid arguments: ${error.message}', isError: true);
@@ -260,6 +221,87 @@ class ToolExecutor {
         isError: true,
       );
     }
+  }
+
+  /// Внешний инструмент: тот же policy → approve → ToolRun, что и у встроенных.
+  ///
+  /// Источник не получает управление, пока политика не разрешила вызов. Ход
+  /// помечается неоткатываемым, если источник может менять Host.
+  Future<ToolResult> _externalTool(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final source = _registry.sourceFor(call.name);
+    if (source == null) {
+      return ToolResult('unknown tool: ${call.name}', isError: true);
+    }
+    final summary = source.summaryFor(call, args);
+    final reason = source.reasonFor(call);
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, reason);
+    }
+    final runId = _uuid.v4();
+    if (decision == PolicyDecision.ask) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        summary: summary,
+        reason: reason,
+      );
+      if (!approved.allowed) {
+        return _rejected(summary, reason: approved.reason);
+      }
+    }
+
+    final run = _newRun(
+      ctx,
+      runId,
+      call,
+      args,
+      ToolRunStatus.running,
+      command: summary,
+    );
+    await _saveRun(run);
+    try {
+      final result = await source.call(call, args, ctx);
+      final finished = await _complete(
+        run,
+        ExecOutcome(
+          status: result.isError ? ToolRunStatus.failed : ToolRunStatus.done,
+          outputText: result.text,
+        ),
+      );
+      await _markExternalMutation(ctx, finished, source);
+      return result;
+    } on Object catch (error) {
+      final finished = await _complete(
+        run,
+        ExecOutcome(
+          status: ToolRunStatus.failed,
+          outputText: '${call.name} failed: $error',
+        ),
+      );
+      await _markExternalMutation(ctx, finished, source);
+      return ToolResult('${call.name} failed: $error', isError: true);
+    }
+  }
+
+  Future<void> _markExternalMutation(
+    ToolContext ctx,
+    ToolRun run,
+    ToolSource source,
+  ) async {
+    final turnId = ctx.turnUserMessageId;
+    if (!source.mutatesHost || turnId == null) return;
+    await _changesets.recordExternalMutation(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      toolRunId: run.id,
+    );
   }
 
   // ---- read_file -----------------------------------------------------------

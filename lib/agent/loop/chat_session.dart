@@ -16,8 +16,6 @@ import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/agent/loop/tool_scheduler.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
-import 'package:probably_works/agent/tools/self_tool_catalog.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -1037,7 +1035,7 @@ class ChatSession {
     _checkFilesAccepted(model, inline);
     final llmMessages = _hub.builder.build(inputFor(chat, files: inline));
     final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
-    final tools = [...ToolCatalog.specs, ...SelfToolCatalog.specs];
+    final tools = _hub.tools.specs;
     _emit(
       AgentUsageUpdated(
         chatId,

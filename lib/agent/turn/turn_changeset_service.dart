@@ -148,6 +148,26 @@ class TurnChangesetService {
     return saved;
   }
 
+  /// Помечает ход неоткатываемым: внешний инструмент мог изменить Host
+  /// так, как приложение не умеет отследить. Тот же список, что у shell-мутаций,
+  /// хранит id запусков, из-за которых откат запрещён.
+  Future<TurnChangeset> recordExternalMutation({
+    required String chatId,
+    required String turnId,
+    required String toolRunId,
+  }) async {
+    var cs = await _open(chatId, turnId);
+    if (cs.shellMutationToolRunIds.contains(toolRunId)) return cs;
+    cs = cs.copyWith(
+      nonRecoverable: true,
+      shellMutationToolRunIds: [...cs.shellMutationToolRunIds, toolRunId],
+      updatedAt: DateTime.now(),
+    );
+    final saved = await _store.save(cs);
+    _emit(saved);
+    return saved;
+  }
+
   Future<Map<String, TurnChangeset>> forChat(String chatId) =>
       _store.loadForChat(chatId);
 
