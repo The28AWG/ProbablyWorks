@@ -88,12 +88,16 @@ void main() {
     );
   });
 
-  test('protected support directory hides file permission bits', () async {
+  test('files created with app-owned modes produce no findings', () async {
     if (Platform.isWindows) return;
-    final file = File('${tmp.path}/probably_works.db')
-      ..writeAsStringSync('test');
-    Process.runSync('chmod', ['644', file.path]);
-    Process.runSync('chmod', ['700', tmp.path]);
+    final paths = AppPaths.forSupport(tmp);
+    paths.database.writeAsStringSync('test');
+    paths.logs.createSync();
+    paths.mcpConfig.writeAsStringSync('{}');
+    _chmod(tmp.path, '700');
+    _chmod(paths.database.path, '600');
+    _chmod(paths.logs.path, '700');
+    _chmod(paths.mcpConfig.path, '600');
 
     final report = await service(
       FlutterSecretStore(const FlutterSecureStorage()),
@@ -102,11 +106,72 @@ void main() {
     expect(report.status, SecurityStatus.baseline);
     expect(
       report.findings.any(
-        (finding) =>
-            finding.code == SecurityFindingCode.dataPermissions &&
-            finding.severity == SecuritySeverity.critical,
+        (finding) => finding.code == SecurityFindingCode.dataPermissions,
       ),
       isFalse,
+    );
+  });
+
+  test('loosened modes are warnings while the parent protects them', () async {
+    if (Platform.isWindows) return;
+    final paths = AppPaths.forSupport(tmp);
+    paths.database.writeAsStringSync('test');
+    _chmod(tmp.path, '700');
+    _chmod(paths.database.path, '644');
+
+    final report = await service(
+      FlutterSecretStore(const FlutterSecureStorage()),
+    ).run();
+
+    final finding = report.findings.singleWhere(
+      (finding) => finding.code == SecurityFindingCode.dataPermissions,
+    );
+    expect(finding.severity, SecuritySeverity.warning);
+    expect(finding.params['expected'], 'rw-------');
+    expect(finding.params['mode'], 'rw-r--r--');
+    expect(report.status, SecurityStatus.baseline);
+  });
+
+  test('reachable loosened mode is critical', () async {
+    if (Platform.isWindows) return;
+    final paths = AppPaths.forSupport(tmp);
+    paths.database.writeAsStringSync('test');
+    _chmod(tmp.path, '755');
+    _chmod(paths.database.path, '644');
+
+    final report = await service(
+      FlutterSecretStore(const FlutterSecureStorage()),
+    ).run();
+
+    expect(report.status, SecurityStatus.unsafe);
+    expect(
+      report.findings.any(
+        (finding) =>
+            finding.code == SecurityFindingCode.dataPermissions &&
+            finding.severity == SecuritySeverity.critical &&
+            finding.params['path'] == paths.database.path,
+      ),
+      isTrue,
+    );
+  });
+
+  test('world-writable support directory is critical', () async {
+    if (Platform.isWindows) return;
+    _chmod(tmp.path, '777');
+
+    final report = await service(
+      FlutterSecretStore(const FlutterSecureStorage()),
+    ).run();
+
+    expect(report.status, SecurityStatus.unsafe);
+    expect(
+      report.findings.any(
+        (finding) =>
+            finding.code == SecurityFindingCode.dataPermissions &&
+            finding.severity == SecuritySeverity.critical &&
+            finding.params['path'] == tmp.path,
+      ),
+      isTrue,
     );
   });
 
@@ -123,4 +188,10 @@ void main() {
       isTrue,
     );
   });
+}
+
+/// Меняет POSIX-режим и падает, если `chmod` недоступен.
+void _chmod(String path, String mode) {
+  final result = Process.runSync('chmod', [mode, path]);
+  expect(result.exitCode, 0, reason: 'chmod $mode $path');
 }

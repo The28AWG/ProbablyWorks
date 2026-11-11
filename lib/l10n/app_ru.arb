@@ -1692,11 +1692,11 @@
   "@securityAuditSecretStoreRecommendation": {
     "description": "Security finding recommendation: secret storage."
   },
-  "securityAuditPermissionsTitle": "Слишком широкие права на файлы",
+  "securityAuditPermissionsTitle": "Права на файлы изменены",
   "@securityAuditPermissionsTitle": {
-    "description": "Security finding: loose file permissions."
+    "description": "Security finding: permissions deviate from the app-owned mode."
   },
-  "securityAuditPermissionsDetail": "{path}: {mode}",
+  "securityAuditPermissionsDetail": "{path}: {mode} (ожидалось {expected})",
   "@securityAuditPermissionsDetail": {
     "description": "Security finding detail: path and permissions.",
     "placeholders": {
@@ -1705,10 +1705,13 @@
       },
       "mode": {
         "type": "String"
+      },
+      "expected": {
+        "type": "String"
       }
     }
   },
-  "securityAuditPermissionsRecommendation": "Оставьте доступ только владельцу (0600 для файлов, 0700 для каталогов).",
+  "securityAuditPermissionsRecommendation": "Верните доступ только владельцу: 0600 для файлов, 0700 для каталогов.",
   "@securityAuditPermissionsRecommendation": {
     "description": "Security finding recommendation: permissions."
   },

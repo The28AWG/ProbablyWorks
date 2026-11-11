@@ -120,37 +120,57 @@ class SecurityAuditService {
       );
       return;
     }
-    for (final path in [
-      _paths.support.path,
-      _paths.database.path,
-      _paths.logs.path,
-      // Lock-файл не содержит данных: его права не являются утечкой.
-      _paths.mcpConfig.path,
-    ]) {
+    // Ожидаемые режимы: приложение само создаёт каталоги с 0700 и файлы
+    // с 0600. Находка означает, что режим изменили после создания.
+    // Lock-файл не содержит данных и в проверку не входит.
+    final expectations = [
+      (path: _paths.support.path, expected: 0x1C0, directory: true),
+      (path: _paths.database.path, expected: 0x180, directory: false),
+      (path: _paths.logs.path, expected: 0x1C0, directory: true),
+      (path: _paths.mcpConfig.path, expected: 0x180, directory: false),
+    ];
+    for (final entry in expectations) {
+      final path = entry.path;
       if (!FileSystemEntity.isFileSync(path) &&
           !FileSystemEntity.isDirectorySync(path)) {
         continue;
       }
       final stat = FileStat.statSync(path);
-      final directory = FileSystemEntity.isDirectorySync(path);
+      final actual = stat.mode & 0x1FF;
+      // Более строгий режим безопасен: сообщаем только о лишних битах.
+      if ((actual & ~entry.expected & 0x1FF) == 0) continue;
       // Если родительский каталог недоступен классу пользователей, биты файла
       // для этого класса ничего не дают: до файла нельзя дойти.
-      final other = _classCanReach(path, 0x001) ? stat.mode & 0x007 : 0;
-      final group = _classCanReach(path, 0x010) ? stat.mode & 0x070 : 0;
+      final other = _classCanReach(path, 0x001) ? actual & 0x007 : 0;
       // Каталог с r-x для других — обычная ситуация; критична запись.
       // Файл с любым доступом для других — уже утечка.
-      final critical = directory ? (other & 0x002) != 0 : other != 0;
-      if (!critical && other == 0 && group == 0) continue;
+      final critical = entry.directory ? (other & 0x002) != 0 : other != 0;
       findings.add(
         SecurityFinding(
           code: SecurityFindingCode.dataPermissions,
           severity: critical
               ? SecuritySeverity.critical
               : SecuritySeverity.warning,
-          params: {'path': path, 'mode': stat.modeString()},
+          params: {
+            'path': path,
+            'mode': _permissions(actual),
+            'expected': _permissions(entry.expected),
+          },
         ),
       );
     }
+  }
+
+  /// Права в формате `rw-r--r--`, без типа файла.
+  static String _permissions(int mode) {
+    String part(int shift) {
+      final bits = (mode >> shift) & 0x7;
+      return '${bits & 0x4 != 0 ? 'r' : '-'}'
+          '${bits & 0x2 != 0 ? 'w' : '-'}'
+          '${bits & 0x1 != 0 ? 'x' : '-'}';
+    }
+
+    return '${part(6)}${part(3)}${part(0)}';
   }
 
   void _checkEnvironment(List<SecurityFinding> findings) {

@@ -203,6 +203,7 @@ class _FindingCard extends StatelessWidget {
       detail: l10n.securityAuditPermissionsDetail(
         finding.params['path'] ?? '?',
         finding.params['mode'] ?? '?',
+        finding.params['expected'] ?? '?',
       ),
       recommendation: l10n.securityAuditPermissionsRecommendation,
     ),

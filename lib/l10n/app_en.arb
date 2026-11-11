@@ -1692,11 +1692,11 @@
   "@securityAuditSecretStoreRecommendation": {
     "description": "Security finding recommendation: secret storage."
   },
-  "securityAuditPermissionsTitle": "Loose file permissions",
+  "securityAuditPermissionsTitle": "File permissions changed",
   "@securityAuditPermissionsTitle": {
-    "description": "Security finding: loose file permissions."
+    "description": "Security finding: permissions deviate from the app-owned mode."
   },
-  "securityAuditPermissionsDetail": "{path}: {mode}",
+  "securityAuditPermissionsDetail": "{path}: {mode} (expected {expected})",
   "@securityAuditPermissionsDetail": {
     "description": "Security finding detail: path and permissions.",
     "placeholders": {
@@ -1705,10 +1705,13 @@
       },
       "mode": {
         "type": "String"
+      },
+      "expected": {
+        "type": "String"
       }
     }
   },
-  "securityAuditPermissionsRecommendation": "Limit access to the owner (0600 for files, 0700 for directories).",
+  "securityAuditPermissionsRecommendation": "Restore owner-only access: 0600 for files, 0700 for directories.",
   "@securityAuditPermissionsRecommendation": {
     "description": "Security finding recommendation: permissions."
   },
