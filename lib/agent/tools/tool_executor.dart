@@ -31,6 +31,7 @@ import 'package:probably_works/core/util/line_diff.dart';
 import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/shell_quote.dart';
 import 'package:probably_works/core/util/text_clip.dart';
+import 'package:probably_works/core/util/unified_diff.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/host/host_capture.dart';
 import 'package:probably_works/host/host_op.dart';
@@ -202,6 +203,7 @@ class ToolExecutor {
         ToolNames.runCommand => _runCommand(ctx, call, args),
         ToolNames.writeFile => _writeFile(ctx, call, args),
         ToolNames.editFile => _editFile(ctx, call, args),
+        ToolNames.applyPatch => _applyPatch(ctx, call, args),
         ToolNames.deleteFile => _deleteFile(ctx, call, args),
         ToolNames.movePath => _movePath(ctx, call, args),
         ToolNames.copyPath => _copyPath(ctx, call, args),
@@ -430,6 +432,58 @@ class ToolExecutor {
     final after = replaceAll
         ? before.replaceAll(oldString, newString)
         : before.replaceFirst(oldString, newString);
+    return _mutateFile(
+      ctx,
+      call,
+      args,
+      path: path,
+      before: before,
+      after: after,
+      expectedMtime: mtime,
+    );
+  }
+
+  /// Применяет unified diff целиком. Патч сначала разбирается и проверяется
+  /// по исходному тексту; при любом несовпадении файл не меняется.
+  Future<ToolResult> _applyPatch(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final raw = _str(args, 'patch');
+    final UnifiedDiff patch;
+    try {
+      patch = parseUnifiedDiff(raw);
+    } on FormatException catch (error) {
+      return ToolResult('invalid patch: ${error.message}', isError: true);
+    }
+    final mtime = await _mtimeOrNull(ctx, path);
+    final before = await _readTextOrNull(ctx, path);
+    if (mtime == null || before == null) {
+      return ToolResult(
+        'cannot apply patch to $path (file missing or unreadable)',
+        isError: true,
+      );
+    }
+    if (before.contains('\uFFFD')) {
+      return ToolResult(
+        'cannot apply patch to $path: it is not valid UTF-8 text',
+        isError: true,
+      );
+    }
+    final String after;
+    try {
+      after = applyUnifiedDiff(before, patch);
+    } on FormatException catch (error) {
+      return ToolResult(
+        'patch does not apply to $path: ${error.message}',
+        isError: true,
+      );
+    }
+    if (after == before) {
+      return ToolResult('patch made no changes in $path', isError: true);
+    }
     return _mutateFile(
       ctx,
       call,

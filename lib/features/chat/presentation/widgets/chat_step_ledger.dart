@@ -517,7 +517,8 @@ class _StepRowState extends State<_StepRow>
   /// Запись или правка файла по аргументам запуска. Для остальных инструментов `null`.
   FileChange? _fileChangeOf(ToolRun run) {
     if (run.toolName != ToolNames.writeFile &&
-        run.toolName != ToolNames.editFile) {
+        run.toolName != ToolNames.editFile &&
+        run.toolName != ToolNames.applyPatch) {
       return null;
     }
     if (run.argsJson != _changeArgs || run.command != _changeCommand) {
@@ -860,7 +861,8 @@ String _stepTitle(
   if (file != null && file.path.isNotEmpty) {
     final verb = switch (file.kind) {
       FileChangeKind.created => 'write',
-      FileChangeKind.edited => 'edit',
+      FileChangeKind.edited =>
+        run.toolName == ToolNames.applyPatch ? 'patch' : 'edit',
     };
     final label = projectFileLabel(
       file.path,

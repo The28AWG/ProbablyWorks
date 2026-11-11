@@ -63,6 +63,7 @@ class PolicyEngine {
     }
     if (toolName == 'write_file' ||
         toolName == 'edit_file' ||
+        toolName == 'apply_patch' ||
         toolName == 'delete_file' ||
         toolName == 'move_path' ||
         toolName == 'copy_path' ||

@@ -11,6 +11,7 @@ abstract final class ToolNames {
   static const runCommand = 'run_command';
   static const writeFile = 'write_file';
   static const editFile = 'edit_file';
+  static const applyPatch = 'apply_patch';
   static const deleteFile = 'delete_file';
   static const movePath = 'move_path';
   static const copyPath = 'copy_path';
@@ -170,6 +171,24 @@ abstract final class ToolCatalog {
           'replace_all': {'type': 'boolean'},
         },
         'required': ['path', 'old_string', 'new_string'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.applyPatch,
+      description:
+          'Apply a unified diff to one text file. The patch must contain one or more @@ hunks '
+          'with context, - and + lines. All hunks are validated against the current file and '
+          'applied at once; on any mismatch the file is unchanged. Earlier content is kept for rollback.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'path': _pathProp,
+          'patch': {
+            'type': 'string',
+            'description': 'Unified diff for this path; file headers are optional, hunks are required',
+          },
+        },
+        'required': ['path', 'patch'],
       },
     ),
     const LlmToolSpec(

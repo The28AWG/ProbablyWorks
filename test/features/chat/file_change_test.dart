@@ -87,6 +87,31 @@ void main() {
     expect(file.lines[2].oldNumber, isNull);
   });
 
+  test('apply_patch is an edited file with a parsed unified diff', () {
+    const patch = '@@ -1,2 +1,3 @@\n keep\n-old\n+new\n+extra';
+    final change = fileChangeOf(
+      _run(
+        tool: ToolNames.applyPatch,
+        args: {'path': 'lib/a.dart', 'patch': patch},
+        command: 'write /work/lib/a.dart',
+      ),
+    );
+
+    expect(change, isNotNull);
+    final file = change!;
+    expect(file.kind, FileChangeKind.edited);
+    expect(file.added, 2);
+    expect(file.removed, 1);
+    expect(file.hunkHeader, '@@ -1,2 +1,3 @@');
+    expect(file.copyText, patch);
+    expect(file.lines.map((line) => line.kind), [
+      FileChangeLineKind.context,
+      FileChangeLineKind.removal,
+      FileChangeLineKind.addition,
+      FileChangeLineKind.addition,
+    ]);
+  });
+
   test('a long write keeps full counts and draws only the first lines', () {
     final change = fileChangeOf(
       _run(tool: ToolNames.writeFile, args: {'content': 'a\nb\nc'}),

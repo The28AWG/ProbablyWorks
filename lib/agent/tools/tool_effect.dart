@@ -159,6 +159,7 @@ ToolEffect toolEffectFor(
     ToolNames.statPath => const ToolEffect(hostRead: true),
     ToolNames.writeFile ||
     ToolNames.editFile ||
+    ToolNames.applyPatch ||
     ToolNames.deleteFile => _fileWrite(workspace, args),
     ToolNames.movePath => const ToolEffect(hostWrite: true),
     ToolNames.copyPath => _copyPathEffect(workspace, args),

@@ -1228,6 +1228,20 @@ void main() {
         LlmCompleted(
           toolCalls: [
             _call(
+              'patch',
+              ToolNames.applyPatch,
+              jsonEncode({
+                'path': '$dir/a.txt',
+                'patch': '@@ -1,1 +1,1 @@\n-alpha\n+beta',
+              }),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
               'copy',
               ToolNames.copyPath,
               jsonEncode({'from': '$dir/a.txt', 'to': '$dir/b.txt'}),
@@ -1283,7 +1297,7 @@ void main() {
 
     await runTurn(hub.session(chatId), 'file operations');
 
-    expect(File('$dir/a.txt').readAsStringSync(), 'alpha');
+    expect(File('$dir/a.txt').readAsStringSync(), 'beta');
     expect(File('$dir/b.txt').existsSync(), isFalse);
     expect(File('$dir/c.txt').existsSync(), isFalse);
     final messages = await hub.chats.messages(chatId);
@@ -1293,7 +1307,7 @@ void main() {
     ];
     expect(
       [for (final message in tools) message.toolCallId],
-      ['mkdir', 'write', 'copy', 'move', 'glob', 'stat', 'delete'],
+      ['mkdir', 'write', 'patch', 'copy', 'move', 'glob', 'stat', 'delete'],
     );
     final runs = await hub.chats.toolRunsForMessages([
       for (final message in messages) message.id,
@@ -2186,6 +2200,57 @@ void main() {
           .first;
       broker.resolveEditFileChanges(request.id, choice);
     }
+
+    test('editing after apply_patch restores the pre-turn file', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/patch_rollback.txt';
+      final session = hub.session(chatId);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                ToolNames.writeFile,
+                jsonEncode({'path': path, 'content': 'one\n'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('created'), const LlmCompleted()]);
+      await runTurn(session, 'create the file');
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'p',
+                ToolNames.applyPatch,
+                jsonEncode({
+                  'path': path,
+                  'patch': '@@ -1,1 +1,1 @@\n-one\n+two',
+                }),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('patched'), const LlmCompleted()]);
+      await runTurn(session, 'patch the file');
+
+      final users = await userMessages(chatId);
+      unawaited(
+        resolveNextEditFileChanges(
+          chatId,
+          EditFileChangesChoice.rollbackAndContinue,
+        ),
+      );
+      llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+      await session.editUserMessage(users.last.id, 'rephrase patch');
+
+      expect(File(path).readAsStringSync(), 'one\n');
+    });
 
     test(
       'editing a later message restores files to state after the first write',

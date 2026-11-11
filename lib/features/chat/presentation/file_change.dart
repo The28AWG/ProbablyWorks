@@ -5,6 +5,7 @@ import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/ui/file_change_view.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/line_diff.dart';
+import 'package:probably_works/core/util/unified_diff.dart';
 
 /// Сколько строк изменения рисуем в ленте. Дальше карточка скроллится уже по построенным
 /// строкам, а тысячи виджетов на длинной записи подвешивают ленту. Счётчики в заголовке
@@ -24,7 +25,7 @@ final _finalNewline = RegExp(r'\n$');
 FileChange? fileChangeOf(ToolRun run, {int maxLines = _maxShownLines}) {
   final kind = switch (run.toolName) {
     ToolNames.writeFile => FileChangeKind.created,
-    ToolNames.editFile => FileChangeKind.edited,
+    ToolNames.editFile || ToolNames.applyPatch => FileChangeKind.edited,
     _ => null,
   };
   if (kind == null) return null;
@@ -33,7 +34,10 @@ FileChange? fileChangeOf(ToolRun run, {int maxLines = _maxShownLines}) {
   final path = _path(run, args);
   return switch (kind) {
     FileChangeKind.created => _created(path, args, maxLines),
-    FileChangeKind.edited => _edited(path, args, maxLines),
+    FileChangeKind.edited =>
+      run.toolName == ToolNames.applyPatch
+          ? _patched(path, args, maxLines)
+          : _edited(path, args, maxLines),
   };
 }
 
@@ -101,6 +105,80 @@ FileChange? _created(String path, Map<String, dynamic> args, int maxLines) {
     copyText: content,
     totalLines: raw.length,
     hunkHeader: _hunk(0, raw.length),
+  );
+}
+
+FileChange? _patched(String path, Map<String, dynamic> args, int maxLines) {
+  final raw = args['patch'];
+  if (raw is! String) return null;
+  final UnifiedDiff diff;
+  try {
+    diff = parseUnifiedDiff(raw);
+  } on FormatException {
+    return null;
+  }
+  final lines = <FileChangeLine>[];
+  var added = 0;
+  var removed = 0;
+  var total = 0;
+  for (final hunk in diff.hunks) {
+    var oldNumber = hunk.oldStart == 0 ? 1 : hunk.oldStart;
+    var newNumber = hunk.newStart == 0 ? 1 : hunk.newStart;
+    for (final line in hunk.lines) {
+      total++;
+      final text = plainTerminalText(line.text);
+      switch (line.kind) {
+        case UnifiedDiffLineKind.context:
+          if (lines.length < maxLines) {
+            lines.add(
+              FileChangeLine(
+                kind: FileChangeLineKind.context,
+                text: text,
+                oldNumber: oldNumber,
+                newNumber: newNumber,
+              ),
+            );
+          }
+          oldNumber++;
+          newNumber++;
+        case UnifiedDiffLineKind.deletion:
+          if (lines.length < maxLines) {
+            lines.add(
+              FileChangeLine(
+                kind: FileChangeLineKind.removal,
+                text: text,
+                oldNumber: oldNumber,
+              ),
+            );
+          }
+          oldNumber++;
+          removed++;
+        case UnifiedDiffLineKind.addition:
+          if (lines.length < maxLines) {
+            lines.add(
+              FileChangeLine(
+                kind: FileChangeLineKind.addition,
+                text: text,
+                newNumber: newNumber,
+              ),
+            );
+          }
+          newNumber++;
+          added++;
+      }
+    }
+  }
+  return FileChange(
+    kind: FileChangeKind.edited,
+    path: path,
+    lines: lines,
+    added: added,
+    removed: removed,
+    copyText: raw,
+    totalLines: total,
+    hunkHeader: diff.hunks.length == 1
+        ? diff.hunks.single.header
+        : '${diff.hunks.length} hunks',
   );
 }
 
