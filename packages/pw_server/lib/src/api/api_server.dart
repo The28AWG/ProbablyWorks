@@ -5,11 +5,15 @@ import 'dart:io';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Локальный HTTP API поверх агента.
 ///
@@ -112,6 +116,23 @@ final class ApiServer {
     switch (path[2]) {
       case 'hosts':
         if (rest.isEmpty && request.method == 'GET') return _hosts(request);
+        if (rest.length == 2 && rest[1] == 'trust' && request.method == 'PUT') {
+          return _trustHost(request, rest.first);
+        }
+      case 'settings':
+        if (rest.isEmpty && request.method == 'GET') return _settings(request);
+        if (rest.length == 1 &&
+            rest.first == 'pinned' &&
+            request.method == 'PUT') {
+          return _savePinned(request);
+        }
+      case 'models':
+        if (rest.isEmpty && request.method == 'GET') return _models(request);
+        if (rest.length == 1 &&
+            rest.first == 'remember' &&
+            request.method == 'POST') {
+          return _rememberModels(request);
+        }
       case 'chats':
         return _routeChats(request, rest);
       case 'approvals':
@@ -186,6 +207,18 @@ final class ApiServer {
         case 'runs':
           if (rest.length == 2 && request.method == 'GET') {
             return _runs(request, chatId);
+          }
+        case 'usage':
+          if (rest.length == 2 && request.method == 'GET') {
+            return _chatUsage(request, chatId);
+          }
+        case 'budget':
+          if (rest.length == 2 && request.method == 'PUT') {
+            return _saveBudget(request, chatId);
+          }
+        case 'project':
+          if (rest.length == 2 && request.method == 'GET') {
+            return _project(request, chatId);
           }
         case 'events':
           if (rest.length == 2 && request.method == 'GET') {
@@ -354,6 +387,120 @@ final class ApiServer {
       'questions': [for (final question in questions) _questionJson(question)],
       'editFileChanges': [for (final edit in edits) _editJson(edit)],
     });
+  }
+
+  ChatApi _requireChatApi() {
+    final chat = _chatApi;
+    if (chat == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'chat API is not available',
+      );
+    }
+    return chat;
+  }
+
+  Future<void> _settings(HttpRequest request) async {
+    final chat = _requireChatApi();
+    _json(request.response, HttpStatus.ok, {
+      'defaultModel': await chat.settings.read('defaultModel') ?? '',
+      'pinnedModels': await chat.settings.readPinnedModels(),
+      'steps': _stepsJson(await chat.settings.readStepsDisplay()),
+      'limits': (await chat.limits()).toMap(),
+    });
+  }
+
+  Future<void> _savePinned(HttpRequest request) async {
+    final body = await _body(request);
+    final pinned = body['pinnedModels'];
+    if (pinned is! List) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_pinned',
+        'pinnedModels must be a list',
+      );
+    }
+    await _requireChatApi().settings.savePinnedModels([
+      for (final id in pinned)
+        if (id is String) id,
+    ]);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _chatUsage(HttpRequest request, String chatId) async {
+    final settings = _requireChatApi().settings;
+    final usage = await settings.readDailyUsage(chatId);
+    final budget = await settings.readDailyBudget(chatId);
+    final compaction = await settings.readCompactionInfo(chatId);
+    _json(request.response, HttpStatus.ok, {
+      'usage': {
+        'promptTokens': usage.promptTokens,
+        'completionTokens': usage.completionTokens,
+        'costUsd': usage.costUsd,
+        'requests': usage.requests,
+      },
+      'budget': budget,
+      'compaction': compaction == null
+          ? null
+          : {
+              'at': compaction.at.toUtc().toIso8601String(),
+              'reason': compaction.reason,
+              'cutoffSeq': compaction.cutoffSeq,
+              'summaryChars': compaction.summaryChars,
+            },
+    });
+  }
+
+  Future<void> _saveBudget(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    final value = body['budget'];
+    await _requireChatApi().settings.saveDailyBudget(
+      chatId,
+      value is num ? value.toDouble() : null,
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _project(HttpRequest request, String chatId) async {
+    final project = await _requireChatApi().projectStore.forChat(chatId);
+    _json(request.response, HttpStatus.ok, {
+      'project': project == null ? null : _projectJson(project),
+    });
+  }
+
+  Future<void> _trustHost(HttpRequest request, String hostId) async {
+    final body = await _body(request);
+    final workspace = _string(body, 'workspace');
+    await _requireChatApi().settings.setTrusted(
+      hostId,
+      workspace,
+      trusted: body['trusted'] != false,
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _models(HttpRequest request) {
+    final state = _requireChatApi().models.state;
+    _json(request.response, HttpStatus.ok, _catalogJson(state));
+    return Future<void>.value();
+  }
+
+  Future<void> _rememberModels(HttpRequest request) async {
+    final body = await _body(request);
+    final ids = body['ids'];
+    if (ids is! List) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_ids',
+        'ids must be a list',
+      );
+    }
+    await _requireChatApi().models.remember([
+      for (final id in ids)
+        if (id is String) id,
+    ]);
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _messages(HttpRequest request, String chatId) async {
@@ -680,6 +827,55 @@ Map<String, Object?> _hostJson(Host host) => {
   'os': host.os.name,
   'defaultWorkspace': host.defaultWorkspace,
   'notes': host.notes,
+};
+
+Map<String, Object?> _stepsJson(StepsDisplay steps) => {
+  'group': steps.group,
+  'expandWhileActive': steps.expandWhileActive,
+  'thoughts': steps.thoughts.name,
+  'tools': steps.tools.name,
+};
+
+Map<String, Object?> _projectJson(Project project) => {
+  'id': project.id,
+  'hostId': project.hostId,
+  'name': project.name,
+  'workspace': project.workspace,
+  'workspaceKey': project.workspaceKey,
+  'policyProfileId': project.policyProfileId,
+  'trustAgentsMd': project.trustAgentsMd,
+  'skillsInitialized': project.skillsInitialized,
+  'archivedAt': project.archivedAt?.toUtc().toIso8601String(),
+  'createdAt': project.createdAt.toUtc().toIso8601String(),
+  'updatedAt': project.updatedAt.toUtc().toIso8601String(),
+};
+
+Map<String, Object?> _catalogJson(ModelCatalogState state) => {
+  'models': [for (final model in state.models) _modelJson(model)],
+  'saved': {
+    for (final entry in state.saved.entries)
+      entry.key: {
+        'id': entry.value.id,
+        'name': entry.value.name,
+        'contextLength': entry.value.contextLength,
+        'supportsTools': entry.value.supportsTools,
+        'inputModalities': entry.value.inputModalities,
+      },
+  },
+  'syncedAt': state.syncedAt?.toUtc().toIso8601String(),
+  'loading': state.loading,
+  'error': state.error,
+};
+
+Map<String, Object?> _modelJson(LlmModelInfo model) => {
+  'id': model.id,
+  'name': model.name,
+  'contextLength': model.contextLength,
+  'supportsTools': model.supportsTools,
+  'promptPrice': model.promptPrice,
+  'completionPrice': model.completionPrice,
+  'created': model.created,
+  'inputModalities': model.inputModalities,
 };
 
 Chat _chatFromJson(String id, Map<String, dynamic> json) {

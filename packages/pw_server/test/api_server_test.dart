@@ -178,6 +178,24 @@ void main() {
     expect(backend.updatedWorkspace, '/work');
   });
 
+  test('chat state endpoints report unsupported without ChatApi', () async {
+    for (final path in [
+      '/api/v1/settings',
+      '/api/v1/models',
+      '/api/v1/chats/c1/usage',
+      '/api/v1/chats/c1/project',
+    ]) {
+      final (status, _) = await _request(
+        client,
+        base,
+        'GET',
+        path,
+        token: _token,
+      );
+      expect(status, HttpStatus.notImplemented, reason: path);
+    }
+  });
+
   test('session endpoints report unsupported without ChatApi', () async {
     final (status, body) = await _request(
       client,

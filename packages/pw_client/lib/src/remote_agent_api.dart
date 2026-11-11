@@ -19,6 +19,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:uuid/uuid.dart';
 
@@ -52,6 +53,10 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   final _questionChats = <String, String>{};
   final _editChats = <String, String>{};
   final _queues = <String, List<QueuedPrompt>>{};
+  Map<String, dynamic>? _globalSettings;
+  final _usageByChat = <String, Map<String, dynamic>>{};
+  final _projectsByChat = <String, Project?>{};
+  ModelCatalogState? _catalog;
   final _approvalsById = <String, ApprovalRequest>{};
   final _questionsById = <String, UserQuestion>{};
   final _editsById = <String, EditFileChangesRequest>{};
@@ -109,16 +114,16 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   late final ChatStore chatStore = _RemoteChatStore(this);
 
   @override
-  late final SettingsStore settings = _RemoteSettings();
+  late final SettingsStore settings = _RemoteSettings(this);
 
   @override
-  late final ProjectStore projectStore = const _RemoteProjectStore();
+  late final ProjectStore projectStore = _RemoteProjectStore(this);
 
   @override
   late final ProjectsStore projects = const _RemoteProjects();
 
   @override
-  late final ModelStore models = const _RemoteModels();
+  late final ModelStore models = _RemoteModels(this);
 
   @override
   late final HostStore hostStore = _RemoteHosts(this);
@@ -255,6 +260,9 @@ class RemoteAgentApi implements AgentApi, ChatApi {
       final chat = _chat(map);
       _trackChatState(chat.id, map);
       _syncCards(chat.id, json);
+      await _loadGlobalSettings();
+      await _loadChatState(chat.id);
+      await _loadModels();
       return chat;
     } on AgentApiException catch (error) {
       if (error.status == 404) return null;
@@ -354,6 +362,39 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   Future<void> openChat(String chatId) async {
     await _send('PUT', '/chats/$chatId/presence');
     await _trySyncSession(chatId);
+    await _loadGlobalSettings();
+    await _loadChatState(chatId);
+    await _loadModels();
+  }
+
+  Future<void> _loadGlobalSettings() async {
+    try {
+      _globalSettings ??= await _get('/settings');
+    } on AgentApiException {
+      // Настройки не критичны для чтения чата.
+    }
+  }
+
+  Future<void> _loadChatState(String chatId) async {
+    try {
+      final usage = await _get('/chats/$chatId/usage');
+      _usageByChat[chatId] = usage;
+      final project = await _get('/chats/$chatId/project');
+      final raw = project['project'];
+      _projectsByChat[chatId] = raw is Map
+          ? _project(Map<String, dynamic>.from(raw))
+          : null;
+    } on AgentApiException {
+      // Чат всё равно можно открыть.
+    }
+  }
+
+  Future<void> _loadModels() async {
+    try {
+      _catalog = _catalogFrom(await _get('/models'));
+    } on AgentApiException {
+      // Каталог не критичен для журнала.
+    }
   }
 
   @override
@@ -777,6 +818,66 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   }
 }
 
+StepsDisplay _steps(Map<String, dynamic> json) => StepsDisplay(
+  group: json['group'] != false,
+  expandWhileActive: json['expandWhileActive'] != false,
+  thoughts: ThoughtsVisibility.values.byName('${json['thoughts'] ?? 'all'}'),
+  tools: ToolsVisibility.values.byName('${json['tools'] ?? 'all'}'),
+);
+
+Project _project(Map<String, dynamic> json) => Project(
+  id: _string(json, 'id'),
+  hostId: _string(json, 'hostId'),
+  name: _string(json, 'name'),
+  workspace: _string(json, 'workspace'),
+  workspaceKey: _string(json, 'workspaceKey'),
+  policyProfileId: json['policyProfileId'] as String?,
+  trustAgentsMd: json['trustAgentsMd'] == true,
+  skillsInitialized: json['skillsInitialized'] == true,
+  archivedAt: _date(json['archivedAt']),
+  createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+  updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+);
+
+ModelCatalogState _catalogFrom(Map<String, dynamic> json) => ModelCatalogState(
+  models: [
+    for (final item in (json['models'] as List? ?? const []))
+      if (item is Map) _model(Map<String, dynamic>.from(item)),
+  ],
+  saved: {
+    for (final entry in (json['saved'] as Map? ?? const {}).entries)
+      '${entry.key}': _savedModel(
+        Map<String, dynamic>.from(entry.value as Map),
+      ),
+  },
+  syncedAt: _date(json['syncedAt']),
+  loading: json['loading'] == true,
+  error: json['error'] as String?,
+);
+
+LlmModelInfo _model(Map<String, dynamic> json) => LlmModelInfo(
+  id: _string(json, 'id'),
+  name: _string(json, 'name'),
+  contextLength: json['contextLength'] as int?,
+  supportsTools: json['supportsTools'] == true,
+  promptPrice: json['promptPrice'] as String?,
+  completionPrice: json['completionPrice'] as String?,
+  created: json['created'] as int?,
+  inputModalities: json['inputModalities'] is List
+      ? [for (final item in json['inputModalities'] as List) '$item']
+      : null,
+);
+
+SavedModel _savedModel(Map<String, dynamic> json) => SavedModel(
+  id: _string(json, 'id'),
+  name: _string(json, 'name'),
+  contextLength: json['contextLength'] as int?,
+  supportsTools: json['supportsTools'] == true,
+  inputModalities: json['inputModalities'] is List
+      ? [for (final item in json['inputModalities'] as List) '$item']
+      : null,
+);
+
 Map<String, Object?> _chatBody(Chat chat) => {
   'hostId': chat.hostId,
   'projectId': chat.projectId,
@@ -966,62 +1067,153 @@ final class _RemoteChatStore implements ChatStore {
 }
 
 final class _RemoteSettings implements SettingsStore {
-  @override
-  Stream<String?> watch(String key) => Stream<String?>.empty();
+  _RemoteSettings(this._api);
+
+  final RemoteAgentApi _api;
 
   @override
-  Future<String?> read(String key) => Future<String?>.value();
+  Stream<String?> watch(String key) async* {
+    while (true) {
+      yield await read(key);
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
 
   @override
-  Future<List<String>> readPinnedModels() => Future.value(const []);
+  Future<String?> read(String key) async {
+    await _api._loadGlobalSettings();
+    return switch (key) {
+      'defaultModel' => _api._globalSettings?['defaultModel'] as String?,
+      _ => null,
+    };
+  }
 
   @override
-  Future<void> savePinnedModels(List<String> ids) => Future<void>.value();
+  Future<List<String>> readPinnedModels() async {
+    await _api._loadGlobalSettings();
+    return [
+      for (final id
+          in (_api._globalSettings?['pinnedModels'] as List? ?? const []))
+        if (id is String) id,
+    ];
+  }
 
   @override
-  Future<StepsDisplay> readStepsDisplay() =>
-      Future.value(StepsDisplay.defaults);
+  Future<void> savePinnedModels(List<String> ids) async {
+    await _api.sendJson('PUT', '/settings/pinned', body: {'pinnedModels': ids});
+    _api._globalSettings = {...?_api._globalSettings, 'pinnedModels': ids};
+  }
 
   @override
-  Future<ChatDailyUsage> readDailyUsage(String chatId) =>
-      Future.value(const ChatDailyUsage());
+  Future<StepsDisplay> readStepsDisplay() async {
+    await _api._loadGlobalSettings();
+    final raw = _api._globalSettings?['steps'];
+    if (raw is! Map) return StepsDisplay.defaults;
+    return _steps(Map<String, dynamic>.from(raw));
+  }
 
   @override
-  Future<double?> readDailyBudget(String chatId) => Future<double?>.value();
+  Future<ChatDailyUsage> readDailyUsage(String chatId) async {
+    await _api._loadChatState(chatId);
+    final raw = _api._usageByChat[chatId]?['usage'];
+    if (raw is! Map) return const ChatDailyUsage();
+    final map = Map<String, dynamic>.from(raw);
+    return ChatDailyUsage(
+      promptTokens: _int(map, 'promptTokens'),
+      completionTokens: _int(map, 'completionTokens'),
+      costUsd: _double(map['costUsd']) ?? 0,
+      requests: _int(map, 'requests'),
+    );
+  }
 
   @override
-  Future<void> saveDailyBudget(String chatId, double? value) =>
-      Future<void>.value();
+  Future<double?> readDailyBudget(String chatId) async {
+    await _api._loadChatState(chatId);
+    return _double(_api._usageByChat[chatId]?['budget']);
+  }
 
   @override
-  Future<ChatCompactionInfo?> readCompactionInfo(String chatId) =>
-      Future<ChatCompactionInfo?>.value();
+  Future<void> saveDailyBudget(String chatId, double? value) async {
+    await _api.sendJson(
+      'PUT',
+      '/chats/$chatId/budget',
+      body: {'budget': value},
+    );
+    _api._usageByChat[chatId] = {
+      ...?_api._usageByChat[chatId],
+      'budget': value,
+    };
+  }
+
+  @override
+  Future<ChatCompactionInfo?> readCompactionInfo(String chatId) async {
+    await _api._loadChatState(chatId);
+    final raw = _api._usageByChat[chatId]?['compaction'];
+    if (raw is! Map) return null;
+    final map = Map<String, dynamic>.from(raw);
+    return ChatCompactionInfo(
+      at: DateTime.parse('${map['at']}'),
+      reason: '${map['reason'] ?? 'threshold'}',
+      cutoffSeq: _int(map, 'cutoffSeq'),
+      summaryChars: _int(map, 'summaryChars'),
+    );
+  }
 
   @override
   Future<void> setTrusted(
     String hostId,
     String workspace, {
     required bool trusted,
-  }) => Future<void>.value();
+  }) async {
+    await _api.sendJson(
+      'PUT',
+      '/hosts/$hostId/trust',
+      body: {'workspace': workspace, 'trusted': trusted},
+    );
+  }
 
   @override
-  AppLimits cachedLimits() => const AppLimits();
+  AppLimits cachedLimits() {
+    final raw = _api._globalSettings?['limits'];
+    if (raw is! Map) return const AppLimits();
+    try {
+      return AppLimits.fromJson(jsonEncode(Map<String, dynamic>.from(raw)));
+    } on FormatException {
+      return const AppLimits();
+    }
+  }
 
   @override
-  List<String> cachedPinnedModels() => const [];
+  List<String> cachedPinnedModels() => [
+    for (final id
+        in (_api._globalSettings?['pinnedModels'] as List? ?? const []))
+      if (id is String) id,
+  ];
 
   @override
-  StepsDisplay cachedStepsDisplay() => StepsDisplay.defaults;
+  StepsDisplay cachedStepsDisplay() {
+    final raw = _api._globalSettings?['steps'];
+    return raw is Map
+        ? _steps(Map<String, dynamic>.from(raw))
+        : StepsDisplay.defaults;
+  }
 
   @override
-  String? cached(String key) => null;
+  String? cached(String key) => key == 'defaultModel'
+      ? (_api._globalSettings?['defaultModel'] as String?)
+      : null;
 }
 
 final class _RemoteProjectStore implements ProjectStore {
-  const _RemoteProjectStore();
+  _RemoteProjectStore(this._api);
+
+  final RemoteAgentApi _api;
 
   @override
-  Future<Project?> forChat(String chatId) => Future<Project?>.value();
+  Future<Project?> forChat(String chatId) async {
+    await _api._loadChatState(chatId);
+    return _api._projectsByChat[chatId];
+  }
 
   @override
   Future<Project?> byId(String id) => Future<Project?>.value();
@@ -1049,16 +1241,26 @@ final class _RemoteProjects implements ProjectsStore {
 }
 
 final class _RemoteModels implements ModelStore {
-  const _RemoteModels();
+  _RemoteModels(this._api);
+
+  final RemoteAgentApi _api;
 
   @override
-  ModelCatalogState get state => const ModelCatalogState();
+  ModelCatalogState get state => _api._catalog ?? const ModelCatalogState();
 
   @override
-  Stream<ModelCatalogState> watch() => Stream<ModelCatalogState>.empty();
+  Stream<ModelCatalogState> watch() async* {
+    while (true) {
+      await _api._loadModels();
+      yield state;
+      await Future<void>.delayed(const Duration(seconds: 30));
+    }
+  }
 
   @override
-  Future<void> remember(List<String> ids) => Future<void>.value();
+  Future<void> remember(List<String> ids) async {
+    await _api.sendJson('POST', '/models/remember', body: {'ids': ids});
+  }
 }
 
 final class _RemoteHosts implements HostStore {
