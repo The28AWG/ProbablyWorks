@@ -1573,6 +1573,247 @@
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
   },
+  "securityAuditTitle": "Проверка безопасности окружения",
+  "@securityAuditTitle": {
+    "description": "Title of the security audit section."
+  },
+  "securityAuditHint": "Проверка только для чтения: режим, хранилище, права, политика и включённые инструменты. Она не защищает от самого агента.",
+  "@securityAuditHint": {
+    "description": "Description of the security audit."
+  },
+  "securityAuditRun": "Проверить",
+  "@securityAuditRun": {
+    "description": "Button that starts the security audit."
+  },
+  "securityAuditRunning": "Проверка…",
+  "@securityAuditRunning": {
+    "description": "Security audit progress."
+  },
+  "securityAuditCheckedAt": "Проверено {when}",
+  "@securityAuditCheckedAt": {
+    "description": "Security audit timestamp.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditPlatform": "Платформа: {platform}",
+  "@securityAuditPlatform": {
+    "description": "Security audit platform line.",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditStatusUnsafe": "Небезопасно",
+  "@securityAuditStatusUnsafe": {
+    "description": "Security audit status: critical findings."
+  },
+  "securityAuditStatusBaseline": "Только базовый уровень",
+  "@securityAuditStatusBaseline": {
+    "description": "Security audit status: MVP checks passed, but agent is trusted."
+  },
+  "securityAuditStatusUnknown": "Неизвестно",
+  "@securityAuditStatusUnknown": {
+    "description": "Security audit status: not enough data."
+  },
+  "securityAuditStatusIsolated": "Изолировано",
+  "@securityAuditStatusIsolated": {
+    "description": "Security audit status: isolation is enabled."
+  },
+  "securityAuditUnsafeHint": "Найдены критичные проблемы. Исправьте их до открытия агента наружу.",
+  "@securityAuditUnsafeHint": {
+    "description": "Security audit hint for unsafe status."
+  },
+  "securityAuditBaselineHint": "Базовые проверки пройдены, но агент работает с правами пользователя и полностью доверен.",
+  "@securityAuditBaselineHint": {
+    "description": "Security audit hint for baseline status."
+  },
+  "securityAuditUnknownHint": "Окружение проверено не полностью.",
+  "@securityAuditUnknownHint": {
+    "description": "Security audit hint for unknown status."
+  },
+  "securityAuditIsolatedHint": "Агент работает в изолированном окружении.",
+  "@securityAuditIsolatedHint": {
+    "description": "Security audit hint for isolated status."
+  },
+  "securityAuditSeverityCritical": "Критично",
+  "@securityAuditSeverityCritical": {
+    "description": "Security finding severity: critical."
+  },
+  "securityAuditSeverityWarning": "Предупреждение",
+  "@securityAuditSeverityWarning": {
+    "description": "Security finding severity: warning."
+  },
+  "securityAuditSeverityInfo": "Информация",
+  "@securityAuditSeverityInfo": {
+    "description": "Security finding severity: info."
+  },
+  "securityAuditGuiTitle": "Режим GUI",
+  "@securityAuditGuiTitle": {
+    "description": "Security finding: GUI mode."
+  },
+  "securityAuditGuiDetail": "Агент работает с правами пользователя. Изоляция от агента не включена.",
+  "@securityAuditGuiDetail": {
+    "description": "Security finding detail: GUI mode."
+  },
+  "securityAuditGuiRecommendation": "Используйте изолированный worker или VM для защиты от агента.",
+  "@securityAuditGuiRecommendation": {
+    "description": "Security finding recommendation: GUI mode."
+  },
+  "securityAuditRootTitle": "Запуск от root",
+  "@securityAuditRootTitle": {
+    "description": "Security finding: root user."
+  },
+  "securityAuditRootDetail": "Процесс имеет права администратора.",
+  "@securityAuditRootDetail": {
+    "description": "Security finding detail: root user."
+  },
+  "securityAuditRootRecommendation": "Запускайте ProbablyWorks от обычного пользователя.",
+  "@securityAuditRootRecommendation": {
+    "description": "Security finding recommendation: root user."
+  },
+  "securityAuditSecretStoreTitle": "Хранилище секретов",
+  "@securityAuditSecretStoreTitle": {
+    "description": "Security finding: secret storage."
+  },
+  "securityAuditSecretStoreDetail": "Backend: {backend}.",
+  "@securityAuditSecretStoreDetail": {
+    "description": "Security finding detail: secret storage backend.",
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditSecretStoreRecommendation": "Используйте keyring ОС или другое защищённое хранилище.",
+  "@securityAuditSecretStoreRecommendation": {
+    "description": "Security finding recommendation: secret storage."
+  },
+  "securityAuditPermissionsTitle": "Слишком широкие права на файлы",
+  "@securityAuditPermissionsTitle": {
+    "description": "Security finding: loose file permissions."
+  },
+  "securityAuditPermissionsDetail": "{path}: {mode}",
+  "@securityAuditPermissionsDetail": {
+    "description": "Security finding detail: path and permissions.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      },
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditPermissionsRecommendation": "Оставьте доступ только владельцу (0600 для файлов, 0700 для каталогов).",
+  "@securityAuditPermissionsRecommendation": {
+    "description": "Security finding recommendation: permissions."
+  },
+  "securityAuditPermissionsUnknownTitle": "Права на файлы не проверены",
+  "@securityAuditPermissionsUnknownTitle": {
+    "description": "Security finding: permissions unknown."
+  },
+  "securityAuditPermissionsUnknownDetail": "Проверка ACL на этой платформе не реализована.",
+  "@securityAuditPermissionsUnknownDetail": {
+    "description": "Security finding detail: permissions unknown."
+  },
+  "securityAuditPermissionsUnknownRecommendation": "Проверьте права на каталог данных вручную.",
+  "@securityAuditPermissionsUnknownRecommendation": {
+    "description": "Security finding recommendation: permissions unknown."
+  },
+  "securityAuditEnvTitle": "Секреты в окружении",
+  "@securityAuditEnvTitle": {
+    "description": "Security finding: secrets in environment."
+  },
+  "securityAuditEnvDetail": "Переменные похожи на секреты: {keys}.",
+  "@securityAuditEnvDetail": {
+    "description": "Security finding detail: environment variable names.",
+    "placeholders": {
+      "keys": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditEnvRecommendation": "Уберите их из окружения и используйте SecretStore.",
+  "@securityAuditEnvRecommendation": {
+    "description": "Security finding recommendation: environment secrets."
+  },
+  "securityAuditPolicyTitle": "Политика YOLO",
+  "@securityAuditPolicyTitle": {
+    "description": "Security finding: yolo policy."
+  },
+  "securityAuditPolicyDetail": "Инструменты выполняются без подтверждения.",
+  "@securityAuditPolicyDetail": {
+    "description": "Security finding detail: yolo policy."
+  },
+  "securityAuditPolicyRecommendation": "Используйте Ask для чувствительной работы.",
+  "@securityAuditPolicyRecommendation": {
+    "description": "Security finding recommendation: yolo policy."
+  },
+  "securityAuditDenylistTitle": "Пустой denylist команд",
+  "@securityAuditDenylistTitle": {
+    "description": "Security finding: empty denylist."
+  },
+  "securityAuditDenylistDetail": "Опасные команды не блокируются.",
+  "@securityAuditDenylistDetail": {
+    "description": "Security finding detail: empty denylist."
+  },
+  "securityAuditDenylistRecommendation": "Восстановите denylist по умолчанию.",
+  "@securityAuditDenylistRecommendation": {
+    "description": "Security finding recommendation: empty denylist."
+  },
+  "securityAuditExternalTitle": "Включены внешние инструменты",
+  "@securityAuditExternalTitle": {
+    "description": "Security finding: external tools."
+  },
+  "securityAuditExternalDetail": "Плагины: {plugins}. MCP-серверы: {servers}.",
+  "@securityAuditExternalDetail": {
+    "description": "Security finding detail: external tools.",
+    "placeholders": {
+      "plugins": {
+        "type": "String"
+      },
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditExternalRecommendation": "Проверьте их и не отключайте подтверждения политики.",
+  "@securityAuditExternalRecommendation": {
+    "description": "Security finding recommendation: external tools."
+  },
+  "securityAuditApiTitle": "Headless API",
+  "@securityAuditApiTitle": {
+    "description": "Security finding: headless API."
+  },
+  "securityAuditApiDetail": "В GUI-режиме не включён.",
+  "@securityAuditApiDetail": {
+    "description": "Security finding detail: headless API."
+  },
+  "securityAuditApiRecommendation": "При включении слушайте loopback и требуйте токен.",
+  "@securityAuditApiRecommendation": {
+    "description": "Security finding recommendation: headless API."
+  },
+  "securityAuditSingleTitle": "Блокировка одного экземпляра",
+  "@securityAuditSingleTitle": {
+    "description": "Security finding: single instance lock."
+  },
+  "securityAuditSingleDetail": "Файл блокировки: {path}.",
+  "@securityAuditSingleDetail": {
+    "description": "Security finding detail: lock file.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditSingleRecommendation": "Действий не требуется.",
+  "@securityAuditSingleRecommendation": {
+    "description": "Security finding recommendation: lock file."
+  },
   "settingsGroupAdvanced": "Дополнительно",
   "@settingsGroupAdvanced": {
     "description": "Settings group: limits in JSON."

@@ -46,6 +46,7 @@ import '../../core/data/virtual_host_provisioner.dart' as _i354;
 import '../../core/db/app_database.dart' as _i386;
 import '../../core/notify/app_notifier.dart' as _i404;
 import '../../core/security/secret_store.dart' as _i617;
+import '../../core/security/security_audit_service.dart' as _i388;
 import '../../host/host_diagnostics.dart' as _i441;
 import '../../host/host_runtime_factory.dart' as _i559;
 import '../../host/portable_pty_launcher.dart' as _i224;
@@ -131,6 +132,15 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i250.HostRepository(
         gh<_i386.AppDatabase>(),
         gh<_i617.SecretStore>(),
+      ),
+    );
+    gh.lazySingleton<_i388.SecurityAuditService>(
+      () => _i388.SecurityAuditService(
+        gh<_i859.AppPaths>(),
+        gh<_i913.SettingsRepository>(),
+        gh<_i617.SecretStore>(),
+        gh<_i968.McpServerRepository>(),
+        gh<_i193.PluginCatalog>(),
       ),
     );
     gh.lazySingleton<_i594.TurnChangesetService>(

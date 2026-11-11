@@ -1573,6 +1573,247 @@
   "@settingsGroupSafetyHint": {
     "description": "Description of the safety settings group."
   },
+  "securityAuditTitle": "Environment security check",
+  "@securityAuditTitle": {
+    "description": "Title of the security audit section."
+  },
+  "securityAuditHint": "Read-only check of mode, storage, permissions, policy and enabled tools. It does not protect against the agent itself.",
+  "@securityAuditHint": {
+    "description": "Description of the security audit."
+  },
+  "securityAuditRun": "Run check",
+  "@securityAuditRun": {
+    "description": "Button that starts the security audit."
+  },
+  "securityAuditRunning": "Checking…",
+  "@securityAuditRunning": {
+    "description": "Security audit progress."
+  },
+  "securityAuditCheckedAt": "Checked {when}",
+  "@securityAuditCheckedAt": {
+    "description": "Security audit timestamp.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditPlatform": "Platform: {platform}",
+  "@securityAuditPlatform": {
+    "description": "Security audit platform line.",
+    "placeholders": {
+      "platform": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditStatusUnsafe": "Unsafe",
+  "@securityAuditStatusUnsafe": {
+    "description": "Security audit status: critical findings."
+  },
+  "securityAuditStatusBaseline": "Baseline only",
+  "@securityAuditStatusBaseline": {
+    "description": "Security audit status: MVP checks passed, but agent is trusted."
+  },
+  "securityAuditStatusUnknown": "Unknown",
+  "@securityAuditStatusUnknown": {
+    "description": "Security audit status: not enough data."
+  },
+  "securityAuditStatusIsolated": "Isolated",
+  "@securityAuditStatusIsolated": {
+    "description": "Security audit status: isolation is enabled."
+  },
+  "securityAuditUnsafeHint": "Critical issues found. Fix them before exposing the agent.",
+  "@securityAuditUnsafeHint": {
+    "description": "Security audit hint for unsafe status."
+  },
+  "securityAuditBaselineHint": "MVP checks passed, but the agent still runs with your user rights and is fully trusted.",
+  "@securityAuditBaselineHint": {
+    "description": "Security audit hint for baseline status."
+  },
+  "securityAuditUnknownHint": "The environment could not be assessed completely.",
+  "@securityAuditUnknownHint": {
+    "description": "Security audit hint for unknown status."
+  },
+  "securityAuditIsolatedHint": "The agent is running in an isolated environment.",
+  "@securityAuditIsolatedHint": {
+    "description": "Security audit hint for isolated status."
+  },
+  "securityAuditSeverityCritical": "Critical",
+  "@securityAuditSeverityCritical": {
+    "description": "Security finding severity: critical."
+  },
+  "securityAuditSeverityWarning": "Warning",
+  "@securityAuditSeverityWarning": {
+    "description": "Security finding severity: warning."
+  },
+  "securityAuditSeverityInfo": "Info",
+  "@securityAuditSeverityInfo": {
+    "description": "Security finding severity: info."
+  },
+  "securityAuditGuiTitle": "GUI mode",
+  "@securityAuditGuiTitle": {
+    "description": "Security finding: GUI mode."
+  },
+  "securityAuditGuiDetail": "The agent runs with your user rights. No isolation from the agent is enabled.",
+  "@securityAuditGuiDetail": {
+    "description": "Security finding detail: GUI mode."
+  },
+  "securityAuditGuiRecommendation": "Use an isolated worker or VM for protection from the agent.",
+  "@securityAuditGuiRecommendation": {
+    "description": "Security finding recommendation: GUI mode."
+  },
+  "securityAuditRootTitle": "Running as root",
+  "@securityAuditRootTitle": {
+    "description": "Security finding: root user."
+  },
+  "securityAuditRootDetail": "The process has administrator rights.",
+  "@securityAuditRootDetail": {
+    "description": "Security finding detail: root user."
+  },
+  "securityAuditRootRecommendation": "Run ProbablyWorks as a normal user.",
+  "@securityAuditRootRecommendation": {
+    "description": "Security finding recommendation: root user."
+  },
+  "securityAuditSecretStoreTitle": "Secret storage",
+  "@securityAuditSecretStoreTitle": {
+    "description": "Security finding: secret storage."
+  },
+  "securityAuditSecretStoreDetail": "Backend: {backend}.",
+  "@securityAuditSecretStoreDetail": {
+    "description": "Security finding detail: secret storage backend.",
+    "placeholders": {
+      "backend": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditSecretStoreRecommendation": "Use the OS keyring or another protected backend.",
+  "@securityAuditSecretStoreRecommendation": {
+    "description": "Security finding recommendation: secret storage."
+  },
+  "securityAuditPermissionsTitle": "Loose file permissions",
+  "@securityAuditPermissionsTitle": {
+    "description": "Security finding: loose file permissions."
+  },
+  "securityAuditPermissionsDetail": "{path}: {mode}",
+  "@securityAuditPermissionsDetail": {
+    "description": "Security finding detail: path and permissions.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      },
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditPermissionsRecommendation": "Limit access to the owner (0600 for files, 0700 for directories).",
+  "@securityAuditPermissionsRecommendation": {
+    "description": "Security finding recommendation: permissions."
+  },
+  "securityAuditPermissionsUnknownTitle": "File permissions not checked",
+  "@securityAuditPermissionsUnknownTitle": {
+    "description": "Security finding: permissions unknown."
+  },
+  "securityAuditPermissionsUnknownDetail": "ACL checks are not implemented on this platform.",
+  "@securityAuditPermissionsUnknownDetail": {
+    "description": "Security finding detail: permissions unknown."
+  },
+  "securityAuditPermissionsUnknownRecommendation": "Verify app data permissions manually.",
+  "@securityAuditPermissionsUnknownRecommendation": {
+    "description": "Security finding recommendation: permissions unknown."
+  },
+  "securityAuditEnvTitle": "Secrets in environment",
+  "@securityAuditEnvTitle": {
+    "description": "Security finding: secrets in environment."
+  },
+  "securityAuditEnvDetail": "Variables look like secrets: {keys}.",
+  "@securityAuditEnvDetail": {
+    "description": "Security finding detail: environment variable names.",
+    "placeholders": {
+      "keys": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditEnvRecommendation": "Remove them from the environment and use SecretStore.",
+  "@securityAuditEnvRecommendation": {
+    "description": "Security finding recommendation: environment secrets."
+  },
+  "securityAuditPolicyTitle": "YOLO policy",
+  "@securityAuditPolicyTitle": {
+    "description": "Security finding: yolo policy."
+  },
+  "securityAuditPolicyDetail": "Tools run without approval.",
+  "@securityAuditPolicyDetail": {
+    "description": "Security finding detail: yolo policy."
+  },
+  "securityAuditPolicyRecommendation": "Use Ask mode for sensitive work.",
+  "@securityAuditPolicyRecommendation": {
+    "description": "Security finding recommendation: yolo policy."
+  },
+  "securityAuditDenylistTitle": "Empty command denylist",
+  "@securityAuditDenylistTitle": {
+    "description": "Security finding: empty denylist."
+  },
+  "securityAuditDenylistDetail": "Dangerous commands are not blocked.",
+  "@securityAuditDenylistDetail": {
+    "description": "Security finding detail: empty denylist."
+  },
+  "securityAuditDenylistRecommendation": "Restore the default denylist.",
+  "@securityAuditDenylistRecommendation": {
+    "description": "Security finding recommendation: empty denylist."
+  },
+  "securityAuditExternalTitle": "External tools enabled",
+  "@securityAuditExternalTitle": {
+    "description": "Security finding: external tools."
+  },
+  "securityAuditExternalDetail": "Plugins: {plugins}. MCP servers: {servers}.",
+  "@securityAuditExternalDetail": {
+    "description": "Security finding detail: external tools.",
+    "placeholders": {
+      "plugins": {
+        "type": "String"
+      },
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditExternalRecommendation": "Review them and keep policy approvals enabled.",
+  "@securityAuditExternalRecommendation": {
+    "description": "Security finding recommendation: external tools."
+  },
+  "securityAuditApiTitle": "Headless API",
+  "@securityAuditApiTitle": {
+    "description": "Security finding: headless API."
+  },
+  "securityAuditApiDetail": "Not enabled in GUI mode.",
+  "@securityAuditApiDetail": {
+    "description": "Security finding detail: headless API."
+  },
+  "securityAuditApiRecommendation": "When enabled, bind to loopback and require a token.",
+  "@securityAuditApiRecommendation": {
+    "description": "Security finding recommendation: headless API."
+  },
+  "securityAuditSingleTitle": "Single instance lock",
+  "@securityAuditSingleTitle": {
+    "description": "Security finding: single instance lock."
+  },
+  "securityAuditSingleDetail": "Lock file: {path}.",
+  "@securityAuditSingleDetail": {
+    "description": "Security finding detail: lock file.",
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "securityAuditSingleRecommendation": "No action needed.",
+  "@securityAuditSingleRecommendation": {
+    "description": "Security finding recommendation: lock file."
+  },
   "settingsGroupAdvanced": "Advanced",
   "@settingsGroupAdvanced": {
     "description": "Settings group: limits in JSON."

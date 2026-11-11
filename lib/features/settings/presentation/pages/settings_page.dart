@@ -20,6 +20,7 @@ import 'package:probably_works/features/settings/presentation/widgets/api_key_se
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/security_audit_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
@@ -676,6 +677,7 @@ class _SettingsViewState extends State<_SettingsView> {
         ),
       ],
     ),
+    const SecurityAuditSection(),
     AppCard(
       child: SettingsFormRow(
         title: l10n.settingsDenylist,
