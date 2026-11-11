@@ -47,7 +47,7 @@ Future<({McpServer server, McpClientManager manager})> _start() async {
   await secrets.write('token', 'secret-value');
   final manager = McpClientManager.withTransport(
     secrets,
-    (server, environment, headers) async => IOStreamTransport(
+    (server, environment, headers, authProvider) async => IOStreamTransport(
       stream: serverToClient.stream,
       sink: clientToServer.sink,
     ),
@@ -99,7 +99,8 @@ void main() {
   test('connection errors become state instead of exceptions', () async {
     final manager = McpClientManager.withTransport(
       MemorySecretStore(),
-      (server, environment, headers) async => throw StateError('boom'),
+      (server, environment, headers, authProvider) async =>
+          throw StateError('boom'),
     );
 
     final state = await manager.connect(_server());
@@ -117,6 +118,7 @@ void main() {
       server,
       environment,
       headers,
+      authProvider,
     ) async {
       captured = environment;
       throw StateError('stop after capture');

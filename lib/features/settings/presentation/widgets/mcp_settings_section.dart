@@ -417,6 +417,15 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
   late final _headers = TextEditingController(
     text: _pairsText(widget.server?.headers),
   );
+  late final _oauthClientId = TextEditingController(
+    text: widget.server?.oauth?.clientId ?? '',
+  );
+  late final _oauthScopes = TextEditingController(
+    text: widget.server?.oauth?.scopes.join(' ') ?? '',
+  );
+  late final _oauthPort = TextEditingController(
+    text: '${widget.server?.oauth?.redirectPort ?? 8765}',
+  );
   late var _transport = widget.server?.transport ?? McpTransport.stdio;
   String? _error;
 
@@ -429,6 +438,9 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
     _url.dispose();
     _env.dispose();
     _headers.dispose();
+    _oauthClientId.dispose();
+    _oauthScopes.dispose();
+    _oauthPort.dispose();
     super.dispose();
   }
 
@@ -523,6 +535,32 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
                   maxLines: 6,
                   mono: true,
                 ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(
+                  l10n.mcpOAuthHint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppTextField(
+                  controller: _oauthClientId,
+                  label: l10n.mcpOAuthClientId,
+                  hint: l10n.mcpOAuthClientIdHint,
+                  mono: true,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  controller: _oauthScopes,
+                  label: l10n.mcpOAuthScopes,
+                  hint: l10n.mcpOAuthScopesHint,
+                  mono: true,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppTextField(
+                  controller: _oauthPort,
+                  label: l10n.mcpOAuthRedirectPort,
+                  hint: l10n.mcpOAuthRedirectPortHint,
+                  keyboardType: TextInputType.number,
+                ),
               ],
               if (_error case final error?) ...[
                 const SizedBox(height: AppSpacing.md),
@@ -567,6 +605,25 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
         return;
       }
     }
+    McpOAuthConfig? oauth;
+    if (_transport == McpTransport.http) {
+      final clientId = _oauthClientId.text.trim();
+      if (clientId.isNotEmpty) {
+        final port = int.tryParse(_oauthPort.text.trim()) ?? 8765;
+        if (port < 1 || port > 65535) {
+          setState(() => _error = l10n.mcpInvalidOAuthPort);
+          return;
+        }
+        oauth = McpOAuthConfig(
+          clientId: clientId,
+          scopes: [
+            for (final scope in _oauthScopes.text.split(RegExp(r'[\s,]+')))
+              if (scope.isNotEmpty) scope,
+          ],
+          redirectPort: port,
+        );
+      }
+    }
     final now = DateTime.now();
     final server = McpServerConfig(
       id: widget.server?.id ?? _uuid.v4(),
@@ -584,6 +641,7 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
       headers: _transport == McpTransport.http
           ? _pairs(_headers.text)
           : const {},
+      oauth: oauth,
       createdAt: widget.server?.createdAt ?? now,
       updatedAt: now,
     );

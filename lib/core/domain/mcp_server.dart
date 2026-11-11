@@ -18,6 +18,33 @@ enum McpServerSource {
   user,
 }
 
+/// OAuth-клиент для remote MCP. Токены живут в `SecretStore`, не здесь.
+final class McpOAuthConfig {
+  const McpOAuthConfig({
+    required this.clientId,
+    this.scopes = const [],
+    this.redirectPort = 8765,
+  });
+
+  factory McpOAuthConfig.fromJson(Map json) => McpOAuthConfig(
+    clientId: '${json['clientId'] ?? ''}',
+    scopes: _stringList(json['scopes']),
+    redirectPort: json['redirectPort'] is num
+        ? (json['redirectPort'] as num).toInt()
+        : 8765,
+  );
+
+  final String clientId;
+  final List<String> scopes;
+  final int redirectPort;
+
+  Map<String, Object?> toJson() => {
+    'clientId': clientId,
+    'scopes': scopes,
+    'redirectPort': redirectPort,
+  };
+}
+
 /// Конфигурация одного MCP-сервера.
 ///
 /// Секреты здесь не хранятся: в [env] и [headers] допускаются ссылки вида
@@ -38,6 +65,7 @@ final class McpServerConfig {
     this.cwd,
     this.url,
     this.headers = const {},
+    this.oauth,
   });
 
   /// Восстанавливает запись из строки БД. Остальные поля — из JSON конфигурации.
@@ -67,6 +95,9 @@ final class McpServerConfig {
       cwd: config['cwd'] as String?,
       url: config['url'] as String?,
       headers: _stringMap(config['headers']),
+      oauth: config['oauth'] is Map
+          ? McpOAuthConfig.fromJson(config['oauth'] as Map)
+          : null,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -86,6 +117,7 @@ final class McpServerConfig {
   final String? cwd;
   final String? url;
   final Map<String, String> headers;
+  final McpOAuthConfig? oauth;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -99,6 +131,7 @@ final class McpServerConfig {
     if (cwd != null) 'cwd': cwd,
     if (url != null) 'url': url,
     if (headers.isNotEmpty) 'headers': headers,
+    if (oauth != null) 'oauth': oauth!.toJson(),
   });
 
   McpServerConfig copyWith({
@@ -114,6 +147,7 @@ final class McpServerConfig {
     String? cwd,
     String? url,
     Map<String, String>? headers,
+    McpOAuthConfig? oauth,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => McpServerConfig(
@@ -129,6 +163,7 @@ final class McpServerConfig {
     cwd: cwd ?? this.cwd,
     url: url ?? this.url,
     headers: headers ?? this.headers,
+    oauth: oauth ?? this.oauth,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );

@@ -60,6 +60,7 @@ dependencies:
     path: packages/plugin_declarative_http
   portable_pty: 0.0.7-beta.2
   sqlite3: ^3.6.0
+  url_launcher: ^6.3.3
   uuid: ^4.5.3
   virtual_git:
     path: packages/virtual_git

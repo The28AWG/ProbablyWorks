@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:injectable/injectable.dart';
 import 'package:mcp_dart/mcp_dart.dart';
+import 'package:probably_works/agent/mcp/mcp_oauth_provider.dart';
 import 'package:probably_works/core/domain/mcp_server.dart';
 import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/core/util/redactor.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Состояние подключения MCP-сервера.
 enum McpConnectionStatus { disconnected, connecting, connected, error }
@@ -63,6 +65,7 @@ typedef McpTransportBuilder = Future<Transport> Function(
   McpServerConfig server,
   Map<String, String> environment,
   Map<String, String> headers,
+  OAuthClientProvider? authProvider,
 );
 
 final class _Session {
@@ -83,12 +86,19 @@ final class _Session {
 /// сериализуются транспортом. Состояние только в памяти; настройки — в БД.
 @lazySingleton
 class McpClientManager {
-  McpClientManager(this._secrets) : _transportBuilder = _defaultTransport;
+  McpClientManager(this._secrets)
+    : _transportBuilder = _defaultTransport,
+      _openUrl = _launchUrl;
 
-  McpClientManager.withTransport(this._secrets, this._transportBuilder);
+  McpClientManager.withTransport(
+    this._secrets,
+    this._transportBuilder, {
+    Future<void> Function(Uri)? openUrl,
+  }) : _openUrl = openUrl ?? _launchUrl;
 
   final SecretStore _secrets;
   final McpTransportBuilder _transportBuilder;
+  final Future<void> Function(Uri) _openUrl;
   final _sessions = <String, _Session>{};
   final _states = <String, McpServerState>{};
   final _changes = StreamController<McpServerState>.broadcast();
@@ -118,30 +128,20 @@ class McpClientManager {
         status: McpConnectionStatus.connecting,
       ),
     );
-    McpClient? client;
+    final oauth = server.transport == McpTransport.http && server.oauth != null
+        ? McpOAuthProvider(server: server, secrets: _secrets, openUrl: _openUrl)
+        : null;
     try {
-      final environment = await _resolveMap(server.env);
-      final headers = await _resolveMap(server.headers);
-      final transport = await _transportBuilder(server, environment, headers);
-      client = McpClient(
-        const Implementation(name: 'probably_works', version: '1.0.0'),
-      );
-      await client.connect(transport);
-      final tools = await _listTools(client);
-      _sessions[server.id] = _Session(
-        server: server,
-        client: client,
-        tools: tools,
-      );
+      final session = await _openSession(server, oauth);
+      _sessions[server.id] = session;
       final state = McpServerState(
         serverId: server.id,
         status: McpConnectionStatus.connected,
-        tools: tools,
+        tools: session.tools,
       );
       _emit(state);
       return state;
     } on Object catch (error) {
-      await client?.close();
       final state = McpServerState(
         serverId: server.id,
         status: McpConnectionStatus.error,
@@ -149,6 +149,52 @@ class McpClientManager {
       );
       _emit(state);
       return state;
+    }
+  }
+
+  Future<_Session> _openSession(
+    McpServerConfig server,
+    McpOAuthProvider? oauth, {
+    bool allowAuth = true,
+  }) async {
+    final environment = await _resolveMap(server.env);
+    final headers = await _resolveMap(server.headers);
+    final transport = await _transportBuilder(
+      server,
+      environment,
+      headers,
+      oauth,
+    );
+    final client = McpClient(
+      const Implementation(name: 'probably_works', version: '1.0.0'),
+    );
+    try {
+      await client.connect(transport);
+      final tools = await _listTools(client);
+      return _Session(server: server, client: client, tools: tools);
+    } on UnauthorizedError {
+      if (!allowAuth ||
+          oauth == null ||
+          transport is! StreamableHttpClientTransport) {
+        await client.close();
+        rethrow;
+      }
+      try {
+        final callback = await oauth.waitForCallback();
+        await transport.finishAuthRedirect(
+          callback.code,
+          state: callback.state,
+        );
+      } on Object {
+        await client.close();
+        rethrow;
+      }
+      await client.close();
+      // Токен уже сохранён. Новый транспорт подключится без повторного redirect.
+      return _openSession(server, oauth, allowAuth: false);
+    } on Object {
+      await client.close();
+      rethrow;
     }
   }
 
@@ -294,6 +340,7 @@ class McpClientManager {
     McpServerConfig server,
     Map<String, String> environment,
     Map<String, String> headers,
+    OAuthClientProvider? authProvider,
   ) async {
     switch (server.transport) {
       case McpTransport.stdio:
@@ -320,9 +367,16 @@ class McpClientManager {
         return StreamableHttpClientTransport(
           Uri.parse(url),
           opts: StreamableHttpClientTransportOptions(
+            authProvider: authProvider,
             requestInit: headers.isEmpty ? null : {'headers': headers},
           ),
         );
+    }
+  }
+
+  static Future<void> _launchUrl(Uri url) async {
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw StateError('cannot open authorization URL');
     }
   }
 

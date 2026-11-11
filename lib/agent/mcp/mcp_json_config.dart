@@ -85,6 +85,9 @@ abstract final class McpJsonConfig {
       cwd: json['cwd'] as String?,
       url: url,
       headers: _stringMap(json['headers']),
+      oauth: json['oauth'] is Map
+          ? McpOAuthConfig.fromJson(json['oauth'] as Map)
+          : null,
       createdAt: at,
       updatedAt: at,
     );
@@ -100,6 +103,7 @@ abstract final class McpJsonConfig {
     if (server.cwd != null) 'cwd': server.cwd,
     if (server.url != null) 'url': server.url,
     if (server.headers.isNotEmpty) 'headers': server.headers,
+    if (server.oauth != null) 'oauth': server.oauth!.toJson(),
   };
 
   static List<String> _stringList(Object? value) => value is List

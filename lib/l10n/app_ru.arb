@@ -1830,6 +1830,38 @@
   "@mcpHeadersHint": {
     "description": "MCP server editor: HTTP headers hint."
   },
+  "mcpOAuthHint": "Необязательный OAuth. Токены хранятся в защищённом хранилище, браузер возвращается на локальный callback.",
+  "@mcpOAuthHint": {
+    "description": "MCP server editor: OAuth section hint."
+  },
+  "mcpOAuthClientId": "OAuth client ID",
+  "@mcpOAuthClientId": {
+    "description": "MCP server editor: OAuth client ID."
+  },
+  "mcpOAuthClientIdHint": "Пусто — OAuth выключен",
+  "@mcpOAuthClientIdHint": {
+    "description": "MCP server editor: OAuth client ID hint."
+  },
+  "mcpOAuthScopes": "OAuth scopes",
+  "@mcpOAuthScopes": {
+    "description": "MCP server editor: OAuth scopes."
+  },
+  "mcpOAuthScopesHint": "Через пробел, необязательно",
+  "@mcpOAuthScopesHint": {
+    "description": "MCP server editor: OAuth scopes hint."
+  },
+  "mcpOAuthRedirectPort": "Порт callback",
+  "@mcpOAuthRedirectPort": {
+    "description": "MCP server editor: local OAuth callback port."
+  },
+  "mcpOAuthRedirectPortHint": "По умолчанию 8765",
+  "@mcpOAuthRedirectPortHint": {
+    "description": "MCP server editor: callback port hint."
+  },
+  "mcpInvalidOAuthPort": "Введите порт от 1 до 65535.",
+  "@mcpInvalidOAuthPort": {
+    "description": "MCP server editor validation: invalid OAuth callback port."
+  },
   "mcpInvalidName": "Введите название.",
   "@mcpInvalidName": {
     "description": "MCP server editor validation: empty name."

@@ -8,8 +8,10 @@
 
 - `packages/plugin_api` — интерфейсы `Plugin`, `PluginTool`, `PluginHost`,
   `PluginSettings`.
-- `packages/plugin_declarative_commands` — первый плагин: фиксированные команды
-  становятся инструментами модели.
+- `packages/plugin_declarative_commands` — фиксированные команды становятся
+  инструментами модели.
+- `packages/plugin_declarative_http` — HTTP-инструменты с подстановками
+  аргументов, JSONPath и CSS-селекторами для ответа.
 - Основное приложение содержит реестр, граф зависимостей, флаги включения и
   адаптер `PluginToolSource` к общему `ToolExecutor`.
 

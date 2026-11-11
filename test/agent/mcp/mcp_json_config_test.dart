@@ -24,6 +24,11 @@ void main() {
             'url': 'https://example.com/mcp',
             'headers': {'Authorization': 'Bearer x'},
             'enabled': false,
+            'oauth': {
+              'clientId': 'client',
+              'scopes': ['tools:read'],
+              'redirectPort': 8765,
+            },
           },
         },
       }),
@@ -36,6 +41,8 @@ void main() {
     expect(servers.first.source, McpServerSource.file);
     expect(servers.last.transport, McpTransport.http);
     expect(servers.last.enabled, isFalse);
+    expect(servers.last.oauth?.clientId, 'client');
+    expect(servers.last.oauth?.scopes, ['tools:read']);
   });
 
   test('rejects malformed files', () {

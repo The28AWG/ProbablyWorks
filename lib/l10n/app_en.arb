@@ -1830,6 +1830,38 @@
   "@mcpHeadersHint": {
     "description": "MCP server editor: HTTP headers hint."
   },
+  "mcpOAuthHint": "Optional OAuth. Tokens are stored in secure storage; the browser returns to a local callback.",
+  "@mcpOAuthHint": {
+    "description": "MCP server editor: OAuth section hint."
+  },
+  "mcpOAuthClientId": "OAuth client ID",
+  "@mcpOAuthClientId": {
+    "description": "MCP server editor: OAuth client ID."
+  },
+  "mcpOAuthClientIdHint": "Leave empty to disable OAuth",
+  "@mcpOAuthClientIdHint": {
+    "description": "MCP server editor: OAuth client ID hint."
+  },
+  "mcpOAuthScopes": "OAuth scopes",
+  "@mcpOAuthScopes": {
+    "description": "MCP server editor: OAuth scopes."
+  },
+  "mcpOAuthScopesHint": "Space-separated, optional",
+  "@mcpOAuthScopesHint": {
+    "description": "MCP server editor: OAuth scopes hint."
+  },
+  "mcpOAuthRedirectPort": "Callback port",
+  "@mcpOAuthRedirectPort": {
+    "description": "MCP server editor: local OAuth callback port."
+  },
+  "mcpOAuthRedirectPortHint": "Default 8765",
+  "@mcpOAuthRedirectPortHint": {
+    "description": "MCP server editor: callback port hint."
+  },
+  "mcpInvalidOAuthPort": "Enter a port from 1 to 65535.",
+  "@mcpInvalidOAuthPort": {
+    "description": "MCP server editor validation: invalid OAuth callback port."
+  },
   "mcpInvalidName": "Enter a name.",
   "@mcpInvalidName": {
     "description": "MCP server editor validation: empty name."
