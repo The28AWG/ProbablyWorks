@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/policy/command_classifier.dart';
-import 'package:probably_works/agent/policy/policy_engine.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/policy/command_classifier.dart';
+import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 
 void main() {
   final classifier = CommandClassifier(

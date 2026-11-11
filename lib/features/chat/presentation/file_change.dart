@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/ui/file_change_view.dart';
-import 'package:probably_works/core/util/ansi_text.dart';
-import 'package:probably_works/core/util/line_diff.dart';
-import 'package:probably_works/core/util/unified_diff.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/core/util/ansi_text.dart';
+import 'package:pw_agent/core/util/line_diff.dart';
+import 'package:pw_agent/core/util/unified_diff.dart';
 
 /// Сколько строк изменения рисуем в ленте. Дальше карточка скроллится уже по построенным
 /// строкам, а тысячи виджетов на длинной записи подвешивают ленту. Счётчики в заголовке

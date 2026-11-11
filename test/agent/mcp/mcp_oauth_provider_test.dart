@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:mcp_dart/mcp_dart.dart';
-import 'package:probably_works/agent/mcp/mcp_oauth_provider.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
-import 'package:probably_works/core/security/secret_store.dart';
+import 'package:pw_agent/agent/mcp/mcp_oauth_provider.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
 
 McpServerConfig _server(int port) => McpServerConfig(
   id: 'remote',

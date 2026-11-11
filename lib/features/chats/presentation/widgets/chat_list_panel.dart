@@ -1,11 +1,11 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/util/short_time.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/short_time.dart';
 
 /// Высота липкого заголовка группы: отступ сверху отделяет группы, текст стоит у низа.
 const _groupHeaderExtent = AppSpacing.xxl + AppSpacing.sm;

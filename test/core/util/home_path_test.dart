@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/home_path.dart';
+import 'package:pw_agent/core/util/home_path.dart';
 
 void main() {
   final env = {'HOME': '/home/me'};

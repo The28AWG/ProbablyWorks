@@ -4,17 +4,17 @@ import 'dart:convert';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/steps_display.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/core/config/app_limits.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 class SettingsState extends Equatable {
   const SettingsState({

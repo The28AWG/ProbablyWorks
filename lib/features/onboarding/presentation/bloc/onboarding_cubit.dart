@@ -1,14 +1,14 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Шаги мастера первого запуска. Порядок важен: индекс шага — текущая позиция в Stepper.
 enum OnboardingStep { welcome, key, model, workspace, ssh, finish }

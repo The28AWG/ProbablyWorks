@@ -1,9 +1,7 @@
-import 'package:flutter/widgets.dart';
-
-/// Встроенный плагин: набор инструментов и необязательного экрана настроек.
+/// Встроенный плагин: набор инструментов, который компилируется в приложение.
 ///
-/// Плагины компилируются в приложение и включаются пользователем. Плагин не
-/// загружает код в рантайме; он только добавляет возможности, когда включён.
+/// Интерфейс не зависит от Flutter: агент и headless-демон используют только
+/// инструменты. Экран настроек и локализация живут в `plugin_api_ui`.
 abstract interface class Plugin {
   /// Стабильный идентификатор. На него завязаны флаги и зависимости.
   String get id;
@@ -14,18 +12,8 @@ abstract interface class Plugin {
   /// Включён ли плагин по умолчанию.
   bool get defaultEnabled;
 
-  /// Делегат локализации плагина. Регистрируется на уровне приложения.
-  LocalizationsDelegate<dynamic> get localizations;
-
-  /// Локализованные название и описание для карточки в настройках.
-  String titleOf(BuildContext context);
-  String descriptionOf(BuildContext context);
-
   /// Инструменты для текущих настроек плагина.
   Future<List<PluginTool>> createTools(PluginSettings settings);
-
-  /// Экран настроек плагина. Null — у плагина нет собственных настроек.
-  Widget? buildSettings(BuildContext context, PluginSettings settings);
 }
 
 /// Инструмент, который плагин отдаёт модели.

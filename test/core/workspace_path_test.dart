@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/util/home_path.dart';
-import 'package:probably_works/core/util/workspace_path.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/home_path.dart';
+import 'package:pw_agent/core/util/workspace_path.dart';
 
 Host _host(HostKind kind, {String? workspace}) => Host(
   id: 'h',

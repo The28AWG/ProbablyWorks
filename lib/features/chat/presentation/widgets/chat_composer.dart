@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
@@ -8,6 +7,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/composer_input.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
 
 /// Композер: поле ввода, вложения, настройки чата и отправка в одной карточке.
 ///

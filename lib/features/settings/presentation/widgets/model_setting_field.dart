@@ -3,7 +3,7 @@ import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Поле выбора модели в настройках: название, id и предупреждение о статусе. Нажатие открывает
 /// [showModelPickerDialog] с поиском и фильтрами, как в композере. Заменяет выпадающий список:

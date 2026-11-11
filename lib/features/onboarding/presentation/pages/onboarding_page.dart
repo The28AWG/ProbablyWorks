@@ -4,18 +4,18 @@ import 'package:auto_route/auto_route.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/onboarding/presentation/bloc/onboarding_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Мастер первого запуска: ключ OpenRouter с проверкой, модель по умолчанию, папка локального Host,
 /// необязательный SSH-хост и первый чат. Без рабочего ключа приложение не пускает дальше настроек.

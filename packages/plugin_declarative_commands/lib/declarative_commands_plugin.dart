@@ -1,11 +1,12 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:plugin_api/plugin_api.dart';
+import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:plugin_declarative_commands/l10n/generated/declarative_commands_localizations.dart';
 import 'package:uuid/uuid.dart';
 
 /// Плагин фиксированных команд: каждая запись становится инструментом модели.
-final class DeclarativeCommandsPlugin implements Plugin {
+final class DeclarativeCommandsPlugin implements Plugin, PluginUi {
   const DeclarativeCommandsPlugin();
 
   @override

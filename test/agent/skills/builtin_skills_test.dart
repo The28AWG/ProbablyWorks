@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/context/context_builder.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/session_state.dart';
-import 'package:probably_works/agent/skills/builtin_skills.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/agent/context/context_builder.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/session_state.dart';
+import 'package:pw_agent/agent/skills/builtin_skills.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 void main() {
   final now = DateTime(2026, 11, 4);

@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/ansi_text.dart';
 
 /// Как показывать изменение: весь файл как добавленный или diff фрагмента.
 enum FileChangeKind { created, edited }

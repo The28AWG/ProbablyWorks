@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 Host _host(String id, HostKind kind) => Host(
   id: id,

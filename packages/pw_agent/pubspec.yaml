@@ -1,0 +1,42 @@
+name: pw_agent
+description: "Ядро ProbablyWorks: агент, хранение, Host и провайдеры без Flutter."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  characters: ^1.4.0
+  command_shield: ^1.4.0
+  dartssh2: ^4.1.0
+  drift: ^2.35.0
+  equatable: ^2.0.8
+  get_it: ^9.2.1
+  http: ^1.5.0
+  injectable: ^3.0.0
+  logging: ^1.3.0
+  mcp_dart: ^2.4.3
+  openrouter:
+    git:
+      url: https://github.com/The28AWG/openrouter.git
+      tag_pattern: dist-v{{version}}
+    version: ^1.0.1
+  path: ^1.9.1
+  plugin_api:
+    path: ../plugin_api
+  portable_pty: 0.0.7-beta.2
+  sqlite3: ^3.6.0
+  uuid: ^4.5.3
+  virtual_git:
+    path: ../virtual_git
+  virtual_host:
+    path: ../virtual_host
+
+dev_dependencies:
+  build_runner: ^2.15.1
+  drift_dev: ^2.35.0
+  flutter_lints: ^6.0.0
+  injectable_generator: ^3.1.3
+  test: ^1.31.1

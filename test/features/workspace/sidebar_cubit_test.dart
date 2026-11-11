@@ -1,7 +1,7 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 
 /// Настройки в памяти: кубит работает с ними так же, как с kv-таблицей.
 class _FakeSettings implements SettingsRepository {

@@ -1,15 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/host/local_host_runtime.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/local_host_runtime.dart';
 
 void main() {
   late AppDatabase db;

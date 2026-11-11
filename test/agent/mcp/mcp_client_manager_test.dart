@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mcp_dart/mcp_dart.dart';
-import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
-import 'package:probably_works/agent/mcp/mcp_tool_source.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_tool_source.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 McpServerConfig _server({Map<String, String> env = const {}}) =>
     McpServerConfig(

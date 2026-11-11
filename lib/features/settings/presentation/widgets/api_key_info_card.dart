@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Карточка сведений о ключе из сервиса: метка, расходы, лимит, срок и тариф.
 /// Загрузка, ошибка и пустое состояние показываются внутри карточки, экран при этом работает.

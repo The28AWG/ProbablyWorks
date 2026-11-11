@@ -3,16 +3,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/virtual_host_provisioner.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_card.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_form_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
-import 'package:probably_works/host/host_diagnostics.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/host_diagnostics.dart';
 
 @RoutePage()
 class HostsPage extends StatelessWidget {

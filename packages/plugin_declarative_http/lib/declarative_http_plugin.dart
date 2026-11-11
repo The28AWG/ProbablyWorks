@@ -5,11 +5,12 @@ import 'package:json_path/json_path.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:new_beautiful_soup_dart/new_beautiful_soup_dart.dart';
 import 'package:plugin_api/plugin_api.dart';
+import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:plugin_declarative_http/l10n/generated/declarative_http_localizations.dart';
 import 'package:uuid/uuid.dart';
 
 /// Плагин HTTP-инструментов с фиксированными endpoint'ами и аргументами.
-final class DeclarativeHttpPlugin implements Plugin {
+final class DeclarativeHttpPlugin implements Plugin, PluginUi {
   const DeclarativeHttpPlugin();
 
   @override

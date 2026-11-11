@@ -1,9 +1,9 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/util/home_path.dart';
-import 'package:probably_works/core/util/workspace_path.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/util/home_path.dart';
+import 'package:pw_agent/core/util/workspace_path.dart';
 
 /// Таблица chats в форме схемы v4: её есть в каждой базе старше v5.
 const _chatsV4 =

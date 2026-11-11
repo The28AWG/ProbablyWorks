@@ -2,10 +2,10 @@ import 'dart:math' show min;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 /// Название хоста для интерфейса: локальный хост показываем переводом.
 String hostLabelOf(List<Host> hosts, String hostId, AppLocalizations l10n) {

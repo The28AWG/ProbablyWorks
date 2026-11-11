@@ -6,8 +6,8 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/domain/model_list_query.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Выбор модели: поиск по id/имени, фильтры (tool calling, бесплатные, провайдер), сортировка,
 /// закреплённые сверху и обновление списка из OpenRouter. Стрелки ↑/↓ двигают подсветку, Enter выбирает.

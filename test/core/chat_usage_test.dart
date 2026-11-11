@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/chat_usage.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/chat_usage.dart';
 
 void main() {
   late AppDatabase db;

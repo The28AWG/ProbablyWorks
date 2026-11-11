@@ -1,8 +1,8 @@
 import 'package:command_shield/command_shield.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/policy/command_catalog.dart';
-import 'package:probably_works/agent/policy/command_risk.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/policy/command_catalog.dart';
+import 'package:pw_agent/agent/policy/command_risk.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
 
 void main() {
   const profile = SecurityProfile();

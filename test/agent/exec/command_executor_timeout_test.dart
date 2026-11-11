@@ -3,17 +3,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/exec/active_exec_registry.dart';
-import 'package:probably_works/agent/exec/command_executor.dart';
-import 'package:probably_works/agent/exec/exec_log_store.dart';
-import 'package:probably_works/agent/exec/live_output_bus.dart';
-import 'package:probably_works/core/config/app_limits.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/host/host_op.dart';
-import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/host_terminal.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/exec/active_exec_registry.dart';
+import 'package:pw_agent/agent/exec/command_executor.dart';
+import 'package:pw_agent/agent/exec/exec_log_store.dart';
+import 'package:pw_agent/agent/exec/live_output_bus.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/host/host_op.dart';
+import 'package:pw_agent/host/host_runtime.dart';
+import 'package:pw_agent/host/host_terminal.dart';
 
 /// Host без процесса и PTY, как виртуальный: поток команды висит, пока его
 /// не отменит подписка.

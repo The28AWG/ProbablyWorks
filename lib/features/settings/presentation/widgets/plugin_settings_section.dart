@@ -1,10 +1,16 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:plugin_api/plugin_api.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/agent/plugins/plugin_service.dart';
+import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/plugins/plugin_service.dart';
+
+PluginUi? _uiOf(Plugin plugin) => plugin is PluginUi ? plugin : null;
+
+String _titleOf(BuildContext context, Plugin? plugin) =>
+    plugin == null ? '' : (_uiOf(plugin)?.titleOf(context) ?? plugin.id);
 
 /// Вкладка плагинов: включение, зависимости и настройки конкретного плагина.
 class PluginSettingsSection extends StatefulWidget {
@@ -48,8 +54,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
         : _service.dependents(plugin.id);
     if (affected.isNotEmpty) {
       final names = [
-        for (final id in affected)
-          _service.pluginById(id)?.titleOf(context) ?? id,
+        for (final id in affected) _titleOf(context, _service.pluginById(id)),
       ];
       final confirmed = await ConfirmDialog.confirm(
         context,
@@ -89,12 +94,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
               plugin: plugin,
               enabled: _enabled.contains(plugin.id),
               onToggle: (value) => _toggle(plugin, value),
-              onSettings:
-                  plugin.buildSettings(
-                        context,
-                        _service.settingsFor(plugin.id),
-                      ) ==
-                      null
+              onSettings: _uiOf(plugin) == null
                   ? null
                   : () => _openSettings(plugin),
             ),
@@ -105,13 +105,13 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
 
   Future<void> _openSettings(Plugin plugin) async {
     final settings = _service.settingsFor(plugin.id);
-    final child = plugin.buildSettings(context, settings);
+    final child = _uiOf(plugin)?.buildSettings(context, settings);
     if (child == null) return;
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(
-          plugin.titleOf(context),
+          _titleOf(context, plugin),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -150,7 +150,7 @@ class _PluginCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final dependencies = [
       for (final id in plugin.dependsOn)
-        getIt<PluginService>().pluginById(id)?.titleOf(context) ?? id,
+        _titleOf(context, getIt<PluginService>().pluginById(id)),
     ];
     return AppCard(
       child: Row(
@@ -160,12 +160,12 @@ class _PluginCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  plugin.titleOf(context),
+                  _titleOf(context, plugin),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  plugin.descriptionOf(context),
+                  _uiOf(plugin)?.descriptionOf(context) ?? '',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (dependencies.isNotEmpty) ...[

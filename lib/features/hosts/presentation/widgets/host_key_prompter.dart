@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/host/ssh_connection_pool.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/host/ssh_connection_pool.dart';
 
 /// Показывает диалог подтверждения SSH host key поверх любого экрана.
 /// Первое подключение — обычный запрос; смена ключа — предупреждение (по умолчанию отказ).

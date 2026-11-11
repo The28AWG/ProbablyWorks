@@ -5,9 +5,9 @@ import 'dart:typed_data';
 
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
-import 'package:probably_works/host/host_terminal.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/utf8_chunk_decoder.dart';
+import 'package:pw_agent/host/host_terminal.dart';
 import 'package:xterm/xterm.dart';
 
 /// Доступ к тексту терминала снаружи виджета, например для кнопки копирования в заголовке блока.

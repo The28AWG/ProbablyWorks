@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/host/virtual/read_file_pager.dart';
+import 'package:pw_agent/host/virtual/read_file_pager.dart';
 
 /// Точный текст постраничного вывода. Эталон — awk-скрипт `ReadFileOp` на POSIX, его проверяет паритет.
 String _page(

@@ -1,5 +1,5 @@
-import 'package:probably_works/core/util/char_substring.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Порядок списка в диалоге выбора моделей. [provider] — группы по провайдеру, остальные — плоский список.
 enum ModelSort { provider, name, context, price, newest }

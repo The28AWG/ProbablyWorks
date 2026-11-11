@@ -1,0 +1,19 @@
+name: pw_daemon
+description: "Headless-демон ProbablyWorks: агент и HTTP API без Flutter."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  get_it: ^9.2.1
+  pw_agent:
+    path: ../pw_agent
+  pw_api:
+    path: ../pw_api
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.31.1

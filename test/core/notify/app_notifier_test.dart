@@ -2,8 +2,9 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/notify/app_notifier.dart';
+import 'package:probably_works/core/notify/app_notifier_plugin.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 
 void main() {
   group('shouldShowNotification', () {

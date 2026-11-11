@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/tools/tool_name.dart';
+import 'package:pw_agent/agent/tools/tool_name.dart';
 
 void main() {
   test('short names are unchanged', () {

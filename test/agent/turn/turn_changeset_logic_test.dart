@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/turn/turn_changeset.dart';
-import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
-import 'package:probably_works/agent/turn/turn_file_kind.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/turn/turn_changeset.dart';
+import 'package:pw_agent/agent/turn/turn_changeset_logic.dart';
+import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 
 TurnChangeset _empty() =>
     TurnChangeset(chatId: 'c', turnId: 't', updatedAt: DateTime(2020));

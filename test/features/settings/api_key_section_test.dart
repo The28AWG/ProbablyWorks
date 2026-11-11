@@ -4,16 +4,16 @@ import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/saved_model_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/core/data/saved_model_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Провайдер без сети: блок ключа не вызывает модели, а кубит нужен только как держатель обработчиков.
 class _NoNetLlm implements LlmProvider {

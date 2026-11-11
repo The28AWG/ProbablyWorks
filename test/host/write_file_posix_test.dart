@@ -3,10 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/local_host_runtime.dart';
-import 'package:probably_works/host/shell_adapter.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/host_runtime.dart';
+import 'package:pw_agent/host/local_host_runtime.dart';
+import 'package:pw_agent/host/shell_adapter.dart';
 
 const _sh = ShellAdapter(HostOs.posix);
 final _runtime = LocalHostRuntime(os: HostOs.posix);

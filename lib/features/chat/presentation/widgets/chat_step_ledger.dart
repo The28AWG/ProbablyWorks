@@ -3,21 +3,21 @@ import 'dart:math' as math;
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/app/router/app_router.gr.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/util/ansi_text.dart';
-import 'package:probably_works/core/util/char_substring.dart';
-import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/file_change.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
 import 'package:probably_works/features/chat/presentation/widgets/step_block.dart';
-import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/core/util/ansi_text.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/core/util/workspace_path.dart';
+import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/host/read_file_output.dart';
 
 /// Шаг журнала ответа: рассуждения модели или запуск команды. В группе идут в порядке появления.
 sealed class LedgerStep {

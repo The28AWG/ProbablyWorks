@@ -1,10 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_info_card.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
 
 /// Блок «API-ключ» вкладки «Аккаунт». Одна строка: поле и иконки действий в одну линию.
 ///

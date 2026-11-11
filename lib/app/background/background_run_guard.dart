@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:logging/logging.dart';
-import 'package:probably_works/agent/loop/agent_event.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
 
 /// Работа агента и фон. Фоновых команд у приложения нет, поэтому:
 ///

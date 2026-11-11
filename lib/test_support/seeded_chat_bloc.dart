@@ -1,10 +1,10 @@
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/exec/live_output_bus.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
-import 'package:probably_works/host/host_terminal.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/exec/live_output_bus.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
+import 'package:pw_agent/host/host_terminal.dart';
 
 /// Блок чата, который сразу показывает заготовленное состояние. Агент и БД не нужны:
 /// виджет-тесты проверяют только отрисовку и реакцию UI.

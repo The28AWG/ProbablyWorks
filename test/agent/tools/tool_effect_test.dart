@@ -1,13 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/policy/command_classifier.dart';
-import 'package:probably_works/agent/policy/policy_engine.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/agent/tools/tool_effect.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/policy/command_classifier.dart';
+import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/tools/tool_effect.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 void main() {
   final policy = PolicyEngine(

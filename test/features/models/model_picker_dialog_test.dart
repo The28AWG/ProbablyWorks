@@ -2,12 +2,12 @@ import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/core/data/saved_model_repository.dart';
-import 'package:probably_works/core/db/db_connection.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/core/data/saved_model_repository.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 class _FakeLlm implements LlmProvider {
   _FakeLlm(this.models);

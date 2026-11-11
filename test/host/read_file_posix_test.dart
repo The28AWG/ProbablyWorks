@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/shell_adapter.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/shell_adapter.dart';
 
 const _sh = ShellAdapter(HostOs.posix);
 

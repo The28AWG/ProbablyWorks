@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:probably_works/agent/domain/project.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/domain/host.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/domain/host.dart';
 import 'package:uuid/uuid.dart';
 
 /// Состояние раздела проектов: активные и архивные проекты, хосты и число чатов.

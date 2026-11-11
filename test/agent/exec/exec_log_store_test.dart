@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/exec/exec_log_store.dart';
+import 'package:pw_agent/agent/exec/exec_log_store.dart';
 
 void main() {
   late Directory root;

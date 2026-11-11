@@ -3,15 +3,15 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/background/background_run_guard.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
 
 class ProbablyWorksApp extends StatefulWidget {
   const ProbablyWorksApp({super.key});

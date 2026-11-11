@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/think_tag_parser.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/think_tag_parser.dart';
 
 /// Прогоняет куски через парсер и возвращает итоговые пары (вид, текст) по порядку.
 List<(String, String)> _run(List<String> chunks) {

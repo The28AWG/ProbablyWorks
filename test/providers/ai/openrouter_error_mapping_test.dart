@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openrouter/openrouter.dart';
-import 'package:probably_works/providers/ai/openrouter/openrouter_llm_provider.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 
 void main() {
   test('404 means the model is gone: not retryable, flagged as missing', () {

@@ -2,12 +2,12 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
-import 'package:probably_works/host/process_control.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/process_control.dart';
 import 'package:uuid/uuid.dart';
 
 /// Сохранение хоста: форма не знает о кубите, поэтому её можно проверять без DI.

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/loop/prompt_queue.dart';
-import 'package:probably_works/core/config/app_limits.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
 
 void main() {
   group('PromptQueue', () {

@@ -2,12 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/mcp/mcp_config_file.dart';
-import 'package:probably_works/agent/mcp/mcp_json_config.dart';
-import 'package:probably_works/core/data/mcp_server_repository.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
-import 'package:probably_works/core/security/secret_store.dart';
+import 'package:pw_agent/agent/mcp/mcp_config_file.dart';
+import 'package:pw_agent/agent/mcp/mcp_json_config.dart';
+import 'package:pw_agent/core/data/mcp_server_repository.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
   test('parses stdio and http entries', () {

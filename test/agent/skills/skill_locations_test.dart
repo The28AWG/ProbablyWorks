@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/skills/skill_locations.dart';
+import 'package:pw_agent/agent/skills/skill_locations.dart';
 
 void main() {
   test('app directory goes first and every workspace path is unique', () {

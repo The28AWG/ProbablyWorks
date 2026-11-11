@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/unified_diff.dart';
+import 'package:pw_agent/core/util/unified_diff.dart';
 
 void main() {
   test('replaces a line and keeps the trailing newline', () {

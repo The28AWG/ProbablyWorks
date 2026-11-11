@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/util/char_substring.dart';
-import 'package:probably_works/core/util/elapsed_format.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/core/util/elapsed_format.dart';
 
 /// Сообщение в ленте. Пользователь — нейтральный пузырь справа, ассистент — текст на всю колонку,
 /// служебные события — одна приглушённая строка. Копирование и правка видны при наведении и при

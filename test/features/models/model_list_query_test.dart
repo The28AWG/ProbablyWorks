@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/models/domain/model_list_query.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 LlmModelInfo _model(
   String id, {

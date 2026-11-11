@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:app_ui/app_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/core/util/ansi_text.dart';
-import 'package:probably_works/host/read_file_output.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/ansi_text.dart';
+import 'package:pw_agent/host/read_file_output.dart';
 
 /// Вид результата инструмента read_file: строки файла с номерами и подвал с подсказкой продолжения.
 ///

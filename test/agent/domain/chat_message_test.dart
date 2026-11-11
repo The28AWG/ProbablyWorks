@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
 
 void main() {
   test('reasoning survives the payload round trip', () {

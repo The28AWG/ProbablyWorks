@@ -1,6 +1,6 @@
-import 'package:probably_works/app/bootstrap/app_paths.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/security/file_permissions.dart';
+import 'package:pw_agent/core/config/app_paths.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/security/file_permissions.dart';
 
 /// Один раз приводит права файлов, созданных старыми версиями, к текущим.
 ///

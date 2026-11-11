@@ -10,8 +10,12 @@ environment:
 workspace:
   - packages/app_ui
   - packages/plugin_api
+  - packages/plugin_api_ui
   - packages/plugin_declarative_commands
   - packages/plugin_declarative_http
+  - packages/pw_agent
+  - packages/pw_api
+  - packages/pw_daemon
   - packages/virtual_git
   - packages/virtual_host
 
@@ -54,11 +58,15 @@ dependencies:
   path_provider: ^2.1.6
   plugin_api:
     path: packages/plugin_api
+  plugin_api_ui:
+    path: packages/plugin_api_ui
   plugin_declarative_commands:
     path: packages/plugin_declarative_commands
   plugin_declarative_http:
     path: packages/plugin_declarative_http
   portable_pty: 0.0.7-beta.2
+  pw_agent:
+    path: packages/pw_agent
   sqlite3: ^3.6.0
   url_launcher: ^6.3.3
   uuid: ^4.5.3

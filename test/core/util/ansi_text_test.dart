@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/ansi_text.dart';
+import 'package:pw_agent/core/util/ansi_text.dart';
 
 void main() {
   test('colour codes are removed', () {

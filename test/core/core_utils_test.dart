@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/async_semaphore.dart';
-import 'package:probably_works/core/util/line_diff.dart';
-import 'package:probably_works/core/util/pid_marker_parser.dart';
-import 'package:probably_works/core/util/redactor.dart';
-import 'package:probably_works/core/util/shell_quote.dart';
-import 'package:probably_works/core/util/text_clip.dart';
-import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
+import 'package:pw_agent/core/util/async_semaphore.dart';
+import 'package:pw_agent/core/util/line_diff.dart';
+import 'package:pw_agent/core/util/pid_marker_parser.dart';
+import 'package:pw_agent/core/util/redactor.dart';
+import 'package:pw_agent/core/util/shell_quote.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/core/util/utf8_chunk_decoder.dart';
 
 Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
 

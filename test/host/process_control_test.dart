@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/process_control.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/process_control.dart';
 
 void main() {
   group('ProcessControl shell override', () {

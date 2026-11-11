@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/interaction/interaction_broker.dart';
-import 'package:probably_works/agent/loop/agent_event.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/domain/host.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 class ChatListState extends Equatable {
   const ChatListState({

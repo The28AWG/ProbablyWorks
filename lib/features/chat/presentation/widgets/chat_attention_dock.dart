@@ -1,13 +1,13 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
-import 'package:probably_works/agent/interaction/interaction_broker.dart';
-import 'package:probably_works/agent/turn/turn_file_kind.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/turn/turn_file_kind.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
 
 /// Док над композером: всё, что требует решения пользователя, и ошибки.
 ///

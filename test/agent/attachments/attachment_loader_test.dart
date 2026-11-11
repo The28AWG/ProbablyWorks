@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/attachments/attachment_loader.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/attachments/attachment_loader.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
 
 void main() {
   late Directory dir;

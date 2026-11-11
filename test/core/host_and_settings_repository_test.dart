@@ -1,14 +1,14 @@
 import 'package:command_shield/command_shield.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/steps_display.dart';
-import 'package:probably_works/agent/policy/command_risk.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/security/secret_store.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/policy/command_risk.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
   late AppDatabase db;

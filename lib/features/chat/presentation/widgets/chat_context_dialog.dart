@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/context/context_breakdown.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/chat_usage.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/context/context_breakdown.dart';
+import 'package:pw_agent/core/domain/chat_usage.dart';
 
 /// Диалог окна контекста: заполнение, разбивка, стоимость и дневной лимит.
 ///

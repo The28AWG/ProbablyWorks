@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/data/mcp_server_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/data/mcp_server_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 
 McpServerConfig _server(
   String id, {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 
 ApprovalRequest _request({
   required String id,

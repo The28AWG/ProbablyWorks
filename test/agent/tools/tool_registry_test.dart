@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/agent/tools/tool_registry.dart';
-import 'package:probably_works/agent/tools/tool_source.dart';
-import 'package:probably_works/agent/tools/tool_types.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/tools/tool_registry.dart';
+import 'package:pw_agent/agent/tools/tool_source.dart';
+import 'package:pw_agent/agent/tools/tool_types.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 final class _FakeSource extends ToolSource {
   _FakeSource(this.id, this.toolName);

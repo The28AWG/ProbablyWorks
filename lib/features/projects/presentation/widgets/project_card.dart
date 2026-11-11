@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 /// Карточка проекта в списке: имя, хост, папка и число чатов.
 /// Архивный проект помечается статусом: чатов нет, через неделю он удалится.

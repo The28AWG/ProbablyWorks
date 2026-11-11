@@ -3,16 +3,10 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/steps_display.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/config/app_limits.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
@@ -25,7 +19,13 @@ import 'package:probably_works/features/settings/presentation/widgets/security_p
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 @RoutePage()
 class SettingsPage extends StatelessWidget {

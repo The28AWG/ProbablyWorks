@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/context/context_breakdown.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/agent/context/context_breakdown.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 void main() {
   test('splits system, conversation, tool results, files and tools', () {

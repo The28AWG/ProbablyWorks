@@ -1,17 +1,17 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 
 /// Рабочая область: оболочка с вкладками «Чаты», «Хосты», «Настройки». Вкладки — вложенные маршруты,
 /// поэтому выбранный чат — это путь маршрута, а не отдельное состояние экрана.

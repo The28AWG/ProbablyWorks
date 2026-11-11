@@ -2,41 +2,41 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/exec/active_exec_registry.dart';
-import 'package:probably_works/agent/exec/command_executor.dart';
-import 'package:probably_works/agent/exec/exec_log_store.dart';
-import 'package:probably_works/agent/exec/live_output_bus.dart';
-import 'package:probably_works/agent/interaction/interaction_broker.dart';
-import 'package:probably_works/agent/policy/command_classifier.dart';
-import 'package:probably_works/agent/policy/policy_engine.dart';
-import 'package:probably_works/agent/state/session_state_service.dart';
-import 'package:probably_works/agent/tools/self_tool_handler.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/agent/tools/tool_executor.dart';
-import 'package:probably_works/agent/tools/tool_source.dart';
-import 'package:probably_works/agent/turn/turn_changeset.dart';
-import 'package:probably_works/agent/turn/turn_changeset_service.dart';
-import 'package:probably_works/agent/turn/turn_changeset_store.dart';
-import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
-import 'package:probably_works/app/locale/locale_controller.dart';
-import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/core/config/app_limits.dart';
-import 'package:probably_works/core/data/chat_repository.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/data/saved_model_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/data/virtual_host_provisioner.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/host/host_diagnostics.dart';
-import 'package:probably_works/host/host_runtime_factory.dart';
-import 'package:probably_works/host/ssh_connection_pool.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/exec/active_exec_registry.dart';
+import 'package:pw_agent/agent/exec/command_executor.dart';
+import 'package:pw_agent/agent/exec/exec_log_store.dart';
+import 'package:pw_agent/agent/exec/live_output_bus.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/policy/command_classifier.dart';
+import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/state/session_state_service.dart';
+import 'package:pw_agent/agent/tools/self_tool_handler.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/tools/tool_executor.dart';
+import 'package:pw_agent/agent/tools/tool_source.dart';
+import 'package:pw_agent/agent/turn/turn_changeset.dart';
+import 'package:pw_agent/agent/turn/turn_changeset_service.dart';
+import 'package:pw_agent/agent/turn/turn_changeset_store.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/data/saved_model_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/host_diagnostics.dart';
+import 'package:pw_agent/host/host_runtime_factory.dart';
+import 'package:pw_agent/host/ssh_connection_pool.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
+
+import '../../test_support/fake_appearance.dart';
 
 final class _FakeToolSource extends ToolSource {
   _FakeToolSource({this.mutatesHost = true});
@@ -135,8 +135,7 @@ void main() {
     final self = SelfToolHandler(
       hosts,
       settings,
-      LocaleController(),
-      ThemeController(),
+      FakeAppearance(),
       ModelCatalogService(SavedModelRepository(db), _NoNetworkLlm()),
       HostDiagnostics(hosts, secrets, settings, runtimes),
     );

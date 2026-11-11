@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
 
 void main() {
   test('get_state_revision is exposed and requires the revision id', () {

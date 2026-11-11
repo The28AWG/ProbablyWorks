@@ -6,15 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:probably_works/agent/attachments/attachment_loader.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/exec/live_output_bus.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/config/app_limits.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_attention_dock.dart';
@@ -28,7 +21,14 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.d
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/attachments/attachment_loader.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/exec/live_output_bus.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Окно контекста, когда модель не сообщила свой лимит.
 const _defaultContextLimit = 128000;

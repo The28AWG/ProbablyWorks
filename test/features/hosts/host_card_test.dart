@@ -2,9 +2,9 @@ import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_card.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 final _local = Host(
   id: 'local',

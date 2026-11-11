@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
 
 /// Карточка хоста в списке. У SSH-хоста — адрес, статус проверки и кнопка проверки; у виртуального — пояснение
 /// вместо адреса, но статус и проверка есть (проверка запускает `host_info` в песочнице); у локального —

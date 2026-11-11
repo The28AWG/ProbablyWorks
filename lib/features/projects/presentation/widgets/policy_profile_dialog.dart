@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/project.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/policy_profile_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/core/data/policy_profile_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:uuid/uuid.dart';
 
 /// Открывает редактор именованного профиля политики для проекта.

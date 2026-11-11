@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/elapsed_format.dart';
+import 'package:pw_agent/core/util/elapsed_format.dart';
 
 void main() {
   test('zero is 0s', () {

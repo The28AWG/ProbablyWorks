@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/data/saved_model_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
+import 'package:pw_agent/core/data/saved_model_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
 void main() {
   late AppDatabase db;

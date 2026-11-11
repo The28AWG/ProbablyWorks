@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:characters/characters.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/text_tool_call_parser.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/text_tool_call_parser.dart';
 
 const _tools = [
   LlmToolSpec(

@@ -1,0 +1,19 @@
+name: plugin_api_ui
+description: "UI-интерфейсы встроенных плагинов ProbablyWorks."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_api:
+    path: ../plugin_api
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/pty_launcher.dart';
+import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/host/pty_launcher.dart';
 
 /// Замена PTY для тестов агента: команда запускается обычным процессом, stdout и stderr объединяются.
 /// Нужна, потому что нативная библиотека PTY не загружается в `flutter test` вместе с агентом.

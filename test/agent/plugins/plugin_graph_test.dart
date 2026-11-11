@@ -1,7 +1,6 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_api/plugin_api.dart';
-import 'package:probably_works/agent/plugins/plugin_graph.dart';
+import 'package:pw_agent/agent/plugins/plugin_graph.dart';
 
 final class _FakePlugin implements Plugin {
   const _FakePlugin(this.id, {this.dependsOn = const {}});
@@ -14,19 +13,6 @@ final class _FakePlugin implements Plugin {
 
   @override
   bool get defaultEnabled => true;
-
-  @override
-  LocalizationsDelegate<dynamic> get localizations =>
-      DefaultWidgetsLocalizations.delegate;
-
-  @override
-  Widget? buildSettings(BuildContext context, PluginSettings settings) => null;
-
-  @override
-  String descriptionOf(BuildContext context) => id;
-
-  @override
-  String titleOf(BuildContext context) => id;
 
   @override
   Future<List<PluginTool>> createTools(PluginSettings settings) async =>

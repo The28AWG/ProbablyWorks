@@ -4,17 +4,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/security/secret_store.dart';
-import 'package:probably_works/host/host_capture.dart';
-import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/ssh_connection_pool.dart';
-import 'package:probably_works/host/ssh_host_runtime.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/host_capture.dart';
+import 'package:pw_agent/host/host_runtime.dart';
+import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/host/ssh_connection_pool.dart';
+import 'package:pw_agent/host/ssh_host_runtime.dart';
 
 /// Интеграционные тесты SSH-рантайма на реальном sshd.
 ///

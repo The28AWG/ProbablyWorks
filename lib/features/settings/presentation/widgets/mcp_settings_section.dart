@@ -1,14 +1,14 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
-import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/mcp_server_repository.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
 import 'package:probably_works/features/settings/presentation/bloc/mcp_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/core/data/mcp_server_repository.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:uuid/uuid.dart';
 
 /// Вкладка MCP в настройках: список серверов, их состояние и действия.

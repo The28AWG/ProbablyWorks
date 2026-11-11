@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
-import 'package:probably_works/agent/mcp/mcp_service.dart';
-import 'package:probably_works/core/data/mcp_server_repository.dart';
-import 'package:probably_works/core/domain/mcp_server.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/core/data/mcp_server_repository.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 
 /// Какая операция с `mcp.json` сейчас выполняется.
 enum McpBusyAction { import, export }

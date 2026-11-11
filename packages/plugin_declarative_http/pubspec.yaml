@@ -21,6 +21,8 @@ dependencies:
   new_beautiful_soup_dart: ^1.0.0
   plugin_api:
     path: ../plugin_api
+  plugin_api_ui:
+    path: ../plugin_api_ui
   uuid: ^4.5.3
 
 dev_dependencies:

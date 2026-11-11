@@ -4,10 +4,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:portable_pty/portable_pty.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/local_host_runtime.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/host_runtime.dart';
+import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/host/local_host_runtime.dart';
 
 /// Настоящий PTY через нативную библиотеку portable_pty (Rust, собирается hook-ом пакета).
 ///

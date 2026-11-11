@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
+import 'package:pw_agent/core/util/utf8_chunk_decoder.dart';
 
 void main() {
   test('a multi-byte character split across chunks is decoded whole', () {

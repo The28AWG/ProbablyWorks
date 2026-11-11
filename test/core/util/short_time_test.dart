@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/util/short_time.dart';
+import 'package:pw_agent/core/util/short_time.dart';
 
 void main() {
   final now = DateTime(2026, 11, 10, 15, 30);

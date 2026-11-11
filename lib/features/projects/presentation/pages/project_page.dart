@@ -3,15 +3,9 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/data/chat_repository.dart';
-import 'package:probably_works/core/data/policy_profile_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/projects/presentation/widgets/policy_profile_dialog.dart';
 import 'package:probably_works/features/settings/presentation/pages/settings_page.dart';
@@ -19,6 +13,12 @@ import 'package:probably_works/features/settings/presentation/widgets/settings_f
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
+import 'package:pw_agent/core/data/policy_profile_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/domain/host.dart';
 
 /// Карточка проекта: имя, неизменяемые хост и папка, профиль политики, доверие,
 /// skills и общая память. Факты меняются только здесь или подтверждённым инструментом агента.

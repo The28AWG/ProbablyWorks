@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/host/shell_adapter.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/host/shell_adapter.dart';
 
 /// Декодирует строку `powershell ... -EncodedCommand <base64>` обратно в текст скрипта (UTF-16LE).
 String _decodePowershell(String line) {

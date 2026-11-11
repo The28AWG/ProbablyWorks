@@ -5,62 +5,63 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
-import 'package:probably_works/agent/context/context_builder.dart';
-import 'package:probably_works/agent/context/context_compactor.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/project.dart';
-import 'package:probably_works/agent/exec/active_exec_registry.dart';
-import 'package:probably_works/agent/exec/command_executor.dart';
-import 'package:probably_works/agent/exec/exec_log_store.dart';
-import 'package:probably_works/agent/exec/live_output_bus.dart';
-import 'package:probably_works/agent/interaction/edit_file_changes_request.dart';
-import 'package:probably_works/agent/interaction/interaction_broker.dart';
-import 'package:probably_works/agent/loop/agent_event.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/agent/loop/chat_session.dart';
-import 'package:probably_works/agent/loop/chat_title.dart';
-import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
-import 'package:probably_works/agent/mcp/mcp_service.dart';
-import 'package:probably_works/agent/plugins/plugin_catalog.dart';
-import 'package:probably_works/agent/plugins/plugin_service.dart';
-import 'package:probably_works/agent/policy/command_risk.dart';
-import 'package:probably_works/agent/policy/security_profile.dart';
-import 'package:probably_works/agent/project/project_lifecycle.dart';
-import 'package:probably_works/agent/recovery/startup_recovery.dart';
-import 'package:probably_works/agent/state/session_state_service.dart';
-import 'package:probably_works/agent/tools/self_tool_handler.dart';
-import 'package:probably_works/agent/tools/tool_catalog.dart';
-import 'package:probably_works/agent/tools/tool_executor.dart';
-import 'package:probably_works/agent/turn/turn_changeset_service.dart';
-import 'package:probably_works/agent/turn/turn_changeset_store.dart';
-import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
-import 'package:probably_works/app/locale/locale_controller.dart';
-import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/core/data/chat_draft_store.dart';
-import 'package:probably_works/core/data/chat_repository.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/mcp_server_repository.dart';
-import 'package:probably_works/core/data/policy_profile_repository.dart';
-import 'package:probably_works/core/data/project_repository.dart';
-import 'package:probably_works/core/data/saved_model_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/data/virtual_host_provisioner.dart';
-import 'package:probably_works/core/db/app_database.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/core/notify/app_notifier.dart';
-import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
-import 'package:probably_works/host/host_capture.dart';
-import 'package:probably_works/host/host_diagnostics.dart';
-import 'package:probably_works/host/host_op.dart';
-import 'package:probably_works/host/host_runtime_factory.dart';
-import 'package:probably_works/host/read_file_output.dart';
-import 'package:probably_works/host/ssh_connection_pool.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/context/context_builder.dart';
+import 'package:pw_agent/agent/context/context_compactor.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/exec/active_exec_registry.dart';
+import 'package:pw_agent/agent/exec/command_executor.dart';
+import 'package:pw_agent/agent/exec/exec_log_store.dart';
+import 'package:pw_agent/agent/exec/live_output_bus.dart';
+import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/loop/chat_session.dart';
+import 'package:pw_agent/agent/loop/chat_title.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/plugins/plugin_registry.dart';
+import 'package:pw_agent/agent/plugins/plugin_service.dart';
+import 'package:pw_agent/agent/policy/command_risk.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/project/project_lifecycle.dart';
+import 'package:pw_agent/agent/recovery/startup_recovery.dart';
+import 'package:pw_agent/agent/state/session_state_service.dart';
+import 'package:pw_agent/agent/tools/self_tool_handler.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
+import 'package:pw_agent/agent/tools/tool_executor.dart';
+import 'package:pw_agent/agent/turn/turn_changeset_service.dart';
+import 'package:pw_agent/agent/turn/turn_changeset_store.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
+import 'package:pw_agent/core/data/chat_draft_store.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/mcp_server_repository.dart';
+import 'package:pw_agent/core/data/policy_profile_repository.dart';
+import 'package:pw_agent/core/data/project_repository.dart';
+import 'package:pw_agent/core/data/saved_model_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
+import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/host_capture.dart';
+import 'package:pw_agent/host/host_diagnostics.dart';
+import 'package:pw_agent/host/host_op.dart';
+import 'package:pw_agent/host/host_runtime_factory.dart';
+import 'package:pw_agent/host/read_file_output.dart';
+import 'package:pw_agent/host/ssh_connection_pool.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
+
+import '../../test_support/fake_appearance.dart';
+import '../../test_support/fake_url_opener.dart';
 
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной сценарий ответа.
 class _FakeLlm implements LlmProvider {
@@ -162,8 +163,7 @@ void main() {
     final self = SelfToolHandler(
       hosts,
       settings,
-      LocaleController(),
-      ThemeController(),
+      FakeAppearance(),
       modelCatalog,
       HostDiagnostics(hosts, MemorySecretStore(), settings, runtimes),
     );
@@ -180,12 +180,12 @@ void main() {
     final compactor = ContextCompactor(chats, llm, builder);
     final mcp = McpService(
       McpServerRepository(db),
-      McpClientManager(secrets),
+      McpClientManager(secrets, FakeUrlOpener()),
       tools,
       secrets,
     );
     final plugins = PluginService(
-      const PluginCatalog(),
+      const PluginRegistry([]),
       settings,
       tools,
       commands,

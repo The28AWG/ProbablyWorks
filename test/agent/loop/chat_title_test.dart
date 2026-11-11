@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/loop/chat_title.dart';
+import 'package:pw_agent/agent/loop/chat_title.dart';
 
 void main() {
   group('ChatTitle.sanitize', () {

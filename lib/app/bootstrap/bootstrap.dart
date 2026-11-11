@@ -1,34 +1,38 @@
 import 'package:flutter/widgets.dart';
-import 'package:probably_works/agent/loop/agent_hub.dart';
-import 'package:probably_works/agent/mcp/mcp_service.dart';
-import 'package:probably_works/agent/project/project_lifecycle.dart';
-import 'package:probably_works/agent/recovery/startup_recovery.dart';
-import 'package:probably_works/app/bootstrap/app_paths.dart';
+import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
 import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/core/data/host_repository.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
-import 'package:probably_works/core/db/db_connection.dart';
-import 'package:probably_works/core/logging/app_log.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
-import 'package:probably_works/core/security/secret_store.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:probably_works/providers/ai/model_catalog.dart';
+import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/project/project_lifecycle.dart';
+import 'package:pw_agent/agent/recovery/startup_recovery.dart';
+import 'package:pw_agent/core/config/app_paths.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/logging/app_log.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host →
 /// настройки интерфейса (язык, ширина панели) → фоновое обновление каталога моделей. Возвращает false, если другой экземпляр уже работает с этой базой.
 Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final paths = await AppPaths.resolve();
+  final paths = await resolveAppPaths();
   final lock = SingleInstanceLock(paths.lockFile);
   // На телефоне второй экземпляр приложения система не запускает, а файловая блокировка может
   // не поддерживаться (sandbox, сетевые тома). Поэтому отказ блокировки там не считаем «уже запущено».
   if (!lock.acquire() && !AppPlatform.current.isMobile) return false;
   await AppLog.init(paths.logs);
+  // Агент получает каталоги снаружи: клиент — из path_provider, демон — из XDG.
+  // Регистрация до DI: модуль агента открывает БД через AppPaths.
+  getIt.registerSingleton<AppPaths>(paths);
   await configureDependencies();
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();

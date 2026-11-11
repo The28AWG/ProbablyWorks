@@ -2,13 +2,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/agent/context/context_builder.dart';
-import 'package:probably_works/agent/domain/chat_models.dart';
-import 'package:probably_works/agent/domain/session_state.dart';
-import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/providers/ai/llm_port.dart';
-import 'package:probably_works/providers/ai/openrouter/openrouter_llm_provider.dart';
+import 'package:pw_agent/agent/context/context_builder.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/session_state.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 
 void main() {
   final now = DateTime(2026, 11, 3);

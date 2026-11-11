@@ -1,7 +1,7 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:pw_agent/core/data/settings_repository.dart';
 
 class SidebarState extends Equatable {
   const SidebarState({this.width = AppLayout.sidebarWidth});

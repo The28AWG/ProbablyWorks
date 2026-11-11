@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/domain/host.dart';
-import 'package:probably_works/core/error/app_failure.dart';
-import 'package:probably_works/host/host_runtime.dart';
-import 'package:probably_works/host/host_terminal.dart';
-import 'package:probably_works/host/process_control.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/host/host_runtime.dart';
+import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/host/process_control.dart';
 
 /// Фейковый PTY: вывод и код выхода задаёт тест, ввод и размер записываются.
 class _FakeChannel implements PtyChannel {
