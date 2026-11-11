@@ -9,16 +9,24 @@ import 'package:probably_works/agent/plugins/plugin_graph.dart';
 import 'package:probably_works/agent/plugins/plugin_tool_source.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/security/secret_store.dart';
 
 /// Включение плагинов и регистрация их инструментов.
 @lazySingleton
 class PluginService {
-  PluginService(this._catalog, this._settings, this._tools, this._commands);
+  PluginService(
+    this._catalog,
+    this._settings,
+    this._tools,
+    this._commands,
+    this._secrets,
+  );
 
   final PluginCatalog _catalog;
   final SettingsRepository _settings;
   final ToolExecutor _tools;
   final CommandExecutor _commands;
+  final SecretStore _secrets;
 
   static final _log = Logger('PluginService');
   static const _enabledPrefix = 'plugin.';
@@ -84,7 +92,12 @@ class PluginService {
         final tools = await plugin.createTools(settingsFor(plugin.id));
         if (tools.isEmpty) continue;
         _tools.registerToolSource(
-          PluginToolSource(plugin: plugin, tools: tools, commands: _commands),
+          PluginToolSource(
+            plugin: plugin,
+            tools: tools,
+            commands: _commands,
+            secrets: _secrets,
+          ),
         );
       } on Object catch (error) {
         _log.warning('cannot load plugin ${plugin.id}', error);

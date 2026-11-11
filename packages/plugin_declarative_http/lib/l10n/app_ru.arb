@@ -1,0 +1,184 @@
+{
+  "pluginTitle": "Декларативные HTTP",
+  "@pluginTitle": {
+    "description": "Plugin title in the plugin list."
+  },
+  "pluginDescription": "Превращает HTTP-запросы в инструменты, которые может вызывать модель.",
+  "@pluginDescription": {
+    "description": "Plugin description in the plugin list."
+  },
+  "settingsTitle": "HTTP-инструменты",
+  "@settingsTitle": {
+    "description": "Heading of the HTTP tools settings screen."
+  },
+  "settingsHint": "Инструменты вызывают фиксированные HTTP-endpoint'ы. В URL, заголовках и теле можно использовать подстановки аргументов.",
+  "@settingsHint": {
+    "description": "Hint above the HTTP tool list."
+  },
+  "addTool": "Добавить HTTP-инструмент",
+  "@addTool": {
+    "description": "Button that opens the HTTP tool editor."
+  },
+  "emptyTitle": "HTTP-инструментов нет",
+  "@emptyTitle": {
+    "description": "Empty state title."
+  },
+  "emptyMessage": "Добавьте HTTP-инструмент, чтобы он стал доступен модели.",
+  "@emptyMessage": {
+    "description": "Empty state message."
+  },
+  "newTool": "Новый HTTP-инструмент",
+  "@newTool": {
+    "description": "Title of the HTTP tool editor when adding."
+  },
+  "editTool": "Изменить HTTP-инструмент",
+  "@editTool": {
+    "description": "Title of the HTTP tool editor when editing."
+  },
+  "name": "Название",
+  "@name": {
+    "description": "Tool name field."
+  },
+  "description": "Описание",
+  "@description": {
+    "description": "Tool description field."
+  },
+  "method": "Метод",
+  "@method": {
+    "description": "HTTP method field."
+  },
+  "url": "URL",
+  "@url": {
+    "description": "HTTP URL field."
+  },
+  "headers": "Заголовки",
+  "@headers": {
+    "description": "HTTP headers field."
+  },
+  "headersHint": "KEY=VALUE, по одному на строку",
+  "@headersHint": {
+    "description": "HTTP headers hint."
+  },
+  "body": "Тело",
+  "@body": {
+    "description": "HTTP body field."
+  },
+  "bodyHint": "JSON или текст; пусто — без тела",
+  "@bodyHint": {
+    "description": "HTTP body hint."
+  },
+  "inputSchema": "Схема аргументов",
+  "@inputSchema": {
+    "description": "Tool arguments JSON schema field."
+  },
+  "inputSchemaHint": "Объект JSON Schema",
+  "@inputSchemaHint": {
+    "description": "Tool arguments schema hint."
+  },
+  "responseFormat": "Ответ",
+  "@responseFormat": {
+    "description": "Response processing format."
+  },
+  "responseText": "Текст",
+  "@responseText": {
+    "description": "Response format: raw text."
+  },
+  "responseJson": "JSON",
+  "@responseJson": {
+    "description": "Response format: parse JSON."
+  },
+  "responseHtml": "HTML",
+  "@responseHtml": {
+    "description": "Response format: parse HTML."
+  },
+  "jsonPath": "JSONPath",
+  "@jsonPath": {
+    "description": "JSONPath selection field."
+  },
+  "jsonPathHint": "Необязательно, например $.items[*].name",
+  "@jsonPathHint": {
+    "description": "JSONPath hint."
+  },
+  "htmlSelector": "CSS-селектор",
+  "@htmlSelector": {
+    "description": "HTML CSS selector field."
+  },
+  "htmlSelectorHint": "Необязательно, например article .title",
+  "@htmlSelectorHint": {
+    "description": "HTML selector hint."
+  },
+  "timeout": "Таймаут, секунды",
+  "@timeout": {
+    "description": "HTTP timeout field."
+  },
+  "maxResponseChars": "Максимум символов ответа",
+  "@maxResponseChars": {
+    "description": "Maximum response size field."
+  },
+  "invalidName": "Введите название.",
+  "@invalidName": {
+    "description": "Validation: empty name."
+  },
+  "invalidUrl": "Введите корректный http(s) URL.",
+  "@invalidUrl": {
+    "description": "Validation: invalid URL."
+  },
+  "invalidMethod": "Используйте GET, POST, PUT, PATCH или DELETE.",
+  "@invalidMethod": {
+    "description": "Validation: unsupported HTTP method."
+  },
+  "invalidBody": "Тело должно быть корректным JSON или текстом.",
+  "@invalidBody": {
+    "description": "Validation: invalid body JSON."
+  },
+  "invalidSchema": "Схема аргументов должна быть JSON-объектом.",
+  "@invalidSchema": {
+    "description": "Validation: invalid arguments schema."
+  },
+  "invalidTimeout": "Введите положительный таймаут.",
+  "@invalidTimeout": {
+    "description": "Validation: invalid timeout."
+  },
+  "invalidMaxChars": "Введите положительный лимит.",
+  "@invalidMaxChars": {
+    "description": "Validation: invalid response size limit."
+  },
+  "deleteTitle": "Удалить HTTP-инструмент",
+  "@deleteTitle": {
+    "description": "Delete confirmation title."
+  },
+  "deleteConfirm": "Удалить «{name}»?",
+  "@deleteConfirm": {
+    "description": "Delete confirmation message.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "delete": "Удалить",
+  "@delete": {
+    "description": "Delete action."
+  },
+  "edit": "Изменить",
+  "@edit": {
+    "description": "Edit action."
+  },
+  "cancel": "Отмена",
+  "@cancel": {
+    "description": "Cancel action."
+  },
+  "save": "Сохранить",
+  "@save": {
+    "description": "Save action."
+  },
+  "toolCount": "Инструментов: {count}",
+  "@toolCount": {
+    "description": "Number of HTTP tools.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

@@ -1,0 +1,184 @@
+{
+  "pluginTitle": "Declarative HTTP",
+  "@pluginTitle": {
+    "description": "Plugin title in the plugin list."
+  },
+  "pluginDescription": "Turn HTTP requests into tools the model can call.",
+  "@pluginDescription": {
+    "description": "Plugin description in the plugin list."
+  },
+  "settingsTitle": "HTTP tools",
+  "@settingsTitle": {
+    "description": "Heading of the HTTP tools settings screen."
+  },
+  "settingsHint": "Tools call fixed HTTP endpoints. URL, headers and body may use argument placeholders.",
+  "@settingsHint": {
+    "description": "Hint above the HTTP tool list."
+  },
+  "addTool": "Add HTTP tool",
+  "@addTool": {
+    "description": "Button that opens the HTTP tool editor."
+  },
+  "emptyTitle": "No HTTP tools",
+  "@emptyTitle": {
+    "description": "Empty state title."
+  },
+  "emptyMessage": "Add an HTTP tool to make it available to the model.",
+  "@emptyMessage": {
+    "description": "Empty state message."
+  },
+  "newTool": "New HTTP tool",
+  "@newTool": {
+    "description": "Title of the HTTP tool editor when adding."
+  },
+  "editTool": "Edit HTTP tool",
+  "@editTool": {
+    "description": "Title of the HTTP tool editor when editing."
+  },
+  "name": "Name",
+  "@name": {
+    "description": "Tool name field."
+  },
+  "description": "Description",
+  "@description": {
+    "description": "Tool description field."
+  },
+  "method": "Method",
+  "@method": {
+    "description": "HTTP method field."
+  },
+  "url": "URL",
+  "@url": {
+    "description": "HTTP URL field."
+  },
+  "headers": "Headers",
+  "@headers": {
+    "description": "HTTP headers field."
+  },
+  "headersHint": "KEY=VALUE, one per line",
+  "@headersHint": {
+    "description": "HTTP headers hint."
+  },
+  "body": "Body",
+  "@body": {
+    "description": "HTTP body field."
+  },
+  "bodyHint": "JSON or text; leave empty for no body",
+  "@bodyHint": {
+    "description": "HTTP body hint."
+  },
+  "inputSchema": "Arguments schema",
+  "@inputSchema": {
+    "description": "Tool arguments JSON schema field."
+  },
+  "inputSchemaHint": "JSON Schema object",
+  "@inputSchemaHint": {
+    "description": "Tool arguments schema hint."
+  },
+  "responseFormat": "Response",
+  "@responseFormat": {
+    "description": "Response processing format."
+  },
+  "responseText": "Text",
+  "@responseText": {
+    "description": "Response format: raw text."
+  },
+  "responseJson": "JSON",
+  "@responseJson": {
+    "description": "Response format: parse JSON."
+  },
+  "responseHtml": "HTML",
+  "@responseHtml": {
+    "description": "Response format: parse HTML."
+  },
+  "jsonPath": "JSONPath",
+  "@jsonPath": {
+    "description": "JSONPath selection field."
+  },
+  "jsonPathHint": "Optional, for example $.items[*].name",
+  "@jsonPathHint": {
+    "description": "JSONPath hint."
+  },
+  "htmlSelector": "CSS selector",
+  "@htmlSelector": {
+    "description": "HTML CSS selector field."
+  },
+  "htmlSelectorHint": "Optional, for example article .title",
+  "@htmlSelectorHint": {
+    "description": "HTML selector hint."
+  },
+  "timeout": "Timeout, seconds",
+  "@timeout": {
+    "description": "HTTP timeout field."
+  },
+  "maxResponseChars": "Max response characters",
+  "@maxResponseChars": {
+    "description": "Maximum response size field."
+  },
+  "invalidName": "Enter a name.",
+  "@invalidName": {
+    "description": "Validation: empty name."
+  },
+  "invalidUrl": "Enter a valid http(s) URL.",
+  "@invalidUrl": {
+    "description": "Validation: invalid URL."
+  },
+  "invalidMethod": "Use GET, POST, PUT, PATCH or DELETE.",
+  "@invalidMethod": {
+    "description": "Validation: unsupported HTTP method."
+  },
+  "invalidBody": "Body must be valid JSON or text.",
+  "@invalidBody": {
+    "description": "Validation: invalid body JSON."
+  },
+  "invalidSchema": "Arguments schema must be a JSON object.",
+  "@invalidSchema": {
+    "description": "Validation: invalid arguments schema."
+  },
+  "invalidTimeout": "Enter a positive timeout.",
+  "@invalidTimeout": {
+    "description": "Validation: invalid timeout."
+  },
+  "invalidMaxChars": "Enter a positive limit.",
+  "@invalidMaxChars": {
+    "description": "Validation: invalid response size limit."
+  },
+  "deleteTitle": "Delete HTTP tool",
+  "@deleteTitle": {
+    "description": "Delete confirmation title."
+  },
+  "deleteConfirm": "Delete “{name}”?",
+  "@deleteConfirm": {
+    "description": "Delete confirmation message.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete action."
+  },
+  "edit": "Edit",
+  "@edit": {
+    "description": "Edit action."
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel action."
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save action."
+  },
+  "toolCount": "{count} tools",
+  "@toolCount": {
+    "description": "Number of HTTP tools.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}

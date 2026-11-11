@@ -247,6 +247,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i913.SettingsRepository>(),
         gh<_i125.ToolExecutor>(),
         gh<_i401.CommandExecutor>(),
+        gh<_i617.SecretStore>(),
       ),
     );
     gh.singleton<_i168.AgentHub>(

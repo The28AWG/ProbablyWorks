@@ -76,6 +76,31 @@ abstract interface class PluginHost {
     List<String> args, {
     Duration? timeout,
   });
+
+  /// Выполняет HTTP-запрос после проверки URL и подстановки секретов
+  /// приложением. Плагин не получает прямой доступ к сети.
+  Future<PluginHttpResult> httpRequest({
+    required String method,
+    required String url,
+    Map<String, String> headers = const {},
+    Object? body,
+    Duration? timeout,
+  });
+}
+
+/// Ответ HTTP-запроса плагина.
+final class PluginHttpResult {
+  const PluginHttpResult({
+    required this.statusCode,
+    required this.body,
+    this.headers = const {},
+    this.isError = false,
+  });
+
+  final int statusCode;
+  final String body;
+  final Map<String, String> headers;
+  final bool isError;
 }
 
 /// Итог команды плагина.

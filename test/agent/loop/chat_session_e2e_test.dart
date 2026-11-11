@@ -189,6 +189,7 @@ void main() {
       settings,
       tools,
       commands,
+      secrets,
     );
     drafts = ChatDraftStore(chats);
     final projectStore = ProjectRepository(db);

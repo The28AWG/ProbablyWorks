@@ -36,6 +36,15 @@ final class _Host implements PluginHost {
     this.timeout = timeout;
     return const PluginCommandResult(output: 'ok', exitCode: 0);
   }
+
+  @override
+  Future<PluginHttpResult> httpRequest({
+    required String method,
+    required String url,
+    Map<String, String> headers = const {},
+    Object? body,
+    Duration? timeout,
+  }) => throw UnsupportedError('HTTP is not used in this test');
 }
 
 void main() {
