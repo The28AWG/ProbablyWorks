@@ -124,7 +124,7 @@ class SecurityAuditService {
       _paths.support.path,
       _paths.database.path,
       _paths.logs.path,
-      _paths.lockFile.path,
+      // Lock-файл не содержит данных: его права не являются утечкой.
       _paths.mcpConfig.path,
     ]) {
       if (!FileSystemEntity.isFileSync(path) &&
