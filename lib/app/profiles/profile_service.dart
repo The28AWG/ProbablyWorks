@@ -9,7 +9,9 @@ import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 
+import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:uuid/uuid.dart';
@@ -28,6 +30,7 @@ class ProfileService {
     this._localHosts,
     this._localProjects,
     this._localSettings,
+    this._notifier,
   );
 
   static const _uuid = Uuid();
@@ -39,9 +42,11 @@ class ProfileService {
   final HostsApi _localHosts;
   final ProjectsApi _localProjects;
   final AgentSettingsApi _localSettings;
+  final AppNotifier _notifier;
 
   final _changes = StreamController<void>.broadcast();
   final _remote = <String, RemoteAgentApi>{};
+  final _listeners = <String, List<StreamSubscription<Object?>>>{};
   final _tokens = <String, String>{};
 
   var _profiles = <AgentProfile>[AgentProfile.local()];
@@ -174,7 +179,7 @@ class ProfileService {
       _tokens[id] = token;
       await _secrets.write(agentProfileTokenKey(id), token);
     }
-    await _remote.remove(id)?.dispose();
+    await _disposeRemote(id);
     await _persist();
     _changes.add(null);
   }
@@ -188,17 +193,24 @@ class ProfileService {
     ];
     _tokens.remove(id);
     await _secrets.delete(agentProfileTokenKey(id));
-    await _remote.remove(id)?.dispose();
+    await _disposeRemote(id);
     await _persist();
     _changes.add(null);
   }
 
   Future<void> dispose() async {
-    for (final api in _remote.values) {
-      await api.dispose();
+    for (final id in _listeners.keys.toList()) {
+      await _disposeRemote(id);
     }
     _remote.clear();
     await _changes.close();
+  }
+
+  Future<void> _disposeRemote(String id) async {
+    for (final subscription in _listeners.remove(id) ?? const []) {
+      await subscription.cancel();
+    }
+    await _remote.remove(id)?.dispose();
   }
 
   RemoteAgentApi _remoteFor(AgentProfile profile) {
@@ -213,7 +225,49 @@ class ProfileService {
       token: _tokens[profile.id] ?? '',
     )..startEvents();
     _remote[profile.id] = api;
+    _listeners[profile.id] = _listenNotices(api);
     return api;
+  }
+
+  /// Сервер не умеет показывать системные уведомления GUI, поэтому клиент
+  /// повторяет их по SSE и потокам карточек удалённого профиля. Локальный
+  /// агент уведомляет сам через `ChatSession`, здесь его нет.
+  List<StreamSubscription<Object?>> _listenNotices(RemoteAgentApi api) => [
+    api.events.listen((event) {
+      final kind = switch (event) {
+        AgentTurnFinished(end: TurnEnd.completed) =>
+          AgentNoticeKind.turnFinished,
+        AgentTurnFinished(end: TurnEnd.stepLimit) =>
+          AgentNoticeKind.stepLimitReached,
+        AgentTurnFinished(end: TurnEnd.failed) => AgentNoticeKind.turnFailed,
+        _ => null,
+      };
+      if (kind != null) unawaited(_notify(api, event.chatId, kind));
+    }),
+    api.approvals.listen(
+      (request) => unawaited(
+        _notify(api, request.chatId, AgentNoticeKind.approvalNeeded),
+      ),
+    ),
+    api.questions.listen(
+      (question) => unawaited(
+        _notify(api, question.chatId, AgentNoticeKind.questionAsked),
+      ),
+    ),
+  ];
+
+  Future<void> _notify(
+    RemoteAgentApi api,
+    String chatId,
+    AgentNoticeKind kind,
+  ) async {
+    var title = '';
+    try {
+      title = (await api.chat(chatId))?.title ?? '';
+    } on Object {
+      // Название не критично: уведомление покажет только действие.
+    }
+    await _notifier.notify(kind: kind, chatTitle: title);
   }
 
   Future<void> _persist() => _settings.write(

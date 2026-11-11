@@ -9,6 +9,7 @@ import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
@@ -33,6 +34,7 @@ void main() {
     _FakeHostsApi(),
     _FakeProjectsApi(),
     _FakeSettingsApi(),
+    _FakeNotifier(),
   );
 
   test('loads local profile and persists remote profiles', () async {
@@ -109,4 +111,13 @@ final class _FakeSettingsApi implements AgentSettingsApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('AgentSettingsApi is not used in profile tests');
+}
+
+final class _FakeNotifier implements AppNotifier {
+  @override
+  Future<void> notify({
+    required AgentNoticeKind kind,
+    required String chatTitle,
+    String? detail,
+  }) => Future<void>.value();
 }
