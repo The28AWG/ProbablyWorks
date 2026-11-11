@@ -1727,6 +1727,18 @@
   "@securityAuditPermissionsUnknownRecommendation": {
     "description": "Security finding recommendation: permissions unknown."
   },
+  "securityAuditSandboxTitle": "Storage sandbox",
+  "@securityAuditSandboxTitle": {
+    "description": "Security finding: mobile storage is protected by the OS sandbox."
+  },
+  "securityAuditSandboxDetail": "Application files live in private storage protected by the OS sandbox.",
+  "@securityAuditSandboxDetail": {
+    "description": "Security finding detail: mobile storage sandbox."
+  },
+  "securityAuditSandboxRecommendation": "No action needed.",
+  "@securityAuditSandboxRecommendation": {
+    "description": "Security finding recommendation: mobile storage sandbox."
+  },
   "securityAuditEnvTitle": "Secrets in environment",
   "@securityAuditEnvTitle": {
     "description": "Security finding: secrets in environment."

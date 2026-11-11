@@ -14,6 +14,7 @@ enum SecurityFindingCode {
   secretStore,
   dataPermissions,
   permissionsUnknown,
+  sandboxedStorage,
   environmentSecrets,
   policyYolo,
   emptyDenylist,

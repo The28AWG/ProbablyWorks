@@ -1727,6 +1727,18 @@
   "@securityAuditPermissionsUnknownRecommendation": {
     "description": "Security finding recommendation: permissions unknown."
   },
+  "securityAuditSandboxTitle": "Песочница хранилища",
+  "@securityAuditSandboxTitle": {
+    "description": "Security finding: mobile storage is protected by the OS sandbox."
+  },
+  "securityAuditSandboxDetail": "Файлы приложения лежат в приватном хранилище, закрытом песочницей ОС.",
+  "@securityAuditSandboxDetail": {
+    "description": "Security finding detail: mobile storage sandbox."
+  },
+  "securityAuditSandboxRecommendation": "Действий не требуется.",
+  "@securityAuditSandboxRecommendation": {
+    "description": "Security finding recommendation: mobile storage sandbox."
+  },
   "securityAuditEnvTitle": "Секреты в окружении",
   "@securityAuditEnvTitle": {
     "description": "Security finding: secrets in environment."

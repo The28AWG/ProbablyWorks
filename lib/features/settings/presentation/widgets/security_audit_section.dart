@@ -212,6 +212,11 @@ class _FindingCard extends StatelessWidget {
       detail: l10n.securityAuditPermissionsUnknownDetail,
       recommendation: l10n.securityAuditPermissionsUnknownRecommendation,
     ),
+    SecurityFindingCode.sandboxedStorage => (
+      title: l10n.securityAuditSandboxTitle,
+      detail: l10n.securityAuditSandboxDetail,
+      recommendation: l10n.securityAuditSandboxRecommendation,
+    ),
     SecurityFindingCode.environmentSecrets => (
       title: l10n.securityAuditEnvTitle,
       detail: l10n.securityAuditEnvDetail(finding.params['keys'] ?? '?'),

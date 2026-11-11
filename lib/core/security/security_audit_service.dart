@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as p;
 import 'package:probably_works/agent/plugins/plugin_catalog.dart';
@@ -110,14 +111,39 @@ class SecurityAuditService {
     );
   }
 
-  Future<void> _checkPermissions(List<SecurityFinding> findings) async {
-    if (Platform.isWindows) {
-      findings.add(
-        const SecurityFinding(
-          code: SecurityFindingCode.permissionsUnknown,
-          severity: SecuritySeverity.warning,
-        ),
+  /// Находка, которая заменяет проверку POSIX-режимов на платформе.
+  ///
+  /// На мобильных граница — не режимы файлов, а UID и песочница ОС: даже
+  /// `0644` внутри private storage недоступен другим приложениям. На Windows
+  /// ACL пока не проверяются, поэтому честно сообщаем об этом.
+  /// `null` означает, что нужно сравнивать POSIX-режимы.
+  @visibleForTesting
+  static SecurityFinding? platformPermissionsFinding({
+    required bool mobile,
+    required bool windows,
+  }) {
+    if (mobile) {
+      return const SecurityFinding(
+        code: SecurityFindingCode.sandboxedStorage,
+        severity: SecuritySeverity.info,
       );
+    }
+    if (windows) {
+      return const SecurityFinding(
+        code: SecurityFindingCode.permissionsUnknown,
+        severity: SecuritySeverity.warning,
+      );
+    }
+    return null;
+  }
+
+  Future<void> _checkPermissions(List<SecurityFinding> findings) async {
+    final platformFinding = platformPermissionsFinding(
+      mobile: Platform.isAndroid || Platform.isIOS,
+      windows: Platform.isWindows,
+    );
+    if (platformFinding != null) {
+      findings.add(platformFinding);
       return;
     }
     // Ожидаемые режимы: приложение само создаёт каталоги с 0700 и файлы

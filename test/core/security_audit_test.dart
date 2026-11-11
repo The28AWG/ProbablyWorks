@@ -155,6 +155,26 @@ void main() {
     );
   });
 
+  test('mobile storage uses the sandbox finding instead of file modes', () {
+    final finding = SecurityAuditService.platformPermissionsFinding(
+      mobile: true,
+      windows: false,
+    );
+
+    expect(finding?.code, SecurityFindingCode.sandboxedStorage);
+    expect(finding?.severity, SecuritySeverity.info);
+  });
+
+  test('windows permissions are reported as unchecked', () {
+    final finding = SecurityAuditService.platformPermissionsFinding(
+      mobile: false,
+      windows: true,
+    );
+
+    expect(finding?.code, SecurityFindingCode.permissionsUnknown);
+    expect(finding?.severity, SecuritySeverity.warning);
+  });
+
   test('world-writable support directory is critical', () async {
     if (Platform.isWindows) return;
     _chmod(tmp.path, '777');
