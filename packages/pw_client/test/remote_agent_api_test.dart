@@ -290,7 +290,12 @@ final class _FakeAgent implements AgentApi {
   Future<void> openChat(String chatId) => Future<void>.value();
 
   @override
-  Future<void> send(String chatId, String text, {bool sendNow = false}) async {
+  Future<void> send(
+    String chatId,
+    String text, {
+    bool sendNow = false,
+    List<AttachmentRef> attachments = const [],
+  }) async {
     sent.add((chatId, text, sendNow));
   }
 

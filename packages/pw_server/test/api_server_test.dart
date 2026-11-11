@@ -628,7 +628,12 @@ final class _FakeBackend implements AgentApi {
   }
 
   @override
-  Future<void> send(String chatId, String text, {bool sendNow = false}) async {
+  Future<void> send(
+    String chatId,
+    String text, {
+    bool sendNow = false,
+    List<AttachmentRef> attachments = const [],
+  }) async {
     sent.add((chatId, text, sendNow));
   }
 

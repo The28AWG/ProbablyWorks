@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -37,7 +38,7 @@ final class ApiServer {
        _hostsApi = hosts,
        _projectsApi = projects;
 
-  static const _maxBodyBytes = 1 << 20;
+  static const _maxBodyBytes = 8 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
 
   final AgentApi _backend;
@@ -774,8 +775,14 @@ final class ApiServer {
 
   Future<void> _send(HttpRequest request, String chatId) async {
     final body = await _body(request);
-    final text = _string(body, 'text');
-    await _backend.send(chatId, text, sendNow: body['sendNow'] == true);
+    final text = body['text'] is String ? body['text'] as String : '';
+    final attachments = _attachments(body['attachments']);
+    await _backend.send(
+      chatId,
+      text,
+      sendNow: body['sendNow'] == true,
+      attachments: attachments,
+    );
     _json(request.response, HttpStatus.accepted, {'ok': true});
   }
 
@@ -1123,6 +1130,26 @@ Map<String, Object?> _modelJson(LlmModelInfo model) => {
   'created': model.created,
   'inputModalities': model.inputModalities,
 };
+
+List<AttachmentRef> _attachments(Object? raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final item in raw)
+      if (item is Map)
+        AttachmentRef(
+          name: '${item['name'] ?? ''}',
+          mode: AttachmentMode.values.byName('${item['mode'] ?? 'file'}'),
+          content: item['content'] as String?,
+          mimeType: item['mimeType'] as String?,
+          sizeBytes: item['sizeBytes'] is num
+              ? (item['sizeBytes'] as num).toInt()
+              : 0,
+          bytes: item['bytes'] is String
+              ? Uint8List.fromList(base64Decode(item['bytes'] as String))
+              : null,
+        ),
+  ];
+}
 
 Chat _chatFromJson(String id, Map<String, dynamic> json) {
   final now = DateTime.now();

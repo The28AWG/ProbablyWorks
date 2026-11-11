@@ -174,12 +174,19 @@ class LocalChatApi implements ChatApi {
     await _hub.session(chatId).restoreUnanswered();
   }
 
-  Future<void> send(String chatId, String text, {bool sendNow = false}) async {
+  Future<void> send(
+    String chatId,
+    String text, {
+    bool sendNow = false,
+    List<AttachmentRef> attachments = const [],
+  }) async {
     await requireChat(chatId);
-    if (text.trim().isEmpty) {
+    if (text.trim().isEmpty && attachments.isEmpty) {
       throw const AgentApiException(400, 'empty_message', 'message is empty');
     }
-    await _hub.session(chatId).submit(text, sendNow: sendNow);
+    await _hub
+        .session(chatId)
+        .submit(text, attachments: attachments, sendNow: sendNow);
   }
 
   Future<void> stop(String chatId, {String? reason}) async {

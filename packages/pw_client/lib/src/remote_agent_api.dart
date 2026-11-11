@@ -428,11 +428,22 @@ class RemoteAgentApi implements AgentApi, ChatApi, HostsApi, ProjectsApi {
   }
 
   @override
-  Future<void> send(String chatId, String text, {bool sendNow = false}) async {
+  Future<void> send(
+    String chatId,
+    String text, {
+    bool sendNow = false,
+    List<AttachmentRef> attachments = const [],
+  }) async {
     await _send(
       'POST',
       '/chats/$chatId/messages',
-      body: {'text': text, 'sendNow': sendNow},
+      body: {
+        'text': text,
+        'sendNow': sendNow,
+        'attachments': [
+          for (final attachment in attachments) _attachmentBody(attachment),
+        ],
+      },
     );
     await _trySyncSession(chatId);
   }
@@ -1206,6 +1217,15 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
       : jsonEncode(json['pendingCard']),
 );
 
+Map<String, Object?> _attachmentBody(AttachmentRef attachment) => {
+  'name': attachment.name,
+  'mode': attachment.mode.name,
+  'content': attachment.content,
+  'mimeType': attachment.mimeType,
+  'sizeBytes': attachment.sizeBytes,
+  if (attachment.bytes != null) 'bytes': base64Encode(attachment.bytes!),
+};
+
 Map<String, Object?> _hostBody(Host host) => {
   'id': host.id,
   'name': host.name,
@@ -1606,7 +1626,7 @@ final class _RemoteChatSession implements ChatSessionApi {
     String text, {
     List<AttachmentRef> attachments = const [],
     bool sendNow = false,
-  }) => _api.send(_chatId, text, sendNow: sendNow);
+  }) => _api.send(_chatId, text, sendNow: sendNow, attachments: attachments);
 
   @override
   Future<void> stop({String? reason}) => _api.stop(_chatId, reason: reason);

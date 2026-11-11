@@ -83,7 +83,12 @@ abstract interface class AgentApi {
   /// Регистрирует карточки чата и продолжает ход, если нужно.
   Future<void> openChat(String chatId);
 
-  Future<void> send(String chatId, String text, {bool sendNow = false});
+  Future<void> send(
+    String chatId,
+    String text, {
+    bool sendNow = false,
+    List<AttachmentRef> attachments = const [],
+  });
   Future<void> stop(String chatId, {String? reason});
 
   /// Продолжает незавершённые шаги после локального перезапуска.
