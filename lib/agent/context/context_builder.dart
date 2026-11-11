@@ -63,6 +63,8 @@ class ContextBuilder {
     ToolNames.listDir,
     ToolNames.readFile,
     ToolNames.grep,
+    ToolNames.glob,
+    ToolNames.statPath,
     ToolNames.which,
     ToolNames.runCommand,
     ToolNames.listSkills,

@@ -84,6 +84,76 @@ void main() {
       expect(await parityMismatch(StatOp('$base/none')), isNull);
     });
 
+    test('make_dir создаёт каталог и родителей', () async {
+      final op = MakeDirOp('$base/mk/a/b');
+      expect(await parityMismatch(op), isNull);
+      expect(Directory('$base/mk/a/b').existsSync(), isTrue);
+      expect(await fs.stat('$base/mk/a/b'), isNotNull);
+      // Повторный вызов идемпотентен, как `mkdir -p`.
+      final repeated = await parityMismatch(op);
+      expect(repeated, isNull);
+    });
+
+    test('delete_file удаляет файл и отвергает отсутствующий путь', () async {
+      await file('del/a.txt', [1, 2, 3]);
+      expect(await parityMismatch(DeleteFileOp('$base/del/a.txt')), isNull);
+      expect(File('$base/del/a.txt').existsSync(), isFalse);
+      final missingAgain = await parityMismatch(
+        DeleteFileOp('$base/del/a.txt'),
+      );
+      expect(missingAgain, isNull);
+    });
+
+    test('move_path переносит файл и уважает overwrite', () async {
+      await file('mv/a.txt', [1, 2, 3]);
+      expect(
+        await parityMismatch(MovePathOp('$base/mv/a.txt', '$base/mv/b.txt')),
+        isNull,
+      );
+      expect(await File('$base/mv/b.txt').readAsBytes(), [1, 2, 3]);
+
+      await file('mv/c.txt', [4]);
+      expect(
+        await parityMismatch(MovePathOp('$base/mv/c.txt', '$base/mv/b.txt')),
+        isNull,
+      );
+      expect(
+        await parityMismatch(
+          MovePathOp('$base/mv/c.txt', '$base/mv/b.txt', overwrite: true),
+        ),
+        isNull,
+      );
+    });
+
+    test('copy_path копирует файл и уважает overwrite', () async {
+      await file('cp/a.txt', [1, 2, 3]);
+      expect(
+        await parityMismatch(CopyPathOp('$base/cp/a.txt', '$base/cp/b.txt')),
+        isNull,
+      );
+      expect(await File('$base/cp/b.txt').readAsBytes(), [1, 2, 3]);
+
+      await file('cp/c.txt', [4]);
+      expect(
+        await parityMismatch(CopyPathOp('$base/cp/c.txt', '$base/cp/b.txt')),
+        isNull,
+      );
+      expect(
+        await parityMismatch(
+          CopyPathOp('$base/cp/c.txt', '$base/cp/b.txt', overwrite: true),
+        ),
+        isNull,
+      );
+    });
+
+    test('glob ищет файлы по имени, а не по содержимому', () async {
+      await file('gl/a.txt', [1]);
+      await file('gl/sub/b.txt', [2]);
+      await file('gl/sub/c.md', [3]);
+      expect(await parityMismatch(GlobOp('*.txt', '$base/gl')), isNull);
+      expect(await parityMismatch(GlobOp('*.md', '$base/gl')), isNull);
+    });
+
     test('firstFile возвращает первый файл из списка по порядку', () async {
       await file('ff/b.txt', [1]);
       await file('ff/c.txt', [1]);

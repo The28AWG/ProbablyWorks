@@ -86,6 +86,21 @@ final class VirtualOpExecutor {
         GrepOp(:final pattern, :final path) => _grep(pattern, path, dir),
         WhichOp(:final name) => _which(name),
         StatOp(:final path) => _stat(path, dir),
+        DeleteFileOp(:final path) => _deleteFile(path, dir),
+        MovePathOp(:final from, :final to, :final overwrite) => _movePath(
+          from,
+          to,
+          dir,
+          overwrite: overwrite,
+        ),
+        CopyPathOp(:final from, :final to, :final overwrite) => _copyPath(
+          from,
+          to,
+          dir,
+          overwrite: overwrite,
+        ),
+        MakeDirOp(:final path) => _makeDir(path, dir),
+        GlobOp(:final pattern, :final root) => _glob(pattern, root, dir),
         RealpathOp(:final path) => _realpath(path, dir),
         CanonicalPathOp(:final path) => _canonical(path, dir),
         FirstFileOp(:final paths) => _firstFile(paths, dir),
@@ -181,6 +196,94 @@ final class VirtualOpExecutor {
     if (node == null) return VirtualOpResult(exitCode: 1);
     final kind = node.kind == VfsNodeKind.dir ? 'dir' : 'file';
     return VirtualOpResult.text('$kind ${node.mtime}\n');
+  }
+
+  /// Удаление файла или симлинка; каталог без рекурсии отвергается самой ФС.
+  Future<VirtualOpResult> _deleteFile(String path, String dir) async {
+    await _fs.remove(_expand(path), cwd: dir);
+    return VirtualOpResult(exitCode: 0);
+  }
+
+  /// Перенос пути. Проверка существующей цели повторяет защиту `mv -n`.
+  Future<VirtualOpResult> _movePath(
+    String from,
+    String to,
+    String dir, {
+    required bool overwrite,
+  }) async {
+    final source = await _fs.stat(_expand(from), cwd: dir, followLast: false);
+    if (source == null) {
+      return VirtualOpResult.fail('No such file or directory');
+    }
+    final destination = await _fs.stat(_expand(to), cwd: dir);
+    if (destination?.kind == VfsNodeKind.dir) {
+      return VirtualOpResult.fail('target is a directory');
+    }
+    if (destination != null && !overwrite) {
+      return VirtualOpResult.fail('target exists');
+    }
+    await _fs.rename(_expand(from), _expand(to), cwd: dir);
+    return VirtualOpResult(exitCode: 0);
+  }
+
+  /// Копирование обычного файла. Каталоги здесь не поддерживаются.
+  Future<VirtualOpResult> _copyPath(
+    String from,
+    String to,
+    String dir, {
+    required bool overwrite,
+  }) async {
+    final source = await _fs.stat(_expand(from), cwd: dir);
+    if (source?.kind != VfsNodeKind.file || !_readable(source!)) {
+      return VirtualOpResult.fail('not a readable regular file');
+    }
+    final destination = await _fs.stat(_expand(to), cwd: dir);
+    if (destination?.kind == VfsNodeKind.dir) {
+      return VirtualOpResult.fail('target is a directory');
+    }
+    if (destination != null && !overwrite) {
+      return VirtualOpResult.fail('target exists');
+    }
+    await _fs.copy(_expand(from), _expand(to), cwd: dir);
+    return VirtualOpResult(exitCode: 0);
+  }
+
+  /// Создание каталога и недостающих родителей.
+  Future<VirtualOpResult> _makeDir(String path, String dir) async {
+    await _fs.mkdir(_expand(path), cwd: dir, recursive: true);
+    return VirtualOpResult(exitCode: 0);
+  }
+
+  /// Поиск файлов по имени под каталогом. Это не поиск по содержимому.
+  Future<VirtualOpResult> _glob(String pattern, String root, String dir) async {
+    final matcher = _globRegExp(pattern);
+    final matches = <String>[];
+    for (final node in await _fs.walk(_expand(root), cwd: dir)) {
+      if (node.kind != VfsNodeKind.file) continue;
+      final name = node.path.split('/').last;
+      if (matcher.hasMatch(name)) matches.add(node.path);
+    }
+    matches.sort();
+    return VirtualOpResult.text(
+      matches.isEmpty ? '' : '${matches.join('\n')}\n',
+    );
+  }
+
+  /// Glob в стиле shell: `*` и `?`, остальные символы буквальные.
+  static RegExp _globRegExp(String pattern) {
+    final buffer = StringBuffer('^');
+    for (final rune in pattern.runes) {
+      switch (String.fromCharCode(rune)) {
+        case '*':
+          buffer.write('.*');
+        case '?':
+          buffer.write('.');
+        default:
+          buffer.write(RegExp.escape(String.fromCharCode(rune)));
+      }
+    }
+    buffer.write(r'$');
+    return RegExp(buffer.toString());
   }
 
   /// Канонический путь виртуальной ФС. Как `realpath`: последний компонент может отсутствовать,

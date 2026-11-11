@@ -19,6 +19,8 @@ class PolicyEngine {
     'read_file',
     'grep',
     'which',
+    'stat_path',
+    'glob',
     'list_skills',
     'load_skill',
     'set_goal',
@@ -59,6 +61,10 @@ class PolicyEngine {
     }
     if (toolName == 'write_file' ||
         toolName == 'edit_file' ||
+        toolName == 'delete_file' ||
+        toolName == 'move_path' ||
+        toolName == 'copy_path' ||
+        toolName == 'make_dir' ||
         _selfWriteTools.contains(toolName)) {
       return mode == PolicyMode.yolo
           ? PolicyDecision.allow

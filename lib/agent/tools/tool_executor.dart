@@ -200,6 +200,22 @@ class ToolExecutor {
         ToolNames.runCommand => _runCommand(ctx, call, args),
         ToolNames.writeFile => _writeFile(ctx, call, args),
         ToolNames.editFile => _editFile(ctx, call, args),
+        ToolNames.deleteFile => _deleteFile(ctx, call, args),
+        ToolNames.movePath => _movePath(ctx, call, args),
+        ToolNames.copyPath => _copyPath(ctx, call, args),
+        ToolNames.makeDir => _makeDir(ctx, call, args),
+        ToolNames.statPath => _hostOp(
+          ctx,
+          call,
+          args,
+          StatOp(_resolve(ctx, _str(args, 'path'))),
+        ),
+        ToolNames.glob => _hostOp(
+          ctx,
+          call,
+          args,
+          GlobOp(_str(args, 'pattern'), _resolve(ctx, _str(args, 'path'))),
+        ),
         ToolNames.askUser => _askUser(ctx, call, args),
         ToolNames.finish => Future.value(
           ToolResult(_str(args, 'summary'), finish: true),
@@ -417,6 +433,282 @@ class ToolExecutor {
       before: before,
       after: after,
       expectedMtime: mtime,
+    );
+  }
+
+  /// Удаление обычного файла или симлинка. Текст сохраняется для отката; если
+  /// прочитать файл нельзя или он бинарный, ход помечается как неоткатываемый.
+  Future<ToolResult> _deleteFile(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, 'delete denied by policy');
+    }
+    final stat = await _statOrNull(ctx, path);
+    if (stat == null) {
+      return ToolResult('cannot delete $path: path not found', isError: true);
+    }
+    if (stat.isDir) {
+      return ToolResult(
+        'cannot delete $path: it is a directory; delete_file removes files only',
+        isError: true,
+      );
+    }
+    final before = await _readTextOrNull(ctx, path);
+    final runId = _uuid.v4();
+    if (decision == PolicyDecision.ask) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        command: 'delete $path',
+        summary: path,
+        reason: 'delete operation',
+      );
+      if (!approved) return _rejected(path);
+    }
+    final result = await _exec(
+      ctx,
+      call,
+      args,
+      command: 'delete $path',
+      op: DeleteFileOp(path),
+      background: false,
+      presetRunId: runId,
+    );
+    if (!result.isError) {
+      await _recordDelete(ctx, runId, path, before);
+    }
+    return result;
+  }
+
+  /// Перенос пути. Откат не автоматический: меняются два пути, а changeset
+  /// хранит только файлы. Ход помечается как неоткатываемый.
+  Future<ToolResult> _movePath(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final from = _resolve(ctx, _str(args, 'from'));
+    final to = _resolve(ctx, _str(args, 'to'));
+    final overwrite = args['overwrite'] == true;
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, 'move denied by policy');
+    }
+    if (await _statOrNull(ctx, from) == null) {
+      return ToolResult('cannot move $from: path not found', isError: true);
+    }
+    final destination = await _statOrNull(ctx, to);
+    if (destination?.isDir == true) {
+      return ToolResult(
+        'cannot move to $to: target is a directory; pass a full new path',
+        isError: true,
+      );
+    }
+    if (!overwrite && destination != null) {
+      return ToolResult(
+        'cannot move to $to: target exists; set overwrite=true to replace it',
+        isError: true,
+      );
+    }
+    final runId = _uuid.v4();
+    if (decision == PolicyDecision.ask) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        command: 'move $from $to',
+        summary: '$from → $to',
+        reason: 'move operation',
+      );
+      if (!approved) return _rejected('$from → $to');
+    }
+    final result = await _exec(
+      ctx,
+      call,
+      args,
+      command: 'move $from -> $to',
+      op: MovePathOp(from, to, overwrite: overwrite),
+      background: false,
+      presetRunId: runId,
+    );
+    if (!result.isError) {
+      await _recordUnrecoverable(ctx, runId);
+    }
+    return result;
+  }
+
+  /// Копирование обычного файла. Цель учитывается в changeset как запись.
+  Future<ToolResult> _copyPath(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final from = _resolve(ctx, _str(args, 'from'));
+    final to = _resolve(ctx, _str(args, 'to'));
+    final overwrite = args['overwrite'] == true;
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, 'copy denied by policy');
+    }
+    final source = await _statOrNull(ctx, from);
+    if (source == null) {
+      return ToolResult('cannot copy $from: path not found', isError: true);
+    }
+    if (source.isDir) {
+      return ToolResult(
+        'cannot copy $from: directory copy is not supported',
+        isError: true,
+      );
+    }
+    final target = await _statOrNull(ctx, to);
+    if (target?.isDir == true) {
+      return ToolResult(
+        'cannot copy to $to: target is a directory; pass a full new path',
+        isError: true,
+      );
+    }
+    if (target != null && !overwrite) {
+      return ToolResult(
+        'cannot copy to $to: target exists; set overwrite=true to replace it',
+        isError: true,
+      );
+    }
+    final before = target == null ? null : await _readTextOrNull(ctx, to);
+    final runId = _uuid.v4();
+    if (decision == PolicyDecision.ask) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        command: 'copy $from $to',
+        summary: '$from → $to',
+        reason: 'copy operation',
+      );
+      if (!approved) return _rejected('$from → $to');
+    }
+    final result = await _exec(
+      ctx,
+      call,
+      args,
+      command: 'copy $from -> $to',
+      op: CopyPathOp(from, to, overwrite: overwrite),
+      background: false,
+      presetRunId: runId,
+    );
+    if (!result.isError) {
+      await _recordCopy(ctx, runId, to, before, fileExisted: target != null);
+    }
+    return result;
+  }
+
+  /// Создание каталога. Откат каталога не поддерживается changeset'ом.
+  Future<ToolResult> _makeDir(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final decision = ctx.policy.decide(call.name, args);
+    if (decision == PolicyDecision.deny) {
+      return _denied(ctx, call, args, 'mkdir denied by policy');
+    }
+    final existed = await _statOrNull(ctx, path) != null;
+    final runId = _uuid.v4();
+    if (decision == PolicyDecision.ask) {
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        command: 'mkdir $path',
+        summary: path,
+        reason: 'create directory',
+      );
+      if (!approved) return _rejected(path);
+    }
+    final result = await _exec(
+      ctx,
+      call,
+      args,
+      command: 'mkdir $path',
+      op: MakeDirOp(path),
+      background: false,
+      presetRunId: runId,
+    );
+    if (!result.isError && !existed) {
+      await _recordUnrecoverable(ctx, runId);
+    }
+    return result;
+  }
+
+  Future<StatResult?> _statOrNull(ToolContext ctx, String path) async {
+    final run = await captureOp(ctx.runtime, StatOp(path));
+    return run.ok ? StatResult.parse(run.stdout) : null;
+  }
+
+  Future<String?> _readTextOrNull(ToolContext ctx, String path) async {
+    final run = await captureOp(ctx.runtime, ReadRawOp(path));
+    return run.ok ? run.stdout : null;
+  }
+
+  Future<void> _recordDelete(
+    ToolContext ctx,
+    String runId,
+    String path,
+    String? before,
+  ) async {
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null) return;
+    if (before == null || before.contains('\uFFFD')) {
+      await _recordUnrecoverable(ctx, runId);
+      return;
+    }
+    await _changesets.recordSuccessfulDelete(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      path: path,
+      beforeText: before,
+    );
+  }
+
+  Future<void> _recordCopy(
+    ToolContext ctx,
+    String runId,
+    String path,
+    String? before, {
+    required bool fileExisted,
+  }) async {
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null) return;
+    if (fileExisted && (before == null || before.contains('\uFFFD'))) {
+      await _recordUnrecoverable(ctx, runId);
+      return;
+    }
+    await _changesets.recordSuccessfulWrite(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      path: path,
+      fileExisted: fileExisted,
+      beforeText: before ?? '',
+    );
+  }
+
+  Future<void> _recordUnrecoverable(ToolContext ctx, String runId) async {
+    final turnId = ctx.turnUserMessageId;
+    if (turnId == null) return;
+    await _changesets.recordUnrecoverable(
+      chatId: ctx.chat.id,
+      turnId: turnId,
+      toolRunId: runId,
     );
   }
 

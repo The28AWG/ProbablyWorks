@@ -73,6 +73,44 @@ class TurnChangesetService {
     return saved;
   }
 
+  /// Учитывает удаление файла. Перед удалением [beforeText] уже прочитан;
+  /// повторное удаление в том же ходу сохраняет прежний снимок «до хода».
+  Future<TurnChangeset> recordSuccessfulDelete({
+    required String chatId,
+    required String turnId,
+    required String path,
+    required String beforeText,
+  }) async {
+    var cs = await _open(chatId, turnId);
+    final backupName = turnChangesetBackupNameFor(path);
+    final prior = cs.files[path];
+    if (prior?.backupName == null && prior?.kind != TurnFileKind.created) {
+      await _store.writeBackupText(chatId, turnId, backupName, beforeText);
+    }
+    cs = turnChangesetRecordDelete(
+      changeset: cs,
+      path: path,
+      backupName: backupName,
+    );
+    final saved = await _store.save(cs);
+    _emit(saved);
+    return saved;
+  }
+
+  /// Помечает ход неоткатываемым: перемещение каталога, создание каталога
+  /// или другой эффект, для которого нет файлового снимка.
+  Future<TurnChangeset> recordUnrecoverable({
+    required String chatId,
+    required String turnId,
+    required String toolRunId,
+  }) async {
+    var cs = await _open(chatId, turnId);
+    cs = turnChangesetMarkShellMutation(changeset: cs, toolRunId: toolRunId);
+    final saved = await _store.save(cs);
+    _emit(saved);
+    return saved;
+  }
+
   /// Путь бэкапа на стороне Host для [WriteFileOp]; для local создаёт `staging/`.
   Future<String> prepareHostWriteBackupPath({
     required HostKind hostKind,

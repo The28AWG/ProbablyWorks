@@ -25,6 +25,7 @@ import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
 import 'package:probably_works/agent/tools/self_tool_handler.dart';
+import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/turn/turn_changeset_store.dart';
@@ -1200,6 +1201,105 @@ void main() {
       expect(tools[1].text, contains('hello from write'));
     },
   );
+
+  test('file tools create, copy, move, find, stat and delete a file', () async {
+    final chatId = await createChat();
+    final dir = '${tmp.path}/fileops';
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call('mkdir', ToolNames.makeDir, jsonEncode({'path': dir})),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'write',
+              ToolNames.writeFile,
+              jsonEncode({'path': '$dir/a.txt', 'content': 'alpha'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'copy',
+              ToolNames.copyPath,
+              jsonEncode({'from': '$dir/a.txt', 'to': '$dir/b.txt'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'move',
+              ToolNames.movePath,
+              jsonEncode({'from': '$dir/b.txt', 'to': '$dir/c.txt'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'glob',
+              ToolNames.glob,
+              jsonEncode({'pattern': '*.txt', 'path': dir}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'stat',
+              ToolNames.statPath,
+              jsonEncode({'path': '$dir/c.txt'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'delete',
+              ToolNames.deleteFile,
+              jsonEncode({'path': '$dir/c.txt'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'file operations');
+
+    expect(File('$dir/a.txt').readAsStringSync(), 'alpha');
+    expect(File('$dir/b.txt').existsSync(), isFalse);
+    expect(File('$dir/c.txt').existsSync(), isFalse);
+    final messages = await hub.chats.messages(chatId);
+    final tools = [
+      for (final message in messages)
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(
+      [for (final message in tools) message.toolCallId],
+      ['mkdir', 'write', 'copy', 'move', 'glob', 'stat', 'delete'],
+    );
+    final runs = await hub.chats.toolRunsForMessages([
+      for (final message in messages) message.id,
+    ]);
+    expect(runs.where((run) => run.status != ToolRunStatus.done), isEmpty);
+  });
 
   Future<void> seedWaiting({
     required String chatId,

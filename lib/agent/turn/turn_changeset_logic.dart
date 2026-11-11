@@ -57,13 +57,17 @@ TurnChangeset turnChangesetRecordBeforeWrite({
 TurnChangeset turnChangesetRecordDelete({
   required TurnChangeset changeset,
   required String path,
+  String? backupName,
 }) {
   final existing = changeset.files[path];
   if (existing?.kind == TurnFileKind.created) {
     final next = Map<String, TurnFileChange>.of(changeset.files)..remove(path);
     return changeset.copyWith(files: next, updatedAt: DateTime.now());
   }
-  final backup = existing?.backupName;
+  // Удаление уже изменённого файла откатывается к снимку «до хода»,
+  // а не к состоянию непосредственно перед удалением.
+  final backup = existing?.backupName ?? backupName;
+  if (backup == null) return changeset;
   return changeset.copyWith(
     files: {
       ...changeset.files,

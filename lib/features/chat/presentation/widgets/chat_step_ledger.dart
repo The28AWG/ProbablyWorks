@@ -9,6 +9,7 @@ import 'package:probably_works/app/theme/app_theme.dart';
 import 'package:probably_works/app/theme/app_tokens.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
+import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/core/util/workspace_path.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/file_change.dart';
@@ -844,10 +845,11 @@ class _StepOutput extends StatelessWidget {
   }
 }
 
-/// Заголовок шага. У read, write и edit перед путём стоит глагол: `read path`, `write path`, `edit path`.
+/// Заголовок шага. У файловых операций перед путём стоит глагол:
+/// `read path`, `write path`, `edit path`, `delete path`, `move from → to`, `mkdir path`.
 ///
-/// Путь внутри [workspace] заменяется именем файла. У read путь берётся из команды `read …`:
-/// у этого инструмента нет [FileChange].
+/// Путь внутри [workspace] заменяется именем файла. У read, delete, mkdir и stat
+/// путь берётся из команды: у этих инструментов нет [FileChange].
 String _stepTitle(
   ToolRun run,
   FileChange? change, {
@@ -868,19 +870,26 @@ String _stepTitle(
     return '$verb $label';
   }
   final command = run.command;
-  const read = 'read ';
-  if (command != null && command.startsWith(read)) {
-    final path = command.replaceFirst(read, '');
-    if (path.isNotEmpty) {
-      final label = projectFileLabel(
-        path,
-        workspace: workspace,
-        windows: windows,
-      );
-      return 'read $label';
-    }
+  if (command == null) return run.toolName;
+  String label(String path) =>
+      projectFileLabel(path, workspace: workspace, windows: windows);
+  for (final prefix in const ['delete ', 'mkdir ', 'stat ']) {
+    if (!command.startsWith(prefix)) continue;
+    final path = charFrom(command, prefix.length);
+    return path.isEmpty ? command : '${prefix.trim()} ${label(path)}';
   }
-  return command ?? run.toolName;
+  for (final prefix in const ['move ', 'copy ']) {
+    if (!command.startsWith(prefix)) continue;
+    final parts = charFrom(command, prefix.length).split(' -> ');
+    if (parts.length != 2) return command;
+    return '${prefix.trim()} ${label(parts.first)} → ${label(parts[1])}';
+  }
+  const read = 'read ';
+  if (command.startsWith(read)) {
+    final path = command.replaceFirst(read, '');
+    if (path.isNotEmpty) return 'read ${label(path)}';
+  }
+  return command;
 }
 
 /// Заголовок группы шагов. Длительность не раздвигает строку: на узкой карточке она сокращается.

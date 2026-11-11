@@ -46,6 +46,19 @@ class ShellAdapter {
     GrepOp(:final pattern, :final path) => grep(pattern, path),
     WhichOp(:final name) => which(name),
     StatOp(:final path) => stat(path),
+    DeleteFileOp(:final path) => deleteFile(path),
+    MovePathOp(:final from, :final to, :final overwrite) => movePath(
+      from,
+      to,
+      overwrite: overwrite,
+    ),
+    CopyPathOp(:final from, :final to, :final overwrite) => copyPath(
+      from,
+      to,
+      overwrite: overwrite,
+    ),
+    MakeDirOp(:final path) => makeDir(path),
+    GlobOp(:final pattern, :final root) => glob(pattern, root),
     RealpathOp(:final path) => realpath(path),
     CanonicalPathOp(:final path) => canonicalPath(path),
     FirstFileOp(:final paths) => firstFile(paths),
@@ -67,6 +80,91 @@ class ShellAdapter {
       'if [ -d $p ]; then echo "dir \$(${_posixMtime(p)})"; '
       'elif [ -e $p ]; then echo "file \$(${_posixMtime(p)})"; '
       'else false; fi';
+
+  /// Удаление файла или симлинка. Каталог отвергается до `rm`.
+  String deleteFile(String path) {
+    if (_windows) {
+      return powershell(
+        '\$p = ${psQuote(path)}; '
+        'if (-not (Test-Path -LiteralPath \$p)) { exit 1 }; '
+        'if (Test-Path -LiteralPath \$p -PathType Container) { '
+        '[Console]::Error.WriteLine("is a directory"); exit 1 }; '
+        'Remove-Item -LiteralPath \$p -Force -ErrorAction Stop',
+      );
+    }
+    final p = quotePath(path);
+    return 'if [ ! -e $p ] && [ ! -L $p ]; then echo "No such file or directory" >&2; exit 1; fi; '
+        'if [ -d $p ] && [ ! -L $p ]; then echo "Is a directory" >&2; exit 1; fi; '
+        'rm -f -- $p';
+  }
+
+  /// Перенос пути. [overwrite] = false не даёт заменить существующую цель.
+  String movePath(String from, String to, {required bool overwrite}) {
+    if (_windows) {
+      return powershell(
+        '\$from = ${psQuote(from)}; \$to = ${psQuote(to)}; '
+        'if (-not (Test-Path -LiteralPath \$from)) { exit 1 }; '
+        'if ((Test-Path -LiteralPath \$to) -and -not ${overwrite ? r'$true' : r'$false'}) { '
+        '[Console]::Error.WriteLine("target exists"); exit 1 }; '
+        'Move-Item -LiteralPath \$from -Destination \$to -Force -ErrorAction Stop',
+      );
+    }
+    final f = quotePath(from);
+    final t = quotePath(to);
+    final guard = overwrite
+        ? ''
+        : 'if [ -e $t ] || [ -L $t ]; then echo "target exists" >&2; exit 1; fi; ';
+    return 'if [ ! -e $f ] && [ ! -L $f ]; then echo "No such file or directory" >&2; exit 1; fi; '
+        'if [ -d $t ] && [ ! -L $t ]; then echo "target is a directory" >&2; exit 1; fi; '
+        '$guard mv -f -- $f $t';
+  }
+
+  /// Копирование обычного файла. Каталоги не поддерживаются: для них нужен `-r`.
+  String copyPath(String from, String to, {required bool overwrite}) {
+    if (_windows) {
+      return powershell(
+        '\$from = ${psQuote(from)}; \$to = ${psQuote(to)}; '
+        'if (-not (Test-Path -LiteralPath \$from -PathType Leaf)) { '
+        '[Console]::Error.WriteLine("not a readable regular file"); exit 1 }; '
+        'if ((Test-Path -LiteralPath \$to) -and -not ${overwrite ? r'$true' : r'$false'}) { '
+        '[Console]::Error.WriteLine("target exists"); exit 1 }; '
+        'Copy-Item -LiteralPath \$from -Destination \$to -Force -ErrorAction Stop',
+      );
+    }
+    final f = quotePath(from);
+    final t = quotePath(to);
+    final guard = overwrite
+        ? ''
+        : 'if [ -e $t ] || [ -L $t ]; then echo "target exists" >&2; exit 1; fi; ';
+    return 'if [ ! -f $f ] || [ ! -r $f ]; then echo "not a readable regular file" >&2; exit 1; fi; '
+        'if [ -d $t ] && [ ! -L $t ]; then echo "target is a directory" >&2; exit 1; fi; '
+        '$guard cp -p -- $f $t';
+  }
+
+  /// Создание каталога со всеми родителями.
+  String makeDir(String path) => _windows
+      ? powershell(
+          'New-Item -ItemType Directory -Force -Path ${psQuote(path)} | Out-Null',
+        )
+      : 'mkdir -p -- ${quotePath(path)}';
+
+  /// Поиск файлов по имени под каталогом. Это не поиск по содержимому.
+  String glob(String pattern, String root) {
+    if (_windows) {
+      return powershell(
+        '$_consoleUtf8'
+        '\$root = ${psQuote(root)}; '
+        'if (-not (Test-Path -LiteralPath \$root -PathType Container)) { exit 1 }; '
+        'Get-ChildItem -LiteralPath \$root -Recurse -File -Filter ${psQuote(pattern)} '
+        '-ErrorAction SilentlyContinue | Sort-Object FullName | '
+        'ForEach-Object { \$_.FullName }',
+      );
+    }
+    final r = quotePath(root);
+    final p = shQuote(pattern);
+    return 'if [ ! -d $r ]; then echo "not a directory" >&2; exit 1; fi; '
+        'find $r -type f -name $p -print | sort';
+  }
 
   /// Канонический путь файла или каталога. `~` и существующие симлинки раскрываются.
   /// Хвоста может не быть: от существующего предка остаётся его каноническая форма,

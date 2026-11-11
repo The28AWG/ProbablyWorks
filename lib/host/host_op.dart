@@ -124,6 +124,61 @@ final class StatOp extends HostOp {
   String get label => 'stat $path';
 }
 
+/// Удаление файла или симлинка. Каталог без рекурсии не удаляется.
+final class DeleteFileOp extends HostOp {
+  const DeleteFileOp(this.path);
+
+  final String path;
+
+  @override
+  String get label => 'delete $path';
+}
+
+/// Перенос или переименование пути. [overwrite] разрешает заменить существующую цель.
+final class MovePathOp extends HostOp {
+  const MovePathOp(this.from, this.to, {this.overwrite = false});
+
+  final String from;
+  final String to;
+  final bool overwrite;
+
+  @override
+  String get label => 'move $from $to';
+}
+
+/// Копирование файла. Каталоги требуют отдельного решения и здесь не поддерживаются.
+final class CopyPathOp extends HostOp {
+  const CopyPathOp(this.from, this.to, {this.overwrite = false});
+
+  final String from;
+  final String to;
+  final bool overwrite;
+
+  @override
+  String get label => 'copy $from $to';
+}
+
+/// Создание каталога со всеми недостающими родителями.
+final class MakeDirOp extends HostOp {
+  const MakeDirOp(this.path);
+
+  final String path;
+
+  @override
+  String get label => 'mkdir $path';
+}
+
+/// Поиск файлов по имени (glob), а не по содержимому. Вывод — по одному пути на строку.
+final class GlobOp extends HostOp {
+  const GlobOp(this.pattern, this.root);
+
+  final String pattern;
+  final String root;
+
+  @override
+  String get label => 'glob $pattern $root';
+}
+
 /// Канонический путь: раскрывает `~`, симлинки и `..` силами Host.
 /// Нужен ключу проекта, чтобы `~/repo` и `/home/user/repo` были одной папкой.
 final class RealpathOp extends HostOp {

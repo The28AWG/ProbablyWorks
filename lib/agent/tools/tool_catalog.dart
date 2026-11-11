@@ -11,6 +11,12 @@ abstract final class ToolNames {
   static const runCommand = 'run_command';
   static const writeFile = 'write_file';
   static const editFile = 'edit_file';
+  static const deleteFile = 'delete_file';
+  static const movePath = 'move_path';
+  static const copyPath = 'copy_path';
+  static const makeDir = 'make_dir';
+  static const statPath = 'stat_path';
+  static const glob = 'glob';
   static const setGoal = 'set_goal';
   static const updatePlan = 'update_plan';
   static const pinFact = 'pin_fact';
@@ -161,6 +167,79 @@ abstract final class ToolCatalog {
           'replace_all': {'type': 'boolean'},
         },
         'required': ['path', 'old_string', 'new_string'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.deleteFile,
+      description:
+          'Delete a regular file or symbolic link. Directories are refused. '
+          'Text content is kept in app storage for rollback; binary content is not.',
+      parameters: {
+        'type': 'object',
+        'properties': {'path': _pathProp},
+        'required': ['path'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.movePath,
+      description:
+          'Move or rename a file or directory. By default an existing target is refused; '
+          'set overwrite=true to replace it. The move is not rolled back automatically.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'from': _pathProp,
+          'to': _pathProp,
+          'overwrite': {'type': 'boolean'},
+        },
+        'required': ['from', 'to'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.copyPath,
+      description:
+          'Copy a regular file. By default an existing target is refused; set overwrite=true to replace it. '
+          'Directory copy is not supported.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'from': _pathProp,
+          'to': _pathProp,
+          'overwrite': {'type': 'boolean'},
+        },
+        'required': ['from', 'to'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.makeDir,
+      description: 'Create a directory and any missing parents. Succeeds if the directory already exists.',
+      parameters: {
+        'type': 'object',
+        'properties': {'path': _pathProp},
+        'required': ['path'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.statPath,
+      description: 'Show whether a path is a file or directory and its modification time.',
+      parameters: {
+        'type': 'object',
+        'properties': {'path': _pathProp},
+        'required': ['path'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.glob,
+      description:
+          'Find files by name pattern under a path (shell-style * and ?), not by contents. '
+          'Returns one path per line. Use grep to search file contents.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'pattern': {'type': 'string'},
+          'path': _pathProp,
+        },
+        'required': ['pattern', 'path'],
       },
     ),
     const LlmToolSpec(

@@ -155,7 +155,14 @@ ToolEffect toolEffectFor(
     ToolNames.readFile => _fileRead(workspace, args),
     ToolNames.listDir => _dirRead(workspace, args),
     ToolNames.grep => _treeRead(workspace, args),
-    ToolNames.writeFile || ToolNames.editFile => _fileWrite(workspace, args),
+    ToolNames.glob => _treeRead(workspace, args),
+    ToolNames.statPath => const ToolEffect(hostRead: true),
+    ToolNames.writeFile ||
+    ToolNames.editFile ||
+    ToolNames.deleteFile => _fileWrite(workspace, args),
+    ToolNames.movePath => const ToolEffect(hostWrite: true),
+    ToolNames.copyPath => _copyPathEffect(workspace, args),
+    ToolNames.makeDir => const ToolEffect(hostWrite: true),
     ToolNames.runCommand => _command(args, policy, hostKind),
     ToolNames.setGoal ||
     ToolNames.updatePlan ||
@@ -215,6 +222,20 @@ ToolEffect _fileWrite(String? workspace, Map<String, dynamic> args) {
   final path = _path(workspace, args);
   if (path == null) return const ToolEffect(hostWrite: true);
   return ToolEffect(fileWrites: {path});
+}
+
+/// Копия читает источник и пишет цель. Если путь не разобрать, безопаснее
+/// считать операцию записью всего хоста.
+ToolEffect _copyPathEffect(String? workspace, Map<String, dynamic> args) {
+  final from = args['from'];
+  final to = args['to'];
+  if (from is! String || from.isEmpty || to is! String || to.isEmpty) {
+    return const ToolEffect(hostWrite: true);
+  }
+  return ToolEffect(
+    fileReads: {toolPathKey(workspace, from)},
+    fileWrites: {toolPathKey(workspace, to)},
+  );
 }
 
 /// Виртуальный Host отвергает фон до запуска: эффекта нет. Deny тоже не

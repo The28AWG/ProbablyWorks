@@ -203,6 +203,24 @@ void main() {
     },
   );
 
+  test('new file operations expose read and write effects', () {
+    final copy = effect(ToolNames.copyPath, {'from': 'a', 'to': 'b'});
+    expect(copy.fileReads, contains('/ws/a'));
+    expect(copy.fileWrites, contains('/ws/b'));
+
+    final stat = effect(ToolNames.statPath, {'path': 'a'});
+    expect(stat.hostRead, isTrue);
+
+    final glob = effect(ToolNames.glob, {'pattern': '*.dart', 'path': '.'});
+    expect(glob.treeReads, contains('/ws'));
+
+    final delete = effect(ToolNames.deleteFile, {'path': 'a'});
+    expect(delete.fileWrites, contains('/ws/a'));
+
+    final mkdir = effect(ToolNames.makeDir, {'path': 'd'});
+    expect(mkdir.hostWrite, isTrue);
+  });
+
   test('ask_user and a broken payload do not take a host resource', () {
     final ask = effect(ToolNames.askUser, {'question': 'now?'});
     final broken = toolEffectFor(
