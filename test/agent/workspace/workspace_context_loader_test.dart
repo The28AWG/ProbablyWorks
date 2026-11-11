@@ -42,8 +42,12 @@ void main() {
     workspace: workspace.path,
   );
 
-  void writeSkill(String name, String description) {
-    final dir = Directory('${workspace.path}/.cursor/skills/$name')
+  void writeSkill(
+    String name,
+    String description, {
+    String root = '.cursor/skills',
+  }) {
+    final dir = Directory('${workspace.path}/$root/$name')
       ..createSync(recursive: true);
     File('${dir.path}/SKILL.md').writeAsStringSync(
       '---\nname: $name\ndescription: $description\n---\nbody',
@@ -94,6 +98,53 @@ void main() {
     expect(snapshot.skills, hasLength(1));
     expect(snapshot.skills.single.name, 'release');
     expect(snapshot.skills.single.description, 'How to cut a release');
+  });
+
+  test('skills from .agents/skills are scanned too', () async {
+    writeSkill('deploy', 'How to deploy', root: '.agents/skills');
+    await settings.setTrusted(
+      HostRepository.localHostId,
+      workspace.path,
+      trusted: true,
+    );
+
+    final snapshot = await loader.load(chat(), runtime);
+
+    expect(snapshot.skills, hasLength(1));
+    expect(snapshot.skills.single.name, 'deploy');
+    expect(snapshot.skills.single.description, 'How to deploy');
+  });
+
+  test('the app directory wins when skill names collide', () async {
+    writeSkill('release', 'App release', root: '.probablyworks/skills');
+    writeSkill('release', 'Other release', root: '.claude/skills');
+    await settings.setTrusted(
+      HostRepository.localHostId,
+      workspace.path,
+      trusted: true,
+    );
+
+    final snapshot = await loader.load(chat(), runtime);
+
+    expect(snapshot.skills, hasLength(1));
+    expect(snapshot.skills.single.description, 'App release');
+    expect(snapshot.skills.single.path, contains('.probablyworks/skills'));
+  });
+
+  test('skills from several compatible directories are merged', () async {
+    writeSkill('app-skill', 'App skill', root: '.probablyworks/skills');
+    writeSkill('claude-skill', 'Claude skill', root: '.claude/skills');
+    writeSkill('opencode-skill', 'OpenCode skill', root: '.opencode/skills');
+    await settings.setTrusted(
+      HostRepository.localHostId,
+      workspace.path,
+      trusted: true,
+    );
+
+    final snapshot = await loader.load(chat(), runtime);
+    final names = {for (final skill in snapshot.skills) skill.name};
+
+    expect(names, containsAll(['app-skill', 'claude-skill', 'opencode-skill']));
   });
 
   test('a workspace without instructions or skills needs no trust', () async {

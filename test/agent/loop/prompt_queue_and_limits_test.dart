@@ -63,6 +63,37 @@ void main() {
       expect(parsed.foregroundExecTimeout, const Duration(seconds: 90));
     });
 
+    test('context ratios and reserve survive JSON', () {
+      final parsed = AppLimits.parse(
+        '{"softContextRatio": 0.5, "hardContextRatio": 0.8, '
+        '"contextReserveTokens": 12000}',
+      );
+      expect(parsed.softContextRatio, 0.5);
+      expect(parsed.hardContextRatio, 0.8);
+      expect(parsed.contextReserveTokens, 12000);
+      expect(
+        AppLimits.parse(parsed.toJson()).contextReserveTokens,
+        parsed.contextReserveTokens,
+      );
+      expect(
+        AppLimits.parse('{"contextReserveTokens": 0}').contextReserveTokens,
+        0,
+      );
+    });
+
+    test('invalid context ratios are rejected', () {
+      expect(
+        () => AppLimits.parse('{"softContextRatio": 1.2}'),
+        throwsFormatException,
+      );
+      expect(
+        () => AppLimits.parse(
+          '{"softContextRatio": 0.9, "hardContextRatio": 0.5}',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('invalid values are rejected by parse', () {
       expect(
         () => AppLimits.parse('{"maxAgentSteps": -1}'),

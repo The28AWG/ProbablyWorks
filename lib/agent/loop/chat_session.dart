@@ -758,8 +758,20 @@ class ChatSession {
       if (turn.isCancelled) return TurnEnd.stopped;
       await _drainQueue();
 
-      final prepared = await _prepare(limits);
-      final step = await _streamWithRetry(prepared.request, turn, limits);
+      var prepared = await _prepare(limits);
+      StepResult step;
+      try {
+        step = await _streamWithRetry(prepared.request, turn, limits);
+      } on LlmFailure catch (failure) {
+        // Запрос мог не поместиться в окно модели: пробуем один раз сжатие и повторяем
+        // с уже пересобранным запросом. Второй такой ошибки не глотаем, иначе ход
+        // будет бесконечно сжимать и повторять одно и то же.
+        if (!failure.contextLengthExceeded || turn.isCancelled) rethrow;
+        _emit(AgentTextDelta(chatId, '', reset: true));
+        _emit(AgentReasoningDelta(chatId, '', reset: true));
+        prepared = await _prepare(limits, forceCompact: true);
+        step = await _streamWithRetry(prepared.request, turn, limits);
+      }
       for (final id in prepared.inlineIds) {
         _inlineFiles.remove(id);
       }
@@ -938,6 +950,7 @@ class ChatSession {
       inputFor(chat),
       summaryModel: model,
       force: forceCompact,
+      limits: limits,
     );
     final inline = Map.of(_inlineFiles);
     _checkFilesAccepted(model, inline);
@@ -1262,6 +1275,16 @@ class ChatSession {
     }
     await _hub.chats.deleteToolRuns([for (final r in runs) r.id]);
     await _hub.chats.deleteRevisionsTriggeredBy(ids);
+    // Сводка могла покрывать удалённые сообщения. Оставлять её и старую границу нельзя:
+    // после правки раннего сообщения cutoff может оказаться больше всех оставшихся seq,
+    // и модель получит только устаревшую сводку вместо диалога. Перечитываем чат:
+    // restoreBefore/restoreAfter уже могли сохранить новый currentRevisionId.
+    if (chat.compactedUntilSeq > fromSeq - 1) {
+      final current = await _hub.chats.chat(chatId) ?? chat;
+      await _hub.chats.saveChat(
+        current.copyWith(clearCompactionSummary: true, compactedUntilSeq: 0),
+      );
+    }
     _emit(AgentStateChanged(chatId));
   }
 

@@ -275,7 +275,7 @@ abstract final class ToolCatalog {
     ),
     const LlmToolSpec(
       name: ToolNames.listSkills,
-      description: 'List skills available in the workspace (.agents/skills).',
+      description: 'List skills available in the workspace.',
       parameters: {'type': 'object', 'properties': <String, dynamic>{}},
     ),
     const LlmToolSpec(

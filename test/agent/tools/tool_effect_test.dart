@@ -190,6 +190,12 @@ void main() {
       );
       expect(
         skills.conflictsWith(
+          effect(ToolNames.writeFile, {'path': '.claude/skills/a/SKILL.md'}),
+        ),
+        isTrue,
+      );
+      expect(
+        skills.conflictsWith(
           effect(ToolNames.writeFile, {'path': 'src/a.dart'}),
         ),
         isFalse,

@@ -40,12 +40,40 @@ class AppLimits {
       return value.toInt();
     }
 
+    /// Необязательное неотрицательное целое: ноль допустим, например чтобы
+    /// отключить резерв под ответ.
+    int? nonNegativeIntOf(String key) {
+      final value = decoded[key];
+      if (value == null) return null;
+      if (value is! num || value < 0 || value != value.toInt()) {
+        throw FormatException('$key must be a non-negative integer');
+      }
+      return value.toInt();
+    }
+
     Duration? secondsOf(String key) {
       final value = intOf(key);
       return value == null ? null : Duration(seconds: value);
     }
 
+    /// Доля окна: строго между 0 и 1. Значения вне диапазона — ошибка настроек.
+    double? ratioOf(String key) {
+      final value = decoded[key];
+      if (value == null) return null;
+      if (value is! num || value <= 0 || value >= 1) {
+        throw FormatException('$key must be between 0 and 1');
+      }
+      return value.toDouble();
+    }
+
     final d = defaults;
+    final softContextRatio = ratioOf('softContextRatio') ?? d.softContextRatio;
+    final hardContextRatio = ratioOf('hardContextRatio') ?? d.hardContextRatio;
+    if (softContextRatio > hardContextRatio) {
+      throw const FormatException(
+        'softContextRatio must not exceed hardContextRatio',
+      );
+    }
     return AppLimits(
       foregroundExecTimeout:
           secondsOf('foregroundExecTimeoutSeconds') ?? d.foregroundExecTimeout,
@@ -68,6 +96,10 @@ class AppLimits {
       maxAgentSteps: intOf('maxAgentSteps') ?? d.maxAgentSteps,
       streamWatchdog: secondsOf('streamWatchdogSeconds') ?? d.streamWatchdog,
       killGrace: secondsOf('killGraceSeconds') ?? d.killGrace,
+      softContextRatio: softContextRatio,
+      hardContextRatio: hardContextRatio,
+      contextReserveTokens:
+          nonNegativeIntOf('contextReserveTokens') ?? d.contextReserveTokens,
       recentWindowMessages:
           intOf('recentWindowMessages') ?? d.recentWindowMessages,
     );
@@ -170,6 +202,9 @@ class AppLimits {
     'maxAgentSteps': maxAgentSteps,
     'streamWatchdogSeconds': streamWatchdog.inSeconds,
     'killGraceSeconds': killGrace.inSeconds,
+    'softContextRatio': softContextRatio,
+    'hardContextRatio': hardContextRatio,
+    'contextReserveTokens': contextReserveTokens,
     'recentWindowMessages': recentWindowMessages,
   };
 

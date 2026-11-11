@@ -8,6 +8,7 @@ import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/agent/exec/live_output_bus.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/error/app_failure.dart';
+import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/utf8_chunk_decoder.dart';
 import 'package:probably_works/host/host_op.dart';
 import 'package:probably_works/host/host_runtime.dart';
@@ -195,8 +196,11 @@ class CommandExecutor {
 
   void _emit(String toolCallId, String chatId, String text) {
     if (text.isEmpty) return;
-    _logs.append(toolCallId, text);
-    _bus.publish(toolCallId, chatId, text);
+    // В лог и в живой вывод уходит одна и та же маскированная версия. Иначе
+    // секрет, напечатанный командой, был бы скрыт в БД, но виден на экране.
+    final safe = Redactor.redact(text);
+    _logs.append(toolCallId, safe);
+    _bus.publish(toolCallId, chatId, safe);
   }
 
   ExecOutcome _outcome({

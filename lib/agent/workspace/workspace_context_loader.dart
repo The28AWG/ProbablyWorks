@@ -1,6 +1,7 @@
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
+import 'package:probably_works/agent/skills/skill_locations.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/util/char_substring.dart';
 import 'package:probably_works/host/host_capture.dart';
@@ -46,8 +47,10 @@ class WorkspaceSnapshot {
   final List<SkillInfo> untrustedSkills;
 }
 
-/// Читает AGENTS.md и skills (.probablyworks/skills, .cursor/skills) с Host. Гейт доверия: без подтверждения
-/// пользователя содержимое не попадает в контекст. Кэш — по mtime файла.
+/// Читает AGENTS.md и skills с Host. Каталог приложения — `.probablyworks/skills`;
+/// совместимые каталоги других агентов ищутся через [SkillLocations].
+/// Гейт доверия: без подтверждения пользователя содержимое не попадает в контекст.
+/// Кэш AGENTS.md — по mtime файла.
 ///
 /// Работает только через типизированные операции [HostOp], поэтому одинаково служит реальным Host и
 /// виртуальному: ни одного shell-скрипта здесь нет.
@@ -71,12 +74,14 @@ class WorkspaceContextLoader {
     final workspace = project?.workspace ?? chat.workspace;
     if (workspace == null || workspace.isEmpty) return WorkspaceSnapshot.empty;
 
-    final skillsDirs = [
-      '$workspace/.probablyworks/skills',
-      '$workspace/.cursor/skills',
-    ];
-    final presence = await _presence(runtime, workspace, skillsDirs);
-    if (!presence.hasAgents && !presence.hasSkills) {
+    // Один скан на все каталоги: отдельный stat на каждый путь был бы лишним
+    // сетевым запросом на каждом шаге модели.
+    final found = await _scanSkills(
+      runtime,
+      SkillLocations.forWorkspace(workspace),
+    );
+    final agentsPath = await _findAgents(runtime, workspace);
+    if (agentsPath == null && found.isEmpty) {
       return WorkspaceSnapshot(workspace: workspace, trusted: true);
     }
 
@@ -85,9 +90,6 @@ class WorkspaceContextLoader {
     final legacyTrust =
         project == null && await _settings.isTrusted(chat.hostId, workspace);
     final agentsTrusted = project?.trustAgentsMd ?? legacyTrust;
-    final found = presence.hasSkills
-        ? await _scanSkills(runtime, skillsDirs)
-        : const <SkillInfo>[];
     final trusted = project == null && legacyTrust
         ? found
         : [
@@ -99,10 +101,10 @@ class WorkspaceContextLoader {
         if (!trusted.contains(skill)) skill,
     ];
     final needsTrust =
-        (presence.hasAgents && !agentsTrusted) || untrusted.isNotEmpty;
-    final agentsMd = presence.agentsPath == null || !agentsTrusted
+        (agentsPath != null && !agentsTrusted) || untrusted.isNotEmpty;
+    final agentsMd = agentsPath == null || !agentsTrusted
         ? null
-        : await _readAgents(runtime, chat.hostId, presence.agentsPath!);
+        : await _readAgents(runtime, chat.hostId, agentsPath);
     return WorkspaceSnapshot(
       workspace: workspace,
       trusted: !needsTrust,
@@ -122,13 +124,9 @@ class WorkspaceContextLoader {
     return run.ok ? run.stdout : null;
   }
 
-  /// Ищет AGENTS.md и каталоги skills. Содержимое не читает: это делает [load] только после доверия.
-  Future<_Presence> _presence(
-    HostRuntime runtime,
-    String workspace,
-    List<String> skillsDirs,
-  ) async {
-    // Порядок важен: первый найденный файл побеждает. Варианты регистра перечислены явно.
+  /// Путь к AGENTS.md или null. Содержимое не читает: это делает [load] только
+  /// после доверия. Порядок важен: первый найденный файл побеждает.
+  Future<String?> _findAgents(HostRuntime runtime, String workspace) async {
     final agents = await captureOp(
       runtime,
       FirstFileOp([
@@ -138,19 +136,8 @@ class WorkspaceContextLoader {
         '$workspace/.probablyworks/AGENTS.md',
       ]),
     );
-    final agentsPath = agents.ok ? agents.stdout.trim() : '';
-    var hasSkills = false;
-    for (final dir in skillsDirs) {
-      final stat = await captureOp(runtime, StatOp(dir));
-      if (stat.ok && (StatResult.parse(stat.stdout)?.isDir ?? false)) {
-        hasSkills = true;
-        break;
-      }
-    }
-    return _Presence(
-      agentsPath: agentsPath.isEmpty ? null : agentsPath,
-      hasSkills: hasSkills,
-    );
+    final path = agents.ok ? agents.stdout.trim() : '';
+    return path.isEmpty ? null : path;
   }
 
   Future<String?> _readAgents(
@@ -183,6 +170,7 @@ class WorkspaceContextLoader {
     );
     if (!run.ok) return const [];
     final skills = <SkillInfo>[];
+    final seen = <String>{};
     for (final block in run.stdout.split('@@@ ').skip(1)) {
       final newline = block.indexOf('\n');
       if (newline == -1) continue;
@@ -192,6 +180,9 @@ class WorkspaceContextLoader {
       final parts = path.split(RegExp(r'[\\/]'));
       final name =
           meta['name'] ?? (parts.length >= 2 ? parts[parts.length - 2] : path);
+      // Каталог приложения идёт первым, поэтому при одинаковом имени skill
+      // из `.probablyworks` выигрывает, а дубликаты из других каталогов скрываются.
+      if (!seen.add(name)) continue;
       skills.add(
         SkillInfo(
           name: name,
@@ -218,14 +209,4 @@ class WorkspaceContextLoader {
     }
     return result;
   }
-}
-
-/// Что нашлось в workspace: путь AGENTS.md и наличие каталогов skills.
-class _Presence {
-  const _Presence({this.agentsPath, this.hasSkills = false});
-
-  final String? agentsPath;
-  final bool hasSkills;
-
-  bool get hasAgents => agentsPath != null;
 }

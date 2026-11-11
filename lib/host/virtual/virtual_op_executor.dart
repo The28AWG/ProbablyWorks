@@ -302,7 +302,6 @@ final class VirtualOpExecutor {
   ) async {
     final out = BytesBuilder(copy: false);
     final err = BytesBuilder(copy: false);
-    var lastExists = false;
     for (final root in dirs) {
       final base = _expand(root);
       final baseNode = await _fs.stat(base, cwd: dir);
@@ -322,15 +321,8 @@ final class VirtualOpExecutor {
           candidates.add((skill, node));
         }
       }
-      if (candidates.isEmpty) {
-        lastExists = false;
-        continue;
-      }
       for (final (skill, node) in candidates) {
-        lastExists = node.kind == VfsNodeKind.file;
-        if (!lastExists) {
-          continue;
-        }
+        if (node.kind != VfsNodeKind.file) continue;
         out.add(utf8.encode('@@@ $skill\n'));
         if (_readable(node)) {
           final data = await _fs.readBytes(skill, cwd: dir);
@@ -346,8 +338,10 @@ final class VirtualOpExecutor {
         }
       }
     }
+    // Скан — это обход списка каталогов, а не проверка последнего шаблона:
+    // отсутствие одной папки не делает успешный обход неуспешным.
     return VirtualOpResult(
-      exitCode: lastExists ? 0 : 1,
+      exitCode: 0,
       stdout: out.takeBytes(),
       stderr: err.takeBytes(),
     );

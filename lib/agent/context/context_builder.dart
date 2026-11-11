@@ -34,6 +34,10 @@ class ContextInput {
   final List<ChatMessage> messages;
   final SessionStateRevision state;
   final WorkspaceSnapshot workspace;
+
+  /// Сколько последних сообщений оставляет сжатие. Сам [ContextBuilder] отдаёт
+  /// модели всю историю после `compactedUntilSeq`: иначе короткие сообщения
+  /// терялись бы без сводки, хотя место в окне ещё есть.
   final int recentWindow;
 
   /// Долгоживущие факты проекта. Отдельный раздел: они не принадлежат ревизии состояния чата.
@@ -61,6 +65,7 @@ class ContextBuilder {
     ToolNames.grep,
     ToolNames.which,
     ToolNames.runCommand,
+    ToolNames.listSkills,
     ToolNames.loadSkill,
     ToolNames.hostList,
     ToolNames.settingsRead,
@@ -73,9 +78,6 @@ class ContextBuilder {
     final history = input.messages
         .where((m) => m.seq > input.chat.compactedUntilSeq)
         .toList();
-    final window = history.length > input.recentWindow
-        ? history.sublist(history.length - input.recentWindow)
-        : history;
     final calls = {
       for (final message in input.messages)
         if (message.role == MessageRole.assistant)
@@ -85,14 +87,14 @@ class ContextBuilder {
     // может оказаться событие (прерванная команда): его оставляем на своём месте,
     // а результат подтягиваем к вызову.
     final toolResults = <String, ChatMessage>{
-      for (final message in window)
+      for (final message in history)
         if (message.role == MessageRole.tool && message.toolCallId != null)
           message.toolCallId!: message,
     };
     final pulled = <String>{};
     return [
       LlmMessage.system(system),
-      for (final message in window)
+      for (final message in history)
         ..._emitInOrder(message, calls, input.inlineFiles, toolResults, pulled),
     ];
   }

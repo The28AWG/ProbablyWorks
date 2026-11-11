@@ -241,6 +241,59 @@ void main() {
     await finished;
   }
 
+  test('context length failure retries once with a rebuilt request', () async {
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.nextFailure = const LlmFailure(
+      'context length exceeded',
+      contextLengthExceeded: true,
+    );
+    llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+    await runTurn(session, 'hello');
+
+    final assistant = (await hub.chats.messages(chatId)).last;
+    expect(assistant.role, MessageRole.assistant);
+    expect(assistant.text, 'ok');
+  });
+
+  test('editing a message after compaction clears the stale summary', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    for (var seq = 1; seq <= 4; seq++) {
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm$seq',
+          chatId: chatId,
+          seq: seq,
+          role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+          createdAt: now,
+          text: 'message $seq',
+        ),
+      );
+    }
+    final before = (await hub.chats.chat(chatId))!;
+    await hub.chats.saveChat(
+      before.copyWith(compactionSummary: 'old summary', compactedUntilSeq: 3),
+    );
+
+    final users = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.user) message,
+    ];
+    final session = hub.session(chatId);
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+    expect(await session.editUserMessage(users.first.id, 'new task'), isTrue);
+    await finished;
+
+    final updated = (await hub.chats.chat(chatId))!;
+    // Сводка описывала удалённые сообщения, а cutoff был больше нового seq.
+    expect(updated.compactionSummary, isNull);
+    expect(updated.compactedUntilSeq, 0);
+  });
+
   Future<void> waitUntil(bool Function() ready) async {
     final deadline = DateTime.now().add(const Duration(seconds: 2));
     while (!ready() && DateTime.now().isBefore(deadline)) {

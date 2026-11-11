@@ -394,7 +394,9 @@ if ($r.Count -gt 300) { '[more matches not shown: narrow the pattern or path]' }
     }
     final globs = [for (final dir in dirs) '${quotePath(dir)}/*/SKILL.md']
         .join(' ');
-    return 'for f in $globs; do [ -f "\$f" ] && { echo "@@@ \$f"; head -c $maxBytes "\$f"; echo; }; done';
+    // Последняя отсутствующая папка не должна делать весь скан неуспешным:
+    // `for` возвращает код последней итерации, а не общий результат.
+    return 'for f in $globs; do [ -f "\$f" ] && { echo "@@@ \$f"; head -c $maxBytes "\$f"; echo; }; done; exit 0';
   }
 
   static const _consoleUtf8 =

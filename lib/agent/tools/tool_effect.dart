@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
+import 'package:probably_works/agent/skills/skill_locations.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
@@ -240,8 +241,8 @@ ToolEffect _skills(String? workspace) {
   return ToolEffect(
     fileReads: {toolPathKey(workspace, 'AGENTS.md')},
     treeReads: {
-      toolPathKey(workspace, '.probablyworks/skills'),
-      toolPathKey(workspace, '.cursor/skills'),
+      for (final path in SkillLocations.forWorkspace(workspace))
+        toolPathKey(null, path),
     },
   );
 }

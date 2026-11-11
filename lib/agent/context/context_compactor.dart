@@ -1,6 +1,7 @@
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/util/char_substring.dart';
@@ -8,8 +9,9 @@ import 'package:probably_works/core/util/redactor.dart';
 import 'package:probably_works/core/util/text_clip.dart';
 import 'package:probably_works/providers/ai/llm_port.dart';
 
-/// Сжатие истории: при 70% окна — сводка старой части; при 90% — сводка с меньшим окном.
-/// Граница сжатия всегда на пользовательском сообщении, пары tool-call не разрываются.
+/// Сжатие истории: при `softContextRatio` окна — сводка старой части; при `hardContextRatio` —
+/// сводка с меньшим окном. Граница сжатия ставится на user/assistant, поэтому пары
+/// tool-call/результат не разрываются. Пороги и резерв под ответ задаются [AppLimits].
 @lazySingleton
 class ContextCompactor {
   ContextCompactor(this._chats, this._llm, this._builder);
@@ -19,43 +21,56 @@ class ContextCompactor {
   final ContextBuilder _builder;
 
   static const defaultContextLength = 128000;
-  static const softRatio = 0.7;
-  static const hardRatio = 0.9;
 
-  /// Порог числа результатов инструментов в окне, после которого сжатие идёт даже при малом бюджете.
+  /// Порог числа результатов инструментов после границы сжатия, после которого сводка
+  /// создаётся даже при малом бюджете: один шаг может принести десятки результатов.
   static const stepGrowthThreshold = 40;
   static const _maxSummaryChars = 6000;
 
   /// Возвращает обновлённый чат (с новой сводкой), если сжатие выполнено; иначе тот же чат.
   ///
-  /// Триггеры: бюджет ≥ 70% (soft) и ≥ 90% (hard, окно вдвое меньше), рост числа tool-результатов
-  /// в окне, принудительный запуск ([force]) — ручное сжатие или смена модели с меньшим окном.
+  /// Триггеры: бюджет ≥ `softContextRatio` (hard — окно вдвое меньше), рост числа
+  /// tool-результатов после границы сжатия, принудительный запуск ([force]) — ручное
+  /// сжатие или смена модели с меньшим окном. Порог считается от полной истории,
+  /// а не от уже усечённого окна: иначе десятки коротких сообщений терялись бы без сводки.
   Future<Chat> compactIfNeeded(
     ContextInput input, {
     required String summaryModel,
     bool force = false,
+    AppLimits limits = AppLimits.defaults,
   }) async {
     final chat = input.chat;
     final limit = chat.contextLength ?? defaultContextLength;
+    final maxReserve = limit > 1 ? limit - 1 : 0;
+    final reserve = limits.contextReserveTokens.clamp(0, maxReserve);
+    final budget = limit - reserve;
     final estimate = ContextCompactor.estimate(_builder.build(input));
-    final stepGrowth = _toolResultsInWindow(input) > stepGrowthThreshold;
-    if (!force && !stepGrowth && estimate < limit * softRatio) return chat;
-    final hard = !force && estimate >= limit * hardRatio;
-    final window = force || hard
-        ? (input.recentWindow / 2).ceil()
-        : input.recentWindow;
+    final stepGrowth = _toolResultsAfterCut(input) > stepGrowthThreshold;
+    final soft = budget * limits.softContextRatio;
+    final hard = budget * limits.hardContextRatio;
+    if (!force && !stepGrowth && estimate < soft) return chat;
+    final hardExceeded = !force && estimate >= hard;
+    final window = force || hardExceeded
+        ? _halfWindow(input.recentWindow)
+        : _fullWindow(input.recentWindow);
     return _compact(input, window: window, summaryModel: summaryModel);
   }
 
-  int _toolResultsInWindow(ContextInput input) {
-    final history = input.messages
-        .where((m) => m.seq > input.chat.compactedUntilSeq)
-        .toList();
-    final window = history.length > input.recentWindow
-        ? history.sublist(history.length - input.recentWindow)
-        : history;
-    return window.where((m) => m.role == MessageRole.tool).length;
+  /// Окно не может быть нулевым: иначе сжатие нечего оставлять и `_compact` ничего не сделает.
+  static int _fullWindow(int recentWindow) =>
+      recentWindow < 1 ? 1 : recentWindow;
+
+  static int _halfWindow(int recentWindow) {
+    final full = _fullWindow(recentWindow);
+    return full == 1 ? 1 : (full / 2).ceil();
   }
+
+  int _toolResultsAfterCut(ContextInput input) => input.messages
+      .where(
+        (m) =>
+            m.seq > input.chat.compactedUntilSeq && m.role == MessageRole.tool,
+      )
+      .length;
 
   static int estimate(List<LlmMessage> messages) =>
       ContextBuilder.estimateTokens(messages);
@@ -69,16 +84,16 @@ class ContextCompactor {
     final history = input.messages
         .where((m) => m.seq > chat.compactedUntilSeq)
         .toList();
-    if (history.length <= window) return chat;
+    // Обычно хвост — это window. Но при force/hard история может быть короче
+    // окна и всё равно не помещаться в модель; тогда сворачиваем половину,
+    // иначе сжатие не сделает ничего.
+    final effectiveWindow = history.length <= window
+        ? (history.length / 2).ceil()
+        : window;
+    if (effectiveWindow >= history.length) return chat;
 
-    final keepFrom = history.length - window;
-    var cutIndex = -1;
-    for (var i = keepFrom; i >= 0; i--) {
-      if (history[i].role == MessageRole.user) {
-        cutIndex = i;
-        break;
-      }
-    }
+    final keepFrom = history.length - effectiveWindow;
+    final cutIndex = _safeCutIndex(history, keepFrom);
     if (cutIndex <= 0) return chat;
 
     final toSummarize = history.sublist(0, cutIndex);
@@ -92,6 +107,23 @@ class ContextCompactor {
     );
     await _chats.saveChat(updated);
     return updated;
+  }
+
+  /// Первый индекс, который можно оставить после сжатия.
+  ///
+  /// User и assistant — безопасная граница: вызов инструмента и его результаты
+  /// не разрываются. Для tool/event ищем ближайшую такую границу назад; если её
+  /// нет, сжатие не выполняется и вся история остаётся в контексте.
+  static int _safeCutIndex(List<ChatMessage> history, int keepFrom) {
+    var index = keepFrom >= history.length ? history.length - 1 : keepFrom;
+    while (index >= 0) {
+      final role = history[index].role;
+      if (role == MessageRole.user || role == MessageRole.assistant) {
+        return index;
+      }
+      index--;
+    }
+    return -1;
   }
 
   Future<String> _summarize(

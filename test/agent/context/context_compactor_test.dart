@@ -101,6 +101,66 @@ void main() {
     expect(llm.requests, isEmpty);
   });
 
+  test(
+    'builder keeps the whole history; the compactor decides what to summarize',
+    () {
+      final messages = [
+        for (var seq = 1; seq <= 100; seq++)
+          message(seq, seq.isOdd ? MessageRole.user : MessageRole.assistant),
+      ];
+
+      final built = ContextBuilder().build(input(messages, recentWindow: 40));
+
+      // system + все 100 сообщений: молчаливое усечение окном недопустимо.
+      expect(built, hasLength(101));
+    },
+  );
+
+  test('a cut moves to the owning assistant, not inside its tool results', () async {
+    llm.replies.add('SAFE');
+    final messages = [
+      message(1, MessageRole.user),
+      ChatMessage(
+        id: 'm2',
+        chatId: 'c1',
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+        toolCalls: const [
+          ToolCallRef(id: 'c1', name: 'read_file', arguments: '{}'),
+        ],
+      ),
+      ChatMessage(
+        id: 'm3',
+        chatId: 'c1',
+        seq: 3,
+        role: MessageRole.tool,
+        createdAt: now,
+        text: 'one',
+        toolCallId: 'c1',
+      ),
+      ChatMessage(
+        id: 'm4',
+        chatId: 'c1',
+        seq: 4,
+        role: MessageRole.tool,
+        createdAt: now,
+        text: 'two',
+        toolCallId: 'c1',
+      ),
+    ];
+
+    final result = await compactor.compactIfNeeded(
+      input(messages, recentWindow: 2),
+      summaryModel: 'fake/model',
+      force: true,
+    );
+
+    expect(result.compactionSummary, 'SAFE');
+    // Оставляем assistant и оба его результата: вызов и ответы не разрываются.
+    expect(result.compactedUntilSeq, 1);
+  });
+
   test('manual compaction ignores the budget and stores a summary', () async {
     llm.replies.add('SUMMARY');
     final messages = [

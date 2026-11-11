@@ -22,6 +22,7 @@ import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/project_repository.dart';
+import 'package:probably_works/core/data/settings_repository.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
@@ -775,7 +776,14 @@ class ToolExecutor {
     final bool needsApproval;
     final String reason;
     final keyPath = change.keyPath;
-    if (keyPath != null) {
+    // Лимиты меняют поведение самого агента: таймауты, параллелизм, размер контекста
+    // и число шагов. Даже в авто-подтверждении это решение пользователя, а не побочный
+    // эффект задачи.
+    if (call.name == ToolNames.settingsUpdate &&
+        args['key'] == SettingsRepository.keyLimits) {
+      needsApproval = true;
+      reason = 'operational limits change how the agent runs';
+    } else if (keyPath != null) {
       // Путь к ключу, который назвал пользователь, — его команда: подтверждение не нужно ни в Ask, ни в YOLO.
       // Путь, найденный агентом, может оказаться не тем ключом: спрашиваем всегда.
       final named = await _keyPathNamedByUser(ctx.chat.id, keyPath);
