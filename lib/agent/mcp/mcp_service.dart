@@ -84,6 +84,12 @@ class McpService {
     await _manager.disconnect(server.id);
   }
 
+  /// Перечитывает `mcp.json` по запросу пользователя и обновляет подключения.
+  Future<void> importConfig() async {
+    await _importConfig();
+    if (_configError == null) await refresh();
+  }
+
   /// Экспортирует текущие настройки в `mcp.json`.
   Future<void> exportConfig() async {
     final file = _configFile;

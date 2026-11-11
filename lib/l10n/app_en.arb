@@ -1561,6 +1561,227 @@
   "@settingsGroupAdvancedHint": {
     "description": "Description of the advanced settings group."
   },
+  "settingsGroupMcp": "MCP",
+  "@settingsGroupMcp": {
+    "description": "Settings group: MCP servers."
+  },
+  "settingsGroupMcpHint": "MCP servers, their tools and connection state.",
+  "@settingsGroupMcpHint": {
+    "description": "Description of the MCP settings group."
+  },
+  "mcpServersTitle": "MCP servers",
+  "@mcpServersTitle": {
+    "description": "Heading of the MCP servers section."
+  },
+  "mcpServersHint": "Servers from mcp.json are read-only; user servers are added here.",
+  "@mcpServersHint": {
+    "description": "Hint above the MCP server list."
+  },
+  "mcpAddServer": "Add MCP server",
+  "@mcpAddServer": {
+    "description": "Tooltip of the button that opens the MCP server editor."
+  },
+  "mcpImportConfig": "Reload mcp.json",
+  "@mcpImportConfig": {
+    "description": "Button that re-imports mcp.json."
+  },
+  "mcpExportConfig": "Export mcp.json",
+  "@mcpExportConfig": {
+    "description": "Button that exports the MCP server list to mcp.json."
+  },
+  "mcpExportDone": "mcp.json exported",
+  "@mcpExportDone": {
+    "description": "Snackbar after exporting mcp.json."
+  },
+  "mcpEmptyTitle": "No MCP servers",
+  "@mcpEmptyTitle": {
+    "description": "Empty state title in the MCP settings section."
+  },
+  "mcpEmptyMessage": "Add a server or create mcp.json in the app data folder.",
+  "@mcpEmptyMessage": {
+    "description": "Empty state message in the MCP settings section."
+  },
+  "mcpTransportStdio": "stdio",
+  "@mcpTransportStdio": {
+    "description": "MCP transport label: local process."
+  },
+  "mcpTransportStdioHint": "Local process: command, arguments and environment.",
+  "@mcpTransportStdioHint": {
+    "description": "MCP stdio transport description."
+  },
+  "mcpTransportHttp": "HTTP",
+  "@mcpTransportHttp": {
+    "description": "MCP transport label: remote endpoint."
+  },
+  "mcpTransportHttpHint": "Remote Streamable HTTP endpoint.",
+  "@mcpTransportHttpHint": {
+    "description": "MCP HTTP transport description."
+  },
+  "mcpStatusConnected": "Connected",
+  "@mcpStatusConnected": {
+    "description": "MCP server status: connected."
+  },
+  "mcpStatusConnecting": "Connecting…",
+  "@mcpStatusConnecting": {
+    "description": "MCP server status: connecting."
+  },
+  "mcpStatusDisconnected": "Not connected",
+  "@mcpStatusDisconnected": {
+    "description": "MCP server status: disconnected."
+  },
+  "mcpStatusError": "Connection error",
+  "@mcpStatusError": {
+    "description": "MCP server status: error."
+  },
+  "mcpRestart": "Restart",
+  "@mcpRestart": {
+    "description": "MCP server action: restart the connection."
+  },
+  "mcpRefreshTools": "Refresh tools",
+  "@mcpRefreshTools": {
+    "description": "MCP server action: reload tools/list."
+  },
+  "mcpViewTools": "Tools",
+  "@mcpViewTools": {
+    "description": "Button that opens the list of MCP tools."
+  },
+  "mcpToolsCount": "{count} tools",
+  "@mcpToolsCount": {
+    "description": "Number of tools exposed by an MCP server.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpNoTools": "The server has not exposed any tools.",
+  "@mcpNoTools": {
+    "description": "Empty state in the MCP tools dialog."
+  },
+  "mcpEdit": "Edit",
+  "@mcpEdit": {
+    "description": "MCP server action: edit a user server."
+  },
+  "mcpDeleteTitle": "Delete MCP server",
+  "@mcpDeleteTitle": {
+    "description": "Title of the MCP server deletion confirmation."
+  },
+  "mcpDeleteConfirm": "Delete “{name}”? Its tools will be removed from chats.",
+  "@mcpDeleteConfirm": {
+    "description": "MCP server deletion confirmation.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpFileManaged": "Managed by mcp.json",
+  "@mcpFileManaged": {
+    "description": "Tooltip of the lock icon on file-managed MCP servers."
+  },
+  "mcpConfigError": "mcp.json: {error}",
+  "@mcpConfigError": {
+    "description": "Error shown when mcp.json could not be imported.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpServerError": "Error: {error}",
+  "@mcpServerError": {
+    "description": "Connection error of an MCP server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpEditorAddTitle": "Add MCP server",
+  "@mcpEditorAddTitle": {
+    "description": "Title of the MCP server creation dialog."
+  },
+  "mcpEditorEditTitle": "Edit MCP server",
+  "@mcpEditorEditTitle": {
+    "description": "Title of the MCP server edit dialog."
+  },
+  "mcpName": "Name",
+  "@mcpName": {
+    "description": "MCP server editor: name field."
+  },
+  "mcpNameHint": "How the server appears in settings",
+  "@mcpNameHint": {
+    "description": "MCP server editor: name hint."
+  },
+  "mcpCommand": "Command",
+  "@mcpCommand": {
+    "description": "MCP server editor: executable command."
+  },
+  "mcpCommandHint": "Executable, for example npx or node",
+  "@mcpCommandHint": {
+    "description": "MCP server editor: command hint."
+  },
+  "mcpArgs": "Arguments",
+  "@mcpArgs": {
+    "description": "MCP server editor: arguments field."
+  },
+  "mcpArgsHint": "One argument per line",
+  "@mcpArgsHint": {
+    "description": "MCP server editor: arguments hint."
+  },
+  "mcpCwd": "Working directory",
+  "@mcpCwd": {
+    "description": "MCP server editor: working directory field."
+  },
+  "mcpCwdHint": "Optional absolute path",
+  "@mcpCwdHint": {
+    "description": "MCP server editor: working directory hint."
+  },
+  "mcpUrl": "URL",
+  "@mcpUrl": {
+    "description": "MCP server editor: HTTP URL field."
+  },
+  "mcpUrlHint": "https://example.com/mcp",
+  "@mcpUrlHint": {
+    "description": "MCP server editor: URL hint."
+  },
+  "mcpEnv": "Environment",
+  "@mcpEnv": {
+    "description": "MCP server editor: environment variables field."
+  },
+  "mcpEnvHint": "KEY=VALUE, one per line",
+  "@mcpEnvHint": {
+    "description": "MCP server editor: environment variables hint."
+  },
+  "mcpHeaders": "Headers",
+  "@mcpHeaders": {
+    "description": "MCP server editor: HTTP headers field."
+  },
+  "mcpHeadersHint": "KEY=VALUE, one per line",
+  "@mcpHeadersHint": {
+    "description": "MCP server editor: HTTP headers hint."
+  },
+  "mcpInvalidName": "Enter a name.",
+  "@mcpInvalidName": {
+    "description": "MCP server editor validation: empty name."
+  },
+  "mcpInvalidCommand": "Enter a command.",
+  "@mcpInvalidCommand": {
+    "description": "MCP server editor validation: empty command."
+  },
+  "mcpInvalidUrl": "Enter a valid http(s) URL.",
+  "@mcpInvalidUrl": {
+    "description": "MCP server editor validation: invalid URL."
+  },
+  "mcpToolsTitle": "Tools of {name}",
+  "@mcpToolsTitle": {
+    "description": "Title of the MCP tools dialog.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "policyAskHint": "Ask before risky commands and any file edits.",
   "policyYoloHint": "Run commands and edits without asking. Denied commands are still blocked.",
   "@policyAskHint": {

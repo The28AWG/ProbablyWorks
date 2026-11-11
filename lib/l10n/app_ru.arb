@@ -1561,6 +1561,227 @@
   "@settingsGroupAdvancedHint": {
     "description": "Description of the advanced settings group."
   },
+  "settingsGroupMcp": "MCP",
+  "@settingsGroupMcp": {
+    "description": "Settings group: MCP servers."
+  },
+  "settingsGroupMcpHint": "MCP-серверы, их инструменты и состояние подключения.",
+  "@settingsGroupMcpHint": {
+    "description": "Description of the MCP settings group."
+  },
+  "mcpServersTitle": "MCP-серверы",
+  "@mcpServersTitle": {
+    "description": "Heading of the MCP servers section."
+  },
+  "mcpServersHint": "Серверы из mcp.json доступны только для чтения; пользовательские добавляются здесь.",
+  "@mcpServersHint": {
+    "description": "Hint above the MCP server list."
+  },
+  "mcpAddServer": "Добавить MCP-сервер",
+  "@mcpAddServer": {
+    "description": "Tooltip of the button that opens the MCP server editor."
+  },
+  "mcpImportConfig": "Перечитать mcp.json",
+  "@mcpImportConfig": {
+    "description": "Button that re-imports mcp.json."
+  },
+  "mcpExportConfig": "Экспортировать mcp.json",
+  "@mcpExportConfig": {
+    "description": "Button that exports the MCP server list to mcp.json."
+  },
+  "mcpExportDone": "mcp.json экспортирован",
+  "@mcpExportDone": {
+    "description": "Snackbar after exporting mcp.json."
+  },
+  "mcpEmptyTitle": "MCP-серверов нет",
+  "@mcpEmptyTitle": {
+    "description": "Empty state title in the MCP settings section."
+  },
+  "mcpEmptyMessage": "Добавьте сервер или создайте mcp.json в папке данных приложения.",
+  "@mcpEmptyMessage": {
+    "description": "Empty state message in the MCP settings section."
+  },
+  "mcpTransportStdio": "stdio",
+  "@mcpTransportStdio": {
+    "description": "MCP transport label: local process."
+  },
+  "mcpTransportStdioHint": "Локальный процесс: команда, аргументы и окружение.",
+  "@mcpTransportStdioHint": {
+    "description": "MCP stdio transport description."
+  },
+  "mcpTransportHttp": "HTTP",
+  "@mcpTransportHttp": {
+    "description": "MCP transport label: remote endpoint."
+  },
+  "mcpTransportHttpHint": "Удалённый Streamable HTTP endpoint.",
+  "@mcpTransportHttpHint": {
+    "description": "MCP HTTP transport description."
+  },
+  "mcpStatusConnected": "Подключён",
+  "@mcpStatusConnected": {
+    "description": "MCP server status: connected."
+  },
+  "mcpStatusConnecting": "Подключение…",
+  "@mcpStatusConnecting": {
+    "description": "MCP server status: connecting."
+  },
+  "mcpStatusDisconnected": "Не подключён",
+  "@mcpStatusDisconnected": {
+    "description": "MCP server status: disconnected."
+  },
+  "mcpStatusError": "Ошибка подключения",
+  "@mcpStatusError": {
+    "description": "MCP server status: error."
+  },
+  "mcpRestart": "Перезапустить",
+  "@mcpRestart": {
+    "description": "MCP server action: restart the connection."
+  },
+  "mcpRefreshTools": "Обновить инструменты",
+  "@mcpRefreshTools": {
+    "description": "MCP server action: reload tools/list."
+  },
+  "mcpViewTools": "Инструменты",
+  "@mcpViewTools": {
+    "description": "Button that opens the list of MCP tools."
+  },
+  "mcpToolsCount": "Инструментов: {count}",
+  "@mcpToolsCount": {
+    "description": "Number of tools exposed by an MCP server.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mcpNoTools": "Сервер не объявил инструменты.",
+  "@mcpNoTools": {
+    "description": "Empty state in the MCP tools dialog."
+  },
+  "mcpEdit": "Изменить",
+  "@mcpEdit": {
+    "description": "MCP server action: edit a user server."
+  },
+  "mcpDeleteTitle": "Удалить MCP-сервер",
+  "@mcpDeleteTitle": {
+    "description": "Title of the MCP server deletion confirmation."
+  },
+  "mcpDeleteConfirm": "Удалить «{name}»? Его инструменты исчезнут из чатов.",
+  "@mcpDeleteConfirm": {
+    "description": "MCP server deletion confirmation.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpFileManaged": "Управляется mcp.json",
+  "@mcpFileManaged": {
+    "description": "Tooltip of the lock icon on file-managed MCP servers."
+  },
+  "mcpConfigError": "mcp.json: {error}",
+  "@mcpConfigError": {
+    "description": "Error shown when mcp.json could not be imported.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpServerError": "Ошибка: {error}",
+  "@mcpServerError": {
+    "description": "Connection error of an MCP server.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mcpEditorAddTitle": "Добавить MCP-сервер",
+  "@mcpEditorAddTitle": {
+    "description": "Title of the MCP server creation dialog."
+  },
+  "mcpEditorEditTitle": "Изменить MCP-сервер",
+  "@mcpEditorEditTitle": {
+    "description": "Title of the MCP server edit dialog."
+  },
+  "mcpName": "Название",
+  "@mcpName": {
+    "description": "MCP server editor: name field."
+  },
+  "mcpNameHint": "Как сервер показывается в настройках",
+  "@mcpNameHint": {
+    "description": "MCP server editor: name hint."
+  },
+  "mcpCommand": "Команда",
+  "@mcpCommand": {
+    "description": "MCP server editor: executable command."
+  },
+  "mcpCommandHint": "Исполняемый файл, например npx или node",
+  "@mcpCommandHint": {
+    "description": "MCP server editor: command hint."
+  },
+  "mcpArgs": "Аргументы",
+  "@mcpArgs": {
+    "description": "MCP server editor: arguments field."
+  },
+  "mcpArgsHint": "По одному аргументу на строку",
+  "@mcpArgsHint": {
+    "description": "MCP server editor: arguments hint."
+  },
+  "mcpCwd": "Рабочий каталог",
+  "@mcpCwd": {
+    "description": "MCP server editor: working directory field."
+  },
+  "mcpCwdHint": "Необязательный абсолютный путь",
+  "@mcpCwdHint": {
+    "description": "MCP server editor: working directory hint."
+  },
+  "mcpUrl": "URL",
+  "@mcpUrl": {
+    "description": "MCP server editor: HTTP URL field."
+  },
+  "mcpUrlHint": "https://example.com/mcp",
+  "@mcpUrlHint": {
+    "description": "MCP server editor: URL hint."
+  },
+  "mcpEnv": "Окружение",
+  "@mcpEnv": {
+    "description": "MCP server editor: environment variables field."
+  },
+  "mcpEnvHint": "KEY=VALUE, по одному на строку",
+  "@mcpEnvHint": {
+    "description": "MCP server editor: environment variables hint."
+  },
+  "mcpHeaders": "Заголовки",
+  "@mcpHeaders": {
+    "description": "MCP server editor: HTTP headers field."
+  },
+  "mcpHeadersHint": "KEY=VALUE, по одному на строку",
+  "@mcpHeadersHint": {
+    "description": "MCP server editor: HTTP headers hint."
+  },
+  "mcpInvalidName": "Введите название.",
+  "@mcpInvalidName": {
+    "description": "MCP server editor validation: empty name."
+  },
+  "mcpInvalidCommand": "Введите команду.",
+  "@mcpInvalidCommand": {
+    "description": "MCP server editor validation: empty command."
+  },
+  "mcpInvalidUrl": "Введите корректный http(s) URL.",
+  "@mcpInvalidUrl": {
+    "description": "MCP server editor validation: invalid URL."
+  },
+  "mcpToolsTitle": "Инструменты {name}",
+  "@mcpToolsTitle": {
+    "description": "Title of the MCP tools dialog.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "policyAskHint": "Подтверждать команды с риском и любые правки файлов.",
   "policyYoloHint": "Выполнять команды и правки без подтверждения. Запрещённые команды всё равно блокируются.",
   "@policyAskHint": {
