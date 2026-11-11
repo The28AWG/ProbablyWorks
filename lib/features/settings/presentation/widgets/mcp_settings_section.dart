@@ -40,19 +40,18 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
     return BlocProvider.value(
       value: _cubit,
       child: BlocBuilder<McpCubit, McpState>(
-        builder: (context, state) => AppSection(
-          title: l10n.mcpServersTitle,
-          description: l10n.mcpServersHint,
-          trailing: IconButton(
-            tooltip: l10n.mcpAddServer,
-            icon: const Icon(Icons.add),
-            onPressed: () => _edit(context, null),
-          ),
+        builder: (context, state) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               children: [
+                FilledButton.icon(
+                  onPressed: () => _edit(context, null),
+                  icon: const Icon(Icons.add),
+                  label: Text(l10n.mcpAddServer),
+                ),
                 OutlinedButton.icon(
                   onPressed: () => _cubit.importConfig(),
                   icon: const Icon(Icons.file_download_outlined),
@@ -65,6 +64,7 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.md),
             if (state.configError case final error?)
               AppBanner(
                 message: l10n.mcpConfigError(error),
@@ -85,19 +85,22 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
               )
             else
               for (final server in state.servers)
-                _ServerCard(
-                  server: server,
-                  state: state.stateOf(server.id),
-                  onToggle: (enabled) => _cubit.toggle(server, enabled),
-                  onRestart: () => _cubit.restart(server),
-                  onRefresh: () => _cubit.refreshTools(server),
-                  onEdit: server.isFileManaged
-                      ? null
-                      : () => _edit(context, server),
-                  onDelete: server.isFileManaged
-                      ? null
-                      : () => _delete(context, server),
-                  onTools: () => _showTools(context, server, state),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _ServerCard(
+                    server: server,
+                    state: state.stateOf(server.id),
+                    onToggle: (enabled) => _cubit.toggle(server, enabled),
+                    onRestart: () => _cubit.restart(server),
+                    onRefresh: () => _cubit.refreshTools(server),
+                    onEdit: server.isFileManaged
+                        ? null
+                        : () => _edit(context, server),
+                    onDelete: server.isFileManaged
+                        ? null
+                        : () => _delete(context, server),
+                    onTools: () => _showTools(context, server, state),
+                  ),
                 ),
           ],
         ),

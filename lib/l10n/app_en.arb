@@ -1565,17 +1565,9 @@
   "@settingsGroupPlugins": {
     "description": "Settings group: optional built-in plugins."
   },
-  "settingsGroupPluginsHint": "Enable optional features compiled into the app.",
+  "settingsGroupPluginsHint": "Enable the features you need. Disabled plugins keep their settings.",
   "@settingsGroupPluginsHint": {
     "description": "Description of the plugins settings group."
-  },
-  "pluginsTitle": "Built-in",
-  "@pluginsTitle": {
-    "description": "Heading of the plugins section."
-  },
-  "pluginsHint": "Enable the features you need. Disabled plugins keep their settings.",
-  "@pluginsHint": {
-    "description": "Hint above the plugin list."
   },
   "pluginSettings": "Plugin settings",
   "@pluginSettings": {
@@ -1632,17 +1624,9 @@
   "@settingsGroupMcp": {
     "description": "Settings group: MCP servers."
   },
-  "settingsGroupMcpHint": "MCP servers, their tools and connection state.",
+  "settingsGroupMcpHint": "Servers from mcp.json are read-only; user servers are added here.",
   "@settingsGroupMcpHint": {
     "description": "Description of the MCP settings group."
-  },
-  "mcpServersTitle": "Servers",
-  "@mcpServersTitle": {
-    "description": "Heading of the MCP servers section."
-  },
-  "mcpServersHint": "Servers from mcp.json are read-only; user servers are added here.",
-  "@mcpServersHint": {
-    "description": "Hint above the MCP server list."
   },
   "mcpAddServer": "Add MCP server",
   "@mcpAddServer": {

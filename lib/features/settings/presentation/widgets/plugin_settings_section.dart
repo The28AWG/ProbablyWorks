@@ -73,16 +73,14 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.all(AppSpacing.lg),
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    return AppSection(
-      title: l10n.pluginsTitle,
-      description: l10n.pluginsHint,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final plugin in _plugins)
           Padding(
@@ -150,7 +148,10 @@ class _PluginCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final dependencies = [for (final id in plugin.dependsOn) id];
+    final dependencies = [
+      for (final id in plugin.dependsOn)
+        getIt<PluginService>().pluginById(id)?.titleOf(context) ?? id,
+    ];
     return AppCard(
       child: Row(
         children: [

@@ -1565,17 +1565,9 @@
   "@settingsGroupPlugins": {
     "description": "Settings group: optional built-in plugins."
   },
-  "settingsGroupPluginsHint": "Включайте дополнительные возможности, собранные в приложении.",
+  "settingsGroupPluginsHint": "Включайте нужные возможности. У выключенных плагинов настройки сохраняются.",
   "@settingsGroupPluginsHint": {
     "description": "Description of the plugins settings group."
-  },
-  "pluginsTitle": "Встроенные",
-  "@pluginsTitle": {
-    "description": "Heading of the plugins section."
-  },
-  "pluginsHint": "Включайте нужные возможности. У выключенных плагинов настройки сохраняются.",
-  "@pluginsHint": {
-    "description": "Hint above the plugin list."
   },
   "pluginSettings": "Настройки плагина",
   "@pluginSettings": {
@@ -1632,17 +1624,9 @@
   "@settingsGroupMcp": {
     "description": "Settings group: MCP servers."
   },
-  "settingsGroupMcpHint": "MCP-серверы, их инструменты и состояние подключения.",
+  "settingsGroupMcpHint": "Серверы из mcp.json доступны только для чтения; пользовательские добавляются здесь.",
   "@settingsGroupMcpHint": {
     "description": "Description of the MCP settings group."
-  },
-  "mcpServersTitle": "Серверы",
-  "@mcpServersTitle": {
-    "description": "Heading of the MCP servers section."
-  },
-  "mcpServersHint": "Серверы из mcp.json доступны только для чтения; пользовательские добавляются здесь.",
-  "@mcpServersHint": {
-    "description": "Hint above the MCP server list."
   },
   "mcpAddServer": "Добавить MCP-сервер",
   "@mcpAddServer": {
