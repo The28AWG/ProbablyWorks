@@ -126,6 +126,9 @@ class ChatListCubit extends Cubit<ChatListState> {
     if (session.isRunning) await session.stop();
     final project = await _hub.projects.projectForChat(chatId);
     await _hub.chats.deleteChat(chatId);
+    // Лимит, расход и метаданные сжатия живут в kv, а не в таблице чатов:
+    // без явной очистки они остались бы после удаления навсегда.
+    await _hub.settings.deleteChatData(chatId);
     _hub.broker.clearChatGrants(chatId);
     _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);

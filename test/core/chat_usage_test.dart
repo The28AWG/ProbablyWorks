@@ -74,4 +74,85 @@ void main() {
     await settings.write(SettingsRepository.compactionInfoKey('c1'), 'oops');
     expect(await settings.readCompactionInfo('c1'), isNull);
   });
+
+  test(
+    'deleting a chat removes its budget, usage and compaction info',
+    () async {
+      final day = DateTime(2026, 11, 11);
+      Future<void> seed(String chatId) async {
+        await settings.saveDailyBudget(chatId, 3);
+        await settings.addDailyUsage(
+          chatId,
+          promptTokens: 10,
+          completionTokens: 5,
+          costUsd: 0.1,
+          day: day,
+        );
+        await settings.addDailyUsage(
+          chatId,
+          promptTokens: 1,
+          completionTokens: 1,
+          costUsd: 0.01,
+          day: day.add(const Duration(days: 1)),
+        );
+        await settings.saveCompactionInfo(
+          chatId,
+          ChatCompactionInfo(
+            at: day,
+            reason: 'threshold',
+            cutoffSeq: 4,
+            summaryChars: 50,
+          ),
+        );
+      }
+
+      await seed('c1');
+      await seed('c2');
+      await settings.deleteChatData('c1');
+
+      expect(await settings.readDailyBudget('c1'), isNull);
+      expect((await settings.readDailyUsage('c1', day: day)).totalTokens, 0);
+      expect(
+        (await settings.readDailyUsage(
+          'c1',
+          day: day.add(const Duration(days: 1)),
+        )).totalTokens,
+        0,
+      );
+      expect(await settings.readCompactionInfo('c1'), isNull);
+
+      // Соседний чат не затронут: ключи не пересекаются по префиксу.
+      expect(await settings.readDailyBudget('c2'), 3);
+      expect((await settings.readDailyUsage('c2', day: day)).totalTokens, 15);
+      expect(await settings.readCompactionInfo('c2'), isNotNull);
+    },
+  );
+
+  test('deleting a chat works without preload', () async {
+    final day = DateTime(2026, 11, 11);
+    final cold = SettingsRepository(db);
+    await cold.saveDailyBudget('c1', 2);
+    await cold.addDailyUsage(
+      'c1',
+      promptTokens: 1,
+      completionTokens: 2,
+      costUsd: 0.01,
+      day: day,
+    );
+    await cold.saveCompactionInfo(
+      'c1',
+      ChatCompactionInfo(
+        at: day,
+        reason: 'forced',
+        cutoffSeq: 2,
+        summaryChars: 10,
+      ),
+    );
+
+    await cold.deleteChatData('c1');
+
+    expect(await cold.readDailyBudget('c1'), isNull);
+    expect((await cold.readDailyUsage('c1', day: day)).totalTokens, 0);
+    expect(await cold.readCompactionInfo('c1'), isNull);
+  });
 }

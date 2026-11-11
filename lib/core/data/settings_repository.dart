@@ -225,6 +225,25 @@ class SettingsRepository {
   static String dailyUsageKey(String chatId, DateTime day) =>
       '$keyDailyUsagePrefix$chatId:${usageDayKey(day)}';
 
+  /// Удаляет все kv-записи чата: дневной лимит, расход по дням и метаданные
+  /// сжатия. Вызывается при удалении чата, иначе ключи остаются навсегда.
+  Future<void> deleteChatData(String chatId) async {
+    final usagePrefix = '$keyDailyUsagePrefix$chatId:';
+    final usageKeys = _preloaded
+        ? _cache.keys.where((key) => key.startsWith(usagePrefix)).toList()
+        : [
+            for (final row in await _db.select(_kvSettingsTable).get())
+              if (row.key.startsWith(usagePrefix)) row.key,
+          ];
+    for (final key in [
+      dailyBudgetKey(chatId),
+      compactionInfoKey(chatId),
+      ...usageKeys,
+    ]) {
+      await write(key, null);
+    }
+  }
+
   Future<List<String>> readDenylist() async {
     final raw = await read(keyDenylist);
     if (raw == null) return defaultDenylist;
