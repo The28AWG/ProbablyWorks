@@ -307,6 +307,29 @@ void main() {
     expect(columns, containsAll(['tool_call_id', 'pending_card']));
   });
 
+  test('v12 → v13 creates the MCP servers table', () async {
+    final db = _openAtVersion(12);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(mcp_servers)')
+        .get();
+    expect(
+      columns.map((row) => row.read<String>('name')),
+      containsAll([
+        'id',
+        'name',
+        'transport',
+        'source',
+        'external_key',
+        'enabled',
+        'config_json',
+        'created_at',
+        'updated_at',
+      ]),
+    );
+  });
+
   test('v9 → v10 creates one project per host and workspace', () async {
     final db = _openProjectsV9();
     addTearDown(db.close);

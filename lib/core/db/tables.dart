@@ -253,6 +253,26 @@ class KvSettings extends Table {
   Set<Column<Object>> get primaryKey => {key};
 }
 
+/// Настройки подключения MCP-серверов.
+///
+/// Секреты не хранятся в [configJson]: там только ссылки `${secret:...}`.
+/// [source] отделяет серверы из `mcp.json` от добавленных пользователем.
+@DataClassName('McpServerRow')
+class McpServers extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  TextColumn get transport => text()();
+  TextColumn get source => text()();
+  TextColumn get externalKey => text().nullable()();
+  BoolColumn get enabled => boolean().withDefault(const Constant(true))();
+  TextColumn get configJson => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 /// Файлы виртуального Host. Строка — узел с метаданными; содержимое файла лежит в [content].
 /// Путь канонический (см. `VfsPath`), поэтому ключ (hostId, path) не допускает двух имён одной записи.
 /// Индекс по (hostId, parentPath) нужен для листинга каталога.

@@ -21,12 +21,13 @@ part 'app_database.g.dart';
     ProjectSkills,
     ProjectFacts,
     PolicyProfiles,
+    McpServers,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 12;
+  static const currentSchemaVersion = 13;
 
   static const _uuid = Uuid();
 
@@ -99,6 +100,8 @@ class AppDatabase extends _$AppDatabase {
       if (from < 11) await _detachImplicitHomeProjects();
       // Версия 12: неотправленная правка сообщения хранится рядом с черновиком поля ввода.
       if (from < 12) await m.addColumn(chats, chats.messageEdits);
+      // Версия 13: настройки подключения MCP-серверов.
+      if (from < 13) await m.createTable(mcpServers);
     },
   );
 
