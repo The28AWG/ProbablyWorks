@@ -9,10 +9,11 @@ import 'package:probably_works/features/workspace/presentation/navigation/worksp
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
@@ -54,60 +55,39 @@ class _FakeChats implements ChatRepository {
       throw UnsupportedError('ChatRepository is not used in this test');
 }
 
-class _FakeHosts implements HostRepository {
-  _FakeHosts(this._hosts);
+class _FakeApi implements AgentApi {
+  _FakeApi(this._chats, this._hosts);
 
+  final List<Chat> _chats;
   final List<Host> _hosts;
 
   @override
-  Stream<List<Host>> watchAll() => Stream.value(_hosts);
+  Stream<List<Chat>> watchChats() => Stream.value(_chats);
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('HostRepository is not used in this test');
-}
+  Stream<List<Host>> watchHosts() => Stream.value(_hosts);
 
-class _FakeBroker implements InteractionBroker {
   @override
-  Stream<ApprovalRequest> get approvalRequests => Stream.empty();
+  Stream<AgentEvent> get events => Stream.empty();
+
+  @override
+  Stream<ApprovalRequest> get approvals => Stream.empty();
 
   @override
   Stream<UserQuestion> get questions => Stream.empty();
 
   @override
-  List<ApprovalRequest> pendingApprovals(String chatId) => const [];
-
-  @override
-  List<UserQuestion> pendingQuestions(String chatId) => const [];
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('InteractionBroker is not used in this test');
-}
-
-class _FakeHub implements AgentHub {
-  _FakeHub(List<Chat> chats, List<Host> hosts)
-    : chats = _FakeChats(chats),
-      hosts = _FakeHosts(hosts);
-
-  @override
-  final ChatRepository chats;
-
-  @override
-  final HostRepository hosts;
-
-  @override
-  final InteractionBroker broker = _FakeBroker();
-
-  @override
-  Stream<AgentEvent> get allEvents => Stream.empty();
+  Stream<EditFileChangesRequest> get editChanges => Stream.empty();
 
   @override
   Set<String> get runningChatIds => const {};
 
   @override
+  Set<String> get waitingChatIds => const {};
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
-      throw UnsupportedError('AgentHub is not used in this test');
+      throw UnsupportedError('AgentApi is not used in this test');
 }
 
 /// Поднимает развёрнутую панель. [onCollapse] передаётся наружу для проверки, [selectedChatId] и [activeTab]
@@ -123,7 +103,7 @@ Future<void> _pumpSidebar(
   void Function(WorkspaceTab tab)? onOpenTab,
 }) async {
   final cubit = ChatListCubit(
-    _FakeHub(chats, hosts),
+    _FakeApi(chats, hosts),
     ChatDraftStore(_FakeChats(chats)),
   );
   addTearDown(cubit.close);

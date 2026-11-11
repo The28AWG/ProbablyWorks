@@ -115,6 +115,9 @@ class AgentHub {
     }
   }
 
+  /// Чаты с неотвеченными карточками.
+  Set<String> get waitingChatIds => broker.waitingChatIds;
+
   /// Чаты, в которых сейчас идёт ход.
   Set<String> get runningChatIds => {
     for (final session in _sessions.values)

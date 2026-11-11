@@ -154,6 +154,13 @@ final class ApiServer {
     if (rest.length == 1 && request.method == 'GET') {
       return _chat(request, rest.first);
     }
+    if (rest.length == 1 && request.method == 'PATCH') {
+      return _renameChat(request, rest.first);
+    }
+    if (rest.length == 1 && request.method == 'DELETE') {
+      await _backend.deleteChat(rest.first);
+      return _json(request.response, HttpStatus.noContent, {});
+    }
     if (rest.length == 2) {
       final chatId = rest.first;
       switch (rest[1]) {
@@ -179,6 +186,8 @@ final class ApiServer {
             );
             return _json(request.response, HttpStatus.noContent, {});
           }
+        case 'fork':
+          if (request.method == 'POST') return _forkChat(request, chatId);
       }
     }
     throw const AgentApiException(
@@ -200,7 +209,11 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, {
       'chats': [
         for (final chat in chats)
-          _chatJson(chat, running: _backend.runningChatIds.contains(chat.id)),
+          _chatJson(
+            chat,
+            running: _backend.runningChatIds.contains(chat.id),
+            waiting: _backend.waitingChatIds.contains(chat.id),
+          ),
       ],
     });
   }
@@ -211,7 +224,39 @@ final class ApiServer {
     _json(
       request.response,
       HttpStatus.created,
-      _chatJson(chat, running: _backend.runningChatIds.contains(chat.id)),
+      _chatJson(
+        chat,
+        running: _backend.runningChatIds.contains(chat.id),
+        waiting: _backend.waitingChatIds.contains(chat.id),
+      ),
+    );
+  }
+
+  Future<void> _renameChat(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _backend.renameChat(id, _string(body, 'title'));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _forkChat(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    final title = body['title'] is String ? body['title'] as String : null;
+    final chat = await _backend.forkChat(chatId, title: title);
+    if (chat == null) {
+      throw AgentApiException(
+        HttpStatus.notFound,
+        'chat_not_found',
+        'chat $chatId not found',
+      );
+    }
+    _json(
+      request.response,
+      HttpStatus.created,
+      _chatJson(
+        chat,
+        running: _backend.runningChatIds.contains(chat.id),
+        waiting: _backend.waitingChatIds.contains(chat.id),
+      ),
     );
   }
 
@@ -233,6 +278,7 @@ final class ApiServer {
       'chat': _chatJson(
         chat,
         running: _backend.runningChatIds.contains(chat.id),
+        waiting: _backend.waitingChatIds.contains(chat.id),
       ),
       'messages': [for (final message in messages) _messageJson(message)],
       'runs': [for (final run in runs) _runJson(run)],
@@ -484,8 +530,13 @@ Map<String, Object?> _hostJson(Host host) => {
   'notes': host.notes,
 };
 
-Map<String, Object?> _chatJson(Chat chat, {required bool running}) => {
+Map<String, Object?> _chatJson(
+  Chat chat, {
+  required bool running,
+  required bool waiting,
+}) => {
   'running': running,
+  'waiting': waiting,
   'id': chat.id,
   'hostId': chat.hostId,
   'projectId': chat.projectId,

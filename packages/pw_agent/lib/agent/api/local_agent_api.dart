@@ -41,7 +41,16 @@ final class LocalAgentApi implements AgentApi {
   Set<String> get runningChatIds => _hub.runningChatIds;
 
   @override
+  Set<String> get waitingChatIds => _hub.waitingChatIds;
+
+  @override
   Future<List<Host>> hosts() => _hub.hosts.all();
+
+  @override
+  Stream<List<Chat>> watchChats() => _hub.chats.watchChats();
+
+  @override
+  Stream<List<Host>> watchHosts() => _hub.hosts.watchAll();
 
   @override
   Future<List<Chat>> chats() async {
@@ -61,6 +70,40 @@ final class LocalAgentApi implements AgentApi {
       throw AgentApiException(404, 'host_not_found', 'host $hostId not found');
     }
     return _hub.newChat(hostId: hostId);
+  }
+
+  @override
+  Future<void> renameChat(String chatId, String title) async {
+    final chat = await _hub.chats.chat(chatId);
+    final trimmed = title.trim();
+    if (chat == null || trimmed.isEmpty) {
+      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
+    }
+    await _hub.chats.saveChat(
+      chat.copyWith(title: trimmed, titleSource: ChatTitleSource.user),
+    );
+  }
+
+  @override
+  Future<Chat?> forkChat(String chatId, {String? title}) async {
+    try {
+      return await _hub.forkChat(chatId, title: title);
+    } on Object {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> deleteChat(String chatId) async {
+    final session = _hub.session(chatId);
+    if (session.isRunning) await session.stop();
+    final project = await _hub.projects.projectForChat(chatId);
+    await _hub.chats.deleteChat(chatId);
+    await _hub.settings.deleteChatData(chatId);
+    _hub.broker.clearChatGrants(chatId);
+    await _hub.logs.deleteChat(chatId);
+    await _hub.turnChangesets.store.deleteChat(chatId);
+    await _hub.projects.releaseIfEmpty(project?.id);
   }
 
   @override

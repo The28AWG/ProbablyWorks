@@ -178,6 +178,13 @@ class InteractionBroker {
   Stream<EditFileChangesRequest> get editFileChangesRequests =>
       _editFileChangesRequests.stream;
 
+  /// Чаты, в которых есть хотя бы одна неотвеченная карточка.
+  Set<String> get waitingChatIds => {
+    for (final request in _pendingApprovals.values) request.chatId,
+    for (final question in _pendingQuestions.values) question.chatId,
+    for (final request in _pendingEditFileChanges.values) request.chatId,
+  };
+
   List<ApprovalRequest> pendingApprovals(String chatId) => [
     for (final r in _pendingApprovals.values)
       if (r.chatId == chatId) r,

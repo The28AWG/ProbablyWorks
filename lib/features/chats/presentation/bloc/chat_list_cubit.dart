@@ -3,10 +3,10 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/domain/host.dart';
 
@@ -51,17 +51,17 @@ class StartupHosts {
 }
 
 class ChatListCubit extends Cubit<ChatListState> {
-  ChatListCubit(this._hub, this._drafts, {List<Host> initialHosts = const []})
+  ChatListCubit(this._api, this._drafts, {List<Host> initialHosts = const []})
     : super(ChatListState(hosts: initialHosts)) {
-    _chatsSub = _hub.chats.watchChats().listen((chats) {
+    _chatsSub = _api.watchChats().listen((chats) {
       emit(state.copyWith(chats: chats));
       _refreshActivity();
     });
-    _hostsSub = _hub.hosts.watchAll().listen(
+    _hostsSub = _api.watchHosts().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
     );
     // Текстовые дельты приходят на каждый токен: на них активность не меняется, пересчёт не нужен.
-    _activitySub = _hub.allEvents
+    _activitySub = _api.events
         .where(
           (event) =>
               event is AgentTurnStarted ||
@@ -69,14 +69,12 @@ class ChatListCubit extends Cubit<ChatListState> {
               event is AgentRunChanged,
         )
         .listen((_) => _refreshActivity());
-    _approvalSub = _hub.broker.approvalRequests.listen(
-      (_) => _refreshActivity(),
-    );
-    _questionSub = _hub.broker.questions.listen((_) => _refreshActivity());
+    _approvalSub = _api.approvals.listen((_) => _refreshActivity());
+    _questionSub = _api.questions.listen((_) => _refreshActivity());
     _refreshActivity();
   }
 
-  final AgentHub _hub;
+  final AgentApi _api;
   final ChatDraftStore _drafts;
   late final StreamSubscription<List<Chat>> _chatsSub;
   late final StreamSubscription<List<Host>> _hostsSub;
@@ -87,13 +85,8 @@ class ChatListCubit extends Cubit<ChatListState> {
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
   void _refreshActivity() {
     if (isClosed) return;
-    final waiting = {
-      for (final chat in state.chats)
-        if (_hub.broker.pendingApprovals(chat.id).isNotEmpty ||
-            _hub.broker.pendingQuestions(chat.id).isNotEmpty)
-          chat.id,
-    };
-    final running = _hub.runningChatIds;
+    final waiting = _api.waitingChatIds;
+    final running = _api.runningChatIds;
     if (setEquals(running, state.runningIds) &&
         setEquals(waiting, state.waitingIds)) {
       return;
@@ -102,18 +95,15 @@ class ChatListCubit extends Cubit<ChatListState> {
   }
 
   Future<void> rename(String chatId, String title) async {
-    final chat = await _hub.chats.chat(chatId);
     final trimmed = title.trim();
-    if (chat == null || trimmed.isEmpty) return;
-    await _hub.chats.saveChat(
-      chat.copyWith(title: trimmed, titleSource: ChatTitleSource.user),
-    );
+    if (trimmed.isEmpty) return;
+    await _api.renameChat(chatId, trimmed);
   }
 
   /// Форк текущего чата. Файлы на Host не копируются и не откатываются.
   Future<Chat?> fork(String chatId, {String? title}) async {
     try {
-      return await _hub.forkChat(chatId, title: title);
+      return await _api.forkChat(chatId, title: title);
     } on Object {
       return null;
     }
@@ -122,18 +112,9 @@ class ChatListCubit extends Cubit<ChatListState> {
   /// Удаление: сначала останавливаем активный ход, затем чистим БД и файлы логов чата.
   /// Если чат был последним в проекте, проект уходит в архив и живёт там неделю.
   Future<void> delete(String chatId) async {
-    final session = _hub.session(chatId);
-    if (session.isRunning) await session.stop();
-    final project = await _hub.projects.projectForChat(chatId);
-    await _hub.chats.deleteChat(chatId);
-    // Лимит, расход и метаданные сжатия живут в kv, а не в таблице чатов:
-    // без явной очистки они остались бы после удаления навсегда.
-    await _hub.settings.deleteChatData(chatId);
-    _hub.broker.clearChatGrants(chatId);
+    await _api.deleteChat(chatId);
+    // Черновик живёт на клиенте и не удаляется вместе с серверным чатом.
     _drafts.discard(chatId);
-    await _hub.logs.deleteChat(chatId);
-    await _hub.turnChangesets.store.deleteChat(chatId);
-    await _hub.projects.releaseIfEmpty(project?.id);
   }
 
   @override

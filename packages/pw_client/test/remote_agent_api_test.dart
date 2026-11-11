@@ -150,6 +150,15 @@ final class _FakeAgent implements AgentApi {
   Set<String> get runningChatIds => const {};
 
   @override
+  Set<String> get waitingChatIds => const {};
+
+  @override
+  Stream<List<Chat>> watchChats() => Stream.value([_chat]);
+
+  @override
+  Stream<List<Host>> watchHosts() => Stream.value(const []);
+
+  @override
   Stream<AgentEvent> get events => _events.stream;
 
   @override
@@ -180,6 +189,15 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<Chat> createChat(String hostId) async => _chat.copyWith(id: 'c2');
+
+  @override
+  Future<void> renameChat(String chatId, String title) => Future<void>.value();
+
+  @override
+  Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;
+
+  @override
+  Future<void> deleteChat(String chatId) => Future<void>.value();
 
   @override
   Future<List<ChatMessage>> messages(String chatId) async {

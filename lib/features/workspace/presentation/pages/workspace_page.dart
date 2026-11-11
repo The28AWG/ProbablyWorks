@@ -7,7 +7,7 @@ import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
-import 'package:pw_agent/agent/loop/agent_hub.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/project_repository.dart';
@@ -25,7 +25,7 @@ class WorkspacePage extends StatelessWidget {
     providers: [
       BlocProvider(
         create: (_) => ChatListCubit(
-          getIt<AgentHub>(),
+          getIt<AgentApi>(),
           getIt<ChatDraftStore>(),
           initialHosts: getIt<StartupHosts>().value,
         ),

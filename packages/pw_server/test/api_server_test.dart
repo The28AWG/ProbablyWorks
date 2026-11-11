@@ -438,6 +438,15 @@ final class _FakeBackend implements AgentApi {
   Set<String> get runningChatIds => const {};
 
   @override
+  Set<String> get waitingChatIds => const {};
+
+  @override
+  Stream<List<Chat>> watchChats() => Stream.value([_chat]);
+
+  @override
+  Stream<List<Host>> watchHosts() => Stream.value(const []);
+
+  @override
   Future<List<Host>> hosts() async => [
     Host(
       id: 'local',
@@ -450,6 +459,15 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Future<List<Chat>> chats() async => [_chat];
+
+  @override
+  Future<void> renameChat(String chatId, String title) => Future<void>.value();
+
+  @override
+  Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;
+
+  @override
+  Future<void> deleteChat(String chatId) => Future<void>.value();
 
   @override
   Future<Chat> createChat(String hostId) async {

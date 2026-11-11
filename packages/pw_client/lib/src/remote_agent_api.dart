@@ -36,6 +36,10 @@ final class RemoteAgentApi implements AgentApi {
   final io.HttpClient _eventsClient;
 
   final _running = <String>{};
+  final _waiting = <String>{};
+  final _approvalChats = <String, String>{};
+  final _questionChats = <String, String>{};
+  final _editChats = <String, String>{};
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -47,6 +51,9 @@ final class RemoteAgentApi implements AgentApi {
 
   @override
   Set<String> get runningChatIds => Set.unmodifiable(_running);
+
+  @override
+  Set<String> get waitingChatIds => Set.unmodifiable(_waiting);
 
   @override
   Stream<AgentEvent> get events => _events.stream;
@@ -91,6 +98,60 @@ final class RemoteAgentApi implements AgentApi {
   }
 
   @override
+  Stream<List<Chat>> watchChats() {
+    late final StreamController<List<Chat>> controller;
+    Timer? timer;
+    Future<void> refresh() async {
+      try {
+        controller.add(await chats());
+      } on Object {
+        // Следующий тик попробует снова.
+      }
+    }
+
+    controller = StreamController<List<Chat>>(
+      onListen: () {
+        unawaited(refresh());
+        timer = Timer.periodic(
+          const Duration(seconds: 2),
+          (_) => unawaited(refresh()),
+        );
+      },
+      onCancel: () {
+        timer?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Stream<List<Host>> watchHosts() {
+    late final StreamController<List<Host>> controller;
+    Timer? timer;
+    Future<void> refresh() async {
+      try {
+        controller.add(await hosts());
+      } on Object {
+        // Следующий тик попробует снова.
+      }
+    }
+
+    controller = StreamController<List<Host>>(
+      onListen: () {
+        unawaited(refresh());
+        timer = Timer.periodic(
+          const Duration(seconds: 10),
+          (_) => unawaited(refresh()),
+        );
+      },
+      onCancel: () {
+        timer?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
   Future<List<Chat>> chats() async {
     final json = await _get('/chats');
     final chats = <Chat>[];
@@ -98,7 +159,7 @@ final class RemoteAgentApi implements AgentApi {
       final map = Map<String, dynamic>.from(item as Map);
       final chat = _chat(map);
       chats.add(chat);
-      _trackRunning(chat.id, map);
+      _trackChatState(chat.id, map);
     }
     return chats;
   }
@@ -109,7 +170,7 @@ final class RemoteAgentApi implements AgentApi {
       final json = await _get('/chats/$id');
       final map = Map<String, dynamic>.from(json['chat'] as Map);
       final chat = _chat(map);
-      _trackRunning(chat.id, map);
+      _trackChatState(chat.id, map);
       return chat;
     } on AgentApiException catch (error) {
       if (error.status == 404) return null;
@@ -120,7 +181,40 @@ final class RemoteAgentApi implements AgentApi {
   @override
   Future<Chat> createChat(String hostId) async {
     final json = await _send('POST', '/chats', body: {'hostId': hostId});
-    return _chat(Map<String, dynamic>.from(json as Map));
+    final map = Map<String, dynamic>.from(json as Map);
+    final chat = _chat(map);
+    _trackChatState(chat.id, map);
+    return chat;
+  }
+
+  @override
+  Future<void> renameChat(String chatId, String title) async {
+    await _send('PATCH', '/chats/$chatId', body: {'title': title});
+  }
+
+  @override
+  Future<Chat?> forkChat(String chatId, {String? title}) async {
+    try {
+      final json = await _send(
+        'POST',
+        '/chats/$chatId/fork',
+        body: {'title': ?title},
+      );
+      final map = Map<String, dynamic>.from(json as Map);
+      final chat = _chat(map);
+      _trackChatState(chat.id, map);
+      return chat;
+    } on AgentApiException catch (error) {
+      if (error.status == 404) return null;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> deleteChat(String chatId) async {
+    await _send('DELETE', '/chats/$chatId');
+    _running.remove(chatId);
+    _waiting.remove(chatId);
   }
 
   @override
@@ -172,11 +266,15 @@ final class RemoteAgentApi implements AgentApi {
     final body = <String, Object?>{'action': action.name};
     if (reason != null) body['reason'] = reason;
     await _send('PUT', '/approvals/$id/decision', body: body);
+    final chatId = _approvalChats.remove(id);
+    if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
 
   @override
   Future<void> answerQuestion(String id, String? text) async {
     await _send('PUT', '/questions/$id/answer', body: {'answer': text});
+    final chatId = _questionChats.remove(id);
+    if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
 
   @override
@@ -189,6 +287,8 @@ final class RemoteAgentApi implements AgentApi {
       '/edit-file-changes/$id/decision',
       body: {'choice': choice.name},
     );
+    final chatId = _editChats.remove(id);
+    if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
 
   @override
@@ -358,13 +458,23 @@ final class RemoteAgentApi implements AgentApi {
     }
   }
 
-  void _trackRunning(String chatId, Map<String, dynamic> json) {
+  void _trackChatState(String chatId, Map<String, dynamic> json) {
     if (json['running'] == true) {
       _running.add(chatId);
     } else {
       _running.remove(chatId);
     }
+    if (json['waiting'] == true) {
+      _waiting.add(chatId);
+    } else {
+      _waiting.remove(chatId);
+    }
   }
+
+  bool _hasPending(String chatId) =>
+      _approvalChats.containsValue(chatId) ||
+      _questionChats.containsValue(chatId) ||
+      _editChats.containsValue(chatId);
 
   void _dispatch(String event, String raw) {
     final decoded = jsonDecode(raw);
@@ -372,11 +482,20 @@ final class RemoteAgentApi implements AgentApi {
     final json = Map<String, dynamic>.from(decoded);
     switch (event) {
       case 'approval':
-        _approvals.add(_approval(json));
+        final request = _approval(json);
+        _approvalChats[request.id] = request.chatId;
+        _waiting.add(request.chatId);
+        _approvals.add(request);
       case 'question':
-        _questions.add(_question(json));
+        final question = _question(json);
+        _questionChats[question.id] = question.chatId;
+        _waiting.add(question.chatId);
+        _questions.add(question);
       case 'editFileChanges':
-        _editChanges.add(_editChangesRequest(json));
+        final request = _editChangesRequest(json);
+        _editChats[request.id] = request.chatId;
+        _waiting.add(request.chatId);
+        _editChanges.add(request);
       case 'turnStarted':
         final chatId = _string(json, 'chatId');
         _running.add(chatId);

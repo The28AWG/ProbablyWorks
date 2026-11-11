@@ -37,11 +37,21 @@ abstract interface class AgentApi {
   /// Чаты с идущим ходом агента. Нужно для бейджей и фонового режима.
   Set<String> get runningChatIds;
 
-  Future<List<Host>> hosts();
+  /// Чаты с неотвеченными карточками.
+  Set<String> get waitingChatIds;
 
+  Future<List<Host>> hosts();
   Future<List<Chat>> chats();
+
+  /// Список чатов и хостов с обновлениями. Локально — поток БД,
+  /// удалённо — периодическое обновление и события.
+  Stream<List<Chat>> watchChats();
+  Stream<List<Host>> watchHosts();
   Future<Chat?> chat(String id);
   Future<Chat> createChat(String hostId);
+  Future<void> renameChat(String chatId, String title);
+  Future<Chat?> forkChat(String chatId, {String? title});
+  Future<void> deleteChat(String chatId);
 
   Future<List<ChatMessage>> messages(String chatId);
   Future<List<ToolRun>> runs(String chatId);
