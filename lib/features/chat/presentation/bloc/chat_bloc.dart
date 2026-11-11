@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:probably_works/agent/context/context_breakdown.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/domain/project.dart';
 import 'package:probably_works/agent/domain/steps_display.dart';
@@ -16,6 +17,7 @@ import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/host_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/domain/chat_usage.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
@@ -271,6 +273,17 @@ final class ChatModelPinToggled extends ChatEvent {
   List<Object?> get props => [modelId];
 }
 
+/// Дневной лимит трат чата изменён из диалога контекста.
+final class ChatDailyBudgetChanged extends ChatEvent {
+  const ChatDailyBudgetChanged(this.budgetUsd);
+
+  /// Null — снять лимит.
+  final double? budgetUsd;
+
+  @override
+  List<Object?> get props => [budgetUsd];
+}
+
 /// Ручное сжатие истории (кнопка в контексте).
 final class ChatCompactRequested extends ChatEvent {
   const ChatCompactRequested();
@@ -359,6 +372,10 @@ class ChatState extends Equatable {
     this.failureModelMissing = false,
     this.promptTokens,
     this.contextLimit,
+    this.contextBreakdown,
+    this.dailyCostUsd = 0,
+    this.dailyBudgetUsd,
+    this.compactionInfo,
     this.trustNeeded = false,
     this.loading = false,
     this.attachments = const [],
@@ -435,7 +452,28 @@ class ChatState extends Equatable {
   bool get failureIsModelMissing => failure != null && failureModelMissing;
   final int? promptTokens;
   final int? contextLimit;
+  final ContextBreakdown? contextBreakdown;
+  final double dailyCostUsd;
+  final double? dailyBudgetUsd;
+
+  /// Последнее сжатие истории: когда, почему и до какой границы.
+  final ChatCompactionInfo? compactionInfo;
   final bool trustNeeded;
+
+  /// Стоимость последнего запроса по ценам каталога. Null — цены модели
+  /// ещё неизвестны или модель не выбрана.
+  double? get lastRequestCostUsd {
+    final modelId = effectiveModelId;
+    final info = modelId == null ? null : catalog.modelOf(modelId);
+    final promptPrice = double.tryParse(info?.promptPrice ?? '');
+    final completionPrice = double.tryParse(info?.completionPrice ?? '');
+    if (promptPrice == null || completionPrice == null) return null;
+    final prompt = chat?.lastPromptTokens;
+    final completion = chat?.lastCompletionTokens;
+    if (prompt == null && completion == null) return null;
+    return promptPrice * (prompt ?? 0) + completionPrice * (completion ?? 0);
+  }
+
   final bool loading;
 
   /// Вложения черновика текущего чата (до отправки).
@@ -473,6 +511,12 @@ class ChatState extends Equatable {
     bool clearFailure = false,
     int? promptTokens,
     int? contextLimit,
+    ContextBreakdown? contextBreakdown,
+    double? dailyCostUsd,
+    double? dailyBudgetUsd,
+    bool clearDailyBudget = false,
+    ChatCompactionInfo? compactionInfo,
+    bool clearCompactionInfo = false,
     bool? trustNeeded,
     bool? loading,
     List<AttachmentRef>? attachments,
@@ -504,6 +548,14 @@ class ChatState extends Equatable {
     failureModelMissing: failureModelMissing ?? this.failureModelMissing,
     promptTokens: promptTokens ?? this.promptTokens,
     contextLimit: contextLimit ?? this.contextLimit,
+    contextBreakdown: contextBreakdown ?? this.contextBreakdown,
+    dailyCostUsd: dailyCostUsd ?? this.dailyCostUsd,
+    dailyBudgetUsd: clearDailyBudget
+        ? null
+        : (dailyBudgetUsd ?? this.dailyBudgetUsd),
+    compactionInfo: clearCompactionInfo
+        ? null
+        : (compactionInfo ?? this.compactionInfo),
     trustNeeded: trustNeeded ?? this.trustNeeded,
     loading: loading ?? this.loading,
     attachments: attachments ?? this.attachments,
@@ -538,6 +590,10 @@ class ChatState extends Equatable {
     failureModelMissing,
     promptTokens,
     contextLimit,
+    contextBreakdown,
+    dailyCostUsd,
+    dailyBudgetUsd,
+    compactionInfo,
     trustNeeded,
     loading,
     attachments,
@@ -596,6 +652,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatQueueRemoved>((event, _) async => _session?.takeQueued(event.index));
     on<ChatQueueEdited>(_onQueueEdited);
     on<ChatCompactRequested>(_onCompactRequested);
+    on<ChatDailyBudgetChanged>(_onDailyBudgetChanged);
     on<_SessionEvent>(_onSessionEvent);
     on<_LiveChunk>(_onLiveChunk);
     on<_LiveFlush>(_onLiveFlush);
@@ -822,6 +879,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     final shared = await _readShared();
     final snapshot = await _readChat(event.chatId);
+    final usage = await _usageOf(event.chatId);
     final project = await _hub.projectStore.forChat(event.chatId);
     // Карточки этого чата — из базы, не при старте приложения.
     // Если ход уже продолжен после старта, здесь только показываем карточки.
@@ -842,6 +900,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       questions: _hub.broker.pendingQuestions(event.chatId),
       editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
       contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
+      dailyCostUsd: usage.usage.costUsd,
+      dailyBudgetUsd: usage.budget,
+      clearDailyBudget: usage.budget == null,
+      compactionInfo: usage.compaction,
+      clearCompactionInfo: usage.compaction == null,
       isRunning: _session?.isRunning ?? false,
       queue: _queueTexts(),
       loading: false,
@@ -1134,6 +1197,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await session.compactNow(force: true);
   }
 
+  Future<void> _onDailyBudgetChanged(
+    ChatDailyBudgetChanged event,
+    Emitter<ChatState> emit,
+  ) async {
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    await _hub.settings.saveDailyBudget(chatId, event.budgetUsd);
+    emit(
+      state.copyWith(
+        dailyBudgetUsd: event.budgetUsd,
+        clearDailyBudget: event.budgetUsd == null,
+      ),
+    );
+  }
+
   Future<void> _onPolicyChanged(
     ChatPolicyChanged event,
     Emitter<ChatState> emit,
@@ -1283,8 +1361,22 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         );
       case AgentTrustNeeded():
         emit(state.copyWith(trustNeeded: true));
-      case AgentUsageUpdated(:final promptTokens, :final limit):
-        emit(state.copyWith(promptTokens: promptTokens, contextLimit: limit));
+      case AgentUsageUpdated(
+        :final promptTokens,
+        :final limit,
+        :final breakdown,
+        :final dailyCostUsd,
+        :final dailyBudgetUsd,
+      ):
+        emit(
+          state.copyWith(
+            promptTokens: promptTokens,
+            contextLimit: limit,
+            contextBreakdown: breakdown,
+            dailyCostUsd: dailyCostUsd,
+            dailyBudgetUsd: dailyBudgetUsd,
+          ),
+        );
       case AgentStateChanged():
         await _reload(emit);
     }
@@ -1349,6 +1441,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chatId = state.chatId;
     if (chatId == null) return;
     final snapshot = await _readChat(chatId);
+    final usage = await _usageOf(chatId);
     final activeIds = {
       for (final r in snapshot.runs)
         if (r.isActive) r.id,
@@ -1368,9 +1461,23 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
         contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
+        dailyCostUsd: usage.usage.costUsd,
+        dailyBudgetUsd: usage.budget,
+        clearDailyBudget: usage.budget == null,
+        compactionInfo: usage.compaction,
+        clearCompactionInfo: usage.compaction == null,
       ),
     );
   }
+
+  Future<
+    ({ChatDailyUsage usage, double? budget, ChatCompactionInfo? compaction})
+  >
+  _usageOf(String chatId) async => (
+    usage: await _hub.settings.readDailyUsage(chatId),
+    budget: await _hub.settings.readDailyBudget(chatId),
+    compaction: await _hub.settings.readCompactionInfo(chatId),
+  );
 
   List<String> _queueTexts() => [
     for (final item in _session?.queue ?? const <QueuedPrompt>[]) item.text,

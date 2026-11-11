@@ -1577,6 +1577,86 @@
   "@contextNoData": {
     "description": "Текст в диалоге контекста до первого ответа модели."
   },
+  "contextBreakdownTitle": "Из чего состоит запрос",
+  "@contextBreakdownTitle": {
+    "description": "Заголовок примерной разбивки по символам в диалоге контекста."
+  },
+  "contextSystem": "Системный промпт",
+  "@contextSystem": {
+    "description": "Строка разбивки: системный промпт."
+  },
+  "contextHistory": "Диалог",
+  "@contextHistory": {
+    "description": "Строка разбивки: сообщения пользователя и ассистента."
+  },
+  "contextToolResults": "Результаты инструментов",
+  "@contextToolResults": {
+    "description": "Строка разбивки: вывод инструментов."
+  },
+  "contextAttachments": "Вложения",
+  "@contextAttachments": {
+    "description": "Строка разбивки: бинарные вложения."
+  },
+  "contextTools": "Схемы инструментов",
+  "@contextTools": {
+    "description": "Строка разбивки: определения инструментов, отправляемые модели."
+  },
+  "contextLastRequestCost": "Последний запрос",
+  "@contextLastRequestCost": {
+    "description": "Стоимость последнего запроса к модели в USD."
+  },
+  "contextTodayCost": "Сегодня",
+  "@contextTodayCost": {
+    "description": "Расход этого чата за сегодня в USD."
+  },
+  "contextDailyBudget": "Дневной лимит",
+  "@contextDailyBudget": {
+    "description": "Дневной лимит трат конкретного чата."
+  },
+  "contextBudgetNotSet": "Не задан",
+  "@contextBudgetNotSet": {
+    "description": "Показывается, когда у чата нет дневного лимита."
+  },
+  "contextSetBudget": "Задать дневной лимит",
+  "@contextSetBudget": {
+    "description": "Кнопка, открывающая ввод дневного лимита."
+  },
+  "contextBudgetHint": "USD; пусто — снять лимит",
+  "@contextBudgetHint": {
+    "description": "Подсказка поля дневного лимита."
+  },
+  "contextCompacted": "История сжата по сообщение #{seq}; сводка {chars} символов",
+  "@contextCompacted": {
+    "description": "Состояние сжатия в диалоге контекста.",
+    "placeholders": {
+      "seq": {
+        "type": "int"
+      },
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "contextCompactedAt": "Сжато {when} · {reason}",
+  "@contextCompactedAt": {
+    "description": "Время и причина последнего сжатия истории.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "contextCompactionForced": "вручную или после смены модели",
+  "@contextCompactionForced": {
+    "description": "Причина сжатия: явный запрос или меньшее окно модели."
+  },
+  "contextCompactionThreshold": "автоматически по порогу контекста",
+  "@contextCompactionThreshold": {
+    "description": "Причина сжатия: автоматический триггер при росте контекста."
+  },
   "chatWelcomeTitle": "С чего начнём?",
   "@chatWelcomeTitle": {
     "description": "Заголовок пустого чата."

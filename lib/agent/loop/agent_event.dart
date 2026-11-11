@@ -1,3 +1,4 @@
+import 'package:probably_works/agent/context/context_breakdown.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/turn/turn_changeset.dart';
 import 'package:probably_works/core/error/app_failure.dart';
@@ -81,10 +82,20 @@ final class AgentTrustNeeded extends AgentEvent {
 }
 
 final class AgentUsageUpdated extends AgentEvent {
-  const AgentUsageUpdated(super.chatId, this.promptTokens, this.limit);
+  const AgentUsageUpdated(
+    super.chatId,
+    this.promptTokens,
+    this.limit, {
+    this.breakdown,
+    this.dailyCostUsd,
+    this.dailyBudgetUsd,
+  });
 
   final int promptTokens;
   final int limit;
+  final ContextBreakdown? breakdown;
+  final double? dailyCostUsd;
+  final double? dailyBudgetUsd;
 }
 
 final class AgentStateChanged extends AgentEvent {

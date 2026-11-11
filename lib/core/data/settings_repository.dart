@@ -5,6 +5,7 @@ import 'package:probably_works/agent/domain/steps_display.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/db/app_database.dart';
+import 'package:probably_works/core/domain/chat_usage.dart';
 
 /// Настройки приложения (kv-таблица) и доверие workspace.
 @lazySingleton
@@ -34,6 +35,9 @@ class SettingsRepository {
   static const keyStepsTools = 'stepsTools';
   static const keySidebarWidth = 'sidebarWidth';
   static const keyLastUsageContextPrefix = 'contextLength:';
+  static const keyDailyBudgetPrefix = 'dailyBudget:';
+  static const keyDailyUsagePrefix = 'dailyUsage:';
+  static const keyCompactionInfoPrefix = 'compactionInfo:';
 
   /// Загружает kv-таблицу в память. Вызывается при старте, до первого чтения настроек.
   Future<void> preload() async {
@@ -159,6 +163,67 @@ class SettingsRepository {
     await write(keyStepsThoughts, value.thoughts.name);
     await write(keyStepsTools, value.tools.name);
   }
+
+  /// Метаданные последнего сжатия истории чата. Null — сжатия ещё не было.
+  static String compactionInfoKey(String chatId) =>
+      '$keyCompactionInfoPrefix$chatId';
+
+  Future<ChatCompactionInfo?> readCompactionInfo(String chatId) async {
+    final raw = await read(compactionInfoKey(chatId));
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return ChatCompactionInfo.decode(raw);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<void> saveCompactionInfo(String chatId, ChatCompactionInfo info) =>
+      write(compactionInfoKey(chatId), info.encode());
+
+  /// Дневной лимит трат конкретного чата. Null — без лимита.
+  static String dailyBudgetKey(String chatId) => '$keyDailyBudgetPrefix$chatId';
+
+  Future<double?> readDailyBudget(String chatId) async {
+    final raw = await read(dailyBudgetKey(chatId));
+    if (raw == null || raw.isEmpty) return null;
+    final value = double.tryParse(raw);
+    return value == null || value <= 0 ? null : value;
+  }
+
+  Future<void> saveDailyBudget(String chatId, double? value) =>
+      write(dailyBudgetKey(chatId), value?.toStringAsFixed(6));
+
+  /// Расход чата за [day]. Битая или отсутствующая запись — нулевой расход.
+  Future<ChatDailyUsage> readDailyUsage(String chatId, {DateTime? day}) async {
+    final raw = await read(dailyUsageKey(chatId, day ?? DateTime.now()));
+    return raw == null || raw.isEmpty
+        ? const ChatDailyUsage()
+        : ChatDailyUsage.decode(raw);
+  }
+
+  /// Добавляет один запрос к расходу дня. Возвращает новое состояние счётчика.
+  Future<ChatDailyUsage> addDailyUsage(
+    String chatId, {
+    required int promptTokens,
+    required int completionTokens,
+    required double costUsd,
+    DateTime? day,
+  }) async {
+    final at = day ?? DateTime.now();
+    final key = dailyUsageKey(chatId, at);
+    final current = await readDailyUsage(chatId, day: at);
+    final next = current.plus(
+      promptTokens: promptTokens,
+      completionTokens: completionTokens,
+      costUsd: costUsd,
+    );
+    await write(key, next.encode());
+    return next;
+  }
+
+  static String dailyUsageKey(String chatId, DateTime day) =>
+      '$keyDailyUsagePrefix$chatId:${usageDayKey(day)}';
 
   Future<List<String>> readDenylist() async {
     final raw = await read(keyDenylist);

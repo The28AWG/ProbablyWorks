@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:logging/logging.dart';
+import 'package:probably_works/agent/context/context_breakdown.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
@@ -22,6 +23,7 @@ import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/core/config/app_limits.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/settings_repository.dart';
+import 'package:probably_works/core/domain/chat_usage.dart';
 import 'package:probably_works/core/domain/host.dart';
 import 'package:probably_works/core/error/app_failure.dart';
 import 'package:probably_works/core/notify/app_notifier.dart';
@@ -827,7 +829,12 @@ class ChatSession {
               ],
             );
       if (step.usage != null) {
-        await _recordUsage(prepared.chat, step.usage!, prepared.limit);
+        await _recordUsage(
+          prepared.chat,
+          prepared.model,
+          step.usage!,
+          prepared.limit,
+        );
       }
       if (step.stopped || turn.isCancelled) return TurnEnd.stopped;
       if (step.interruptedBySendNow) continue;
@@ -995,18 +1002,51 @@ class ChatSession {
       inlineFiles: files,
       projectFacts: projectFacts,
     );
+    // Лимит проверяем до сжатия: оно тоже тратит токены, а превышение должно
+    // остановить ход, а не оплатить ещё одну сводку.
+    final daily = await _hub.settings.readDailyUsage(chatId);
+    final budget = await _hub.settings.readDailyBudget(chatId);
+    if (budget != null && daily.costUsd >= budget) {
+      throw LlmFailure(
+        'daily spending limit reached: '
+        '\$${daily.costUsd.toStringAsFixed(4)} of '
+        '\$${budget.toStringAsFixed(2)} today',
+      );
+    }
+    final cutoffBefore = chat.compactedUntilSeq;
     chat = await _hub.compactor.compactIfNeeded(
       inputFor(chat),
       summaryModel: model,
       force: forceCompact,
       limits: limits,
     );
+    // Метаданные пишем только при реальном сдвиге границы: compactor возвращает
+    // тот же чат, если сжимать было нечего.
+    if (chat.compactedUntilSeq != cutoffBefore) {
+      await _hub.settings.saveCompactionInfo(
+        chatId,
+        ChatCompactionInfo(
+          at: DateTime.now(),
+          reason: forceCompact ? 'forced' : 'threshold',
+          cutoffSeq: chat.compactedUntilSeq,
+          summaryChars: chat.compactionSummary?.length ?? 0,
+        ),
+      );
+    }
     final inline = Map.of(_inlineFiles);
     _checkFilesAccepted(model, inline);
     final llmMessages = _hub.builder.build(inputFor(chat, files: inline));
     final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
+    final tools = [...ToolCatalog.specs, ...SelfToolCatalog.specs];
     _emit(
-      AgentUsageUpdated(chatId, ContextCompactor.estimate(llmMessages), limit),
+      AgentUsageUpdated(
+        chatId,
+        ContextCompactor.estimate(llmMessages),
+        limit,
+        breakdown: ContextBreakdown.of(llmMessages, tools: tools),
+        dailyCostUsd: daily.costUsd,
+        dailyBudgetUsd: budget,
+      ),
     );
 
     final policy = bound.policy;
@@ -1016,13 +1056,10 @@ class ChatSession {
       runtime: runtime,
       policy: policy,
       limit: limit,
+      model: model,
       inlineIds: inline.keys.toList(),
       project: project,
-      request: LlmRequest(
-        model: model,
-        messages: llmMessages,
-        tools: [...ToolCatalog.specs, ...SelfToolCatalog.specs],
-      ),
+      request: LlmRequest(model: model, messages: llmMessages, tools: tools),
     );
   }
 
@@ -1288,7 +1325,20 @@ class ChatSession {
     }
   }
 
-  Future<void> _recordUsage(Chat chat, LlmUsage usage, int limit) async {
+  Future<void> _recordUsage(
+    Chat chat,
+    String model,
+    LlmUsage usage,
+    int limit,
+  ) async {
+    final cost = _costOf(model, usage);
+    final daily = await _hub.settings.addDailyUsage(
+      chatId,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      costUsd: cost ?? 0,
+    );
+    final budget = await _hub.settings.readDailyBudget(chatId);
     final current = await _hub.chats.chat(chatId) ?? chat;
     await _hub.chats.saveChat(
       current.copyWith(
@@ -1296,7 +1346,25 @@ class ChatSession {
         lastCompletionTokens: usage.completionTokens,
       ),
     );
-    _emit(AgentUsageUpdated(chatId, usage.promptTokens, limit));
+    _emit(
+      AgentUsageUpdated(
+        chatId,
+        usage.promptTokens,
+        limit,
+        dailyCostUsd: daily.costUsd,
+        dailyBudgetUsd: budget,
+      ),
+    );
+  }
+
+  /// Стоимость одного ответа по ценам каталога. Цены OpenRouter — за токен.
+  /// Null, если каталог ещё не знает модель: тогда расход не оценивается.
+  double? _costOf(String model, LlmUsage usage) {
+    final info = _hub.models.state.modelOf(model);
+    final prompt = double.tryParse(info?.promptPrice ?? '');
+    final completion = double.tryParse(info?.completionPrice ?? '');
+    if (prompt == null || completion == null) return null;
+    return prompt * usage.promptTokens + completion * usage.completionTokens;
   }
 
   Future<ChatMessage?> _find(String messageId) async {
@@ -1458,6 +1526,7 @@ class _Prepared {
     required this.runtime,
     required this.policy,
     required this.limit,
+    required this.model,
     required this.inlineIds,
     required this.request,
     this.project,
@@ -1468,6 +1537,7 @@ class _Prepared {
   final HostRuntime runtime;
   final PolicyEngine policy;
   final int limit;
+  final String model;
 
   /// Проект чата. Null, пока у чата нет явной папки: дом общим проектом не становится.
   final Project? project;

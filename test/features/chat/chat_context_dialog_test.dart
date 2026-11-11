@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/agent/context/context_breakdown.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/theme/app_theme.dart';
+import 'package:probably_works/core/domain/chat_usage.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_context_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
@@ -11,6 +13,12 @@ Future<void> _open(
   WidgetTester tester, {
   int? used,
   bool running = false,
+  ContextBreakdown? breakdown,
+  double? lastRequestCostUsd,
+  double dailyCostUsd = 0,
+  double? dailyBudgetUsd,
+  ChatCompactionInfo? compaction,
+  ValueChanged<double?>? onBudgetChanged,
   required VoidCallback onCompact,
 }) async {
   await tester.pumpWidget(
@@ -29,6 +37,12 @@ Future<void> _open(
                   used: used,
                   limit: 128000,
                   running: running,
+                  breakdown: breakdown,
+                  lastRequestCostUsd: lastRequestCostUsd,
+                  dailyCostUsd: dailyCostUsd,
+                  dailyBudgetUsd: dailyBudgetUsd,
+                  compaction: compaction,
+                  onBudgetChanged: onBudgetChanged,
                   onCompact: onCompact,
                 ),
               ),
@@ -79,6 +93,52 @@ void main() {
     );
     await tester.tap(find.text('Compact'));
     await tester.pumpAndSettle();
+    expect(compacted, 0);
+  });
+
+  testWidgets('shows breakdown, cost and compaction state', (tester) async {
+    var compacted = 0;
+    await _open(
+      tester,
+      used: 1200,
+      breakdown: const ContextBreakdown(
+        systemChars: 400,
+        historyChars: 800,
+        toolResultChars: 200,
+        attachmentBytes: 40,
+        toolSchemaChars: 80,
+      ),
+      lastRequestCostUsd: 0.0123,
+      dailyCostUsd: 0.5,
+      dailyBudgetUsd: 2,
+      compaction: ChatCompactionInfo(
+        at: DateTime(2026, 11, 11, 14, 5),
+        reason: 'threshold',
+        cutoffSeq: 3,
+        summaryChars: 100,
+      ),
+      onCompact: () => compacted++,
+    );
+
+    expect(find.text('Request breakdown'), findsOneWidget);
+    expect(find.text('System prompt'), findsOneWidget);
+    expect(find.text('~100'), findsOneWidget);
+    expect(find.text('Last request'), findsOneWidget);
+    expect(find.text('\$0.0123'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('\$0.5000'), findsOneWidget);
+    expect(find.text('Daily limit'), findsOneWidget);
+    expect(find.text('\$2.0000'), findsOneWidget);
+    expect(
+      find.text('History compacted through message #3; summary 100 chars'),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'Compacted 2026-11-11 14:05 · automatically by the context threshold',
+      ),
+      findsOneWidget,
+    );
     expect(compacted, 0);
   });
 

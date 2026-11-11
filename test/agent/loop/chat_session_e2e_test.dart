@@ -242,6 +242,27 @@ void main() {
     await finished;
   }
 
+  test('daily spending limit blocks a new step', () async {
+    final chatId = await createChat();
+    await hub.settings.saveDailyBudget(chatId, 0.5);
+    await hub.settings.addDailyUsage(
+      chatId,
+      promptTokens: 1,
+      completionTokens: 1,
+      costUsd: 1,
+    );
+    final session = hub.session(chatId);
+    final failures = <AppFailure>[];
+    final sub = session.events.listen((event) {
+      if (event is AgentFailureRaised) failures.add(event.failure);
+    });
+    addTearDown(sub.cancel);
+
+    await runTurn(session, 'hello');
+
+    expect(failures.single.message, contains('daily spending limit'));
+  });
+
   test('context length failure retries once with a rebuilt request', () async {
     final chatId = await createChat();
     final session = hub.session(chatId);
@@ -318,6 +339,35 @@ void main() {
     // Сводка описывала удалённые сообщения, а cutoff был больше нового seq.
     expect(updated.compactionSummary, isNull);
     expect(updated.compactedUntilSeq, 0);
+  });
+
+  test('manual compaction records when and why it happened', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    for (var seq = 1; seq <= 4; seq++) {
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm$seq',
+          chatId: chatId,
+          seq: seq,
+          role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+          createdAt: now,
+          text: 'message $seq',
+        ),
+      );
+    }
+    final session = hub.session(chatId);
+    llm.script.add([const LlmTextDelta('summary'), const LlmCompleted()]);
+
+    await session.compactNow(force: true);
+
+    final updated = (await hub.chats.chat(chatId))!;
+    expect(updated.compactedUntilSeq, greaterThan(0));
+    final info = await hub.settings.readCompactionInfo(chatId);
+    expect(info, isNotNull);
+    expect(info!.reason, 'forced');
+    expect(info.cutoffSeq, updated.compactedUntilSeq);
+    expect(info.summaryChars, updated.compactionSummary?.length);
   });
 
   Future<void> waitUntil(bool Function() ready) async {

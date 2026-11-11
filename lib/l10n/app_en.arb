@@ -1577,6 +1577,86 @@
   "@contextNoData": {
     "description": "Text in the context dialog before the first model reply."
   },
+  "contextBreakdownTitle": "Request breakdown",
+  "@contextBreakdownTitle": {
+    "description": "Heading of the approximate character breakdown in the context dialog."
+  },
+  "contextSystem": "System prompt",
+  "@contextSystem": {
+    "description": "Context breakdown row: system prompt."
+  },
+  "contextHistory": "Conversation",
+  "@contextHistory": {
+    "description": "Context breakdown row: user and assistant messages."
+  },
+  "contextToolResults": "Tool results",
+  "@contextToolResults": {
+    "description": "Context breakdown row: tool outputs."
+  },
+  "contextAttachments": "Attachments",
+  "@contextAttachments": {
+    "description": "Context breakdown row: binary attachments."
+  },
+  "contextTools": "Tool schemas",
+  "@contextTools": {
+    "description": "Context breakdown row: tool definitions sent to the model."
+  },
+  "contextLastRequestCost": "Last request",
+  "@contextLastRequestCost": {
+    "description": "Cost of the last model request in USD."
+  },
+  "contextTodayCost": "Today",
+  "@contextTodayCost": {
+    "description": "Spending of this chat today in USD."
+  },
+  "contextDailyBudget": "Daily limit",
+  "@contextDailyBudget": {
+    "description": "Per-chat daily spending limit."
+  },
+  "contextBudgetNotSet": "Not set",
+  "@contextBudgetNotSet": {
+    "description": "Shown when a chat has no daily spending limit."
+  },
+  "contextSetBudget": "Set daily limit",
+  "@contextSetBudget": {
+    "description": "Button that opens the daily spending limit prompt."
+  },
+  "contextBudgetHint": "USD; leave empty to remove",
+  "@contextBudgetHint": {
+    "description": "Hint of the daily spending limit prompt."
+  },
+  "contextCompacted": "History compacted through message #{seq}; summary {chars} chars",
+  "@contextCompacted": {
+    "description": "Compaction status in the context dialog.",
+    "placeholders": {
+      "seq": {
+        "type": "int"
+      },
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "contextCompactedAt": "Compacted {when} · {reason}",
+  "@contextCompactedAt": {
+    "description": "Time and reason of the last history compaction.",
+    "placeholders": {
+      "when": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "contextCompactionForced": "manually or after a model change",
+  "@contextCompactionForced": {
+    "description": "Compaction reason: explicit request or smaller model window."
+  },
+  "contextCompactionThreshold": "automatically by the context threshold",
+  "@contextCompactionThreshold": {
+    "description": "Compaction reason: automatic trigger when context grows."
+  },
   "chatWelcomeTitle": "What should we work on?",
   "@chatWelcomeTitle": {
     "description": "Heading of the empty chat."
