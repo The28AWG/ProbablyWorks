@@ -101,13 +101,13 @@ final class ChatContinued extends ChatEvent {
 }
 
 final class ChatApprovalAnswered extends ChatEvent {
-  const ChatApprovalAnswered(this.requestId, {required this.allow});
+  const ChatApprovalAnswered(this.requestId, this.decision);
 
   final String requestId;
-  final bool allow;
+  final ApprovalDecision decision;
 
   @override
-  List<Object?> get props => [requestId, allow];
+  List<Object?> get props => [requestId, decision.action, decision.reason];
 }
 
 final class ChatQuestionAnswered extends ChatEvent {
@@ -989,7 +989,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onApproval(ChatApprovalAnswered event, Emitter<ChatState> emit) {
-    _hub.broker.resolveApproval(event.requestId, allow: event.allow);
+    _hub.broker.resolveApproval(event.requestId, event.decision);
     emit(
       state.copyWith(approvals: _hub.broker.pendingApprovals(state.chatId!)),
     );

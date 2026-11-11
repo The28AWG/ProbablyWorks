@@ -166,7 +166,7 @@ void main() {
       ctx,
     );
     final approval = await broker.approvalRequests.first;
-    broker.resolveApproval(approval.id, allow: false);
+    broker.resolveApproval(approval.id, const ApprovalDecision.deny());
     final result = await pending;
     expect(result.isError, isTrue);
     expect(await turnCs(), isNull);
@@ -182,7 +182,7 @@ void main() {
     );
     final approval = await broker.approvalRequests.first;
     File(path).writeAsStringSync('surprise');
-    broker.resolveApproval(approval.id, allow: true);
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
     final result = await pending;
     expect(result.isError, isTrue);
     expect(await turnCs(), isNull);

@@ -440,6 +440,10 @@ void main() {
       tester.element(find.byType(ChatAttentionDock)),
     );
     expect(find.text(l10n.approvalTitle), findsOneWidget);
+    expect(find.text(l10n.approvalAllowTurn), findsOneWidget);
+    expect(find.text(l10n.approvalAllowChat), findsOneWidget);
+    expect(find.text(l10n.approvalApprove), findsOneWidget);
+    expect(find.text(l10n.approvalDeny), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(ChatTimeline),
@@ -447,6 +451,97 @@ void main() {
       ),
       findsNothing,
     );
+
+    await tester.tap(find.text(l10n.approvalDeny));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.approvalDenyReasonTitle), findsOneWidget);
+    await tester.tap(find.text(l10n.commonCancel));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.approvalDenyReasonTitle), findsNothing);
+  });
+
+  testWidgets('several approvals show a bulk once action', (tester) async {
+    final state = _state(
+      running: true,
+      approvals: const [
+        ApprovalRequest(
+          id: 'ap1',
+          chatId: 'c',
+          toolName: 'run_command',
+          summary: 'ls',
+          reason: 'Needs confirmation.',
+        ),
+        ApprovalRequest(
+          id: 'ap2',
+          chatId: 'c',
+          toolName: 'run_command',
+          summary: 'pwd',
+          reason: 'Needs confirmation.',
+        ),
+      ],
+    );
+    final bloc = SeededChatBloc(state);
+    addTearDown(bloc.close);
+    await tester.pumpWidget(
+      _TestApp(
+        Column(
+          children: [
+            Expanded(child: ChatTimeline(state: state)),
+            ChatAttentionDock(state: state),
+          ],
+        ),
+        bloc: bloc,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatAttentionDock)),
+    );
+
+    expect(find.text(l10n.approvalBulkCount(2)), findsOneWidget);
+    expect(find.text(l10n.approvalAllowAllOnce), findsOneWidget);
+    expect(find.text(l10n.approvalTitle), findsNWidgets(2));
+  });
+
+  testWidgets('approval actions wrap on a narrow dock', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = _state(
+      running: true,
+      approvals: const [
+        ApprovalRequest(
+          id: 'ap1',
+          chatId: 'c',
+          toolName: 'run_command',
+          summary: 'mkdir build',
+          reason: 'Needs confirmation.',
+        ),
+        ApprovalRequest(
+          id: 'ap2',
+          chatId: 'c',
+          toolName: 'run_command',
+          summary: 'touch build/out',
+          reason: 'Needs confirmation.',
+        ),
+      ],
+    );
+    final bloc = SeededChatBloc(state);
+    addTearDown(bloc.close);
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(width: 340, child: ChatAttentionDock(state: state)),
+        bloc: bloc,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatAttentionDock)),
+    );
+    expect(find.text(l10n.approvalAllowTurn), findsNWidgets(2));
+    expect(find.text(l10n.approvalAllowChat), findsNWidgets(2));
+    expect(find.text(l10n.approvalApprove), findsNWidgets(2));
+    expect(find.text(l10n.approvalAllowAllOnce), findsOneWidget);
   });
 
   testWidgets(

@@ -225,6 +225,35 @@
   "@approvalDeny": {
     "description": "Кнопка отклонения ожидающего действия."
   },
+  "approvalAllowTurn": "Этот ход",
+  "@approvalAllowTurn": {
+    "description": "Разрешить это точное действие до конца текущего хода."
+  },
+  "approvalAllowChat": "Этот чат",
+  "@approvalAllowChat": {
+    "description": "Разрешить это точное действие до конца чата."
+  },
+  "approvalDenyReasonTitle": "Причина отказа",
+  "@approvalDenyReasonTitle": {
+    "description": "Заголовок необязательного диалога причины после «Отклонить»."
+  },
+  "approvalDenyReasonHint": "Необязательно: объясните почему",
+  "@approvalDenyReasonHint": {
+    "description": "Подсказка поля причины отказа."
+  },
+  "approvalBulkCount": "{count, plural, one{# действие ждёт подтверждения} few{# действия ждут подтверждения} many{# действий ждут подтверждения} other{# действия ждут подтверждения}}",
+  "@approvalBulkCount": {
+    "description": "Сводка над несколькими карточками подтверждения.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "approvalAllowAllOnce": "Разрешить все один раз",
+  "@approvalAllowAllOnce": {
+    "description": "Массовое действие: подтвердить все видимые карточки по одному разу."
+  },
   "questionTitle": "Агент спрашивает",
   "@questionTitle": {
     "description": "Заголовок карточки, в которой агент задаёт вопрос пользователю."

@@ -225,6 +225,35 @@
   "@approvalDeny": {
     "description": "Button that rejects the pending action."
   },
+  "approvalAllowTurn": "This turn",
+  "@approvalAllowTurn": {
+    "description": "Approve this exact action until the current user turn ends."
+  },
+  "approvalAllowChat": "This chat",
+  "@approvalAllowChat": {
+    "description": "Approve this exact action for the rest of the chat."
+  },
+  "approvalDenyReasonTitle": "Reason for denial",
+  "@approvalDenyReasonTitle": {
+    "description": "Title of the optional reason dialog after Deny."
+  },
+  "approvalDenyReasonHint": "Optional: explain why",
+  "@approvalDenyReasonHint": {
+    "description": "Hint in the denial reason field."
+  },
+  "approvalBulkCount": "{count, plural, =1{1 action needs approval} other{{count} actions need approval}}",
+  "@approvalBulkCount": {
+    "description": "Summary above several approval cards.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "approvalAllowAllOnce": "Allow all once",
+  "@approvalAllowAllOnce": {
+    "description": "Bulk action that approves every visible approval card once."
+  },
   "questionTitle": "The agent asks",
   "@questionTitle": {
     "description": "Title of the card in which the agent asks the user a question."

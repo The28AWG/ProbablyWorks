@@ -75,6 +75,19 @@ class ChatAttentionDock extends StatelessWidget {
             ),
           ),
         ),
+      if (state.approvals.length > 1)
+        _DockItem(
+          'approvals-bulk',
+          AppBanner(
+            message: l10n.approvalBulkCount(state.approvals.length),
+            icon: Icons.lock_clock_outlined,
+            tone: AppTone.waiting,
+            action: FilledButton(
+              onPressed: () => _approveAll(context, state.approvals),
+              child: Text(l10n.approvalAllowAllOnce),
+            ),
+          ),
+        ),
       for (final approval in state.approvals)
         _DockItem('approval:${approval.id}', _ApprovalCard(request: approval)),
       for (final question in state.questions)
@@ -94,6 +107,17 @@ class ChatAttentionDock extends StatelessWidget {
         child: SingleChildScrollView(child: _DockList(items: items)),
       ),
     );
+  }
+
+  /// Массовое подтверждение безопасно: каждое действие всё равно разрешается
+  /// ровно один раз, без шаблона и без общего разрешения на инструмент.
+  void _approveAll(BuildContext context, List<ApprovalRequest> approvals) {
+    final bloc = context.read<ChatBloc>();
+    for (final approval in approvals) {
+      bloc.add(
+        ChatApprovalAnswered(approval.id, const ApprovalDecision.allowOnce()),
+      );
+    }
   }
 }
 
@@ -241,13 +265,36 @@ class _ApprovalCard extends StatelessWidget {
       tone: AppTone.waiting,
       actions: [
         TextButton(
-          onPressed: () =>
-              bloc.add(ChatApprovalAnswered(request.id, allow: false)),
+          onPressed: () => _deny(context, bloc, request),
           child: Text(l10n.approvalDeny),
         ),
+        if (request.grantable) ...[
+          TextButton(
+            onPressed: () => bloc.add(
+              ChatApprovalAnswered(
+                request.id,
+                const ApprovalDecision.allowTurn(),
+              ),
+            ),
+            child: Text(l10n.approvalAllowTurn),
+          ),
+          TextButton(
+            onPressed: () => bloc.add(
+              ChatApprovalAnswered(
+                request.id,
+                const ApprovalDecision.allowChat(),
+              ),
+            ),
+            child: Text(l10n.approvalAllowChat),
+          ),
+        ],
         FilledButton(
-          onPressed: () =>
-              bloc.add(ChatApprovalAnswered(request.id, allow: true)),
+          onPressed: () => bloc.add(
+            ChatApprovalAnswered(
+              request.id,
+              const ApprovalDecision.allowOnce(),
+            ),
+          ),
           child: Text(l10n.approvalApprove),
         ),
       ],
@@ -256,6 +303,31 @@ class _ApprovalCard extends StatelessWidget {
         CodeBlock(text: request.summary, maxHeight: 160),
         if (diff != null && diff.isNotEmpty) DiffView(diff: diff),
       ],
+    );
+  }
+
+  Future<void> _deny(
+    BuildContext context,
+    ChatBloc bloc,
+    ApprovalRequest request,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final reason = await ConfirmDialog.prompt(
+      context,
+      title: l10n.approvalDenyReasonTitle,
+      cancelLabel: l10n.commonCancel,
+      confirmLabel: l10n.approvalDeny,
+      hint: l10n.approvalDenyReasonHint,
+      minLines: 2,
+      maxLines: 4,
+    );
+    if (reason == null) return;
+    final text = reason.trim();
+    bloc.add(
+      ChatApprovalAnswered(
+        request.id,
+        ApprovalDecision.deny(reason: text.isEmpty ? null : text),
+      ),
     );
   }
 }

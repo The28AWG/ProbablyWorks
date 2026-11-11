@@ -95,13 +95,16 @@ class ToolResult {
 /// Ответ на карточку, которую показали снова после перезапуска.
 class WaitingDecision {
   /// [text] — ответ на вопрос. null значит, что ход остановили и ответа нет.
-  const WaitingDecision.question(this.text) : allowed = null;
+  const WaitingDecision.question(this.text) : approval = null;
 
-  /// [allowed] — решение по подтверждению. false — явный отказ.
-  const WaitingDecision.approval({required this.allowed}) : text = null;
+  /// [approval] — решение по подтверждению, включая область и причину отказа.
+  const WaitingDecision.approval(this.approval) : text = null;
 
   final String? text;
-  final bool? allowed;
+  final ApprovalDecision? approval;
+
+  bool get allowed => approval?.allowed ?? false;
+  String? get denyReason => approval?.reason;
 }
 
 /// Незавершённый запуск и будущее его решения. Карточка уже лежит в [InteractionBroker].
@@ -348,7 +351,9 @@ class ToolExecutor {
           summary: command,
           reason: ctx.policy.reasonFor(call.name, args),
         );
-        if (!approved) return _rejected(command);
+        if (!approved.allowed) {
+          return _rejected(command, reason: approved.reason);
+        }
         break;
       case PolicyDecision.allow:
         break;
@@ -535,7 +540,9 @@ class ToolExecutor {
         summary: path,
         reason: 'delete operation',
       );
-      if (!approved) return _rejected(path);
+      if (!approved.allowed) {
+        return _rejected(path, reason: approved.reason);
+      }
     }
     final result = await _exec(
       ctx,
@@ -593,7 +600,9 @@ class ToolExecutor {
         summary: '$from → $to',
         reason: 'move operation',
       );
-      if (!approved) return _rejected('$from → $to');
+      if (!approved.allowed) {
+        return _rejected('$from → $to', reason: approved.reason);
+      }
     }
     final result = await _exec(
       ctx,
@@ -658,7 +667,9 @@ class ToolExecutor {
         summary: '$from → $to',
         reason: 'copy operation',
       );
-      if (!approved) return _rejected('$from → $to');
+      if (!approved.allowed) {
+        return _rejected('$from → $to', reason: approved.reason);
+      }
     }
     final result = await _exec(
       ctx,
@@ -698,7 +709,9 @@ class ToolExecutor {
         summary: path,
         reason: 'create directory',
       );
-      if (!approved) return _rejected(path);
+      if (!approved.allowed) {
+        return _rejected(path, reason: approved.reason);
+      }
     }
     final result = await _exec(
       ctx,
@@ -808,7 +821,9 @@ class ToolExecutor {
         reason: 'write operation',
         diff: diff,
       );
-      if (!approved) return _rejected(path);
+      if (!approved.allowed) {
+        return _rejected(path, reason: approved.reason);
+      }
     }
     final backupPath = turnId == null
         ? '$path.pw-bak-$runId'
@@ -914,8 +929,11 @@ class ToolExecutor {
       summary: summary,
       command: summary,
       reason: ctx.policy.reasonFor(call.name, args),
+      allowStoredGrant: false,
     );
-    if (!approved) return _rejected(summary);
+    if (!approved.allowed) {
+      return _rejected(summary, reason: approved.reason);
+    }
     return _applyProjectFact(
       ctx,
       call,
@@ -1086,7 +1104,9 @@ class ToolExecutor {
         summary: id,
         reason: 'process control',
       );
-      if (!approved) return _rejected(id);
+      if (!approved.allowed) {
+        return _rejected(id, reason: approved.reason);
+      }
     }
     final stopped = await _commands.stopRun(id);
     await _saveRun(
@@ -1265,8 +1285,10 @@ class ToolExecutor {
     // Лимиты меняют поведение самого агента: таймауты, параллелизм, размер контекста
     // и число шагов. Даже в авто-подтверждении это решение пользователя, а не побочный
     // эффект задачи.
-    if (call.name == ToolNames.settingsUpdate &&
-        args['key'] == SettingsRepository.keyLimits) {
+    final limitsChange =
+        call.name == ToolNames.settingsUpdate &&
+        args['key'] == SettingsRepository.keyLimits;
+    if (limitsChange) {
       needsApproval = true;
       reason = 'operational limits change how the agent runs';
     } else if (keyPath != null) {
@@ -1290,8 +1312,11 @@ class ToolExecutor {
         summary: change.summary,
         command: change.summary,
         reason: reason,
+        allowStoredGrant: !limitsChange,
       );
-      if (!approved) return _rejected(change.summary);
+      if (!approved.allowed) {
+        return _rejected(change.summary, reason: approved.reason);
+      }
     }
     final String text;
     try {
@@ -1486,7 +1511,7 @@ class ToolExecutor {
 
   // ---- helpers -----------------------------------------------------------
 
-  Future<bool> _approve(
+  Future<ApprovalDecision> _approve(
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args, {
@@ -1495,8 +1520,26 @@ class ToolExecutor {
     required String reason,
     String? command,
     String? diff,
+    bool allowStoredGrant = true,
   }) async {
-    final card = PendingCard(summary: summary, reason: reason, diff: diff);
+    final permissionKey = '${call.name}\u0000$summary';
+    final turnId = ctx.turnUserMessageId;
+    if (allowStoredGrant &&
+        _broker.hasGrant(
+          chatId: ctx.chat.id,
+          turnId: turnId,
+          key: permissionKey,
+        )) {
+      return const ApprovalDecision.allowOnce();
+    }
+    final card = PendingCard(
+      summary: summary,
+      reason: reason,
+      diff: diff,
+      turnId: turnId,
+      permissionKey: permissionKey,
+      grantable: allowStoredGrant,
+    );
     final run = _newRun(
       ctx,
       runId,
@@ -1507,7 +1550,7 @@ class ToolExecutor {
       pendingCard: card.encode(),
     );
     await _saveRun(run);
-    final allowed = await _broker.requestApproval(
+    final decision = await _broker.requestApproval(
       ApprovalRequest(
         id: runId,
         chatId: ctx.chat.id,
@@ -1515,10 +1558,13 @@ class ToolExecutor {
         summary: summary,
         reason: reason,
         diff: diff,
+        turnId: turnId,
+        permissionKey: permissionKey,
+        grantable: allowStoredGrant,
       ),
     );
-    if (!allowed) await _denyRun(run, summary);
-    return allowed;
+    if (!decision.allowed) await _denyRun(run, summary);
+    return decision;
   }
 
   /// Снова показывает карточку незавершённого запуска. Регистрация синхронная:
@@ -1539,6 +1585,9 @@ class ToolExecutor {
           summary: card?.summary ?? run.command ?? run.toolName,
           reason: card?.reason ?? '',
           diff: card?.diff,
+          turnId: card?.turnId,
+          permissionKey: card?.permissionKey,
+          grantable: card?.grantable ?? true,
         ),
       );
       return ReopenedWait(run, _asApproval(pending));
@@ -1551,8 +1600,8 @@ class ToolExecutor {
       WaitingDecision.question(await pending);
 
   /// Ждёт подтверждение, не откладывая регистрацию карточки.
-  Future<WaitingDecision> _asApproval(Future<bool> pending) async =>
-      WaitingDecision.approval(allowed: await pending);
+  Future<WaitingDecision> _asApproval(Future<ApprovalDecision> pending) async =>
+      WaitingDecision.approval(await pending);
 
   /// Записывает ответ и, если действие подтвердили, выполняет его тем же запуском.
   /// [ctx] нужен только для подтверждённой команды или записи. Вопрос и отказ обходятся без него.
@@ -1571,7 +1620,9 @@ class ToolExecutor {
         PendingCard.tryDecode(run.pendingCard)?.summary ??
         run.command ??
         run.toolName;
-    if (decision.allowed != true) return _denyRun(run, summary);
+    if (!decision.allowed) {
+      return _denyRun(run, summary, reason: decision.denyReason);
+    }
     if (ctx == null) return _failRun(run, 'host not found');
     final args = _decodeArgs(run.argsJson);
     if (args == null) return _failRun(run, 'invalid arguments JSON');
@@ -1601,7 +1652,11 @@ class ToolExecutor {
   }
 
   /// Отказ — явный ответ: статус больше не waiting, карточка после перезапуска не вернётся.
-  Future<ToolResult> _denyRun(ToolRun run, String summary) async {
+  Future<ToolResult> _denyRun(
+    ToolRun run,
+    String summary, {
+    String? reason,
+  }) async {
     await _saveRun(
       run.copyWith(
         status: ToolRunStatus.denied,
@@ -1609,7 +1664,7 @@ class ToolExecutor {
         clearPendingCard: true,
       ),
     );
-    return _rejected(summary);
+    return _rejected(summary, reason: reason);
   }
 
   Future<ToolResult> _failRun(ToolRun run, String text) async {
@@ -1860,8 +1915,9 @@ class ToolExecutor {
     return ToolResult('denied by policy: $reason', isError: true);
   }
 
-  ToolResult _rejected(String target) => ToolResult(
-    'the user rejected this action ($target). Do not retry it without a different approach.',
+  ToolResult _rejected(String target, {String? reason}) => ToolResult(
+    'the user rejected this action ($target). Do not retry it without a different approach.'
+    '${reason == null || reason.trim().isEmpty ? '' : ' Reason: ${reason.trim()}'}',
     isError: true,
   );
 

@@ -207,7 +207,7 @@ void main() {
     final approval = await request;
     expect(approval.reason, contains('found by the agent'));
     expect(approval.summary, contains('/home/me/.ssh/id_rsa'));
-    broker.resolveApproval(approval.id, allow: false);
+    broker.resolveApproval(approval.id, const ApprovalDecision.deny());
 
     final result = await pending;
     expect(result.isError, isTrue);
@@ -222,7 +222,7 @@ void main() {
     );
 
     final approval = await request;
-    broker.resolveApproval(approval.id, allow: true);
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
     final result = await pending;
     expect(result.isError, isFalse);
     expect(await hosts.all(), hasLength(2));

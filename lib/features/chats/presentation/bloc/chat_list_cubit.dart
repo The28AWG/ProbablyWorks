@@ -117,6 +117,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     if (session.isRunning) await session.stop();
     final project = await _hub.projects.projectForChat(chatId);
     await _hub.chats.deleteChat(chatId);
+    _hub.broker.clearChatGrants(chatId);
     _drafts.discard(chatId);
     await _hub.logs.deleteChat(chatId);
     await _hub.turnChangesets.store.deleteChat(chatId);

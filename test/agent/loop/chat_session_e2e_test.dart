@@ -642,7 +642,10 @@ void main() {
     () async {
       final chatId = await createChat(mode: PolicyMode.ask);
       final approvals = broker.approvalRequests.listen((request) {
-        broker.resolveApproval(request.id, allow: false);
+        broker.resolveApproval(
+          request.id,
+          const ApprovalDecision.deny(reason: 'not this time'),
+        );
       });
       addTearDown(approvals.cancel);
       llm.script
@@ -664,10 +667,46 @@ void main() {
       final tool = (await hub.chats.messages(chatId))
           .firstWhere((m) => m.role == MessageRole.tool);
       expect(tool.text, contains('rejected'));
+      expect(tool.text, contains('not this time'));
       final runs = await hub.chats.toolRunsForChat(chatId);
       expect(runs.single.status, ToolRunStatus.denied);
     },
   );
+
+  test('allowTurn grants the exact command for the rest of the turn', () async {
+    final chatId = await createChat(mode: PolicyMode.ask);
+    final requested = <String>[];
+    final approvals = broker.approvalRequests.listen((request) {
+      requested.add(request.id);
+      broker.resolveApproval(request.id, const ApprovalDecision.allowTurn());
+    });
+    addTearDown(approvals.cancel);
+    final command = 'mkdir -p ${tmp.path}/granted';
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call('c1', ToolNames.runCommand, jsonEncode({'command': command})),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call('c2', ToolNames.runCommand, jsonEncode({'command': command})),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'run twice');
+
+    final runs = await hub.chats.toolRunsForChat(chatId);
+    expect(runs, hasLength(2));
+    expect(runs.every((run) => run.status == ToolRunStatus.done), isTrue);
+    expect(requested, hasLength(1), reason: 'second call uses the grant');
+    expect(Directory('${tmp.path}/granted').existsSync(), isTrue);
+  });
 
   test(
     'ask mode: approved command stays one run that moves from waiting to done',
@@ -676,7 +715,7 @@ void main() {
       final requested = <String>[];
       final approvals = broker.approvalRequests.listen((request) {
         requested.add(request.id);
-        broker.resolveApproval(request.id, allow: true);
+        broker.resolveApproval(request.id, const ApprovalDecision.allowOnce());
       });
       addTearDown(approvals.cancel);
       llm.script
@@ -1610,7 +1649,7 @@ void main() {
 
     llm.script.add([const LlmTextDelta('ran'), const LlmCompleted()]);
     final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
-    broker.resolveApproval(request.id, allow: true);
+    broker.resolveApproval(request.id, const ApprovalDecision.allowOnce());
     await finished;
 
     expect(broker.pendingApprovals(chatId), isEmpty);
@@ -1642,7 +1681,7 @@ void main() {
 
     llm.script.add([const LlmTextDelta('stopped'), const LlmCompleted()]);
     final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
-    broker.resolveApproval(request.id, allow: false);
+    broker.resolveApproval(request.id, const ApprovalDecision.deny());
     await finished;
 
     expect(broker.pendingApprovals(chatId), isEmpty);
@@ -1963,7 +2002,7 @@ void main() {
         .session(chatId)
         .events
         .firstWhere((event) => event is AgentTurnFinished);
-    broker.resolveApproval('run-write', allow: true);
+    broker.resolveApproval('run-write', const ApprovalDecision.allowOnce());
     final event = await finished;
 
     expect((event as AgentTurnFinished).end, TurnEnd.completed);
@@ -2206,7 +2245,7 @@ void main() {
       expect(broker.pendingApprovals(chatId).map((card) => card.id), [
         'run-pin',
       ]);
-      broker.resolveApproval('run-pin', allow: true);
+      broker.resolveApproval('run-pin', const ApprovalDecision.allowOnce());
       await finished;
 
       final tools = [
@@ -2232,7 +2271,7 @@ void main() {
         final path = '${tmp.path}/denied_create.txt';
         final session = hub.session(chatId);
         final approvals = broker.approvalRequests.listen((request) {
-          broker.resolveApproval(request.id, allow: false);
+          broker.resolveApproval(request.id, const ApprovalDecision.deny());
         });
         addTearDown(approvals.cancel);
 

@@ -345,7 +345,9 @@ class ChatSession {
       if (card.run.status == ToolRunStatus.waitingUser) {
         card.decision.complete(const WaitingDecision.question(null));
       } else {
-        card.decision.complete(const WaitingDecision.approval(allowed: false));
+        card.decision.complete(
+          const WaitingDecision.approval(ApprovalDecision.deny()),
+        );
       }
     }
   }
@@ -1308,6 +1310,8 @@ class ChatSession {
         current.copyWith(clearCompactionSummary: true, compactedUntilSeq: 0),
       );
     }
+    // Правка хода не должна оставлять выданные им разрешения.
+    _hub.broker.clearTurnGrants(message.id);
     _emit(AgentStateChanged(chatId));
   }
 
