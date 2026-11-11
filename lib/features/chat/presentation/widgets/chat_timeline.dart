@@ -31,6 +31,7 @@ class ChatTimeline extends StatefulWidget {
     this.editingMessageId,
     this.messageEditor,
     this.onEditMessage,
+    this.onRegenerate,
     this.editDraftTexts = const {},
     super.key,
   });
@@ -48,6 +49,9 @@ class ChatTimeline extends StatefulWidget {
 
   /// «Изменить» или нажатие по пузырю пользователя. Null — правку из ленты не начать.
   final ValueChanged<ChatMessage>? onEditMessage;
+
+  /// Перезапуск последнего ответа. Null — действие недоступно.
+  final VoidCallback? onRegenerate;
 
   /// Неотправленный текст правки по id сообщения. Пузырь показывает его вместо исходного и окрашен.
   final Map<String, String> editDraftTexts;
@@ -146,6 +150,9 @@ class _ChatTimelineState extends State<ChatTimeline> {
     }
     final boundary = _compactionBoundary(chat, visible);
     final lastUser = visible.lastIndexWhere((m) => m.role == MessageRole.user);
+    final lastAnswer = visible.lastIndexWhere(
+      (m) => m.role == MessageRole.assistant && m.text.trim().isNotEmpty,
+    );
     final answerIds = _answerIds(state.messages, running: state.isRunning);
     final taskTimes = _taskDurations(state.messages, running: state.isRunning);
 
@@ -255,6 +262,9 @@ class _ChatTimelineState extends State<ChatTimeline> {
           turnElapsed: taskTimes[message.id],
           onEdit: message.role == MessageRole.user && edit != null
               ? () => edit(message)
+              : null,
+          onRegenerate: i == lastAnswer && !state.isRunning
+              ? widget.onRegenerate
               : null,
           editText: widget.editDraftTexts[message.id],
         );

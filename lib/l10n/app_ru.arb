@@ -98,6 +98,19 @@
   "@chatsDeleteConfirm": {
     "description": "Подтверждение перед удалением чата и его сообщений."
   },
+  "chatsFork": "Дублировать",
+  "@chatsFork": {
+    "description": "Пункт меню: скопировать текущую историю чата в новый чат."
+  },
+  "chatForkTitle": "Копия «{title}»",
+  "@chatForkTitle": {
+    "description": "Заголовок дублированного чата.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "sidebarCollapse": "Свернуть боковую панель",
   "@sidebarCollapse": {
     "description": "Подсказка кнопки, которая сворачивает боковую панель до иконок."
@@ -1391,6 +1404,10 @@
   "commonCopy": "Копировать",
   "@commonCopy": {
     "description": "Generic copy button tooltip."
+  },
+  "messageRegenerate": "Сгенерировать заново",
+  "@messageRegenerate": {
+    "description": "Подсказка действия, которое перезапускает последний ход."
   },
   "commonMore": "Ещё",
   "@commonMore": {

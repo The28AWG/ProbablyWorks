@@ -642,12 +642,14 @@ void main() {
         ),
       ],
     ];
+    var regenerated = false;
     await tester.pumpWidget(
       _TestApp(
         SizedBox(
           height: 500,
           child: ChatTimeline(
             state: ChatState(chatId: 'c', messages: messages),
+            onRegenerate: () => regenerated = true,
           ),
         ),
       ),
@@ -660,9 +662,18 @@ void main() {
       ),
       matching: find.byIcon(Icons.copy_outlined),
     );
+    Finder regenerateIn(String id) => find.descendant(
+      of: find.byWidgetPredicate(
+        (w) => w is ChatMessageTile && w.message.id == id,
+      ),
+      matching: find.byIcon(Icons.refresh),
+    );
     expect(copyIn('u0'), findsNothing);
     expect(copyIn('a0'), findsOneWidget);
     expect(copyIn('a1'), findsOneWidget);
+    expect(regenerateIn('a0'), findsNothing);
+    expect(regenerateIn('a1'), findsOneWidget);
+    expect(regenerated, isFalse);
   });
 
   testWidgets('copy follows the closing answer of the last finished turn', (

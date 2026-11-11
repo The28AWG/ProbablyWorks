@@ -96,6 +96,7 @@ class ChatListPanel extends StatelessWidget {
                             context,
                             chat,
                             position,
+                            onOpen: onOpen,
                             onDeleted: onDeleted,
                           ),
                         );
@@ -115,6 +116,7 @@ Future<void> _showChatMenu(
   BuildContext context,
   Chat chat,
   Offset position, {
+  required void Function(String chatId) onOpen,
   void Function(String chatId)? onDeleted,
 }) async {
   final l10n = AppLocalizations.of(context);
@@ -143,6 +145,16 @@ Future<void> _showChatMenu(
         ),
       ),
       PopupMenuItem(
+        value: _ChatAction.fork,
+        child: Row(
+          children: [
+            const Icon(Icons.copy_all_outlined, size: 18),
+            const SizedBox(width: AppSpacing.sm),
+            Text(l10n.chatsFork, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      ),
+      PopupMenuItem(
         value: _ChatAction.delete,
         child: Row(
           children: [
@@ -163,6 +175,13 @@ Future<void> _showChatMenu(
   switch (action) {
     case _ChatAction.rename:
       await _renameChat(context, chat);
+    case _ChatAction.fork:
+      final sourceTitle = chat.title.isEmpty ? l10n.chatsNew : chat.title;
+      final forked = await context.read<ChatListCubit>().fork(
+        chat.id,
+        title: l10n.chatForkTitle(sourceTitle),
+      );
+      if (forked != null && context.mounted) onOpen(forked.id);
     case _ChatAction.delete:
       await _deleteChat(context, chat, onDeleted: onDeleted);
   }
@@ -202,7 +221,7 @@ Future<void> _deleteChat(
   }
 }
 
-enum _ChatAction { rename, delete }
+enum _ChatAction { rename, fork, delete }
 
 /// Заголовок группы, который остаётся у верхнего края списка при прокрутке.
 class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {

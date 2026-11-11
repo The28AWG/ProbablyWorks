@@ -110,6 +110,15 @@ class ChatListCubit extends Cubit<ChatListState> {
     );
   }
 
+  /// Форк текущего чата. Файлы на Host не копируются и не откатываются.
+  Future<Chat?> fork(String chatId, {String? title}) async {
+    try {
+      return await _hub.forkChat(chatId, title: title);
+    } on Object {
+      return null;
+    }
+  }
+
   /// Удаление: сначала останавливаем активный ход, затем чистим БД и файлы логов чата.
   /// Если чат был последним в проекте, проект уходит в архив и живёт там неделю.
   Future<void> delete(String chatId) async {

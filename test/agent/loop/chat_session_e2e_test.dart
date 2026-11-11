@@ -1439,6 +1439,69 @@ void main() {
     expect(tools[3].text, contains('timedOut'));
   });
 
+  test(
+    'forkChat copies history and state without changing the source',
+    () async {
+      final chatId = await createChat();
+      final now = DateTime.now();
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'u1',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: now,
+          text: 'original question',
+        ),
+      );
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'a1',
+          chatId: chatId,
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: now,
+          text: 'original answer',
+        ),
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'r1',
+          chatId: chatId,
+          messageId: 'a1',
+          toolName: ToolNames.readFile,
+          argsJson: '{"path":"a.txt"}',
+          status: ToolRunStatus.done,
+          startedAt: now,
+          finishedAt: now,
+          resultPreview: 'text',
+        ),
+      );
+      final source = (await hub.chats.chat(chatId))!;
+      await hub.state.mutate(source, (revision) {
+        revision.goal = 'remembered goal';
+      });
+
+      final forked = await hub.forkChat(chatId, title: 'Copy of test');
+
+      expect(forked.id, isNot(chatId));
+      expect(forked.title, 'Copy of test');
+      final copied = await hub.chats.messages(forked.id);
+      expect(
+        [for (final message in copied) message.text],
+        ['original question', 'original answer'],
+      );
+      expect((await hub.state.current(forked)).goal, 'remembered goal');
+      final copiedRuns = await hub.chats.toolRunsForChat(forked.id);
+      expect(copiedRuns, hasLength(1));
+      expect(copiedRuns.single.messageId, copied[1].id);
+
+      expect((await hub.chats.messages(chatId)).length, 2);
+      final sourceAfter = (await hub.chats.chat(chatId))!;
+      expect((await hub.state.current(sourceAfter)).goal, 'remembered goal');
+    },
+  );
+
   test('list_runs and read_run_output expose stored output by pages', () async {
     final chatId = await createChat();
     final now = DateTime.now();
@@ -2324,6 +2387,54 @@ void main() {
           .first;
       broker.resolveEditFileChanges(request.id, choice);
     }
+
+    test('regenerate uses the same implicit rollback prompt', () async {
+      final chatId = await createChat();
+      final path = '${tmp.path}/regenerate_rollback.txt';
+      final session = hub.session(chatId);
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'w',
+                ToolNames.writeFile,
+                jsonEncode({'path': path, 'content': 'created'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('first answer'), const LlmCompleted()]);
+      await runTurn(session, 'create the file');
+
+      final before = (await hub.chats.messages(chatId))
+          .where((message) => message.role == MessageRole.user);
+      expect(before, hasLength(1));
+
+      unawaited(
+        resolveNextEditFileChanges(
+          chatId,
+          EditFileChangesChoice.rollbackAndContinue,
+        ),
+      );
+      final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+      llm.script.add([
+        const LlmTextDelta('second answer'),
+        const LlmCompleted(),
+      ]);
+
+      expect(await session.regenerateLast(), isTrue);
+      await finished;
+
+      expect(File(path).existsSync(), isFalse);
+      final messages = await hub.chats.messages(chatId);
+      expect(
+        messages.where((message) => message.role == MessageRole.user),
+        hasLength(1),
+      );
+      expect(messages.last.text, 'second answer');
+    });
 
     test('editing after apply_patch restores the pre-turn file', () async {
       final chatId = await createChat();

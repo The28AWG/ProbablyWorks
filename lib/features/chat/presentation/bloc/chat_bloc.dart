@@ -100,6 +100,10 @@ final class ChatContinued extends ChatEvent {
   const ChatContinued();
 }
 
+final class ChatRegenerateRequested extends ChatEvent {
+  const ChatRegenerateRequested();
+}
+
 final class ChatApprovalAnswered extends ChatEvent {
   const ChatApprovalAnswered(this.requestId, this.decision);
 
@@ -560,6 +564,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatSubmitted>(_onSubmitted);
     on<ChatStopped>((_, _) async => _session?.stop());
     on<ChatContinued>((_, _) async => _session?.continueAfterStepLimit());
+    on<ChatRegenerateRequested>((_, _) async {
+      await _session?.regenerateLast();
+    });
     on<ChatApprovalAnswered>(_onApproval);
     on<ChatQuestionAnswered>(_onQuestion);
     on<ChatMessageEdited>(_onEdited);

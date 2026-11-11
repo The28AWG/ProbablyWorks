@@ -98,6 +98,19 @@
   "@chatsDeleteConfirm": {
     "description": "Confirmation text before a chat and its messages are deleted."
   },
+  "chatsFork": "Duplicate",
+  "@chatsFork": {
+    "description": "Menu action that copies the current chat history into a new chat."
+  },
+  "chatForkTitle": "Copy of {title}",
+  "@chatForkTitle": {
+    "description": "Title of a duplicated chat.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "sidebarCollapse": "Collapse sidebar",
   "@sidebarCollapse": {
     "description": "Tooltip of the button that collapses the sidebar to icons."
@@ -1391,6 +1404,10 @@
   "commonCopy": "Copy",
   "@commonCopy": {
     "description": "Generic copy button tooltip."
+  },
+  "messageRegenerate": "Regenerate",
+  "@messageRegenerate": {
+    "description": "Tooltip of the action that reruns the last turn."
   },
   "commonMore": "More",
   "@commonMore": {

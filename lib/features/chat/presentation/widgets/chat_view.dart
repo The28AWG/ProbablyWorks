@@ -294,6 +294,8 @@ class _ChatBodyState extends State<ChatBody> {
                                         onOpenContext: () => _openContext(bloc),
                                       ),
                                 onEditMessage: _startEdit,
+                                onRegenerate: () =>
+                                    bloc.add(const ChatRegenerateRequested()),
                               ),
                       ),
                       if (empty)

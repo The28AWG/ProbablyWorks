@@ -23,6 +23,7 @@ class ChatMessageTile extends StatelessWidget {
     this.editText,
     this.isLastAnswer = false,
     this.turnElapsed,
+    this.onRegenerate,
     super.key,
   });
 
@@ -45,6 +46,9 @@ class ChatMessageTile extends StatelessWidget {
   /// законченного задания; у ответа без времени — `null`.
   final Duration? turnElapsed;
 
+  /// Перезапускает последний ход без изменения текста сообщения. Null — действие недоступно.
+  final VoidCallback? onRegenerate;
+
   @override
   Widget build(BuildContext context) => switch (message.role) {
     MessageRole.user => _UserMessage(
@@ -57,6 +61,7 @@ class ChatMessageTile extends StatelessWidget {
       message: message,
       isLastAnswer: isLastAnswer,
       elapsed: turnElapsed,
+      onRegenerate: onRegenerate,
     ),
     MessageRole.event => _EventLine(text: message.text),
     MessageRole.tool => const SizedBox.shrink(),
@@ -224,6 +229,7 @@ class _AssistantMessage extends StatelessWidget {
     required this.message,
     required this.isLastAnswer,
     this.elapsed,
+    this.onRegenerate,
   });
 
   final ChatMessage message;
@@ -231,6 +237,7 @@ class _AssistantMessage extends StatelessWidget {
 
   /// Время всего задания; `null`, если у этого ответа его не показываем.
   final Duration? elapsed;
+  final VoidCallback? onRegenerate;
 
   @override
   Widget build(BuildContext context) {
@@ -263,6 +270,12 @@ class _AssistantMessage extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            if (isLastAnswer && onRegenerate != null)
+                              _ActionIcon(
+                                tooltip: l10n.messageRegenerate,
+                                icon: Icons.refresh,
+                                onPressed: onRegenerate!,
+                              ),
                             if (isLastAnswer)
                               _ActionIcon(
                                 tooltip: l10n.commonCopy,

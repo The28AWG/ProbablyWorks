@@ -402,6 +402,33 @@ class ChatSession {
     return true;
   }
 
+  /// Regenerate: удаляет ответы последнего хода и запускает его заново.
+  ///
+  /// Сообщение пользователя остаётся. Если агент менял файлы, вызывается тот же
+  /// неявный откат, что и при edit: без отдельной кнопки отката в интерфейсе.
+  /// false — истории нет или пользователь отменил откат файлов.
+  Future<bool> regenerateLast() async {
+    if (_running) {
+      throw StateError('cannot regenerate while the agent is running');
+    }
+    final messages = await _hub.chats.messages(chatId);
+    ChatMessage? user;
+    for (final message in messages) {
+      if (message.role == MessageRole.user) user = message;
+    }
+    if (user == null) return false;
+    if (!await _confirmFileChangesBeforeRewind(
+      anchor: user,
+      afterOnly: false,
+    )) {
+      return false;
+    }
+    await _truncate(user, fromSelf: false, restoreBefore: false);
+    _running = true;
+    unawaited(_runTurn());
+    return true;
+  }
+
   /// Delete-after N: оставляет N, удаляет всё после, состояние — как после N.
   Future<void> deleteAfter(String messageId) async {
     if (_running) throw StateError('cannot delete while the agent is running');

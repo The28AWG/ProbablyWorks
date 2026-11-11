@@ -4,6 +4,7 @@ import 'package:injectable/injectable.dart';
 import 'package:probably_works/agent/context/context_builder.dart';
 import 'package:probably_works/agent/context/context_compactor.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
+import 'package:probably_works/agent/domain/session_state.dart';
 import 'package:probably_works/agent/exec/active_exec_registry.dart';
 import 'package:probably_works/agent/exec/exec_log_store.dart';
 import 'package:probably_works/agent/interaction/interaction_broker.dart';
@@ -111,6 +112,100 @@ class AgentHub {
   Future<AppLimits> limits() => settings.limits();
 
   static const _uuid = Uuid();
+
+  /// Форк текущего чата: копия истории и состояния на текущий момент.
+  ///
+  /// Файлы на Host не копируются и не откатываются: оба чата смотрят на одну
+  /// рабочую папку, а исходный чат остаётся неизменным. Поэтому форк имеет
+  /// смысл только от текущего состояния, а не от старого сообщения.
+  Future<Chat> forkChat(String chatId, {String? title}) async {
+    final source = await chats.chat(chatId);
+    if (source == null) {
+      throw ArgumentError.value(chatId, 'chatId', 'chat not found');
+    }
+    final messages = await chats.messages(chatId);
+    final runs = await chats.toolRunsForChat(chatId);
+    final sourceState = await state.current(source);
+    final id = _uuid.v4();
+    final revisionId = _uuid.v4();
+    final now = DateTime.now();
+    final copy = Chat(
+      id: id,
+      hostId: source.hostId,
+      projectId: source.projectId,
+      title: title?.trim().isNotEmpty == true ? title!.trim() : source.title,
+      titleSource: ChatTitleSource.user,
+      model: source.model,
+      policyMode: source.policyMode,
+      workspace: source.workspace,
+      lastPromptTokens: source.lastPromptTokens,
+      lastCompletionTokens: source.lastCompletionTokens,
+      contextLength: source.contextLength,
+      currentRevisionId: revisionId,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await chats.saveChat(copy);
+    await chats.saveRevision(
+      SessionStateRevision(
+        id: revisionId,
+        chatId: id,
+        createdAt: now,
+        goal: sourceState.goal,
+        taskStatus: sourceState.taskStatus,
+        plan: [...sourceState.plan],
+        pinnedFacts: [...sourceState.pinnedFacts],
+      ),
+    );
+
+    final messageIds = <String, String>{};
+    for (final message in messages) {
+      final messageId = _uuid.v4();
+      messageIds[message.id] = messageId;
+      await chats.insertMessage(
+        ChatMessage(
+          id: messageId,
+          chatId: id,
+          seq: message.seq,
+          role: message.role,
+          createdAt: message.createdAt,
+          text: message.text,
+          reasoning: message.reasoning,
+          toolCalls: message.toolCalls,
+          toolCallId: message.toolCallId,
+          attachments: message.attachments,
+        ),
+      );
+    }
+    for (final run in runs) {
+      // Ожидающие и активные запуски в новый чат не переносятся: ответ на
+      // карточку принадлежит исходному ходу.
+      if (run.isActive) continue;
+      final messageId = messageIds[run.messageId];
+      if (messageId == null) continue;
+      await chats.saveToolRun(
+        ToolRun(
+          id: _uuid.v4(),
+          chatId: id,
+          messageId: messageId,
+          toolName: run.toolName,
+          argsJson: run.argsJson,
+          command: run.command,
+          background: run.background,
+          status: run.status,
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt,
+          exitCode: run.exitCode,
+          timedOut: run.timedOut,
+          outputText: run.outputText,
+          outputTruncated: run.outputTruncated,
+          resultPreview: run.resultPreview,
+          toolCallId: run.toolCallId,
+        ),
+      );
+    }
+    return copy;
+  }
 
   /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
   /// Проект появляется только вместе с явной папкой чата или папкой хоста.
