@@ -560,11 +560,15 @@ void main() {
 
   test('a model removed from OpenRouter is not blocked: the send fails with a model-missing failure and the catalog is rechecked', () async {
     final chatId = await createChat();
-    llm.models = const [LlmModelInfo(id: 'fake/model', name: 'Fake')];
+    llm.models = const [
+      LlmModelInfo(id: 'fake/model', name: 'Fake', supportsTools: true),
+    ];
     await hub.models.refresh();
     // Модель исчезла с сервера, но в кеше ещё есть: следующий запрос вернёт 404.
     llm
-      ..models = const [LlmModelInfo(id: 'other/model', name: 'Other')]
+      ..models = const [
+        LlmModelInfo(id: 'other/model', name: 'Other', supportsTools: true),
+      ]
       ..nextFailure = const LlmFailure(
         'No endpoints found for fake/model.',
         statusCode: 404,
@@ -596,6 +600,7 @@ void main() {
             id: 'fake/model',
             name: 'Fake',
             inputModalities: ['text', 'file'],
+            supportsTools: true,
           ),
         ]
         ..script.addAll([
@@ -644,7 +649,12 @@ void main() {
     () async {
       final chatId = await createChat();
       llm.models = const [
-        LlmModelInfo(id: 'fake/model', name: 'Fake', inputModalities: ['text']),
+        LlmModelInfo(
+          id: 'fake/model',
+          name: 'Fake',
+          inputModalities: ['text'],
+          supportsTools: true,
+        ),
       ];
       await hub.models.refresh();
       final session = hub.session(chatId);

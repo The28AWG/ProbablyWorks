@@ -1120,9 +1120,10 @@ class ChatSession {
   /// tool calling она не поддерживает.
   void _ensureModelSupportsTools(String model) {
     final live = _hub.models.state.modelOf(model);
-    final saved = _hub.models.state.saved[model];
-    if (live == null && saved == null) return;
-    if (!(live?.supportsTools ?? saved?.supportsTools ?? false)) {
+    // Если модели нет в живом каталоге, её мог удалить провайдер: не блокируем
+    // запрос, чтобы сработали 404 и fallback. Проверяем только известную модель.
+    if (live == null) return;
+    if (!live.supportsTools) {
       throw LlmFailure(
         'model $model does not support tools; choose another model',
       );
