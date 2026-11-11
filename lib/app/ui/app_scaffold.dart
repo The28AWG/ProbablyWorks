@@ -28,14 +28,16 @@ class AppScaffold extends StatelessWidget {
       drawer: drawer,
       bottomNavigationBar: bottomNavigationBar,
       floatingActionButton: floatingActionButton,
-      body: width == null
-          ? body
-          : Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: width),
-                child: body,
+      body: SafeArea(
+        child: width == null
+            ? body
+            : Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: width),
+                  child: body,
+                ),
               ),
-            ),
+      ),
     );
   }
 }
