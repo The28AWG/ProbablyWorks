@@ -29,8 +29,6 @@ Future<bool> bootstrap() async {
   if (!lock.acquire() && !AppPlatform.current.isMobile) return false;
   await AppLog.init(paths.logs);
   await configureDependencies();
-  // Аудиту безопасности и будущему headless-режиму нужны те же каталоги.
-  getIt.registerSingleton(paths);
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();
   final language = await getIt<SettingsRepository>().read(
