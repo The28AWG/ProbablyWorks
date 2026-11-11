@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
@@ -433,6 +435,120 @@ void main() {
     expect(find.text('alpha'), findsOneWidget);
     expect(find.text('beta'), findsOneWidget);
     expect(find.text('gamma'), findsOneWidget);
+  });
+
+  testWidgets('apply_patch opens as a diff with a patch verb', (tester) async {
+    const patch = '''
+@@ -1,2 +1,3 @@
+ alpha
+-beta
++gamma
++delta''';
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 640,
+          child: ChatStepLedger(
+            workspace: '/work',
+            steps: [
+              RunStep(
+                _fileRun(
+                  tool: 'apply_patch',
+                  args: '{"path":"lib/a.dart","patch":${jsonEncode(patch)}}',
+                  command: 'write /work/lib/a.dart',
+                ),
+              ),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('patch a.dart'), findsOneWidget);
+    expect(find.text('edit a.dart'), findsNothing);
+    expect(find.byType(FileChangeView), findsNothing);
+
+    await tester.tap(find.text('patch a.dart'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FileChangeView), findsOneWidget);
+    expect(find.byType(CommandOutput), findsNothing);
+    expect(find.text('@@ -1,2 +1,3 @@'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
+    expect(find.text('beta'), findsOneWidget);
+    expect(find.text('gamma'), findsOneWidget);
+    expect(find.text('delta'), findsOneWidget);
+  });
+
+  testWidgets('path and run tools keep the same compact journal style', (
+    tester,
+  ) async {
+    Future<void> check(
+      String tool,
+      String command,
+      String title, {
+      String output = '',
+    }) async {
+      await tester.pumpWidget(
+        _TestApp(
+          SizedBox(
+            width: 640,
+            child: ChatStepLedger(
+              workspace: '/work',
+              steps: [
+                RunStep(
+                  _fileRun(
+                    tool: tool,
+                    args: '{}',
+                    command: command,
+                    output: output,
+                  ),
+                ),
+              ],
+              live: const {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(title), findsOneWidget);
+      expect(find.byType(FileChangeView), findsNothing);
+    }
+
+    await check('delete_file', 'delete /work/a.txt', 'delete a.txt');
+    await check(
+      'move_path',
+      'move /work/a.txt -> /work/b.txt',
+      'move a.txt → b.txt',
+    );
+    await check(
+      'copy_path',
+      'copy /work/a.txt -> /work/b.txt',
+      'copy a.txt → b.txt',
+    );
+    await check('make_dir', 'mkdir /work/new', 'mkdir new');
+    await check(
+      'stat_path',
+      'stat /work/a.txt',
+      'stat a.txt',
+      output: 'file 1700000000\n',
+    );
+    await check(
+      'glob',
+      'glob *.dart /work',
+      'glob *.dart /work',
+      output: '/work/a.dart\n',
+    );
+    await check('list_runs', 'list runs', 'list runs', output: 'run | done\n');
+    await check(
+      'read_run_output',
+      'read run seed',
+      'read run seed',
+      output: 'output\n',
+    );
+    await check('stop_run', 'stop run seed', 'stop run seed');
   });
 
   testWidgets(
