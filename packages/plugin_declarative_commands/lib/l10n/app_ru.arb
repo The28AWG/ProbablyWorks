@@ -1,4 +1,5 @@
 {
+  "@@locale": "ru",
   "pluginTitle": "Декларативные команды",
   "@pluginTitle": {
     "description": "Plugin title in the plugin list."
