@@ -73,6 +73,15 @@ class ChatSession {
   static const _uuid = Uuid();
   static const _maxRetries = 3;
 
+  /// Сколько раз можно автоматически попросить модель продолжить ответ,
+  /// обрезанный по лимиту вывода. Дальше показываем предупреждение и завершаем ход.
+  static const _maxLengthContinues = 2;
+
+  static const _lengthContinueText =
+      'the previous answer was cut by the model output limit; continue it';
+  static const _lengthFinalText =
+      'model output limit reached; the answer may be incomplete';
+
   bool _running = false;
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
@@ -754,6 +763,7 @@ class ChatSession {
   Future<TurnEnd> _loop(CancelToken turn) async {
     final limits = await _hub.limits();
     var steps = 0;
+    var lengthContinues = 0;
     while (true) {
       if (turn.isCancelled) return TurnEnd.stopped;
       await _drainQueue();
@@ -794,6 +804,16 @@ class ChatSession {
       if (step.interruptedBySendNow) continue;
       if (step.toolCalls.isEmpty) {
         if (_queue.isNotEmpty) continue;
+        if (_isLengthFinish(step.finishReason)) {
+          // Ответ упёрся в лимит вывода. Не выдаём его за полный: просим
+          // продолжить, но не бесконечно. Событие остаётся в ленте и контексте.
+          if (lengthContinues < _maxLengthContinues) {
+            lengthContinues++;
+            await _append(MessageRole.event, text: _lengthContinueText);
+            continue;
+          }
+          await _append(MessageRole.event, text: _lengthFinalText);
+        }
         return TurnEnd.completed;
       }
 
@@ -1032,6 +1052,7 @@ class ChatSession {
     final reasoning = StringBuffer();
     var toolCalls = <LlmToolCall>[];
     LlmUsage? usage;
+    String? finishReason;
     final done = Completer<void>();
     late StreamSubscription<LlmEvent> sub;
     Timer? watchdog;
@@ -1063,6 +1084,7 @@ class ChatSession {
               case LlmCompleted e:
                 toolCalls = e.toolCalls;
                 usage = e.usage;
+                finishReason = e.finishReason;
             }
           },
           onError: (Object error) {
@@ -1089,6 +1111,7 @@ class ChatSession {
       reasoning: reasoning.toString(),
       toolCalls: toolCalls,
       usage: usage,
+      finishReason: finishReason,
       interruptedBySendNow: step.isCancelled && !turn.isCancelled,
       stopped: turn.isCancelled,
     );
@@ -1339,6 +1362,14 @@ class ChatSession {
     } on Object catch (error, stack) {
       _log.warning('title generation failed', error, stack);
     }
+  }
+
+  /// Провайдеры называют лимит вывода по-разному: `length` у OpenRouter,
+  /// `max_tokens` у некоторых совместимых API.
+  static bool _isLengthFinish(String? reason) {
+    final value = reason?.toLowerCase();
+    return value != null &&
+        (value.contains('length') || value.contains('max_tokens'));
   }
 
   void _emit(AgentEvent event) {

@@ -257,6 +257,31 @@ void main() {
     expect(assistant.text, 'ok');
   });
 
+  test('a length finish asks the model to continue the answer', () async {
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.script
+      ..add([
+        const LlmTextDelta('part'),
+        const LlmCompleted(finishReason: 'length'),
+      ])
+      ..add([const LlmTextDelta(' rest'), const LlmCompleted()]);
+
+    await runTurn(session, 'hello');
+
+    final messages = await hub.chats.messages(chatId);
+    final answers = [
+      for (final message in messages)
+        if (message.role == MessageRole.assistant) message.text,
+    ];
+    final events = [
+      for (final message in messages)
+        if (message.role == MessageRole.event) message.text,
+    ];
+    expect(answers, ['part', ' rest']);
+    expect(events.single, contains('cut by the model output limit'));
+  });
+
   test('editing a message after compaction clears the stale summary', () async {
     final chatId = await createChat();
     final now = DateTime.now();

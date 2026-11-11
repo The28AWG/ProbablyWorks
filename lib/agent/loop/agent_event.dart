@@ -112,6 +112,7 @@ class StepResult {
     this.reasoning = '',
     this.toolCalls = const [],
     this.usage,
+    this.finishReason,
     this.interruptedBySendNow = false,
     this.stopped = false,
   });
@@ -120,6 +121,10 @@ class StepResult {
   final String reasoning;
   final List<LlmToolCall> toolCalls;
   final LlmUsage? usage;
+
+  /// Причина завершения ответа провайдером (`stop`, `length`, `tool_calls`).
+  /// Нужна, чтобы не считать обрезанный по лимиту ответ полным.
+  final String? finishReason;
   final bool interruptedBySendNow;
   final bool stopped;
 }
