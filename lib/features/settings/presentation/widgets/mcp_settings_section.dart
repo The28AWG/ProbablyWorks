@@ -53,22 +53,31 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
                   label: Text(l10n.mcpAddServer),
                 ),
                 OutlinedButton.icon(
-                  onPressed: state.busy ? null : () => _import(context),
-                  icon: const Icon(Icons.file_download_outlined),
+                  onPressed: state.busyAction == null
+                      ? () => _import(context)
+                      : null,
+                  icon: state.busyAction == McpBusyAction.import
+                      ? const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.file_download_outlined),
                   label: Text(l10n.mcpImportConfig),
                 ),
                 OutlinedButton.icon(
-                  onPressed: state.busy ? null : () => _export(context),
-                  icon: const Icon(Icons.file_upload_outlined),
+                  onPressed: state.busyAction == null
+                      ? () => _export(context)
+                      : null,
+                  icon: state.busyAction == McpBusyAction.export
+                      ? const SizedBox.square(
+                          dimension: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.file_upload_outlined),
                   label: Text(l10n.mcpExportConfig),
                 ),
               ],
             ),
-            if (state.busy)
-              const Padding(
-                padding: EdgeInsets.only(top: AppSpacing.sm),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
             const SizedBox(height: AppSpacing.md),
             if (state.configError case final error?)
               AppBanner(

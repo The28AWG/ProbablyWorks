@@ -7,13 +7,16 @@ import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/core/data/mcp_server_repository.dart';
 import 'package:probably_works/core/domain/mcp_server.dart';
 
+/// Какая операция с `mcp.json` сейчас выполняется.
+enum McpBusyAction { import, export }
+
 /// Состояние вкладки MCP в настройках.
 class McpState extends Equatable {
   const McpState({
     this.servers = const [],
     this.states = const {},
     this.loading = false,
-    this.busy = false,
+    this.busyAction,
     this.error,
     this.configError,
   });
@@ -21,11 +24,11 @@ class McpState extends Equatable {
   final List<McpServerConfig> servers;
   final Map<String, McpServerState> states;
   final bool loading;
-
-  /// Идёт ручной импорт или экспорт `mcp.json`.
-  final bool busy;
   final String? error;
   final String? configError;
+
+  /// Идёт ручной импорт или экспорт `mcp.json`.
+  final McpBusyAction? busyAction;
 
   McpServerState stateOf(String serverId) =>
       states[serverId] ?? McpServerState.disconnected(serverId);
@@ -34,7 +37,8 @@ class McpState extends Equatable {
     List<McpServerConfig>? servers,
     Map<String, McpServerState>? states,
     bool? loading,
-    bool? busy,
+    McpBusyAction? busyAction,
+    bool clearBusy = false,
     String? error,
     String? configError,
     bool clearError = false,
@@ -43,7 +47,7 @@ class McpState extends Equatable {
     servers: servers ?? this.servers,
     states: states ?? this.states,
     loading: loading ?? this.loading,
-    busy: busy ?? this.busy,
+    busyAction: clearBusy ? null : (busyAction ?? this.busyAction),
     error: clearError ? null : (error ?? this.error),
     configError: clearConfigError ? null : (configError ?? this.configError),
   );
@@ -53,7 +57,7 @@ class McpState extends Equatable {
     servers,
     states,
     loading,
-    busy,
+    busyAction,
     error,
     configError,
   ];
@@ -123,22 +127,22 @@ class McpCubit extends Cubit<McpState> {
   }
 
   Future<McpImportResult> importConfig() async {
-    emit(state.copyWith(busy: true));
+    emit(state.copyWith(busyAction: McpBusyAction.import));
     try {
       final result = await _service.importConfig();
       await _reloadStates();
       return result;
     } finally {
-      emit(state.copyWith(busy: false));
+      emit(state.copyWith(clearBusy: true));
     }
   }
 
   Future<String> exportConfig() async {
-    emit(state.copyWith(busy: true));
+    emit(state.copyWith(busyAction: McpBusyAction.export));
     try {
       return await _service.exportConfig();
     } finally {
-      emit(state.copyWith(busy: false));
+      emit(state.copyWith(clearBusy: true));
     }
   }
 
