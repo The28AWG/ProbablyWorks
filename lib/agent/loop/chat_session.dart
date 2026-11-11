@@ -199,7 +199,7 @@ class ChatSession {
   /// здесь только появляются карточки, которые старт сознательно не показывал.
   Future<void> restoreUnanswered() async {
     if (_running) {
-      _showParkedCards();
+      await _showParkedCards();
       return;
     }
     final inflight = _restoreInFlight;
@@ -208,7 +208,7 @@ class ChatSession {
       // Ход уже идёт: карточки, отложенные стартом, пора показать.
       // Ход не стартовал (в шаге были только карточки) — идём обычным путём ниже.
       if (_running) {
-        _showParkedCards();
+        await _showParkedCards();
         return;
       }
     }
@@ -320,11 +320,11 @@ class ChatSession {
 
   /// Кладёт отложенные карточки в брокер. Регистрация синхронная: открытие чата
   /// сразу читает список, не дожидаясь ответа. Повторный вызов карточки не двоит.
-  void _showParkedCards() {
+  Future<void> _showParkedCards() async {
     for (final card in _parked.values) {
       if (card.shown) continue;
       card.shown = true;
-      unawaited(_showParkedCard(card));
+      await _showParkedCard(card);
     }
   }
 
