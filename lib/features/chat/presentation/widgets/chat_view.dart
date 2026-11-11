@@ -212,45 +212,50 @@ class _ChatBodyState extends State<ChatBody> {
         final forkTitle = chat.title.isEmpty ? l10n.chatsNew : chat.title;
         // Пустой чат (в том числе новый): композер по центру под приветствием. Как только появилось
         // сообщение или ход начался, композер уходит вниз. Переход сохраняет состояние композера (фокус, текст).
+        final readOnly = chat.isSubagent;
         final empty =
+            !readOnly &&
             !state.loading &&
             !state.isRunning &&
             !state.messages.any((m) => m.role != MessageRole.tool);
-        final composer = KeyedSubtree(
-          key: _composerKey,
-          // Во время загрузки чата настройки относятся к прежнему чату: меняются только после загрузки.
-          // Фокус тоже снимаем: иначе текст набрался бы в поле, которое сейчас относится к прежнему чату.
-          child: ExcludeFocus(
-            excluding: state.loading,
-            child: IgnorePointer(
-              ignoring: state.loading,
-              child: ChatComposer(
-                state: state,
-                centered: empty,
-                controller: _composer,
-                attachments: state.attachments,
-                // Пока открыта правка, брошенные файлы идут в неё, а не в черновик следующего сообщения.
-                dragging: _dragging && _editingId == null,
-                workspace: chat.workspace,
-                policy: chat.policyMode,
-                onPickWorkspace: () => _pickWorkspace(bloc, chat),
-                onPolicySelected: (mode) => bloc.add(ChatPolicyChanged(mode)),
-                settings: _ChatSettings(
-                  state: state,
-                  onPickWorkspace: () => _pickWorkspace(bloc, chat),
-                  onPickModel: () => _pickModel(bloc, state, chat),
-                  onOpenContext: () => _openContext(bloc),
+        final composer = readOnly
+            ? const SizedBox.shrink()
+            : KeyedSubtree(
+                key: _composerKey,
+                // Во время загрузки чата настройки относятся к прежнему чату: меняются только после загрузки.
+                // Фокус тоже снимаем: иначе текст набрался бы в поле, которое сейчас относится к прежнему чату.
+                child: ExcludeFocus(
+                  excluding: state.loading,
+                  child: IgnorePointer(
+                    ignoring: state.loading,
+                    child: ChatComposer(
+                      state: state,
+                      centered: empty,
+                      controller: _composer,
+                      attachments: state.attachments,
+                      // Пока открыта правка, брошенные файлы идут в неё, а не в черновик следующего сообщения.
+                      dragging: _dragging && _editingId == null,
+                      workspace: chat.workspace,
+                      policy: chat.policyMode,
+                      onPickWorkspace: () => _pickWorkspace(bloc, chat),
+                      onPolicySelected: (mode) =>
+                          bloc.add(ChatPolicyChanged(mode)),
+                      settings: _ChatSettings(
+                        state: state,
+                        onPickWorkspace: () => _pickWorkspace(bloc, chat),
+                        onPickModel: () => _pickModel(bloc, state, chat),
+                        onOpenContext: () => _openContext(bloc),
+                      ),
+                      onAttach: _pickFiles,
+                      onRemoveAttachment: (index) =>
+                          bloc.add(ChatAttachmentRemoved(index)),
+                      onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
+                      onStop: () => bloc.add(const ChatStopped()),
+                      onInputFocus: _onComposerFocus,
+                    ),
+                  ),
                 ),
-                onAttach: _pickFiles,
-                onRemoveAttachment: (index) =>
-                    bloc.add(ChatAttachmentRemoved(index)),
-                onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
-                onStop: () => bloc.add(const ChatStopped()),
-                onInputFocus: _onComposerFocus,
-              ),
-            ),
-          ),
-        );
+              );
         // Перетаскивание есть только на десктопе (desktop_drop на мобильных не работает): там остаётся кнопка.
         final content = Stack(
           children: [
@@ -293,15 +298,20 @@ class _ChatBodyState extends State<ChatBody> {
                                             _pickModel(bloc, state, chat),
                                         onOpenContext: () => _openContext(bloc),
                                       ),
-                                onEditMessage: _startEdit,
-                                onRegenerate: () =>
-                                    bloc.add(const ChatRegenerateRequested()),
-                                onForkMessage: (message) => bloc.add(
-                                  ChatForkRequested(
-                                    message.id,
-                                    title: l10n.chatForkTitle(forkTitle),
-                                  ),
-                                ),
+                                onEditMessage: readOnly ? null : _startEdit,
+                                onRegenerate: readOnly
+                                    ? null
+                                    : () => bloc.add(
+                                        const ChatRegenerateRequested(),
+                                      ),
+                                onForkMessage: readOnly
+                                    ? null
+                                    : (message) => bloc.add(
+                                        ChatForkRequested(
+                                          message.id,
+                                          title: l10n.chatForkTitle(forkTitle),
+                                        ),
+                                      ),
                               ),
                       ),
                       if (empty)

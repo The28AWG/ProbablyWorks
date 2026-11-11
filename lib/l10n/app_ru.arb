@@ -24,6 +24,10 @@
   "@commonClose": {
     "description": "Подпись общей кнопки закрытия."
   },
+  "subagentOpen": "Открыть чат субагента",
+  "@subagentOpen": {
+    "description": "Tooltip of the button that opens the hidden subagent chat."
+  },
   "commonRequired": "Обязательное поле",
   "@commonRequired": {
     "description": "Validation message for a required field."

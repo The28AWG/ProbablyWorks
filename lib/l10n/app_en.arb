@@ -24,6 +24,10 @@
   "@commonClose": {
     "description": "Generic close button label."
   },
+  "subagentOpen": "Open subagent chat",
+  "@subagentOpen": {
+    "description": "Tooltip of the button that opens the hidden subagent chat."
+  },
   "commonRequired": "Required",
   "@commonRequired": {
     "description": "Validation message for a required field."

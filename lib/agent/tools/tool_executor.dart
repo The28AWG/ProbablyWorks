@@ -1565,9 +1565,11 @@ class ToolExecutor {
   }) async {
     final permissionKey = '${call.name}\u0000$summary';
     final turnId = ctx.turnUserMessageId;
+    // Подтверждение субагента показываем в главном чате, а не в скрытом.
+    final approvalChatId = ctx.chat.rootChatId ?? ctx.chat.id;
     if (allowStoredGrant &&
         _broker.hasGrant(
-          chatId: ctx.chat.id,
+          chatId: approvalChatId,
           turnId: turnId,
           key: permissionKey,
         )) {
@@ -1594,7 +1596,7 @@ class ToolExecutor {
     final decision = await _broker.requestApproval(
       ApprovalRequest(
         id: runId,
-        chatId: ctx.chat.id,
+        chatId: approvalChatId,
         toolName: call.name,
         summary: summary,
         reason: reason,

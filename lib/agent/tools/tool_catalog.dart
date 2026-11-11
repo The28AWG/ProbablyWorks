@@ -34,6 +34,8 @@ abstract final class ToolNames {
   static const loadSkill = 'load_skill';
   static const askUser = 'ask_user';
   static const finish = 'finish';
+  static const delegateTask = 'delegate_task';
+  static const waitSubagent = 'wait_subagent';
 
   // Self-инструменты: всегда доступны, см. SelfToolCatalog.
   static const hostList = 'host_list';

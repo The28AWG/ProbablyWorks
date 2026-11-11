@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/agent/domain/chat_models.dart';
 import 'package:probably_works/agent/tools/tool_catalog.dart';
+import 'package:probably_works/app/router/app_router.gr.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/util/ansi_text.dart';
 import 'package:probably_works/core/util/char_substring.dart';
@@ -487,6 +489,13 @@ class _StepRowState extends State<_StepRow>
   /// Исходный текст, из которого получен [_parsed]: разбор не повторяется при каждой перерисовке.
   String? _parsedFrom;
 
+  static final _subagentRef = RegExp(r'subagent started:\s*([0-9a-fA-F-]+)');
+
+  String? _subagentIdOf(ToolRun run) {
+    if (run.toolName != ToolNames.delegateTask) return null;
+    return _subagentRef.firstMatch(run.outputText ?? '')?.group(1);
+  }
+
   /// Разобранный вывод read_file; `null`, если инструмент другой или вывод не в формате read_file.
   ReadFileOutput? _parsed;
 
@@ -546,6 +555,7 @@ class _StepRowState extends State<_StepRow>
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final run = widget.run;
+    final subagentId = _subagentIdOf(run);
     final output = widget.live ?? run.outputText ?? '';
     final readFile = _readFileOf(output);
     final change = _fileChangeOf(run);
@@ -594,12 +604,25 @@ class _StepRowState extends State<_StepRow>
       // У записи файла нет живого PTY, высоту можно снять и пока запись идёт.
       // У команды высота задаёт размер терминала, поэтому у выполняющейся её не снимаем.
       canFullHeight: canExpand && (change != null || !active),
-      trailing: (palette) => CopyButton(
-        key: const ValueKey('step-copy'),
-        textOf: _copyText,
-        color: palette.muted,
-        size: 24,
-      ),
+      trailing: (palette) => subagentId == null
+          ? CopyButton(
+              key: const ValueKey('step-copy'),
+              textOf: _copyText,
+              color: palette.muted,
+              size: 24,
+            )
+          : IconButton(
+              key: const ValueKey('open-subagent'),
+              tooltip: l10n.subagentOpen,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+              iconSize: 18,
+              color: palette.text,
+              onPressed: () =>
+                  context.router.push(ChatRoute(chatId: subagentId)),
+              icon: const Icon(Icons.open_in_new),
+            ),
       header: (palette) => Row(
         children: [
           ChatMorph(

@@ -361,6 +361,62 @@ void main() {
     expect(updated.compactedUntilSeq, 0);
   });
 
+  test('subagent runs in a hidden chat and returns its result', () async {
+    final chatId = await createChat();
+    llm.models = const [
+      LlmModelInfo(id: 'fake/model', name: 'Fake', supportsTools: true),
+    ];
+    await hub.models.refresh();
+    llm.script.add([const LlmTextDelta('child result'), const LlmCompleted()]);
+
+    final parent = (await hub.chats.chat(chatId))!;
+    final run = await hub.subagents.start(parent: parent, task: 'child task');
+    final result = await hub.subagents.wait(run.id);
+
+    expect(result.text, contains('child result'));
+    final child = await hub.chats.chat(run.id);
+    expect(child?.kind, ChatKind.subagent);
+    expect(child?.parentChatId, chatId);
+    expect(child?.rootChatId, chatId);
+    expect(child?.depth, 1);
+    expect(
+      (await hub.chats.watchChats().first).map((chat) => chat.id),
+      isNot(contains(run.id)),
+    );
+  });
+
+  test('subagent model follows parent, setting and tool strategy', () async {
+    final chatId = await createChat();
+    llm.models = const [
+      LlmModelInfo(id: 'fake/model', name: 'Parent', supportsTools: true),
+      LlmModelInfo(id: 'cheap/model', name: 'Cheap', supportsTools: true),
+    ];
+    await hub.models.refresh();
+    await hub.settings.write(
+      SettingsRepository.keySubagentModel,
+      'cheap/model',
+    );
+    final parent = (await hub.chats.chat(chatId))!;
+
+    Future<String> runModel(String? strategy) async {
+      llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+      final run = await hub.subagents.start(
+        parent: parent,
+        task: 'task',
+        modelStrategy: strategy,
+      );
+      await hub.subagents.wait(run.id);
+      return (await hub.chats.chat(run.id))!.model!;
+    }
+
+    expect(await runModel(null), 'cheap/model');
+    expect(await runModel('default'), 'cheap/model');
+    expect(await runModel('parent'), 'fake/model');
+
+    await hub.settings.write(SettingsRepository.keySubagentModel, '');
+    expect(await runModel('default'), 'fake/model');
+  });
+
   test('manual compaction records when and why it happened', () async {
     final chatId = await createChat();
     final now = DateTime.now();

@@ -14,6 +14,8 @@ import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/agent/plugins/plugin_service.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/state/session_state_service.dart';
+import 'package:probably_works/agent/subagent/subagent_manager.dart';
+import 'package:probably_works/agent/subagent/subagent_tool_source.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/turn/turn_changeset_service.dart';
 import 'package:probably_works/agent/workspace/workspace_context_loader.dart';
@@ -56,7 +58,13 @@ class AgentHub {
     this.projects,
     this.projectStore,
     this.policyProfiles,
-  );
+  ) {
+    final manager = SubagentManager(this);
+    subagents = manager;
+    tools
+      ..registerToolSource(DelegateTaskToolSource(manager))
+      ..registerToolSource(WaitSubagentToolSource(manager));
+  }
 
   final ChatRepository chats;
   final SettingsRepository settings;
@@ -70,6 +78,9 @@ class AgentHub {
   final McpService mcp;
   final PluginService plugins;
   final WorkspaceContextLoader workspace;
+
+  /// Скрытые чаты субагентов и их фоновые результаты.
+  late final SubagentManager subagents;
   final SessionStateService state;
   final InteractionBroker broker;
   final ActiveExecRegistry registry;

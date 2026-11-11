@@ -16,6 +16,7 @@ import 'package:probably_works/agent/loop/prompt_queue.dart';
 import 'package:probably_works/agent/loop/tool_scheduler.dart';
 import 'package:probably_works/agent/policy/command_classifier.dart';
 import 'package:probably_works/agent/policy/policy_engine.dart';
+import 'package:probably_works/agent/subagent/subagent_manager.dart';
 import 'package:probably_works/agent/tools/tool_executor.dart';
 import 'package:probably_works/agent/turn/turn_changeset_logic.dart';
 import 'package:probably_works/core/config/app_limits.dart';
@@ -174,6 +175,7 @@ class ChatSession {
     _releaseParked();
     _hub.broker.cancelChat(chatId);
     await _hub.registry.stopChat(chatId);
+    await _hub.subagents.stopChildren(chatId);
     if (reason != null) await _append(MessageRole.event, text: reason);
     final limits = await _hub.limits();
     Timer(limits.killGrace, () {
@@ -1033,7 +1035,11 @@ class ChatSession {
     }
     final inline = Map.of(_inlineFiles);
     _checkFilesAccepted(model, inline);
-    final llmMessages = _hub.builder.build(inputFor(chat, files: inline));
+    final llmMessages = [..._hub.builder.build(inputFor(chat, files: inline))];
+    final activeSubagents = _hub.subagents.activeFor(chatId);
+    if (activeSubagents.isNotEmpty) {
+      llmMessages.add(LlmMessage.system(_subagentContext(activeSubagents)));
+    }
     final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
     // Первый запрос подключает включённые MCP-серверы и плагины.
     await _hub.mcp.ensureReady();
@@ -1062,6 +1068,20 @@ class ChatSession {
       project: project,
       request: LlmRequest(model: model, messages: llmMessages, tools: tools),
     );
+  }
+
+  static String _subagentContext(List<SubagentRun> runs) {
+    final buffer = StringBuffer('Active subagents started in this chat:');
+    for (final run in runs) {
+      buffer
+        ..write('\n- ${run.id}: ${run.task} (model ${run.model})')
+        ..write(' [running]');
+    }
+    buffer.write(
+      '\nResults are delivered as events. '
+      'Use wait_subagent(runId) if you need a result now.',
+    );
+    return buffer.toString();
   }
 
   /// Файлы в запросе допустимы только для модели, которая принимает их тип (см. [ModelCatalogState.acceptsFile]).
@@ -1217,6 +1237,10 @@ class ChatSession {
     );
     unawaited(_deliverEvent(text));
   }
+
+  /// Доставляет фоновое событие в чат. Если ход идёт — ставит в очередь,
+  /// иначе добавляет событие и запускает новый ход.
+  Future<void> deliverEvent(String text) => _deliverEvent(text);
 
   Future<void> _deliverEvent(String text) async {
     if (_running) {
