@@ -14,8 +14,7 @@ workspace:
   - packages/plugin_declarative_commands
   - packages/plugin_declarative_http
   - packages/pw_agent
-  - packages/pw_api
-  - packages/pw_daemon
+  - packages/pw_server
   - packages/virtual_git
   - packages/virtual_host
 

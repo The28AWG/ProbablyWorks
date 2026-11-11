@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
-import 'package:pw_api/pw_api.dart';
+import 'package:pw_server/src/api_token.dart';
 
 /// `SecretStore` headless-демона.
 ///

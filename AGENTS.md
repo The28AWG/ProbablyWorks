@@ -39,7 +39,7 @@
    `dart run build_runner build --delete-conflicting-outputs`.
 6. Если приложение запущено через `flutter run`, после правок Dart-кода выполните hot reload или hot restart.
 
-Пакеты `packages/virtual_host` и `packages/virtual_git` этими командами не покрываются.
+Пакеты `packages/pw_agent`, `packages/pw_server`, `packages/virtual_host` и `packages/virtual_git` этими командами не покрываются.
 Каждый проверяют отдельно, из каталога пакета: `dart format lib test`, `dart analyze`,
 `dcm analyze lib test`, `dart test`.
 

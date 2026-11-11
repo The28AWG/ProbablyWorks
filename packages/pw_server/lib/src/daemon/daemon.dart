@@ -20,13 +20,15 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
-import 'package:pw_api/pw_api.dart';
-import 'package:pw_daemon/src/daemon_options.dart';
-import 'package:pw_daemon/src/daemon_paths.dart';
-import 'package:pw_daemon/src/daemon_secret_store.dart';
-import 'package:pw_daemon/src/noop_app_notifier.dart';
-import 'package:pw_daemon/src/noop_appearance.dart';
-import 'package:pw_daemon/src/process_url_opener.dart';
+import 'package:pw_server/src/agent_api_backend.dart';
+import 'package:pw_server/src/api_server.dart';
+import 'package:pw_server/src/api_token.dart';
+import 'package:pw_server/src/daemon/daemon_options.dart';
+import 'package:pw_server/src/daemon/daemon_paths.dart';
+import 'package:pw_server/src/daemon/daemon_secret_store.dart';
+import 'package:pw_server/src/daemon/noop_app_notifier.dart';
+import 'package:pw_server/src/daemon/noop_appearance.dart';
+import 'package:pw_server/src/daemon/process_url_opener.dart';
 
 /// Запускает headless-демон. Возвращает код выхода.
 Future<int> runDaemon(List<String> args) async {

@@ -71,7 +71,7 @@ final class DaemonOptions {
   static const usage = '''
 ProbablyWorks headless daemon
 
-Usage: pw_daemon [options]
+Usage: pw_server [options]
 
   --data-dir <path>  data directory (default: platform app support)
   --port <port>      API port (default: 7787)

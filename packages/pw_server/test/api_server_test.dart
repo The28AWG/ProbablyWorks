@@ -8,7 +8,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_api/pw_api.dart';
+import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
 
 const _token = 'test-token';

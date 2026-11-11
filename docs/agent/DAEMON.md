@@ -8,15 +8,14 @@ HTTP API. Клиент по-прежнему работает с агентом 
 
 ```
 packages/pw_agent   # агент, БД, Host, провайдеры; чистый Dart
-packages/pw_api     # HTTP API поверх pw_agent; чистый Dart
-packages/pw_daemon  # headless-процесс: pw_api + pw_agent; чистый Dart
+packages/pw_server  # HTTP API и headless-запуск поверх pw_agent; чистый Dart
 ```
 
 Зависимости направлены только вниз:
 
 ```
 Flutter-клиент ──► pw_agent
-pw_daemon    ──► pw_api ──► pw_agent
+pw_server    ──► pw_agent
 ```
 
 Flutter-части (keyring, уведомления, тема, `path_provider`) остаются в клиенте.
@@ -26,7 +25,7 @@ Flutter-части (keyring, уведомления, тема, `path_provider`) 
 ## Запуск
 
 ```bash
-dart run packages/pw_daemon/bin/pw_daemon.dart --print-token
+dart run packages/pw_server/bin/pw_server.dart --print-token
 ```
 
 Полезные аргументы:
