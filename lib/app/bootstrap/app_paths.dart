@@ -16,6 +16,10 @@ class AppPaths {
 
   File get lockFile => File(p.join(support.path, 'instance.lock'));
 
+  /// Пользовательская конфигурация MCP. Импортируется при старте и на desktop
+  /// перечитывается при изменении файла.
+  File get mcpConfig => File(p.join(support.path, 'mcp.json'));
+
   static Future<AppPaths> resolve() async {
     final dir = await getApplicationSupportDirectory();
     final support = Directory(p.join(dir.path, 'ProbablyWorks'));

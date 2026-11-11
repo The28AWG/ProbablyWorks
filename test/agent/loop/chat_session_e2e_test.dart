@@ -19,6 +19,8 @@ import 'package:probably_works/agent/loop/agent_event.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
 import 'package:probably_works/agent/loop/chat_session.dart';
 import 'package:probably_works/agent/loop/chat_title.dart';
+import 'package:probably_works/agent/mcp/mcp_client_manager.dart';
+import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/agent/policy/command_risk.dart';
 import 'package:probably_works/agent/policy/security_profile.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
@@ -35,6 +37,7 @@ import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/data/chat_draft_store.dart';
 import 'package:probably_works/core/data/chat_repository.dart';
 import 'package:probably_works/core/data/host_repository.dart';
+import 'package:probably_works/core/data/mcp_server_repository.dart';
 import 'package:probably_works/core/data/policy_profile_repository.dart';
 import 'package:probably_works/core/data/project_repository.dart';
 import 'package:probably_works/core/data/saved_model_repository.dart';
@@ -173,6 +176,12 @@ void main() {
       turnChangesets,
     );
     final compactor = ContextCompactor(chats, llm, builder);
+    final mcp = McpService(
+      McpServerRepository(db),
+      McpClientManager(secrets),
+      tools,
+      secrets,
+    );
     drafts = ChatDraftStore(chats);
     final projectStore = ProjectRepository(db);
     hub = AgentHub(
@@ -185,6 +194,7 @@ void main() {
       builder,
       compactor,
       tools,
+      mcp,
       workspace,
       state,
       broker,

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:probably_works/agent/loop/agent_hub.dart';
+import 'package:probably_works/agent/mcp/mcp_service.dart';
 import 'package:probably_works/agent/project/project_lifecycle.dart';
 import 'package:probably_works/agent/recovery/startup_recovery.dart';
 import 'package:probably_works/app/bootstrap/app_paths.dart';
@@ -42,6 +43,9 @@ Future<bool> bootstrap() async {
   final projects = getIt<ProjectLifecycleService>();
   await projects.repairOrphans();
   await projects.purgeExpired();
+  // mcp.json импортируется без подключения серверов: сеть и процессы не должны
+  // задерживать первый кадр. Подключение произойдёт перед первым запросом.
+  await getIt<McpService>().start(configFile: paths.mcpConfig);
   // Карточки здесь не показываются. Их регистрирует открытие чата.
   // Вызовы без карточки, чьи зависимости уже закрыты, продолжаются сразу.
   await getIt<AgentHub>().resumeAfterRestart();
