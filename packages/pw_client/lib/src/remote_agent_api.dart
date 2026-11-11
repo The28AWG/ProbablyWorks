@@ -4,20 +4,29 @@ import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:uuid/uuid.dart';
 
 /// [AgentApi] поверх HTTP/SSE.
 ///
 /// Используется для удалённых профилей. Локальный профиль работает через
 /// `LocalAgentApi` без транспорта.
-final class RemoteAgentApi implements AgentApi {
+class RemoteAgentApi implements AgentApi, ChatApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -40,10 +49,15 @@ final class RemoteAgentApi implements AgentApi {
   final _approvalChats = <String, String>{};
   final _questionChats = <String, String>{};
   final _editChats = <String, String>{};
+  final _approvalsById = <String, ApprovalRequest>{};
+  final _questionsById = <String, UserQuestion>{};
+  final _editsById = <String, EditFileChangesRequest>{};
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
+
+  static const _uuid = Uuid();
 
   var _eventsStarted = false;
   var _disposed = false;
@@ -66,6 +80,49 @@ final class RemoteAgentApi implements AgentApi {
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+
+  @override
+  late final ChatStore chatStore = _RemoteChatStore(this);
+
+  @override
+  late final SettingsStore settings = _RemoteSettings();
+
+  @override
+  late final ProjectStore projectStore = const _RemoteProjectStore();
+
+  @override
+  late final ProjectsStore projects = const _RemoteProjects();
+
+  @override
+  late final ModelStore models = const _RemoteModels();
+
+  @override
+  late final HostStore hostStore = _RemoteHosts(this);
+
+  @override
+  late final ExecStore registry = const _RemoteExec();
+
+  @override
+  late final InteractionsStore broker = _RemoteInteractions(this);
+
+  @override
+  ChatSessionApi session(String chatId) => _RemoteChatSession(this, chatId);
+
+  @override
+  Future<AppLimits> limits() async => const AppLimits();
+
+  @override
+  Chat draftChat({required String hostId, Host? host}) {
+    final now = DateTime.now();
+    return Chat(
+      id: _uuid.v4(),
+      hostId: hostId,
+      workspace: host?.defaultWorkspace,
+      title: '',
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
 
   /// Завершается после установки первого SSE-соединения.
   Future<void> get eventsReady => _eventsReady.future;
@@ -171,6 +228,7 @@ final class RemoteAgentApi implements AgentApi {
       final map = Map<String, dynamic>.from(json['chat'] as Map);
       final chat = _chat(map);
       _trackChatState(chat.id, map);
+      _syncCards(chat.id, json);
       return chat;
     } on AgentApiException catch (error) {
       if (error.status == 404) return null;
@@ -193,7 +251,11 @@ final class RemoteAgentApi implements AgentApi {
   }
 
   @override
-  Future<Chat?> forkChat(String chatId, {String? title}) async {
+  Future<Chat?> forkChat(
+    String chatId, {
+    String? title,
+    String? untilMessageId,
+  }) async {
     try {
       final json = await _send(
         'POST',
@@ -266,6 +328,7 @@ final class RemoteAgentApi implements AgentApi {
     final body = <String, Object?>{'action': action.name};
     if (reason != null) body['reason'] = reason;
     await _send('PUT', '/approvals/$id/decision', body: body);
+    _approvalsById.remove(id);
     final chatId = _approvalChats.remove(id);
     if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
@@ -273,6 +336,7 @@ final class RemoteAgentApi implements AgentApi {
   @override
   Future<void> answerQuestion(String id, String? text) async {
     await _send('PUT', '/questions/$id/answer', body: {'answer': text});
+    _questionsById.remove(id);
     final chatId = _questionChats.remove(id);
     if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
@@ -287,37 +351,74 @@ final class RemoteAgentApi implements AgentApi {
       '/edit-file-changes/$id/decision',
       body: {'choice': choice.name},
     );
+    _editsById.remove(id);
     final chatId = _editChats.remove(id);
     if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
 
   @override
   Future<List<ApprovalRequest>> pendingApprovals(String chatId) async {
-    final json = await _get('/chats/$chatId');
-    return [
-      for (final item in (json['approvals'] as List? ?? const []))
-        _approval(Map<String, dynamic>.from(item as Map)),
-    ];
+    await _syncCardsFromServer(chatId);
+    return pendingApprovalsSync(chatId);
   }
 
   @override
   Future<List<UserQuestion>> pendingQuestions(String chatId) async {
-    final json = await _get('/chats/$chatId');
-    return [
-      for (final item in (json['questions'] as List? ?? const []))
-        _question(Map<String, dynamic>.from(item as Map)),
-    ];
+    await _syncCardsFromServer(chatId);
+    return pendingQuestionsSync(chatId);
   }
 
   @override
   Future<List<EditFileChangesRequest>> pendingEditFileChanges(
     String chatId,
   ) async {
+    await _syncCardsFromServer(chatId);
+    return pendingEditFileChangesSync(chatId);
+  }
+
+  List<ApprovalRequest> pendingApprovalsSync(String chatId) => [
+    for (final value in _approvalsById.values)
+      if (value.chatId == chatId) value,
+  ];
+
+  List<UserQuestion> pendingQuestionsSync(String chatId) => [
+    for (final value in _questionsById.values)
+      if (value.chatId == chatId) value,
+  ];
+
+  List<EditFileChangesRequest> pendingEditFileChangesSync(String chatId) => [
+    for (final value in _editsById.values)
+      if (value.chatId == chatId) value,
+  ];
+
+  Future<void> _syncCardsFromServer(String chatId) async {
     final json = await _get('/chats/$chatId');
-    return [
-      for (final item in (json['editFileChanges'] as List? ?? const []))
-        _editChangesRequest(Map<String, dynamic>.from(item as Map)),
-    ];
+    _syncCards(chatId, json);
+  }
+
+  void _syncCards(String chatId, Map<String, dynamic> json) {
+    _approvalsById.removeWhere((_, value) => value.chatId == chatId);
+    _questionsById.removeWhere((_, value) => value.chatId == chatId);
+    _editsById.removeWhere((_, value) => value.chatId == chatId);
+    for (final item in (json['approvals'] as List? ?? const [])) {
+      final request = _approval(Map<String, dynamic>.from(item as Map));
+      _approvalsById[request.id] = request;
+      _approvalChats[request.id] = request.chatId;
+    }
+    for (final item in (json['questions'] as List? ?? const [])) {
+      final question = _question(Map<String, dynamic>.from(item as Map));
+      _questionsById[question.id] = question;
+      _questionChats[question.id] = question.chatId;
+    }
+    for (final item in (json['editFileChanges'] as List? ?? const [])) {
+      final request = _editChangesRequest(
+        Map<String, dynamic>.from(item as Map),
+      );
+      _editsById[request.id] = request;
+      _editChats[request.id] = request.chatId;
+    }
+    _waiting.removeWhere((id) => id == chatId && !_hasPending(chatId));
+    if (_hasPending(chatId)) _waiting.add(chatId);
   }
 
   @override
@@ -385,6 +486,11 @@ final class RemoteAgentApi implements AgentApi {
     if (response.body.isEmpty) return null;
     return jsonDecode(response.body);
   }
+
+  Future<Map<String, dynamic>> getJson(String path) => _get(path);
+
+  Future<Object?> sendJson(String method, String path, {Object? body}) =>
+      _send(method, path, body: body);
 
   Map<String, dynamic> _asMap(Object? value) {
     if (value is Map) return Map<String, dynamic>.from(value);
@@ -487,16 +593,19 @@ final class RemoteAgentApi implements AgentApi {
       case 'approval':
         final request = _approval(json);
         _approvalChats[request.id] = request.chatId;
+        _approvalsById[request.id] = request;
         _waiting.add(request.chatId);
         _approvals.add(request);
       case 'question':
         final question = _question(json);
         _questionChats[question.id] = question.chatId;
+        _questionsById[question.id] = question;
         _waiting.add(question.chatId);
         _questions.add(question);
       case 'editFileChanges':
         final request = _editChangesRequest(json);
         _editChats[request.id] = request.chatId;
+        _editsById[request.id] = request;
         _waiting.add(request.chatId);
         _editChanges.add(request);
       case 'turnStarted':
@@ -715,3 +824,249 @@ double? _double(Object? value) => value is num ? value.toDouble() : null;
 
 DateTime? _date(Object? value) =>
     value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
+
+final class _RemoteChatStore implements ChatStore {
+  _RemoteChatStore(this._api);
+
+  final RemoteAgentApi _api;
+
+  @override
+  Future<Chat?> chat(String id) => _api.chat(id);
+
+  @override
+  Future<List<ChatMessage>> messages(String id) => _api.messages(id);
+
+  @override
+  Future<List<ToolRun>> toolRunsForChat(String id) => _api.runs(id);
+
+  @override
+  Future<void> saveChat(Chat chat) async {
+    await _api.sendJson(
+      'PATCH',
+      '/chats/${chat.id}',
+      body: {
+        'title': chat.title,
+        'model': chat.model,
+        'policyMode': chat.policyMode.name,
+        'workspace': chat.workspace,
+      },
+    );
+  }
+}
+
+final class _RemoteSettings implements SettingsStore {
+  @override
+  Stream<String?> watch(String key) => Stream<String?>.empty();
+
+  @override
+  Future<String?> read(String key) => Future<String?>.value();
+
+  @override
+  Future<List<String>> readPinnedModels() => Future.value(const []);
+
+  @override
+  Future<void> savePinnedModels(List<String> ids) => Future<void>.value();
+
+  @override
+  Future<StepsDisplay> readStepsDisplay() =>
+      Future.value(StepsDisplay.defaults);
+
+  @override
+  Future<ChatDailyUsage> readDailyUsage(String chatId) =>
+      Future.value(const ChatDailyUsage());
+
+  @override
+  Future<double?> readDailyBudget(String chatId) => Future<double?>.value();
+
+  @override
+  Future<void> saveDailyBudget(String chatId, double? value) =>
+      Future<void>.value();
+
+  @override
+  Future<ChatCompactionInfo?> readCompactionInfo(String chatId) =>
+      Future<ChatCompactionInfo?>.value();
+
+  @override
+  Future<void> setTrusted(
+    String hostId,
+    String workspace, {
+    required bool trusted,
+  }) => Future<void>.value();
+
+  @override
+  AppLimits cachedLimits() => const AppLimits();
+
+  @override
+  List<String> cachedPinnedModels() => const [];
+
+  @override
+  StepsDisplay cachedStepsDisplay() => StepsDisplay.defaults;
+
+  @override
+  String? cached(String key) => null;
+}
+
+final class _RemoteProjectStore implements ProjectStore {
+  const _RemoteProjectStore();
+
+  @override
+  Future<Project?> forChat(String chatId) => Future<Project?>.value();
+
+  @override
+  Future<Project?> byId(String id) => Future<Project?>.value();
+}
+
+final class _RemoteProjects implements ProjectsStore {
+  const _RemoteProjects();
+
+  @override
+  Future<Chat> attach(Chat chat) => Future.value(chat);
+
+  @override
+  String? configuredWorkspace(Host host) => host.defaultWorkspace;
+
+  @override
+  Future<Chat> relocate(
+    Chat chat, {
+    String? hostId,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) => Future.value(chat);
+
+  @override
+  Future<void> trustWorkspace(String projectId) => Future<void>.value();
+}
+
+final class _RemoteModels implements ModelStore {
+  const _RemoteModels();
+
+  @override
+  ModelCatalogState get state => const ModelCatalogState();
+
+  @override
+  Stream<ModelCatalogState> watch() => Stream<ModelCatalogState>.empty();
+
+  @override
+  Future<void> remember(List<String> ids) => Future<void>.value();
+}
+
+final class _RemoteHosts implements HostStore {
+  _RemoteHosts(this._api);
+
+  final RemoteAgentApi _api;
+
+  @override
+  Future<List<Host>> all() => _api.hosts();
+
+  @override
+  Stream<List<Host>> watchAll() => _api.watchHosts();
+}
+
+final class _RemoteExec implements ExecStore {
+  const _RemoteExec();
+
+  @override
+  ActiveExec? find(String runId) => null;
+
+  @override
+  Future<void> stop(ActiveExec exec, {required bool force}) =>
+      Future<void>.value();
+}
+
+final class _RemoteInteractions implements InteractionsStore {
+  _RemoteInteractions(this._api);
+
+  final RemoteAgentApi _api;
+
+  @override
+  Stream<ApprovalRequest> get approvalRequests => _api.approvals;
+
+  @override
+  Stream<UserQuestion> get questions => _api.questions;
+
+  @override
+  Stream<EditFileChangesRequest> get editFileChangesRequests =>
+      _api.editChanges;
+
+  @override
+  List<ApprovalRequest> pendingApprovals(String chatId) =>
+      _api.pendingApprovalsSync(chatId);
+
+  @override
+  List<UserQuestion> pendingQuestions(String chatId) =>
+      _api.pendingQuestionsSync(chatId);
+
+  @override
+  List<EditFileChangesRequest> pendingEditFileChanges(String chatId) =>
+      _api.pendingEditFileChangesSync(chatId);
+
+  @override
+  void resolveApproval(String requestId, ApprovalDecision decision) {
+    unawaited(_api.resolveApproval(requestId, decision.action));
+  }
+
+  @override
+  void answer(String questionId, String? text) {
+    unawaited(_api.answerQuestion(questionId, text));
+  }
+
+  @override
+  void resolveEditFileChanges(String requestId, EditFileChangesChoice choice) {
+    unawaited(_api.resolveEditFileChanges(requestId, choice));
+  }
+}
+
+final class _RemoteChatSession implements ChatSessionApi {
+  _RemoteChatSession(this._api, this._chatId);
+
+  final RemoteAgentApi _api;
+  final String _chatId;
+
+  @override
+  bool get isRunning => _api.runningChatIds.contains(_chatId);
+
+  @override
+  List<QueuedPrompt> get queue => const [];
+
+  @override
+  Stream<AgentEvent> get events =>
+      _api.events.where((event) => event.chatId == _chatId);
+
+  @override
+  Future<void> submit(
+    String text, {
+    List<AttachmentRef> attachments = const [],
+    bool sendNow = false,
+  }) => _api.send(_chatId, text, sendNow: sendNow);
+
+  @override
+  Future<void> stop({String? reason}) => _api.stop(_chatId, reason: reason);
+
+  @override
+  Future<void> continueAfterStepLimit() => Future<void>.value();
+
+  @override
+  Future<bool> regenerateLast() => Future.value(false);
+
+  @override
+  void promoteQueued(int index) => index;
+
+  @override
+  QueuedPrompt? takeQueued(int index) => null;
+
+  @override
+  Future<bool> editUserMessage(
+    String messageId,
+    String newText, {
+    List<AttachmentRef>? attachments,
+  }) => Future.value(false);
+
+  @override
+  Future<void> deleteAfter(String messageId) => Future<void>.value();
+
+  @override
+  Future<void> restoreUnanswered() => _api.openChat(_chatId);
+
+  @override
+  Future<void> compactNow({bool force = false}) => Future<void>.value();
+}

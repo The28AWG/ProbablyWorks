@@ -79,6 +79,15 @@ void main() {
     );
   });
 
+  test('exposes ChatApi for the remote chat screen', () async {
+    final chat = await remote.chat('c1');
+
+    expect(chat?.title, 'Test chat');
+    expect(remote.draftChat(hostId: 'local').hostId, 'local');
+    expect(remote.session('c1').isRunning, isFalse);
+    expect(remote.chatStore, isNotNull);
+  });
+
   test('streams SSE events into typed streams', () async {
     final events = <AgentEvent>[];
     final approvals = <ApprovalRequest>[];
