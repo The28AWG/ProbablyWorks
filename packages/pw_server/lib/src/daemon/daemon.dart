@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -100,6 +101,7 @@ Future<int> runDaemon(List<String> args) async {
     chat: backend,
     hosts: getIt<HostsApi>(),
     projects: getIt<ProjectsApi>(),
+    settingsApi: getIt<AgentSettingsApi>(),
   );
   final port = await server.start();
   final scheduler = getIt<TaskScheduler>()..start();

@@ -1,12 +1,18 @@
 import 'dart:async';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
@@ -15,12 +21,14 @@ const _token = 'client-token';
 
 void main() {
   late _FakeAgent backend;
+  late _FakeSettings settings;
   late ApiServer server;
   late RemoteAgentApi remote;
 
   setUp(() async {
     backend = _FakeAgent();
-    server = ApiServer(backend, _token, port: 0);
+    settings = _FakeSettings();
+    server = ApiServer(backend, _token, port: 0, settingsApi: settings);
     final port = await server.start();
     remote = RemoteAgentApi(
       baseUri: Uri.parse('http://127.0.0.1:$port'),
@@ -111,6 +119,42 @@ void main() {
     expect(remote.draftChat(hostId: 'local').hostId, 'local');
     expect(remote.session('c1').isRunning, isFalse);
     expect(remote.chatStore, isNotNull);
+  });
+
+  test('reads and writes settings through the remote API', () async {
+    final snapshot = await remote.load();
+
+    expect(snapshot.defaultModel, 'openai/gpt-4o');
+    expect(snapshot.pinnedModels, ['openai/gpt-4o']);
+    expect(snapshot.catalog.loaded, isTrue);
+
+    await remote.writeSetting('titleModel', 'openai/gpt-4o-mini');
+    await remote.savePinnedModels(['a']);
+    await remote.saveStepsDisplay(
+      const StepsDisplay(group: false, thoughts: ThoughtsVisibility.expanded),
+    );
+    await remote.saveDenylist(['rm -rf']);
+    await remote.saveSecurityProfile(const SecurityProfile());
+    await remote.saveLimits(const AppLimits(attachmentsPerMessage: 2));
+    await remote.saveApiKey('sk-or-v1-secret-abc');
+
+    expect(settings.written['titleModel'], 'openai/gpt-4o-mini');
+    expect(settings.pinned, ['a']);
+    expect(settings.steps.group, isFalse);
+    expect(settings.steps.thoughts, ThoughtsVisibility.expanded);
+    expect(settings.denylist, ['rm -rf']);
+    expect(settings.limits.attachmentsPerMessage, 2);
+    expect(settings.savedKey, 'sk-or-v1-secret-abc');
+
+    final info = await remote.checkKey();
+    expect(info?.label, 'sk-or-v1-...abc');
+
+    await remote.refreshModels();
+    await remote.rememberModels(['openai/gpt-4o']);
+    await remote.deleteApiKey();
+    expect(settings.refreshed, 1);
+    expect(settings.remembered, ['openai/gpt-4o']);
+    expect(settings.savedKey, isNull);
   });
 
   test('streams SSE events into typed streams', () async {
@@ -369,4 +413,106 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();
+}
+
+final class _FakeSettings implements AgentSettingsApi {
+  String? savedKey;
+  final written = <String, String?>{};
+  var pinned = <String>['openai/gpt-4o'];
+  var denylist = <String>[];
+  var securityProfile = const SecurityProfile();
+  var steps = const StepsDisplay();
+  var limits = const AppLimits();
+  var refreshed = 0;
+  var remembered = <String>[];
+
+  AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
+    defaultModel: 'openai/gpt-4o',
+    titleModel: '',
+    subagentModel: '',
+    fallbackModel: '',
+    defaultPolicy: 'ask',
+    denylist: denylist,
+    securityProfile: const SecurityProfile(),
+    limits: limits,
+    pinnedModels: pinned,
+    stepsDisplay: steps,
+    apiKeyTail: savedKey == null ? '' : 'abc',
+    catalog: ModelCatalogState(
+      models: [
+        LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
+      ],
+      syncedAt: DateTime.utc(2026, 11, 11),
+    ),
+  );
+
+  @override
+  Future<AgentSettingsSnapshot> load() async => _snapshot;
+
+  @override
+  Stream<ModelCatalogState> watchCatalog() => Stream.value(_snapshot.catalog);
+
+  @override
+  Stream<List<String>> watchPinnedModels() => Stream.value(pinned);
+
+  @override
+  Future<void> writeSetting(String key, String? value) async {
+    written[key] = value;
+  }
+
+  @override
+  Future<void> saveStepsDisplay(StepsDisplay value) async {
+    steps = value;
+  }
+
+  @override
+  Future<void> savePinnedModels(List<String> ids) async {
+    pinned = ids;
+  }
+
+  @override
+  Future<void> saveDenylist(List<String> patterns) async {
+    denylist = patterns;
+  }
+
+  @override
+  Future<void> saveSecurityProfile(SecurityProfile profile) async {
+    securityProfile = profile;
+  }
+
+  @override
+  Future<void> saveLimits(AppLimits value) async {
+    limits = value;
+  }
+
+  @override
+  Future<void> saveApiKey(String key) async {
+    savedKey = key;
+  }
+
+  @override
+  Future<void> deleteApiKey() async {
+    savedKey = null;
+  }
+
+  @override
+  Future<LlmKeyInfo?> checkKey() async => savedKey == null
+      ? null
+      : LlmKeyInfo(
+          label: 'sk-or-v1-...abc',
+          usage: 1,
+          limit: 10,
+          limitRemaining: 9,
+          isFreeTier: false,
+        );
+
+  @override
+  Future<void> refreshModels() async {
+    refreshed++;
+  }
+
+  @override
+  Future<void> rememberModels(List<String> ids) async {
+    remembered = ids;
+  }
 }

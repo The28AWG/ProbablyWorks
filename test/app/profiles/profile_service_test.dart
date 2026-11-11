@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -31,6 +32,7 @@ void main() {
     _FakeChatApi(),
     _FakeHostsApi(),
     _FakeProjectsApi(),
+    _FakeSettingsApi(),
   );
 
   test('loads local profile and persists remote profiles', () async {
@@ -101,4 +103,10 @@ final class _FakeProjectsApi implements ProjectsApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('ProjectsApi is not used in profile tests');
+}
+
+final class _FakeSettingsApi implements AgentSettingsApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('AgentSettingsApi is not used in profile tests');
 }

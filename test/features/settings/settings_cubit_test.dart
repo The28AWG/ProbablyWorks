@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:pw_agent/agent/api/local_agent_settings_api.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -59,8 +60,7 @@ void main() {
     theme = ThemeController();
     cubit = SettingsCubit(
       settings,
-      secrets,
-      catalog,
+      LocalAgentSettingsApi(settings, secrets, catalog),
       LocaleController(),
       theme,
     );
@@ -157,8 +157,7 @@ void main() {
 
     final reopened = SettingsCubit(
       settings,
-      secrets,
-      catalog,
+      LocalAgentSettingsApi(settings, secrets, catalog),
       LocaleController(),
       ThemeController(),
     );

@@ -4,6 +4,7 @@ import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -30,7 +31,8 @@ import 'package:uuid/uuid.dart';
 ///
 /// Используется для удалённых профилей. Локальный профиль работает через
 /// `LocalAgentApi` без транспорта.
-class RemoteAgentApi implements AgentApi, ChatApi, HostsApi, ProjectsApi {
+class RemoteAgentApi
+    implements AgentApi, ChatApi, HostsApi, ProjectsApi, AgentSettingsApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -620,6 +622,110 @@ class RemoteAgentApi implements AgentApi, ChatApi, HostsApi, ProjectsApi {
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();
 
+  AgentSettingsSnapshot? _snapshot;
+
+  @override
+  Future<AgentSettingsSnapshot> load() async {
+    final json = await _get('/settings');
+    _snapshot = _snapshotFrom(json);
+    return _snapshot!;
+  }
+
+  @override
+  Stream<ModelCatalogState> watchCatalog() async* {
+    while (!_disposed) {
+      try {
+        final snapshot = await load();
+        yield snapshot.catalog;
+      } on AgentApiException {
+        // Следующий тик попробует снова.
+      }
+      await Future<void>.delayed(const Duration(seconds: 30));
+    }
+  }
+
+  @override
+  Stream<List<String>> watchPinnedModels() async* {
+    while (!_disposed) {
+      try {
+        yield (await load()).pinnedModels;
+      } on AgentApiException {
+        // Следующий тик попробует снова.
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
+    }
+  }
+
+  @override
+  Future<void> writeSetting(String key, String? value) async {
+    await _send('PUT', '/settings/$key', body: {'value': value});
+  }
+
+  @override
+  Future<void> saveStepsDisplay(StepsDisplay value) async {
+    await _send(
+      'PUT',
+      '/settings/steps',
+      body: {
+        'group': value.group,
+        'expandWhileActive': value.expandWhileActive,
+        'thoughts': value.thoughts.name,
+        'tools': value.tools.name,
+      },
+    );
+  }
+
+  @override
+  Future<void> savePinnedModels(List<String> ids) async {
+    await _send('PUT', '/settings/pinned', body: {'pinnedModels': ids});
+  }
+
+  @override
+  Future<void> saveDenylist(List<String> patterns) async {
+    await _send('PUT', '/settings/denylist', body: {'denylist': patterns});
+  }
+
+  @override
+  Future<void> saveSecurityProfile(SecurityProfile profile) async {
+    await _send(
+      'PUT',
+      '/settings/security-profile',
+      body: {'profile': profile.encode()},
+    );
+  }
+
+  @override
+  Future<void> saveLimits(AppLimits limits) async {
+    await _send('PUT', '/settings/limits', body: {'limits': limits.toMap()});
+  }
+
+  @override
+  Future<void> saveApiKey(String key) async {
+    await _send('POST', '/settings/api-key', body: {'key': key});
+  }
+
+  @override
+  Future<void> deleteApiKey() async {
+    await _send('DELETE', '/settings/api-key');
+  }
+
+  @override
+  Future<LlmKeyInfo?> checkKey() async {
+    final json = await _send('POST', '/settings/api-key/check');
+    if (json is! Map) return null;
+    return _keyInfo(Map<String, dynamic>.from(json));
+  }
+
+  @override
+  Future<void> refreshModels() async {
+    await _send('POST', '/models/refresh');
+  }
+
+  @override
+  Future<void> rememberModels(List<String> ids) async {
+    await _send('POST', '/models/remember', body: {'ids': ids});
+  }
+
   @override
   Stream<List<Project>> watchProjects() =>
       _pollList('/projects', 'projects', _project, const Duration(seconds: 2));
@@ -1082,6 +1188,49 @@ Map<String, Object?> _policyBody(PolicyProfile profile) => {
   'createdAt': profile.createdAt.toUtc().toIso8601String(),
   'updatedAt': profile.updatedAt.toUtc().toIso8601String(),
 };
+
+AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
+  final rawLimits = json['limits'];
+  final rawCatalog = json['catalog'];
+  return AgentSettingsSnapshot(
+    defaultModel: '${json['defaultModel'] ?? ''}',
+    titleModel: '${json['titleModel'] ?? ''}',
+    subagentModel: '${json['subagentModel'] ?? ''}',
+    fallbackModel: '${json['fallbackModel'] ?? ''}',
+    defaultPolicy: '${json['defaultPolicy'] ?? 'ask'}',
+    denylist: [
+      for (final item in (json['denylist'] as List? ?? const []))
+        if (item is String) item,
+    ],
+    securityProfile: SecurityProfile.decode(
+      '${json['securityProfile'] ?? '{}'}',
+    ),
+    limits: rawLimits is Map
+        ? AppLimits.fromJson(jsonEncode(Map<String, dynamic>.from(rawLimits)))
+        : const AppLimits(),
+    pinnedModels: [
+      for (final item in (json['pinnedModels'] as List? ?? const []))
+        if (item is String) item,
+    ],
+    stepsDisplay: json['steps'] is Map
+        ? _steps(Map<String, dynamic>.from(json['steps'] as Map))
+        : StepsDisplay.defaults,
+    apiKeyTail: '${json['apiKeyTail'] ?? ''}',
+    catalog: rawCatalog is Map
+        ? _catalogFrom(Map<String, dynamic>.from(rawCatalog))
+        : const ModelCatalogState(),
+  );
+}
+
+LlmKeyInfo _keyInfo(Map<String, dynamic> json) => LlmKeyInfo(
+  label: '${json['label'] ?? ''}',
+  usage: _double(json['usage']) ?? 0,
+  limit: _double(json['limit']),
+  limitRemaining: _double(json['limitRemaining']),
+  limitReset: json['limitReset'] as String?,
+  isFreeTier: json['isFreeTier'] == true,
+  expiresAt: _date(json['expiresAt']),
+);
 
 StepsDisplay _steps(Map<String, dynamic> json) => StepsDisplay(
   group: json['group'] != false,

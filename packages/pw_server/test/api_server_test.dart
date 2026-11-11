@@ -3,12 +3,18 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
 
@@ -446,6 +452,170 @@ void main() {
     expect(event, 'event: turnStarted');
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
   });
+
+  group('settings api', () {
+    late _FakeSettings settings;
+    late ApiServer settingsServer;
+    late String settingsBase;
+
+    setUp(() async {
+      settings = _FakeSettings();
+      settingsServer = ApiServer(
+        backend,
+        _token,
+        port: 0,
+        settingsApi: settings,
+      );
+      final port = await settingsServer.start();
+      settingsBase = 'http://127.0.0.1:$port';
+    });
+
+    tearDown(() => settingsServer.stop());
+
+    test('returns the settings snapshot', () async {
+      final (status, body) = await _request(
+        client,
+        settingsBase,
+        'GET',
+        '/api/v1/settings',
+        token: _token,
+      );
+
+      expect(status, HttpStatus.ok);
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      expect(json['defaultModel'], 'openai/gpt-4o');
+      expect(json['pinnedModels'], ['openai/gpt-4o']);
+      expect(json['steps'], containsPair('thoughts', 'all'));
+      expect((json['catalog'] as Map)['models'], hasLength(1));
+    });
+
+    test('writes an arbitrary setting', () async {
+      final (status, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/titleModel',
+        token: _token,
+        body: {'value': 'openai/gpt-4o-mini'},
+      );
+
+      expect(status, HttpStatus.noContent);
+      expect(settings.written, {'titleModel': 'openai/gpt-4o-mini'});
+    });
+
+    test('saves structured settings without treating them as keys', () async {
+      final (pinnedStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/pinned',
+        token: _token,
+        body: {
+          'pinnedModels': ['a', 'b'],
+        },
+      );
+      final (stepsStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/steps',
+        token: _token,
+        body: {
+          'group': false,
+          'expandWhileActive': false,
+          'thoughts': 'expanded',
+          'tools': 'active',
+        },
+      );
+      final (denylistStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/denylist',
+        token: _token,
+        body: {
+          'denylist': ['rm -rf', 'mkfs'],
+        },
+      );
+      final (limitsStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/limits',
+        token: _token,
+        body: {'limits': const AppLimits(attachmentsPerMessage: 3).toMap()},
+      );
+
+      expect(pinnedStatus, HttpStatus.noContent);
+      expect(stepsStatus, HttpStatus.noContent);
+      expect(denylistStatus, HttpStatus.noContent);
+      expect(limitsStatus, HttpStatus.noContent);
+      expect(settings.pinned, ['a', 'b']);
+      expect(settings.steps.group, isFalse);
+      expect(settings.steps.thoughts, ThoughtsVisibility.expanded);
+      expect(settings.denylist, ['rm -rf', 'mkfs']);
+      expect(settings.limits.attachmentsPerMessage, 3);
+      expect(settings.written, isEmpty);
+    });
+
+    test('saves and deletes the api key', () async {
+      final (saveStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/settings/api-key',
+        token: _token,
+        body: {'key': 'sk-or-v1-secret-abc'},
+      );
+      expect(saveStatus, HttpStatus.noContent);
+      expect(settings.savedKey, 'sk-or-v1-secret-abc');
+
+      final (checkStatus, checkBody) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/settings/api-key/check',
+        token: _token,
+      );
+      expect(checkStatus, HttpStatus.ok);
+      expect((jsonDecode(checkBody) as Map)['label'], 'sk-or-v1-...abc');
+
+      final (deleteStatus, _) = await _request(
+        client,
+        settingsBase,
+        'DELETE',
+        '/api/v1/settings/api-key',
+        token: _token,
+      );
+      expect(deleteStatus, HttpStatus.noContent);
+      expect(settings.savedKey, isNull);
+    });
+
+    test('refreshes and remembers models', () async {
+      final (refreshStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/refresh',
+        token: _token,
+      );
+      final (rememberStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/remember',
+        token: _token,
+        body: {
+          'ids': ['openai/gpt-4o'],
+        },
+      );
+
+      expect(refreshStatus, HttpStatus.accepted);
+      expect(rememberStatus, HttpStatus.noContent);
+      expect(settings.refreshed, 1);
+      expect(settings.remembered, ['openai/gpt-4o']);
+    });
+  });
 }
 
 Future<(int, String)> _request(
@@ -732,4 +902,105 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+}
+
+final class _FakeSettings implements AgentSettingsApi {
+  String? savedKey;
+  final written = <String, String?>{};
+  var pinned = <String>['openai/gpt-4o'];
+  var denylist = <String>[];
+  var securityProfile = const SecurityProfile();
+  var steps = const StepsDisplay();
+  var limits = const AppLimits();
+  var refreshed = 0;
+  var remembered = <String>[];
+
+  AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
+    defaultModel: 'openai/gpt-4o',
+    titleModel: '',
+    subagentModel: '',
+    fallbackModel: '',
+    defaultPolicy: 'ask',
+    denylist: denylist,
+    securityProfile: const SecurityProfile(),
+    limits: limits,
+    pinnedModels: pinned,
+    stepsDisplay: steps,
+    apiKeyTail: savedKey == null ? '' : 'abc',
+    catalog: const ModelCatalogState(
+      models: [
+        LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
+      ],
+    ),
+  );
+
+  @override
+  Future<AgentSettingsSnapshot> load() async => _snapshot;
+
+  @override
+  Stream<ModelCatalogState> watchCatalog() => Stream.value(_snapshot.catalog);
+
+  @override
+  Stream<List<String>> watchPinnedModels() => Stream.value(pinned);
+
+  @override
+  Future<void> writeSetting(String key, String? value) async {
+    written[key] = value;
+  }
+
+  @override
+  Future<void> saveStepsDisplay(StepsDisplay value) async {
+    steps = value;
+  }
+
+  @override
+  Future<void> savePinnedModels(List<String> ids) async {
+    pinned = ids;
+  }
+
+  @override
+  Future<void> saveDenylist(List<String> patterns) async {
+    denylist = patterns;
+  }
+
+  @override
+  Future<void> saveSecurityProfile(SecurityProfile profile) async {
+    securityProfile = profile;
+  }
+
+  @override
+  Future<void> saveLimits(AppLimits value) async {
+    limits = value;
+  }
+
+  @override
+  Future<void> saveApiKey(String key) async {
+    savedKey = key;
+  }
+
+  @override
+  Future<void> deleteApiKey() async {
+    savedKey = null;
+  }
+
+  @override
+  Future<LlmKeyInfo?> checkKey() async => savedKey == null
+      ? null
+      : LlmKeyInfo(
+          label: 'sk-or-v1-...abc',
+          usage: 1,
+          limit: 10,
+          limitRemaining: 9,
+          isFreeTier: false,
+        );
+
+  @override
+  Future<void> refreshModels() async {
+    refreshed++;
+  }
+
+  @override
+  Future<void> rememberModels(List<String> ids) async {
+    remembered = ids;
+  }
 }

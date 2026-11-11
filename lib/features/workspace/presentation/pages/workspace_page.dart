@@ -33,6 +33,7 @@ class WorkspacePage extends StatelessWidget {
       chatApi: service.chatApiFor(profile),
       hostsApi: service.hostsApiFor(profile),
       projectsApi: service.projectsApiFor(profile),
+      settingsApi: service.settingsApiFor(profile),
       child: MultiBlocProvider(
         providers: [
           BlocProvider(

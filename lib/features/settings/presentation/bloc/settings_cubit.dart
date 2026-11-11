@@ -6,13 +6,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
@@ -160,21 +160,15 @@ class SettingsState extends Equatable {
 }
 
 class SettingsCubit extends Cubit<SettingsState> {
-  SettingsCubit(
-    this._settings,
-    this._secrets,
-    this._catalog,
-    this._locale,
-    this._theme,
-  ) : super(const SettingsState());
+  SettingsCubit(this._settings, this._agentSettings, this._locale, this._theme)
+    : super(const SettingsState());
 
   final SettingsRepository _settings;
-  final SecretStore _secrets;
-  final ModelCatalogService _catalog;
+  final AgentSettingsApi _agentSettings;
   final LocaleController _locale;
   final ThemeController _theme;
   StreamSubscription<ModelCatalogState>? _catalogSub;
-  StreamSubscription<String?>? _pinsSub;
+  StreamSubscription<List<String>>? _pinsSub;
 
   @override
   Future<void> close() async {
@@ -184,71 +178,57 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> load() async {
-    final limits = await _settings.limits();
-    final key = await _secrets.read(openRouterKeyName);
+    final snapshot = await _agentSettings.load();
     emit(
       state.copyWith(
-        apiKeyTail: _tailOf(key),
-        defaultModel:
-            await _settings.read(SettingsRepository.keyDefaultModel) ?? '',
-        titleModel:
-            await _settings.read(SettingsRepository.keyTitleModel) ?? '',
-        subagentModel:
-            await _settings.read(SettingsRepository.keySubagentModel) ?? '',
-        fallbackModel:
-            await _settings.read(SettingsRepository.keyFallbackModel) ?? '',
+        apiKeyTail: snapshot.apiKeyTail,
+        defaultModel: snapshot.defaultModel,
+        titleModel: snapshot.titleModel,
+        subagentModel: snapshot.subagentModel,
+        fallbackModel: snapshot.fallbackModel,
+        defaultPolicy: PolicyMode.values.byName(snapshot.defaultPolicy),
+        denylist: snapshot.denylist.join('\n'),
+        securityProfile: snapshot.securityProfile,
+        limitsJson: const JsonEncoder.withIndent('  ')
+            .convert(snapshot.limits.toMap()),
+        pinnedModels: snapshot.pinnedModels,
+        stepsDisplay: snapshot.stepsDisplay,
+        catalog: snapshot.catalog,
         language:
             await _settings.read(SettingsRepository.keyLanguage) ?? 'system',
         themeMode: ThemeController.modeFrom(
           await _settings.read(SettingsRepository.keyThemeMode),
         ),
-        defaultPolicy: PolicyMode.values.byName(
-          await _settings.read(SettingsRepository.keyDefaultPolicy) ?? 'ask',
-        ),
-        denylist: (await _settings.readDenylist()).join('\n'),
-        securityProfile: await _settings.readSecurityProfile(),
-        limitsJson: const JsonEncoder.withIndent('  ').convert(limits.toMap()),
-        pinnedModels: await _settings.readPinnedModels(),
-        stepsDisplay: await _settings.readStepsDisplay(),
       ),
     );
-    // Выбранные модели показываем сразу; список грузится в фоне, а если его ещё не было — загружаем здесь.
-    await _catalog.remember([
-      state.defaultModel,
-      state.titleModel,
-      state.subagentModel,
-      state.fallbackModel,
-      ...state.pinnedModels,
+    await _agentSettings.rememberModels([
+      snapshot.defaultModel,
+      snapshot.titleModel,
+      snapshot.subagentModel,
+      snapshot.fallbackModel,
+      ...snapshot.pinnedModels,
     ]);
-    emit(state.copyWith(catalog: _catalog.state));
     await _catalogSub?.cancel();
-    _catalogSub = _catalog.watch().listen(
+    _catalogSub = _agentSettings.watchCatalog().listen(
       (catalog) => emit(state.copyWith(catalog: catalog)),
     );
-    // Закрепления могут смениться в композере открытого чата или агентом: читаем их из БД при каждом изменении.
     await _pinsSub?.cancel();
-    _pinsSub = _settings
-        .watch(SettingsRepository.keyPinnedModels)
-        .listen((_) => unawaited(_reloadPinned()));
-    if (!_catalog.state.loaded && state.apiKeySet) await refreshModels();
+    _pinsSub = _agentSettings.watchPinnedModels().listen(
+      (pinned) => emit(state.copyWith(pinnedModels: pinned)),
+    );
+    if (!snapshot.catalog.loaded && state.apiKeySet) await refreshModels();
     await refreshKeyInfo();
   }
 
-  /// Ключ сохраняется, только если сервис его принял. Иначе возвращается прежнее значение.
+  /// Ключ сохраняется, только если сервис его принял. Иначе адаптер возвращает прежнее значение.
   Future<void> saveApiKey(String key) async {
     final trimmed = key.trim();
     if (trimmed.isEmpty) return;
-    final previous = await _secrets.read(openRouterKeyName);
-    await _secrets.write(openRouterKeyName, trimmed);
-    final LlmKeyInfo info;
+    final LlmKeyInfo? info;
     try {
-      info = await _catalog.checkKey();
+      await _agentSettings.saveApiKey(trimmed);
+      info = await _agentSettings.checkKey();
     } on Object catch (error) {
-      if (previous == null) {
-        await _secrets.delete(openRouterKeyName);
-      } else {
-        await _secrets.write(openRouterKeyName, previous);
-      }
       emit(state.copyWith(keyError: _messageOf(error)));
       return;
     }
@@ -256,6 +236,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       state.copyWith(
         apiKeyTail: _tailOf(trimmed),
         keyInfo: info,
+        clearKeyInfo: info == null,
         clearKeyInfoError: true,
         clearKeyError: true,
         saved: state.saved + 1,
@@ -267,7 +248,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// Удаляет ключ из защищённого хранилища. Список моделей публичный и остаётся в памяти.
   /// Фоновые обновления без ключа не запускаются: ModelCatalogService проверяет ключ перед каждой попыткой.
   Future<void> deleteApiKey() async {
-    await _secrets.delete(openRouterKeyName);
+    await _agentSettings.deleteApiKey();
     emit(
       state.copyWith(
         apiKeyTail: '',
@@ -284,7 +265,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     if (!state.apiKeySet) return;
     emit(state.copyWith(keyInfoLoading: true, clearKeyInfoError: true));
     try {
-      final info = await _catalog.checkKey();
+      final info = await _agentSettings.checkKey();
       emit(state.copyWith(keyInfo: info, keyInfoLoading: false));
     } on Object catch (error) {
       emit(
@@ -296,7 +277,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   /// Обновляет список из OpenRouter. Загрузка и ошибка приходят в состоянии каталога.
   Future<void> refreshModels() async {
     try {
-      await _catalog.refresh();
+      await _agentSettings.refreshModels();
     } on Object {
       // Ошибка уже в state.catalog.error; повтор запланирован каталогом.
     }
@@ -306,9 +287,15 @@ class SettingsCubit extends Cubit<SettingsState> {
     required String defaultModel,
     required String titleModel,
   }) async {
-    await _settings.write(SettingsRepository.keyDefaultModel, defaultModel);
-    await _settings.write(SettingsRepository.keyTitleModel, titleModel);
-    await _catalog.remember([defaultModel, titleModel]);
+    await _agentSettings.writeSetting(
+      SettingsRepository.keyDefaultModel,
+      defaultModel,
+    );
+    await _agentSettings.writeSetting(
+      SettingsRepository.keyTitleModel,
+      titleModel,
+    );
+    await _agentSettings.rememberModels([defaultModel, titleModel]);
     emit(
       state.copyWith(
         defaultModel: defaultModel,
@@ -319,14 +306,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> saveSubagentModel(String id) async {
-    await _settings.write(SettingsRepository.keySubagentModel, id);
-    await _catalog.remember([id]);
+    await _agentSettings.writeSetting(SettingsRepository.keySubagentModel, id);
+    await _agentSettings.rememberModels([id]);
     emit(state.copyWith(subagentModel: id, saved: state.saved + 1));
   }
 
   Future<void> saveFallbackModel(String id) async {
-    await _settings.write(SettingsRepository.keyFallbackModel, id);
-    await _catalog.remember([id]);
+    await _agentSettings.writeSetting(SettingsRepository.keyFallbackModel, id);
+    await _agentSettings.rememberModels([id]);
     emit(state.copyWith(fallbackModel: id, saved: state.saved + 1));
   }
 
@@ -343,20 +330,23 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> saveDefaultPolicy(PolicyMode mode) async {
-    await _settings.write(SettingsRepository.keyDefaultPolicy, mode.name);
+    await _agentSettings.writeSetting(
+      SettingsRepository.keyDefaultPolicy,
+      mode.name,
+    );
     emit(state.copyWith(defaultPolicy: mode, saved: state.saved + 1));
   }
 
   Future<void> saveStepsDisplay(StepsDisplay value) async {
-    await _settings.saveStepsDisplay(value);
+    await _agentSettings.saveStepsDisplay(value);
     emit(state.copyWith(stepsDisplay: value, saved: state.saved + 1));
   }
 
   Future<void> togglePin(String modelId) async {
     final pins = [...state.pinnedModels];
     if (!pins.remove(modelId)) pins.add(modelId);
-    if (pins.contains(modelId)) await _catalog.remember([modelId]);
-    await _settings.savePinnedModels(pins);
+    if (pins.contains(modelId)) await _agentSettings.rememberModels([modelId]);
+    await _agentSettings.savePinnedModels(pins);
     emit(state.copyWith(pinnedModels: pins, saved: state.saved + 1));
   }
 
@@ -365,11 +355,12 @@ class SettingsCubit extends Cubit<SettingsState> {
     required int perMessage,
     required int maxBytes,
   }) async {
-    final limits = (await _settings.limits()).copyWith(
+    final current = _parseLimits(state.limitsJson) ?? const AppLimits();
+    final limits = current.copyWith(
       attachmentsPerMessage: perMessage,
       attachmentMaxBytes: maxBytes,
     );
-    await _settings.saveLimits(limits);
+    await _agentSettings.saveLimits(limits);
     emit(
       state.copyWith(
         limitsJson: const JsonEncoder.withIndent('  ').convert(limits.toMap()),
@@ -384,13 +375,13 @@ class SettingsCubit extends Cubit<SettingsState> {
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    await _settings.saveDenylist(patterns);
+    await _agentSettings.saveDenylist(patterns);
     emit(state.copyWith(denylist: patterns.join('\n'), saved: state.saved + 1));
   }
 
   /// Записывает уровни команд и увеличивает счётчик сохранения.
   Future<void> saveSecurityProfile(SecurityProfile profile) async {
-    await _settings.saveSecurityProfile(profile);
+    await _agentSettings.saveSecurityProfile(profile);
     emit(state.copyWith(securityProfile: profile, saved: state.saved + 1));
   }
 
@@ -401,7 +392,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       emit(state.copyWith(limitsError: true));
       return;
     }
-    await _settings.saveLimits(parsed);
+    await _agentSettings.saveLimits(parsed);
     emit(
       state.copyWith(
         limitsError: false,
@@ -409,12 +400,6 @@ class SettingsCubit extends Cubit<SettingsState> {
         saved: state.saved + 1,
       ),
     );
-  }
-
-  Future<void> _reloadPinned() async {
-    final pinned = await _settings.readPinnedModels();
-    if (isClosed) return;
-    emit(state.copyWith(pinnedModels: pinned));
   }
 
   AppLimits? _parseLimits(String text) {

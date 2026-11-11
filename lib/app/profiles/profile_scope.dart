@@ -2,6 +2,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -17,6 +18,7 @@ class ProfileScope extends InheritedWidget {
     required this.chatApi,
     required this.hostsApi,
     required this.projectsApi,
+    required this.settingsApi,
     required super.child,
     super.key,
   });
@@ -26,6 +28,7 @@ class ProfileScope extends InheritedWidget {
   final ChatApi chatApi;
   final HostsApi hostsApi;
   final ProjectsApi projectsApi;
+  final AgentSettingsApi settingsApi;
 
   static ProfileScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ProfileScope>();
@@ -42,5 +45,6 @@ class ProfileScope extends InheritedWidget {
       agentApi != oldWidget.agentApi ||
       chatApi != oldWidget.chatApi ||
       hostsApi != oldWidget.hostsApi ||
-      projectsApi != oldWidget.projectsApi;
+      projectsApi != oldWidget.projectsApi ||
+      settingsApi != oldWidget.settingsApi;
 }

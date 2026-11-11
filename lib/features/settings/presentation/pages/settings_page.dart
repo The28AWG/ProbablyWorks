@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
@@ -20,12 +21,12 @@ import 'package:probably_works/features/settings/presentation/widgets/security_p
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 @RoutePage()
@@ -44,8 +45,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => SettingsCubit(
       getIt<SettingsRepository>(),
-      getIt<SecretStore>(),
-      getIt<ModelCatalogService>(),
+      ProfileScope.maybeOf(context)?.settingsApi ?? getIt<AgentSettingsApi>(),
       getIt<LocaleController>(),
       getIt<ThemeController>(),
     )..load(),

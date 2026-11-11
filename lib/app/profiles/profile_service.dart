@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -26,6 +27,7 @@ class ProfileService {
     this._localChat,
     this._localHosts,
     this._localProjects,
+    this._localSettings,
   );
 
   static const _uuid = Uuid();
@@ -36,6 +38,7 @@ class ProfileService {
   final ChatApi _localChat;
   final HostsApi _localHosts;
   final ProjectsApi _localProjects;
+  final AgentSettingsApi _localSettings;
 
   final _changes = StreamController<void>.broadcast();
   final _remote = <String, RemoteAgentApi>{};
@@ -120,6 +123,9 @@ class ProfileService {
 
   ProjectsApi projectsApiFor(AgentProfile profile) =>
       profile.isLocal ? _localProjects : _remoteFor(profile);
+
+  AgentSettingsApi settingsApiFor(AgentProfile profile) =>
+      profile.isLocal ? _localSettings : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 

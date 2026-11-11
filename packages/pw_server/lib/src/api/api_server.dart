@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -15,6 +16,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -33,6 +35,7 @@ final class ApiServer {
     ChatApi? chat,
     HostsApi? hosts,
     ProjectsApi? projects,
+    this.settingsApi,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -45,6 +48,7 @@ final class ApiServer {
   final ChatApi? _chatApi;
   final HostsApi? _hostsApi;
   final ProjectsApi? _projectsApi;
+  final AgentSettingsApi? settingsApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -161,12 +165,57 @@ final class ApiServer {
             request.method == 'PUT') {
           return _savePinned(request);
         }
+        if (rest.length == 1 &&
+            rest.first == 'steps' &&
+            request.method == 'PUT') {
+          return _saveSteps(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'limits' &&
+            request.method == 'PUT') {
+          return _saveLimits(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'denylist' &&
+            request.method == 'PUT') {
+          return _saveDenylist(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'security-profile' &&
+            request.method == 'PUT') {
+          return _saveSecurityProfile(request);
+        }
+        if (rest.length == 1 && request.method == 'PUT') {
+          return _saveSetting(request, rest.first);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'api-key' &&
+            request.method == 'POST') {
+          return _saveApiKey(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'api-key' &&
+            request.method == 'DELETE') {
+          await _requireSettingsApi().deleteApiKey();
+          return _json(request.response, HttpStatus.noContent, {});
+        }
+        if (rest.length == 2 &&
+            rest.first == 'api-key' &&
+            rest[1] == 'check' &&
+            request.method == 'POST') {
+          return _checkKey(request);
+        }
       case 'models':
         if (rest.isEmpty && request.method == 'GET') return _models(request);
         if (rest.length == 1 &&
             rest.first == 'remember' &&
             request.method == 'POST') {
           return _rememberModels(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'refresh' &&
+            request.method == 'POST') {
+          return _refreshModels(request);
         }
       case 'chats':
         return _routeChats(request, rest);
@@ -570,17 +619,130 @@ final class ApiServer {
     return chat;
   }
 
+  AgentSettingsApi _requireSettingsApi() {
+    final settings = settingsApi;
+    if (settings == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'settings API is not available',
+      );
+    }
+    return settings;
+  }
+
   Future<void> _settings(HttpRequest request) async {
-    final chat = _requireChatApi();
+    final snapshot = await _requireSettingsApi().load();
     _json(request.response, HttpStatus.ok, {
-      'defaultModel': await chat.settings.read('defaultModel') ?? '',
-      'pinnedModels': await chat.settings.readPinnedModels(),
-      'steps': _stepsJson(await chat.settings.readStepsDisplay()),
-      'limits': (await chat.limits()).toMap(),
-      'denylist': await _requireProjectsApi().readDenylist(),
-      'securityProfile': (await _requireProjectsApi().readSecurityProfile())
-          .encode(),
+      'defaultModel': snapshot.defaultModel,
+      'titleModel': snapshot.titleModel,
+      'subagentModel': snapshot.subagentModel,
+      'fallbackModel': snapshot.fallbackModel,
+      'defaultPolicy': snapshot.defaultPolicy,
+      'denylist': snapshot.denylist,
+      'securityProfile': snapshot.securityProfile.encode(),
+      'limits': snapshot.limits.toMap(),
+      'pinnedModels': snapshot.pinnedModels,
+      'steps': _stepsJson(snapshot.stepsDisplay),
+      'apiKeyTail': snapshot.apiKeyTail,
+      'catalog': _catalogJson(snapshot.catalog),
     });
+  }
+
+  Future<void> _saveSetting(HttpRequest request, String key) async {
+    final body = await _body(request);
+    final value = body['value'];
+    if (value != null && value is! String) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_value',
+        'value must be a string or null',
+      );
+    }
+    await _requireSettingsApi().writeSetting(key, value as String?);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveApiKey(HttpRequest request) async {
+    final body = await _body(request);
+    try {
+      await _requireSettingsApi().saveApiKey(_string(body, 'key'));
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        AgentApiException(HttpStatus.badRequest, 'api_key_rejected', '$error'),
+        stackTrace,
+      );
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _checkKey(HttpRequest request) async {
+    final info = await _requireSettingsApi().checkKey();
+    if (info == null) {
+      return _json(request.response, HttpStatus.noContent, {});
+    }
+    _json(request.response, HttpStatus.ok, _keyInfoJson(info));
+  }
+
+  Future<void> _refreshModels(HttpRequest request) async {
+    await _requireSettingsApi().refreshModels();
+    _json(request.response, HttpStatus.accepted, {});
+  }
+
+  Future<void> _saveSteps(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireSettingsApi().saveStepsDisplay(
+      StepsDisplay(
+        group: body['group'] != false,
+        expandWhileActive: body['expandWhileActive'] != false,
+        thoughts: ThoughtsVisibility.values.byName(
+          '${body['thoughts'] ?? 'all'}',
+        ),
+        tools: ToolsVisibility.values.byName('${body['tools'] ?? 'all'}'),
+      ),
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveLimits(HttpRequest request) async {
+    final body = await _body(request);
+    final raw = body['limits'];
+    if (raw is! Map) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_limits',
+        'limits must be an object',
+      );
+    }
+    await _requireSettingsApi().saveLimits(
+      AppLimits.fromJson(jsonEncode(Map<String, dynamic>.from(raw))),
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveDenylist(HttpRequest request) async {
+    final body = await _body(request);
+    final raw = body['denylist'];
+    if (raw is! List) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_denylist',
+        'denylist must be a list',
+      );
+    }
+    await _requireSettingsApi().saveDenylist([
+      for (final item in raw)
+        if (item is String) item,
+    ]);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveSecurityProfile(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireSettingsApi().saveSecurityProfile(
+      SecurityProfile.decode('${body['profile'] ?? '{}'}'),
+    );
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _savePinned(HttpRequest request) async {
@@ -593,7 +755,7 @@ final class ApiServer {
         'pinnedModels must be a list',
       );
     }
-    await _requireChatApi().settings.savePinnedModels([
+    await _requireSettingsApi().savePinnedModels([
       for (final id in pinned)
         if (id is String) id,
     ]);
@@ -652,10 +814,9 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
-  Future<void> _models(HttpRequest request) {
-    final state = _requireChatApi().models.state;
+  Future<void> _models(HttpRequest request) async {
+    final state = (await _requireSettingsApi().load()).catalog;
     _json(request.response, HttpStatus.ok, _catalogJson(state));
-    return Future<void>.value();
   }
 
   Future<void> _rememberModels(HttpRequest request) async {
@@ -668,7 +829,7 @@ final class ApiServer {
         'ids must be a list',
       );
     }
-    await _requireChatApi().models.remember([
+    await _requireSettingsApi().rememberModels([
       for (final id in ids)
         if (id is String) id,
     ]);
@@ -1049,6 +1210,16 @@ Map<String, Object?> _policyJson(PolicyProfile profile) => {
   'profile': profile.profile.encode(),
   'createdAt': profile.createdAt.toUtc().toIso8601String(),
   'updatedAt': profile.updatedAt.toUtc().toIso8601String(),
+};
+
+Map<String, Object?> _keyInfoJson(LlmKeyInfo info) => {
+  'label': info.label,
+  'usage': info.usage,
+  'limit': info.limit,
+  'limitRemaining': info.limitRemaining,
+  'limitReset': info.limitReset,
+  'isFreeTier': info.isFreeTier,
+  'expiresAt': info.expiresAt?.toUtc().toIso8601String(),
 };
 
 Host _hostFromJson(String id, Map<String, dynamic> json) {

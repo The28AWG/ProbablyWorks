@@ -7,6 +7,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/local_agent_settings_api.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -58,10 +59,14 @@ void main() {
 
   setUp(() {
     db = openInMemoryDatabase();
+    final settings = SettingsRepository(db);
     cubit = SettingsCubit(
-      SettingsRepository(db),
-      MemorySecretStore(),
-      ModelCatalogService(SavedModelRepository(db), _NoNetLlm()),
+      settings,
+      LocalAgentSettingsApi(
+        settings,
+        MemorySecretStore(),
+        ModelCatalogService(SavedModelRepository(db), _NoNetLlm()),
+      ),
       LocaleController(),
       ThemeController(),
     );
