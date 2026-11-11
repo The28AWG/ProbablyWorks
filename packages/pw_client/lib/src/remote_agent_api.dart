@@ -5,6 +5,7 @@ import 'dart:io' as io;
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -27,7 +28,7 @@ import 'package:uuid/uuid.dart';
 ///
 /// Используется для удалённых профилей. Локальный профиль работает через
 /// `LocalAgentApi` без транспорта.
-class RemoteAgentApi implements AgentApi, ChatApi {
+class RemoteAgentApi implements AgentApi, ChatApi, HostsApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -174,6 +175,33 @@ class RemoteAgentApi implements AgentApi, ChatApi {
     await _editChanges.close();
     _client.close();
     _eventsClient.close(force: true);
+  }
+
+  @override
+  Future<void> saveHost(
+    Host host, {
+    String? secret,
+    String? privateKeyPem,
+  }) async {
+    await _send(
+      'PUT',
+      '/hosts/${host.id}',
+      body: {
+        ..._hostBody(host),
+        'secret': ?secret,
+        'privateKeyPem': ?privateKeyPem,
+      },
+    );
+  }
+
+  @override
+  Future<void> deleteHost(String id) async {
+    await _send('DELETE', '/hosts/$id');
+  }
+
+  @override
+  Future<void> testHost(Host host) async {
+    await _send('POST', '/hosts/${host.id}/test', body: _hostBody(host));
   }
 
   @override
@@ -965,6 +993,22 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
       ? null
       : jsonEncode(json['pendingCard']),
 );
+
+Map<String, Object?> _hostBody(Host host) => {
+  'id': host.id,
+  'name': host.name,
+  'kind': host.kind.name,
+  'address': host.address,
+  'port': host.port,
+  'username': host.username,
+  'authType': host.authType.name,
+  'keyPath': host.keyPath,
+  'os': host.os.name,
+  'defaultWorkspace': host.defaultWorkspace,
+  'notes': host.notes,
+  'createdAt': host.createdAt.toUtc().toIso8601String(),
+  'updatedAt': host.updatedAt.toUtc().toIso8601String(),
+};
 
 Host _host(Map<String, dynamic> json) => Host(
   id: _string(json, 'id'),

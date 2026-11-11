@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -27,14 +28,17 @@ final class ApiServer {
     InternetAddress? address,
     this._port = 7787,
     ChatApi? chat,
+    HostsApi? hosts,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
-       _chatApi = chat;
+       _chatApi = chat,
+       _hostsApi = hosts;
 
   static const _maxBodyBytes = 1 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
 
   final AgentApi _backend;
   final ChatApi? _chatApi;
+  final HostsApi? _hostsApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -116,6 +120,16 @@ final class ApiServer {
     switch (path[2]) {
       case 'hosts':
         if (rest.isEmpty && request.method == 'GET') return _hosts(request);
+        if (rest.length == 1) {
+          if (request.method == 'PUT') return _saveHost(request, rest.first);
+          if (request.method == 'DELETE') {
+            await _requireHostsApi().deleteHost(rest.first);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
+        }
+        if (rest.length == 2 && rest[1] == 'test' && request.method == 'POST') {
+          return _testHost(request, rest.first);
+        }
         if (rest.length == 2 && rest[1] == 'trust' && request.method == 'PUT') {
           return _trustHost(request, rest.first);
         }
@@ -274,10 +288,38 @@ final class ApiServer {
   }
 
   Future<void> _hosts(HttpRequest request) async {
-    final hosts = await _backend.hosts();
+    final hosts = await (_hostsApi?.hosts() ?? _backend.hosts());
     _json(request.response, HttpStatus.ok, {
       'hosts': [for (final host in hosts) _hostJson(host)],
     });
+  }
+
+  HostsApi _requireHostsApi() {
+    final hosts = _hostsApi;
+    if (hosts == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'hosts API is not available',
+      );
+    }
+    return hosts;
+  }
+
+  Future<void> _saveHost(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _requireHostsApi().saveHost(
+      _hostFromJson(id, body),
+      secret: body['secret'] as String?,
+      privateKeyPem: body['privateKeyPem'] as String?,
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _testHost(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _requireHostsApi().testHost(_hostFromJson(id, body));
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _chats(HttpRequest request) async {
@@ -815,6 +857,25 @@ final class ApiServer {
       'error': {'code': code, 'message': message},
     });
   }
+}
+
+Host _hostFromJson(String id, Map<String, dynamic> json) {
+  final now = DateTime.now();
+  return Host(
+    id: id,
+    name: '${json['name'] ?? ''}',
+    kind: HostKind.values.byName('${json['kind'] ?? 'local'}'),
+    address: json['address'] as String?,
+    port: json['port'] is num ? (json['port'] as num).toInt() : 22,
+    username: json['username'] as String?,
+    authType: SshAuthType.values.byName('${json['authType'] ?? 'key'}'),
+    keyPath: json['keyPath'] as String?,
+    os: HostOs.values.byName('${json['os'] ?? 'posix'}'),
+    defaultWorkspace: json['defaultWorkspace'] as String?,
+    notes: json['notes'] as String?,
+    createdAt: _date(json['createdAt']) ?? now,
+    updatedAt: _date(json['updatedAt']) ?? now,
+  );
 }
 
 Map<String, Object?> _hostJson(Host host) => {

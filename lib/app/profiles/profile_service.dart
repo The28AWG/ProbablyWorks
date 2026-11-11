@@ -5,6 +5,8 @@ import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/hosts_api.dart';
+
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_client/pw_client.dart';
@@ -21,6 +23,7 @@ class ProfileService {
     this._secrets,
     this._localApi,
     this._localChat,
+    this._localHosts,
   );
 
   static const _uuid = Uuid();
@@ -29,6 +32,7 @@ class ProfileService {
   final SecretStore _secrets;
   final AgentApi _localApi;
   final ChatApi _localChat;
+  final HostsApi _localHosts;
 
   final _changes = StreamController<void>.broadcast();
   final _remote = <String, RemoteAgentApi>{};
@@ -107,6 +111,9 @@ class ProfileService {
 
   ChatApi chatApiFor(AgentProfile profile) =>
       profile.isLocal ? _localChat : _remoteFor(profile);
+
+  HostsApi hostsApiFor(AgentProfile profile) =>
+      profile.isLocal ? _localHosts : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/api/local_hosts_api.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
@@ -42,10 +43,12 @@ void main() {
       provisioner,
     );
     cubit = HostsCubit(
-      hosts,
-      secrets,
-      HostDiagnostics(hosts, secrets, settings, runtimes),
-      provisioner,
+      LocalHostsApi(
+        hosts,
+        secrets,
+        HostDiagnostics(hosts, secrets, settings, runtimes),
+        provisioner,
+      ),
     );
   });
 

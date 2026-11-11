@@ -2,17 +2,15 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_card.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_form_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
-import 'package:pw_agent/core/data/host_repository.dart';
-import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
+import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
-import 'package:pw_agent/host/host_diagnostics.dart';
 
 @RoutePage()
 class HostsPage extends StatelessWidget {
@@ -23,10 +21,7 @@ class HostsPage extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return BlocProvider(
       create: (_) => HostsCubit(
-        getIt<HostRepository>(),
-        getIt<SecretStore>(),
-        getIt<HostDiagnostics>(),
-        getIt<VirtualHostProvisioner>(),
+        ProfileScope.maybeOf(context)?.hostsApi ?? getIt<HostsApi>(),
       ),
       child: AppScaffold(
         appBar: AppBar(
