@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
@@ -156,7 +157,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
     unawaited(
       context.router.replaceAll([
         WorkspaceRoute(
-          profileId: 'local',
+          profileId: getIt<ProfileService>().localProfileId,
           children: [
             ChatsTabRoute(children: [ChatRoute(chatId: state.created!)]),
           ],
@@ -409,7 +410,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
             ),
             onPressed: () => context.router.push(
               WorkspaceRoute(
-                profileId: 'local',
+                profileId: getIt<ProfileService>().localProfileId,
                 children: [const HostsRoute()],
               ),
             ),

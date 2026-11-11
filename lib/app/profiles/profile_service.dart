@@ -24,7 +24,6 @@ class ProfileService {
   );
 
   static const _uuid = Uuid();
-  static const localProfileId = 'local';
 
   final SettingsRepository _settings;
   final SecretStore _secrets;
@@ -46,28 +45,58 @@ class ProfileService {
     if (_loaded) return;
     _loaded = true;
     final raw = await _settings.read(agentProfilesKey);
+    final storedLocal = await _settings.read(localAgentProfileKey);
+    final localId = storedLocal == null || storedLocal.isEmpty
+        ? 'p-${_uuid.v4()}'
+        : storedLocal;
+    if (storedLocal == null || storedLocal.isEmpty) {
+      await _settings.write(localAgentProfileKey, localId);
+    }
+    final locals = <AgentProfile>[];
     if (raw != null && raw.isNotEmpty) {
       try {
         final decoded = jsonDecode(raw);
         if (decoded is List) {
-          final loaded = [
+          locals.addAll([
             for (final item in decoded)
               if (item is Map)
-                AgentProfile.fromJson(Map<String, dynamic>.from(item)),
-          ];
-          if (loaded.isNotEmpty) _profiles = loaded;
+                _normalizeRemote(
+                  AgentProfile.fromJson(Map<String, dynamic>.from(item)),
+                ),
+          ]);
         }
       } on FormatException {
         // Битый список не должен мешать открытию приложения.
       }
     }
-    if (!_profiles.any((profile) => profile.isLocal)) {
-      _profiles.insert(0, AgentProfile.local());
-    }
+    _profiles = [
+      AgentProfile.local(localId),
+      for (final profile in locals)
+        if (!profile.isLocal) profile,
+    ];
     for (final profile in _profiles.where((profile) => !profile.isLocal)) {
-      _tokens[profile.id] =
-          await _secrets.read(agentProfileTokenKey(profile.id)) ?? '';
+      var token = await _secrets.read(agentProfileTokenKey(profile.id));
+      final oldKey = agentProfileTokenKey('remote-${profile.id}');
+      if (token == null || token.isEmpty) {
+        final oldToken = await _secrets.read(oldKey);
+        if (oldToken != null && oldToken.isNotEmpty) {
+          token = oldToken;
+          await _secrets.write(agentProfileTokenKey(profile.id), oldToken);
+          await _secrets.delete(oldKey);
+        }
+      }
+      _tokens[profile.id] = token ?? '';
     }
+    await _persist();
+  }
+
+  AgentProfile get localProfile => _profiles.firstWhere((p) => p.isLocal);
+
+  String get localProfileId => localProfile.id;
+
+  AgentProfile _normalizeRemote(AgentProfile profile) {
+    if (!profile.id.startsWith('remote-')) return profile;
+    return profile.copyWith(id: profile.id.replaceFirst('remote-', ''));
   }
 
   AgentProfile? byId(String id) =>
@@ -91,7 +120,7 @@ class ProfileService {
   }) async {
     _validateRemote(baseUri);
     final profile = AgentProfile(
-      id: 'remote-${_uuid.v4()}',
+      id: 'p-${_uuid.v4()}',
       name: name.trim(),
       kind: AgentProfileKind.remote,
       baseUri: baseUri,
@@ -170,7 +199,10 @@ class ProfileService {
 
   Future<void> _persist() => _settings.write(
     agentProfilesKey,
-    jsonEncode([for (final profile in _profiles) profile.toJson()]),
+    jsonEncode([
+      for (final profile in _profiles)
+        if (!profile.isLocal) profile.toJson(),
+    ]),
   );
 
   static void _validateRemote(Uri uri) {

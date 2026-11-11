@@ -10,8 +10,8 @@ final class AgentProfile {
     this.baseUri,
   });
 
-  factory AgentProfile.local() => const AgentProfile(
-    id: 'local',
+  factory AgentProfile.local([String id = 'local']) => AgentProfile(
+    id: id,
     // Имя локального профиля локализуется в интерфейсе через localHostTitle.
     name: '',
     kind: AgentProfileKind.local,
@@ -24,6 +24,18 @@ final class AgentProfile {
     baseUri: json['baseUri'] is String
         ? Uri.tryParse(json['baseUri'] as String)
         : null,
+  );
+
+  AgentProfile copyWith({
+    String? id,
+    String? name,
+    AgentProfileKind? kind,
+    Uri? baseUri,
+  }) => AgentProfile(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    kind: kind ?? this.kind,
+    baseUri: baseUri ?? this.baseUri,
   );
 
   final String id;
@@ -46,5 +58,6 @@ final class AgentProfile {
 /// Профили лежат в клиентской настройке; токены — в SecretStore.
 const String agentProfilesKey = 'agentProfiles';
 const String activeAgentProfileKey = 'activeAgentProfile';
+const String localAgentProfileKey = 'localAgentProfileId';
 
 String agentProfileTokenKey(String profileId) => 'agent.$profileId.token';

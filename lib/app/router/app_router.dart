@@ -14,7 +14,7 @@ class AppRouter extends RootStackRouter {
 
   @override
   List<AutoRoute> get routes => [
-    RedirectRoute(path: '/', redirectTo: '/a/local'),
+    AutoRoute(page: StartRoute.page, path: '/', initial: true),
     AutoRoute(page: OnboardingRoute.page, path: '/onboarding'),
     AutoRoute(
       page: WorkspaceRoute.page,
