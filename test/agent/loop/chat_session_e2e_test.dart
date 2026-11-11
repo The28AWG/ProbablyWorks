@@ -1133,6 +1133,30 @@ void main() {
     },
   );
 
+  test('virtual host run_command receives stdin', () async {
+    final chatId = await createVirtualChat();
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'stdin',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'cat', 'stdin': 'virtual stdin'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'read stdin');
+
+    final tool = (await hub.chats.messages(chatId))
+        .firstWhere((message) => message.role == MessageRole.tool);
+    expect(tool.text, contains('status: done'));
+    expect(tool.text, contains('virtual stdin'));
+  });
+
   test('background run_command on a virtual host is refused and the model is told why', () async {
     final chatId = await createVirtualChat();
     llm.script

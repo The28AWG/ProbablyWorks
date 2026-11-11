@@ -33,6 +33,10 @@ class ActiveExec {
 
   /// Терминал, в котором выполняется команда; появляется после открытия PTY.
   HostTerminal? terminal;
+
+  /// Отмена потока для Host без процесса и PTY (виртуальный Host).
+  /// Останавливает интерпретатор, отписываясь от его событий.
+  Future<void> Function()? cancel;
 }
 
 /// Реестр запущенных команд и лимит параллельности на Host.
@@ -72,8 +76,12 @@ class ActiveExecRegistry {
     final pid = exec.pid;
     if (pid != null) {
       await exec.runtime.killProcess(pid, force: force);
+    } else if (exec.terminal case final terminal?) {
+      terminal.write(Uint8List.fromList(const [0x03]));
     } else {
-      exec.terminal?.write(Uint8List.fromList(const [0x03]));
+      // У виртуального Host нет ни pid, ни PTY: отмена — это закрытие
+      // подписки на поток интерпретатора.
+      await exec.cancel?.call();
     }
   }
 

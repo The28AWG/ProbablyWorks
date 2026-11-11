@@ -143,7 +143,8 @@ class CommandExecutor {
       );
     }
 
-    events.listen(
+    late final StreamSubscription<ExecEvent> subscription;
+    subscription = events.listen(
       (event) {
         switch (event) {
           case ExecStarted e:
@@ -163,6 +164,15 @@ class CommandExecutor {
       onError: (Object error) => unawaited(finalize(error: error)),
       onDone: () => unawaited(finalize()),
     );
+    // У виртуального Host нет pid/PTY: остановка — закрытие подписки на
+    // интерпретатор. Для local/SSH этот путь остаётся запасным.
+    exec.cancel = () async {
+      if (finalized) return;
+      // finalize выставляет [finalized] до первого await, поэтому поздний
+      // onDone отменённой подписки уже не подменит итог.
+      await finalize(done: ExecDone(exitCode: 130, message: 'stopped'));
+      await subscription.cancel();
+    };
 
     watchdog = Timer(limit, () {
       timedOut = true;
