@@ -98,6 +98,8 @@ class LocalChatApi implements ChatApi {
     return _hub.newChat(hostId: hostId);
   }
 
+  Future<void> saveChat(Chat chat) => _hub.chats.saveChat(chat);
+
   Future<void> renameChat(String chatId, String title) =>
       updateChat(chatId, title: title);
 

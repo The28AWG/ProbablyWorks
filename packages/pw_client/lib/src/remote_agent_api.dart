@@ -51,6 +51,7 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   final _approvalChats = <String, String>{};
   final _questionChats = <String, String>{};
   final _editChats = <String, String>{};
+  final _queues = <String, List<QueuedPrompt>>{};
   final _approvalsById = <String, ApprovalRequest>{};
   final _questionsById = <String, UserQuestion>{};
   final _editsById = <String, EditFileChangesRequest>{};
@@ -271,6 +272,12 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   }
 
   @override
+  @override
+  Future<void> saveChat(Chat chat) async {
+    await _send('PUT', '/chats/${chat.id}', body: _chatBody(chat));
+  }
+
+  @override
   Future<void> renameChat(String chatId, String title) =>
       updateChat(chatId, title: title);
 
@@ -346,6 +353,7 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   @override
   Future<void> openChat(String chatId) async {
     await _send('PUT', '/chats/$chatId/presence');
+    await _trySyncSession(chatId);
   }
 
   @override
@@ -355,6 +363,23 @@ class RemoteAgentApi implements AgentApi, ChatApi {
       '/chats/$chatId/messages',
       body: {'text': text, 'sendNow': sendNow},
     );
+    await _trySyncSession(chatId);
+  }
+
+  Future<void> _trySyncSession(String chatId) async {
+    try {
+      await _syncSession(chatId);
+    } on AgentApiException {
+      // Очередь — дополнительная информация; без неё чат всё равно работает.
+    }
+  }
+
+  Future<void> _syncSession(String chatId) async {
+    final json = await _get('/chats/$chatId/session');
+    _queues[chatId] = [
+      for (final item in (json['queue'] as List? ?? const []))
+        if (item is Map) QueuedPrompt.user('${item['text'] ?? ''}'),
+    ];
   }
 
   @override
@@ -752,6 +777,25 @@ class RemoteAgentApi implements AgentApi, ChatApi {
   }
 }
 
+Map<String, Object?> _chatBody(Chat chat) => {
+  'hostId': chat.hostId,
+  'projectId': chat.projectId,
+  'kind': chat.kind.name,
+  'parentChatId': chat.parentChatId,
+  'rootChatId': chat.rootChatId,
+  'depth': chat.depth,
+  'title': chat.title,
+  'titleSource': chat.titleSource.name,
+  'model': chat.model,
+  'policyMode': chat.policyMode.name,
+  'workspace': chat.workspace,
+  'lastPromptTokens': chat.lastPromptTokens,
+  'lastCompletionTokens': chat.lastCompletionTokens,
+  'contextLength': chat.contextLength,
+  'createdAt': chat.createdAt.toUtc().toIso8601String(),
+  'updatedAt': chat.updatedAt.toUtc().toIso8601String(),
+};
+
 Chat _chat(Map<String, dynamic> json) => Chat(
   id: _string(json, 'id'),
   hostId: _string(json, 'hostId'),
@@ -1093,7 +1137,7 @@ final class _RemoteChatSession implements ChatSessionApi {
   bool get isRunning => _api.runningChatIds.contains(_chatId);
 
   @override
-  List<QueuedPrompt> get queue => const [];
+  List<QueuedPrompt> get queue => _api._queues[_chatId] ?? const [];
 
   @override
   Stream<AgentEvent> get events =>
@@ -1110,30 +1154,67 @@ final class _RemoteChatSession implements ChatSessionApi {
   Future<void> stop({String? reason}) => _api.stop(_chatId, reason: reason);
 
   @override
-  Future<void> continueAfterStepLimit() => Future<void>.value();
+  Future<void> continueAfterStepLimit() async {
+    await _api.sendJson('POST', '/chats/$_chatId/session/continue');
+  }
 
   @override
-  Future<bool> regenerateLast() => Future.value(false);
+  Future<bool> regenerateLast() async {
+    final json = await _api.sendJson(
+      'POST',
+      '/chats/$_chatId/session/regenerate',
+    );
+    return json is Map && json['accepted'] == true;
+  }
 
   @override
-  void promoteQueued(int index) => index;
+  void promoteQueued(int index) {
+    unawaited(
+      _api.sendJson('POST', '/chats/$_chatId/session/queue/$index/promote'),
+    );
+  }
 
   @override
-  QueuedPrompt? takeQueued(int index) => null;
+  QueuedPrompt? takeQueued(int index) {
+    final items = _api._queues[_chatId];
+    if (items == null || index < 0 || index >= items.length) return null;
+    final item = items.removeAt(index);
+    unawaited(_api.sendJson('DELETE', '/chats/$_chatId/session/queue/$index'));
+    return item;
+  }
 
   @override
   Future<bool> editUserMessage(
     String messageId,
     String newText, {
     List<AttachmentRef>? attachments,
-  }) => Future.value(false);
+  }) async {
+    final json = await _api.sendJson(
+      'POST',
+      '/chats/$_chatId/session/edit',
+      body: {'messageId': messageId, 'text': newText},
+    );
+    return json is Map && json['accepted'] == true;
+  }
 
   @override
-  Future<void> deleteAfter(String messageId) => Future<void>.value();
+  Future<void> deleteAfter(String messageId) async {
+    await _api.sendJson(
+      'POST',
+      '/chats/$_chatId/session/delete-after',
+      body: {'messageId': messageId},
+    );
+  }
 
   @override
   Future<void> restoreUnanswered() => _api.openChat(_chatId);
 
   @override
-  Future<void> compactNow({bool force = false}) => Future<void>.value();
+  Future<void> compactNow({bool force = false}) async {
+    await _api.sendJson(
+      'POST',
+      '/chats/$_chatId/session/compact',
+      body: {'force': force},
+    );
+  }
 }

@@ -134,6 +134,27 @@ void main() {
     expect((jsonDecode(body) as Map)['error'], contains('code'));
   });
 
+  test('upserts a chat by id', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/chats/new-chat',
+      token: _token,
+      body: {
+        'hostId': 'local',
+        'title': 'New chat',
+        'policyMode': 'ask',
+        'createdAt': '2026-11-11T00:00:00Z',
+        'updatedAt': '2026-11-11T00:00:00Z',
+      },
+    );
+
+    expect(status, HttpStatus.noContent);
+    expect(backend.savedChatId, 'new-chat');
+    expect(backend.savedChatTitle, 'New chat');
+  });
+
   test('updates chat model, policy and workspace', () async {
     final (status, _) = await _request(
       client,
@@ -155,6 +176,19 @@ void main() {
     expect(backend.updatedModel, 'model/x');
     expect(backend.updatedPolicy, PolicyMode.yolo);
     expect(backend.updatedWorkspace, '/work');
+  });
+
+  test('session endpoints report unsupported without ChatApi', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1/session',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.notImplemented);
+    expect((jsonDecode(body) as Map)['error'], contains('code'));
   });
 
   test('returns chat journal and pending cards', () async {
@@ -429,6 +463,8 @@ final class _FakeBackend implements AgentApi {
   String? updatedModel;
   PolicyMode? updatedPolicy;
   String? updatedWorkspace;
+  String? savedChatId;
+  String? savedChatTitle;
   final choices = <EditFileChangesChoice>[];
   var opened = 0;
   var stopped = 0;
@@ -495,6 +531,12 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Future<List<Chat>> chats() async => [_chat];
+
+  @override
+  Future<void> saveChat(Chat chat) async {
+    savedChatId = chat.id;
+    savedChatTitle = chat.title;
+  }
 
   @override
   Future<void> renameChat(String chatId, String title) => Future<void>.value();

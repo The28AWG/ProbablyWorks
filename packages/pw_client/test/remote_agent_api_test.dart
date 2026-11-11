@@ -56,6 +56,20 @@ void main() {
     expect(backend.answers, ['yes']);
   });
 
+  test('upserts a chat through the remote API', () async {
+    await remote.saveChat(
+      Chat(
+        id: 'new-chat',
+        hostId: 'local',
+        title: 'New',
+        createdAt: DateTime.utc(2026, 11, 11),
+        updatedAt: DateTime.utc(2026, 11, 11),
+      ),
+    );
+
+    expect(backend.savedChatId, 'new-chat');
+  });
+
   test('updates chat fields through the remote API', () async {
     await remote.updateChat('c1', model: 'vendor/model');
 
@@ -138,6 +152,7 @@ final class _FakeAgent implements AgentApi {
   final answers = <String?>[];
   final scheduled = <ScheduledTask>[];
   String? updatedModel;
+  String? savedChatId;
 
   final _chat = Chat(
     id: 'c1',
@@ -219,6 +234,11 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<Chat> createChat(String hostId) async => _chat.copyWith(id: 'c2');
+
+  @override
+  Future<void> saveChat(Chat chat) async {
+    savedChatId = chat.id;
+  }
 
   @override
   Future<void> renameChat(String chatId, String title) => Future<void>.value();

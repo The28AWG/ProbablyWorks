@@ -95,6 +95,7 @@ Future<int> runDaemon(List<String> args) async {
     token,
     address: options.bind,
     port: options.port,
+    chat: backend,
   );
   final port = await server.start();
   final scheduler = getIt<TaskScheduler>()..start();

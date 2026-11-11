@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -21,12 +22,15 @@ final class ApiServer {
     this._token, {
     InternetAddress? address,
     this._port = 7787,
-  }) : _address = address ?? InternetAddress.loopbackIPv4;
+    ChatApi? chat,
+  }) : _address = address ?? InternetAddress.loopbackIPv4,
+       _chatApi = chat;
 
   static const _maxBodyBytes = 1 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
 
   final AgentApi _backend;
+  final ChatApi? _chatApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -154,6 +158,9 @@ final class ApiServer {
     if (rest.length == 1 && request.method == 'GET') {
       return _chat(request, rest.first);
     }
+    if (rest.length == 1 && request.method == 'PUT') {
+      return _saveChat(request, rest.first);
+    }
     if (rest.length == 1 && request.method == 'PATCH') {
       return _renameChat(request, rest.first);
     }
@@ -188,6 +195,26 @@ final class ApiServer {
           }
         case 'fork':
           if (request.method == 'POST') return _forkChat(request, chatId);
+        case 'session':
+          if (rest.length == 2 && request.method == 'GET') {
+            return _sessionInfo(request, chatId);
+          }
+          if (rest.length == 3) {
+            return _sessionAction(request, chatId, rest[2]);
+          }
+          if (rest.length == 4 && rest[2] == 'queue') {
+            if (request.method == 'DELETE') {
+              _session(chatId).takeQueued(int.tryParse(rest[3]) ?? -1);
+              return _json(request.response, HttpStatus.noContent, {});
+            }
+          }
+          if (rest.length == 5 &&
+              rest[2] == 'queue' &&
+              rest[4] == 'promote' &&
+              request.method == 'POST') {
+            _session(chatId).promoteQueued(int.tryParse(rest[3]) ?? -1);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
       }
     }
     throw const AgentApiException(
@@ -230,6 +257,12 @@ final class ApiServer {
         waiting: _backend.waitingChatIds.contains(chat.id),
       ),
     );
+  }
+
+  Future<void> _saveChat(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _backend.saveChat(_chatFromJson(id, body));
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _renameChat(HttpRequest request, String id) async {
@@ -319,6 +352,72 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, {
       'runs': [for (final run in runs) _runJson(run)],
     });
+  }
+
+  ChatSessionApi _session(String chatId) {
+    final chat = _chatApi;
+    if (chat == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'session API is not available',
+      );
+    }
+    return chat.session(chatId);
+  }
+
+  Future<void> _sessionInfo(HttpRequest request, String chatId) {
+    final session = _session(chatId);
+    _json(request.response, HttpStatus.ok, {
+      'isRunning': session.isRunning,
+      'queue': [
+        for (final item in session.queue)
+          {'text': item.text, 'isEvent': item.isEvent},
+      ],
+    });
+    return Future<void>.value();
+  }
+
+  Future<void> _sessionAction(
+    HttpRequest request,
+    String chatId,
+    String action,
+  ) async {
+    final session = _session(chatId);
+    try {
+      switch (action) {
+        case 'continue':
+          await session.continueAfterStepLimit();
+        case 'regenerate':
+          final accepted = await session.regenerateLast();
+          return _json(request.response, HttpStatus.ok, {'accepted': accepted});
+        case 'edit':
+          final body = await _body(request);
+          final accepted = await session.editUserMessage(
+            _string(body, 'messageId'),
+            _string(body, 'text'),
+          );
+          return _json(request.response, HttpStatus.ok, {'accepted': accepted});
+        case 'delete-after':
+          final body = await _body(request);
+          await session.deleteAfter(_string(body, 'messageId'));
+        case 'compact':
+          final body = await _body(request);
+          await session.compactNow(force: body['force'] == true);
+        default:
+          throw const AgentApiException(
+            HttpStatus.notFound,
+            'not_found',
+            'unknown session action',
+          );
+      }
+    } on StateError catch (error, stack) {
+      Error.throwWithStackTrace(
+        AgentApiException(HttpStatus.conflict, 'session_busy', error.message),
+        stack,
+      );
+    }
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _send(HttpRequest request, String chatId) async {
@@ -548,6 +647,34 @@ Map<String, Object?> _hostJson(Host host) => {
   'defaultWorkspace': host.defaultWorkspace,
   'notes': host.notes,
 };
+
+Chat _chatFromJson(String id, Map<String, dynamic> json) {
+  final now = DateTime.now();
+  return Chat(
+    id: id,
+    hostId: '${json['hostId'] ?? ''}',
+    projectId: json['projectId'] as String?,
+    kind: ChatKind.values.byName('${json['kind'] ?? 'main'}'),
+    parentChatId: json['parentChatId'] as String?,
+    rootChatId: json['rootChatId'] as String?,
+    depth: json['depth'] is num ? (json['depth'] as num).toInt() : 0,
+    title: '${json['title'] ?? ''}',
+    titleSource: ChatTitleSource.values.byName(
+      '${json['titleSource'] ?? 'none'}',
+    ),
+    model: json['model'] as String?,
+    policyMode: PolicyMode.values.byName('${json['policyMode'] ?? 'ask'}'),
+    workspace: json['workspace'] as String?,
+    lastPromptTokens: json['lastPromptTokens'] as int?,
+    lastCompletionTokens: json['lastCompletionTokens'] as int?,
+    contextLength: json['contextLength'] as int?,
+    createdAt: _date(json['createdAt']) ?? now,
+    updatedAt: _date(json['updatedAt']) ?? now,
+  );
+}
+
+DateTime? _date(Object? value) =>
+    value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
 
 Map<String, Object?> _chatJson(
   Chat chat, {

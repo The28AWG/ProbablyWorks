@@ -62,6 +62,9 @@ abstract interface class AgentApi {
   Stream<List<Host>> watchHosts();
   Future<Chat?> chat(String id);
   Future<Chat> createChat(String hostId);
+
+  /// Сохраняет чат целиком. Для удалённого агента это upsert по id.
+  Future<void> saveChat(Chat chat);
   Future<void> renameChat(String chatId, String title);
   Future<void> updateChat(
     String chatId, {
