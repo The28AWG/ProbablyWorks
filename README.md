@@ -84,6 +84,7 @@
 flutter pub get
 flutter gen-l10n   # обычно выполняется сам при сборке
 dart run build_runner build --delete-conflicting-outputs
+(cd packages/pw_agent && dart run build_runner build --delete-conflicting-outputs)
 flutter run -d linux
 ```
 
@@ -111,6 +112,9 @@ Dart-файлы с переводами генерируются командо�
 
 ```
 packages/
+  pw_agent/      # агент, БД, Host и провайдеры без Flutter
+  pw_api/        # HTTP API поверх pw_agent
+  pw_daemon/     # headless-демон: pw_api + pw_agent
   virtual_git/   # git поверх файловой системы виртуального хоста и по HTTPS
   virtual_host/  # ядро виртуального хоста: файловая система, оболочка, апплеты
 lib/
@@ -150,6 +154,8 @@ lib/
 
 ```bash
 flutter test
+(cd packages/pw_agent && dart test)
+(cd packages/pw_api && dart test)
 (cd packages/virtual_host && dart test)
 (cd packages/virtual_git && dart test)
 ```
@@ -207,6 +213,7 @@ git config commit.template .gitmessage
 ## Документация по агенту
 
 - [docs/agent/ISSUES.md](docs/agent/ISSUES.md) — backlog: задачи, приоритеты и критерии приёмки.
+- [docs/agent/DAEMON.md](docs/agent/DAEMON.md) — headless-демон, HTTP API и планировщик.
 
 ## Безопасность
 

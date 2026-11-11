@@ -9,6 +9,7 @@ environment:
 
 dependencies:
   get_it: ^9.2.1
+  path: ^1.9.1
   pw_agent:
     path: ../pw_agent
   pw_api:

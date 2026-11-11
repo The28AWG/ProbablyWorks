@@ -27,6 +27,8 @@ import 'agent/plugins/plugin_registry.dart' as _i408;
 import 'agent/plugins/plugin_service.dart' as _i298;
 import 'agent/project/project_lifecycle.dart' as _i475;
 import 'agent/recovery/startup_recovery.dart' as _i262;
+import 'agent/schedule/scheduled_task_repository.dart' as _i453;
+import 'agent/schedule/task_scheduler.dart' as _i778;
 import 'agent/state/session_state_service.dart' as _i154;
 import 'agent/tools/self_tool_handler.dart' as _i865;
 import 'agent/tools/tool_executor.dart' as _i780;
@@ -87,6 +89,9 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i214.TurnChangesetService>(
       () => _i214.TurnChangesetService(gh<_i221.TurnChangesetStore>()),
+    );
+    gh.lazySingleton<_i453.ScheduledTaskRepository>(
+      () => _i453.ScheduledTaskRepository(gh<_i232.AppDatabase>()),
     );
     gh.lazySingleton<_i906.ChatRepository>(
       () => _i906.ChatRepository(gh<_i232.AppDatabase>()),
@@ -252,6 +257,12 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i475.ProjectLifecycleService>(),
         gh<_i518.ProjectRepository>(),
         gh<_i215.PolicyProfileRepository>(),
+      ),
+    );
+    gh.lazySingleton<_i778.TaskScheduler>(
+      () => _i778.TaskScheduler(
+        gh<_i712.AgentHub>(),
+        gh<_i453.ScheduledTaskRepository>(),
       ),
     );
     return this;

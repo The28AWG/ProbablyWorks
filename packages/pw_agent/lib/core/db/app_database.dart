@@ -22,12 +22,13 @@ part 'app_database.g.dart';
     ProjectFacts,
     PolicyProfiles,
     McpServers,
+    ScheduledTasks,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 14;
+  static const currentSchemaVersion = 15;
 
   static const _uuid = Uuid();
 
@@ -42,6 +43,7 @@ class AppDatabase extends _$AppDatabase {
     onCreate: (m) async {
       await m.createAll();
       await _createSearchIndex();
+      await _createScheduledTasksIndex();
     },
     onUpgrade: (m, from, to) async {
       // v2: таймаут подключения и результат последней проверки Host.
@@ -108,6 +110,11 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(chats, chats.parentChatId);
         await m.addColumn(chats, chats.rootChatId);
         await m.addColumn(chats, chats.depth);
+      }
+      // Версия 15: отложенные задачи демона.
+      if (from < 15) {
+        await m.createTable(scheduledTasks);
+        await _createScheduledTasksIndex();
       }
     },
   );
@@ -262,6 +269,11 @@ class AppDatabase extends _$AppDatabase {
 
   /// FTS5-индекс для chat_history_search. Тело сообщения пишется вручную
   /// в той же транзакции, что и само сообщение.
+  Future<void> _createScheduledTasksIndex() => customStatement(
+    'CREATE INDEX IF NOT EXISTS scheduled_tasks_due '
+    'ON scheduled_tasks(status, due_at)',
+  );
+
   Future<void> _createSearchIndex() => customStatement(
     'CREATE VIRTUAL TABLE IF NOT EXISTS message_search USING fts5('
     'message_id UNINDEXED, chat_id UNINDEXED, body)',

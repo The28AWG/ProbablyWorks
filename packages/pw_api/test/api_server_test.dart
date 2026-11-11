@@ -1,0 +1,354 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
+import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_api/pw_api.dart';
+import 'package:test/test.dart';
+
+const _token = 'test-token';
+
+void main() {
+  late _FakeBackend backend;
+  late ApiServer server;
+  late HttpClient client;
+  late String base;
+
+  setUp(() async {
+    backend = _FakeBackend();
+    server = ApiServer(backend, _token, port: 0);
+    final port = await server.start();
+    base = 'http://127.0.0.1:$port';
+    client = HttpClient();
+  });
+
+  tearDown(() async {
+    client.close(force: true);
+    await server.stop();
+    await backend.dispose();
+  });
+
+  test('health is open and reports ok', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/health',
+    );
+
+    expect(status, HttpStatus.ok);
+    expect(jsonDecode(body), containsPair('ok', true));
+  });
+
+  test('protected endpoints require a bearer token', () async {
+    final (status, body) = await _request(client, base, 'GET', '/api/v1/chats');
+
+    expect(status, HttpStatus.unauthorized);
+    expect(jsonDecode(body), contains('error'));
+  });
+
+  test('wrong token is rejected', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats',
+      token: 'wrong',
+    );
+
+    expect(status, HttpStatus.unauthorized);
+  });
+
+  test('lists main chats', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final chats = (jsonDecode(body) as Map)['chats'] as List;
+    expect(chats, hasLength(1));
+    expect(chats.single['title'], 'Test chat');
+  });
+
+  test('lists hosts and creates a chat', () async {
+    final (hostsStatus, hostsBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/hosts',
+      token: _token,
+    );
+    final (createStatus, createBody) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/chats',
+      token: _token,
+      body: {'hostId': 'local'},
+    );
+
+    expect(hostsStatus, HttpStatus.ok);
+    expect((jsonDecode(hostsBody) as Map)['hosts'], hasLength(1));
+    expect(createStatus, HttpStatus.created);
+    expect((jsonDecode(createBody) as Map)['hostId'], 'local');
+  });
+
+  test('returns chat journal and pending cards', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final json = jsonDecode(body) as Map;
+    expect((json['messages'] as List).single['text'], 'hello');
+    expect((json['approvals'] as List).single['id'], 'a1');
+    expect((json['questions'] as List).single['text'], 'continue?');
+  });
+
+  test('accepts a message and forwards sendNow', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/chats/c1/messages',
+      token: _token,
+      body: {'text': 'do it', 'sendNow': true},
+    );
+
+    expect(status, HttpStatus.accepted);
+    expect(backend.sent, [('c1', 'do it', true)]);
+  });
+
+  test('resolves approvals with the requested scope', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/approvals/a1',
+      token: _token,
+      body: {'action': 'allowTurn'},
+    );
+
+    expect(status, HttpStatus.noContent);
+    expect(backend.approvals, [ApprovalAction.allowTurn]);
+  });
+
+  test('creates a scheduled task', () async {
+    final dueAt = DateTime(2026, 11, 12, 9);
+    final (status, body) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/schedules',
+      token: _token,
+      body: {
+        'chatId': 'c1',
+        'prompt': 'later',
+        'dueAt': dueAt.toIso8601String(),
+      },
+    );
+
+    expect(status, HttpStatus.created);
+    expect((jsonDecode(body) as Map)['prompt'], 'later');
+    expect(backend.scheduled, hasLength(1));
+  });
+
+  test('streams agent events over SSE', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    // Первая строка подтверждает, что сервер подписался на события.
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+    backend.emit(const AgentTurnStarted('c1'));
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: turnStarted');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
+  });
+}
+
+Future<(int, String)> _request(
+  HttpClient client,
+  String base,
+  String method,
+  String path, {
+  String? token,
+  Object? body,
+}) async {
+  final request = await client.openUrl(method, Uri.parse('$base$path'));
+  if (token != null) {
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+  }
+  if (body != null) {
+    request.headers.contentType = ContentType.json;
+    request.write(jsonEncode(body));
+  }
+  final response = await request.close();
+  return (response.statusCode, await utf8.decoder.bind(response).join());
+}
+
+final class _FakeBackend implements ApiBackend {
+  final _events = StreamController<Object>.broadcast();
+  final sent = <(String, String, bool)>[];
+  final approvals = <ApprovalAction>[];
+  final scheduled = <ScheduledTask>[];
+
+  final _chat = Chat(
+    id: 'c1',
+    hostId: 'local',
+    title: 'Test chat',
+    createdAt: DateTime(2026, 11, 11),
+    updatedAt: DateTime(2026, 11, 11),
+  );
+
+  void emit(Object event) => _events.add(event);
+
+  Future<void> dispose() => _events.close();
+
+  @override
+  Future<List<Host>> hosts() async => [
+    Host(
+      id: 'local',
+      name: 'Local',
+      kind: HostKind.local,
+      createdAt: DateTime(2026, 11, 11),
+      updatedAt: DateTime(2026, 11, 11),
+    ),
+  ];
+
+  @override
+  Future<List<Chat>> chats() async => [_chat];
+
+  @override
+  Future<Chat> createChat(String hostId) async => Chat(
+    id: 'c2',
+    hostId: hostId,
+    title: '',
+    createdAt: DateTime(2026, 11, 11),
+    updatedAt: DateTime(2026, 11, 11),
+  );
+
+  @override
+  Future<Chat?> chat(String id) async => id == 'c1' ? _chat : null;
+
+  @override
+  Future<List<ChatMessage>> messages(String id) async => [
+    ChatMessage(
+      id: 'm1',
+      chatId: id,
+      seq: 1,
+      role: MessageRole.user,
+      createdAt: DateTime(2026, 11, 11),
+      text: 'hello',
+    ),
+  ];
+
+  @override
+  Future<List<ToolRun>> runs(String id) async => const [];
+
+  @override
+  Future<void> openChat(String id) => Future<void>.value();
+
+  @override
+  Future<void> send(String chatId, String text, {bool sendNow = false}) async {
+    sent.add((chatId, text, sendNow));
+  }
+
+  @override
+  Future<void> stop(String chatId) => Future<void>.value();
+
+  @override
+  Future<void> resolveApproval(
+    String id,
+    ApprovalAction action, {
+    String? reason,
+  }) async {
+    approvals.add(action);
+  }
+
+  @override
+  Future<void> answerQuestion(String id, String? text) => Future<void>.value();
+
+  @override
+  Future<void> resolveEditFileChanges(
+    String id,
+    EditFileChangesChoice choice,
+  ) => Future<void>.value();
+
+  @override
+  List<ApprovalRequest> pendingApprovals(String chatId) => const [
+    ApprovalRequest(
+      id: 'a1',
+      chatId: 'c1',
+      toolName: 'run_command',
+      summary: 'ls',
+      reason: 'ask',
+    ),
+  ];
+
+  @override
+  List<UserQuestion> pendingQuestions(String chatId) => const [
+    UserQuestion(id: 'q1', chatId: 'c1', text: 'continue?'),
+  ];
+
+  @override
+  List<EditFileChangesRequest> pendingEditFileChanges(String chatId) =>
+      const [];
+
+  @override
+  Future<List<ScheduledTask>> schedules() async => scheduled;
+
+  @override
+  Future<ScheduledTask> schedule({
+    required String chatId,
+    required String prompt,
+    required DateTime dueAt,
+  }) async {
+    final task = ScheduledTask(
+      id: 's1',
+      chatId: chatId,
+      prompt: prompt,
+      dueAt: dueAt,
+      status: ScheduledTaskStatus.pending,
+      createdAt: DateTime(2026, 11, 11),
+      updatedAt: DateTime(2026, 11, 11),
+    );
+    scheduled.add(task);
+    return task;
+  }
+
+  @override
+  Future<void> cancelSchedule(String id) => Future<void>.value();
+
+  @override
+  Stream<Object> events() => _events.stream;
+}

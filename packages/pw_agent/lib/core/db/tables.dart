@@ -305,3 +305,22 @@ class VirtualFsNodes extends Table {
   @override
   Set<Column<Object>> get primaryKey => {hostId, path};
 }
+
+/// Отложенный запуск агента: сообщение, которое нужно отправить в чат в указанное время.
+/// Статус `dispatched` означает, что сообщение уже передано сессии; результат живёт в журнале чата.
+@DataClassName('ScheduledTaskRow')
+@TableIndex(name: 'scheduled_tasks_due', columns: {#status, #dueAt})
+class ScheduledTasks extends Table {
+  TextColumn get id => text()();
+  TextColumn get chatId =>
+      text().references(Chats, #id, onDelete: KeyAction.cascade)();
+  TextColumn get prompt => text()();
+  DateTimeColumn get dueAt => dateTime()();
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+  TextColumn get error => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}

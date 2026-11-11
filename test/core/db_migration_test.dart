@@ -341,6 +341,35 @@ void main() {
     );
   });
 
+  test('v14 → v15 creates scheduled tasks table and index', () async {
+    final db = _openAtVersion(14);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(scheduled_tasks)')
+        .get();
+    expect(
+      columns.map((row) => row.read<String>('name')),
+      containsAll([
+        'id',
+        'chat_id',
+        'prompt',
+        'due_at',
+        'status',
+        'error',
+        'created_at',
+        'updated_at',
+      ]),
+    );
+    final indexes = await db
+        .customSelect('PRAGMA index_list(scheduled_tasks)')
+        .get();
+    expect(
+      indexes.map((row) => row.read<String>('name')),
+      contains('scheduled_tasks_due'),
+    );
+  });
+
   test('v9 → v10 creates one project per host and workspace', () async {
     final db = _openProjectsV9();
     addTearDown(db.close);
