@@ -53,7 +53,16 @@ POST   /api/v1/chats                 {"hostId": "local"}
 GET    /api/v1/chats/{id}
 
 PUT    /api/v1/chats/{id}/presence   зарегистрировать карточки после перезапуска
+PUT    /api/v1/chats/{id}/turn       продолжить ход после лимита шагов
 DELETE /api/v1/chats/{id}/turn       остановить текущий ход
+POST   /api/v1/chats/{id}/forks      форк чата
+POST   /api/v1/chats/{id}/regenerations
+POST   /api/v1/chats/{id}/compactions
+PATCH  /api/v1/chats/{id}/messages/{messageId}
+DELETE /api/v1/chats/{id}/messages/{messageId}/following
+GET    /api/v1/chats/{id}/session
+PATCH  /api/v1/chats/{id}/queue/{index}
+DELETE /api/v1/chats/{id}/queue/{index}
 
 GET    /api/v1/chats/{id}/messages
 POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false}

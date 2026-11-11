@@ -155,65 +155,81 @@ final class ApiServer {
   Future<void> _routeChats(HttpRequest request, List<String> rest) async {
     if (rest.isEmpty && request.method == 'GET') return _chats(request);
     if (rest.isEmpty && request.method == 'POST') return _createChat(request);
-    if (rest.length == 1 && request.method == 'GET') {
-      return _chat(request, rest.first);
+    if (rest.length == 1) {
+      final id = rest.first;
+      if (request.method == 'GET') return _chat(request, id);
+      if (request.method == 'PUT') return _saveChat(request, id);
+      if (request.method == 'PATCH') return _renameChat(request, id);
+      if (request.method == 'DELETE') {
+        await _backend.deleteChat(id);
+        return _json(request.response, HttpStatus.noContent, {});
+      }
     }
-    if (rest.length == 1 && request.method == 'PUT') {
-      return _saveChat(request, rest.first);
-    }
-    if (rest.length == 1 && request.method == 'PATCH') {
-      return _renameChat(request, rest.first);
-    }
-    if (rest.length == 1 && request.method == 'DELETE') {
-      await _backend.deleteChat(rest.first);
-      return _json(request.response, HttpStatus.noContent, {});
-    }
-    if (rest.length == 2) {
+    if (rest.length >= 2) {
       final chatId = rest.first;
       switch (rest[1]) {
         case 'messages':
-          if (request.method == 'GET') return _messages(request, chatId);
-          if (request.method == 'POST') return _send(request, chatId);
+          if (rest.length == 2 && request.method == 'GET') {
+            return _messages(request, chatId);
+          }
+          if (rest.length == 2 && request.method == 'POST') {
+            return _send(request, chatId);
+          }
+          if (rest.length == 3 && request.method == 'PATCH') {
+            return _editMessage(request, chatId, rest[2]);
+          }
+          if (rest.length == 4 &&
+              rest[3] == 'following' &&
+              request.method == 'DELETE') {
+            return _deleteFollowing(request, chatId, rest[2]);
+          }
         case 'runs':
-          if (request.method == 'GET') return _runs(request, chatId);
+          if (rest.length == 2 && request.method == 'GET') {
+            return _runs(request, chatId);
+          }
         case 'events':
-          if (request.method == 'GET') {
+          if (rest.length == 2 && request.method == 'GET') {
             return _events(request, chatId: chatId);
           }
         case 'presence':
-          if (request.method == 'PUT') {
+          if (rest.length == 2 && request.method == 'PUT') {
             await _backend.openChat(chatId);
             return _json(request.response, HttpStatus.noContent, {});
           }
         case 'turn':
-          if (request.method == 'DELETE') {
+          if (rest.length == 2 && request.method == 'PUT') {
+            return _continueTurn(request, chatId);
+          }
+          if (rest.length == 2 && request.method == 'DELETE') {
             await _backend.stop(
               chatId,
               reason: request.uri.queryParameters['reason'],
             );
             return _json(request.response, HttpStatus.noContent, {});
           }
-        case 'fork':
-          if (request.method == 'POST') return _forkChat(request, chatId);
+        case 'forks':
+          if (rest.length == 2 && request.method == 'POST') {
+            return _forkChat(request, chatId);
+          }
+        case 'regenerations':
+          if (rest.length == 2 && request.method == 'POST') {
+            return _regenerate(request, chatId);
+          }
+        case 'compactions':
+          if (rest.length == 2 && request.method == 'POST') {
+            return _compact(request, chatId);
+          }
+        case 'queue':
+          if (rest.length == 3 && request.method == 'PATCH') {
+            return _promoteQueued(request, chatId, rest[2]);
+          }
+          if (rest.length == 3 && request.method == 'DELETE') {
+            _session(chatId).takeQueued(int.tryParse(rest[2]) ?? -1);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
         case 'session':
           if (rest.length == 2 && request.method == 'GET') {
             return _sessionInfo(request, chatId);
-          }
-          if (rest.length == 3) {
-            return _sessionAction(request, chatId, rest[2]);
-          }
-          if (rest.length == 4 && rest[2] == 'queue') {
-            if (request.method == 'DELETE') {
-              _session(chatId).takeQueued(int.tryParse(rest[3]) ?? -1);
-              return _json(request.response, HttpStatus.noContent, {});
-            }
-          }
-          if (rest.length == 5 &&
-              rest[2] == 'queue' &&
-              rest[4] == 'promote' &&
-              request.method == 'POST') {
-            _session(chatId).promoteQueued(int.tryParse(rest[3]) ?? -1);
-            return _json(request.response, HttpStatus.noContent, {});
           }
       }
     }
@@ -378,45 +394,63 @@ final class ApiServer {
     return Future<void>.value();
   }
 
-  Future<void> _sessionAction(
+  Future<void> _continueTurn(HttpRequest request, String chatId) async {
+    await _session(chatId).continueAfterStepLimit();
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _editMessage(
     HttpRequest request,
     String chatId,
-    String action,
+    String messageId,
   ) async {
-    final session = _session(chatId);
+    final body = await _body(request);
     try {
-      switch (action) {
-        case 'continue':
-          await session.continueAfterStepLimit();
-        case 'regenerate':
-          final accepted = await session.regenerateLast();
-          return _json(request.response, HttpStatus.ok, {'accepted': accepted});
-        case 'edit':
-          final body = await _body(request);
-          final accepted = await session.editUserMessage(
-            _string(body, 'messageId'),
-            _string(body, 'text'),
-          );
-          return _json(request.response, HttpStatus.ok, {'accepted': accepted});
-        case 'delete-after':
-          final body = await _body(request);
-          await session.deleteAfter(_string(body, 'messageId'));
-        case 'compact':
-          final body = await _body(request);
-          await session.compactNow(force: body['force'] == true);
-        default:
-          throw const AgentApiException(
-            HttpStatus.notFound,
-            'not_found',
-            'unknown session action',
-          );
-      }
+      final accepted = await _session(chatId)
+          .editUserMessage(messageId, _string(body, 'text'));
+      _json(request.response, HttpStatus.ok, {'accepted': accepted});
     } on StateError catch (error, stack) {
       Error.throwWithStackTrace(
         AgentApiException(HttpStatus.conflict, 'session_busy', error.message),
         stack,
       );
     }
+  }
+
+  Future<void> _deleteFollowing(
+    HttpRequest request,
+    String chatId,
+    String messageId,
+  ) async {
+    await _session(chatId).deleteAfter(messageId);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _regenerate(HttpRequest request, String chatId) async {
+    final accepted = await _session(chatId).regenerateLast();
+    _json(request.response, HttpStatus.ok, {'accepted': accepted});
+  }
+
+  Future<void> _compact(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    await _session(chatId).compactNow(force: body['force'] == true);
+    _json(request.response, HttpStatus.accepted, {});
+  }
+
+  Future<void> _promoteQueued(
+    HttpRequest request,
+    String chatId,
+    String index,
+  ) async {
+    final body = await _body(request);
+    if (body['position'] != null && body['position'] != 0) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_position',
+        'only position 0 is supported',
+      );
+    }
+    _session(chatId).promoteQueued(int.tryParse(index) ?? -1);
     _json(request.response, HttpStatus.noContent, {});
   }
 

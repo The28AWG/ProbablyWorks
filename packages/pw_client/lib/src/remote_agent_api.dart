@@ -312,7 +312,7 @@ class RemoteAgentApi implements AgentApi, ChatApi {
     try {
       final json = await _send(
         'POST',
-        '/chats/$chatId/fork',
+        '/chats/$chatId/forks',
         body: {'title': ?title},
       );
       final map = Map<String, dynamic>.from(json as Map);
@@ -1155,22 +1155,23 @@ final class _RemoteChatSession implements ChatSessionApi {
 
   @override
   Future<void> continueAfterStepLimit() async {
-    await _api.sendJson('POST', '/chats/$_chatId/session/continue');
+    await _api.sendJson('PUT', '/chats/$_chatId/turn');
   }
 
   @override
   Future<bool> regenerateLast() async {
-    final json = await _api.sendJson(
-      'POST',
-      '/chats/$_chatId/session/regenerate',
-    );
+    final json = await _api.sendJson('POST', '/chats/$_chatId/regenerations');
     return json is Map && json['accepted'] == true;
   }
 
   @override
   void promoteQueued(int index) {
     unawaited(
-      _api.sendJson('POST', '/chats/$_chatId/session/queue/$index/promote'),
+      _api.sendJson(
+        'PATCH',
+        '/chats/$_chatId/queue/$index',
+        body: {'position': 0},
+      ),
     );
   }
 
@@ -1179,7 +1180,7 @@ final class _RemoteChatSession implements ChatSessionApi {
     final items = _api._queues[_chatId];
     if (items == null || index < 0 || index >= items.length) return null;
     final item = items.removeAt(index);
-    unawaited(_api.sendJson('DELETE', '/chats/$_chatId/session/queue/$index'));
+    unawaited(_api.sendJson('DELETE', '/chats/$_chatId/queue/$index'));
     return item;
   }
 
@@ -1190,9 +1191,9 @@ final class _RemoteChatSession implements ChatSessionApi {
     List<AttachmentRef>? attachments,
   }) async {
     final json = await _api.sendJson(
-      'POST',
-      '/chats/$_chatId/session/edit',
-      body: {'messageId': messageId, 'text': newText},
+      'PATCH',
+      '/chats/$_chatId/messages/$messageId',
+      body: {'text': newText},
     );
     return json is Map && json['accepted'] == true;
   }
@@ -1200,9 +1201,8 @@ final class _RemoteChatSession implements ChatSessionApi {
   @override
   Future<void> deleteAfter(String messageId) async {
     await _api.sendJson(
-      'POST',
-      '/chats/$_chatId/session/delete-after',
-      body: {'messageId': messageId},
+      'DELETE',
+      '/chats/$_chatId/messages/$messageId/following',
     );
   }
 
@@ -1213,7 +1213,7 @@ final class _RemoteChatSession implements ChatSessionApi {
   Future<void> compactNow({bool force = false}) async {
     await _api.sendJson(
       'POST',
-      '/chats/$_chatId/session/compact',
+      '/chats/$_chatId/compactions',
       body: {'force': force},
     );
   }
