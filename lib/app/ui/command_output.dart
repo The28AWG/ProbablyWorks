@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -128,7 +129,16 @@ class _CommandOutputState extends State<CommandOutput> {
       _reset();
     }
     final host = widget.terminal;
-    if (host != null && !identical(host, _host)) _attach(host);
+    if (host == null && _host != null) {
+      // Команда завершилась: отключаемся от PTY и возвращаемся к обычному
+      // сохранённому выводу, иначе клавиатура осталась бы активной.
+      unawaited(_feed?.cancel());
+      _feed = null;
+      _host = null;
+      _reset();
+    } else if (host != null && !identical(host, _host)) {
+      _attach(host);
+    }
     _sync();
   }
 
@@ -150,6 +160,13 @@ class _CommandOutputState extends State<CommandOutput> {
   void _reset() {
     _terminal = Terminal(maxLines: _maxLines)..setCursorVisibleMode(false);
     _terminal.onResize = _onResize;
+    // Ввод идёт только в живой PTY. Для сохранённого вывода _host == null,
+    // поэтому клавиши никуда не уходят.
+    _terminal.onOutput = (data) {
+      final host = _host;
+      if (host == null) return;
+      host.write(Uint8List.fromList(utf8.encode(data)));
+    };
     _terminal.write(_prompt);
     _written = '';
     _generation++;
@@ -175,7 +192,7 @@ class _CommandOutputState extends State<CommandOutput> {
     unawaited(_feed?.cancel());
     _host = host;
     _decoder = Utf8ChunkDecoder();
-    // Ввода с клавиатуры нет: терминал только отображает вывод, поэтому onOutput не назначается.
+    // Ввод с клавиатуры уходит в PTY через _terminal.onOutput из _reset.
     _feed = host.attach().listen(
       (bytes) => setState(() => _write(_decoder.add(bytes))),
       onDone: () => setState(() => _write(_decoder.close())),
@@ -316,8 +333,9 @@ class _CommandOutputState extends State<CommandOutput> {
                                   ),
                                   textStyle: _style,
                                   padding: _padding,
-                                  // Ввод с клавиатуры запрещён на всех платформах: вывод только для чтения.
-                                  readOnly: true,
+                                  // У живой команды можно ответить на приглашение; у сохранённого
+                                  // вывода клавиатура неактивна.
+                                  readOnly: !live,
                                 ),
                               ),
                             ),

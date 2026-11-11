@@ -331,6 +331,8 @@ class ToolExecutor {
     final cwd = cwdArg == null || cwdArg.isEmpty
         ? _commandCwd(ctx)
         : _resolve(ctx, cwdArg);
+    final stdin = _stdinArg(args);
+    final timeout = _timeoutArg(ctx, args, background: background);
     // Один id на всю жизнь команды: ожидание подтверждения и выполнение — одна строка в журнале.
     final runId = _uuid.v4();
     final decision = ctx.policy.decide(call.name, args);
@@ -356,10 +358,14 @@ class ToolExecutor {
       call,
       args,
       command: command,
+      execCommand: _withCommandDefaults(ctx, command),
       cwd: cwd,
       background: background,
       presetRunId: runId,
-      inTerminal: true,
+      // stdin означает поток без PTY: иначе байты некуда подать до старта.
+      inTerminal: stdin == null,
+      stdin: stdin,
+      timeout: timeout,
     );
   }
 
@@ -1323,11 +1329,13 @@ class ToolExecutor {
     LlmToolCall call,
     Map<String, dynamic> args, {
     required String command,
+    String? execCommand,
     required bool background,
     String? cwd,
     String? presetRunId,
     bool inTerminal = false,
     Uint8List? stdin,
+    Duration? timeout,
     HostOp? op,
     DateTime? startedAt,
   }) async {
@@ -1349,12 +1357,14 @@ class ToolExecutor {
       hostId: ctx.host.id,
       toolCallId: runId,
       runtime: ctx.runtime,
-      command: command,
+      command: execCommand ?? command,
+      displayCommand: command,
       cwd: cwd,
       limits: ctx.limits,
       background: background,
       inTerminal: inTerminal,
       stdin: stdin,
+      timeout: timeout,
       op: op,
     );
     run = run.copyWith(logPath: handle.logPath);
@@ -1651,15 +1661,20 @@ class ToolExecutor {
     final cwd = cwdArg == null || cwdArg.isEmpty
         ? _commandCwd(ctx)
         : _resolve(ctx, cwdArg);
+    final stdin = _stdinArg(args);
+    final timeout = _timeoutArg(ctx, args, background: background);
     return _exec(
       ctx,
       call,
       args,
       command: command,
+      execCommand: _withCommandDefaults(ctx, command),
       cwd: cwd,
       background: background,
       presetRunId: run.id,
-      inTerminal: true,
+      inTerminal: stdin == null,
+      stdin: stdin,
+      timeout: timeout,
       startedAt: run.startedAt,
     );
   }
@@ -1877,6 +1892,48 @@ class ToolExecutor {
     toolCallId: call.id,
     pendingCard: pendingCard,
   );
+
+  /// Неинтерактивные значения по умолчанию для обычных команд. Экспорт не
+  /// меняет команду, которую видит модель и журнал, но не даёт пагеру ждать ввода.
+  /// На Windows оболочка другая, там значения не подставляются.
+  static String _withCommandDefaults(ToolContext ctx, String command) {
+    if (ctx.runtime.os == HostOs.windows) return command;
+    const prefix =
+        r'export PAGER="${PAGER:-cat}" GIT_PAGER="${GIT_PAGER:-cat}" '
+        r'CI="${CI:-1}"; ';
+    return '$prefix$command';
+  }
+
+  /// Необязательный stdin. Пустая строка — явный EOF, отсутствие ключа — PTY.
+  static Uint8List? _stdinArg(Map<String, dynamic> args) {
+    if (!args.containsKey('stdin')) return null;
+    final value = args['stdin'];
+    if (value is! String) {
+      throw ArgumentError.value(value, 'stdin', 'string expected');
+    }
+    return Uint8List.fromList(utf8.encode(value));
+  }
+
+  /// Таймаут конкретной команды. Не даёт обойти лимиты из Settings: запрошенное
+  /// значение ограничено тем же пределом, что и обычный запуск.
+  static Duration? _timeoutArg(
+    ToolContext ctx,
+    Map<String, dynamic> args, {
+    required bool background,
+  }) {
+    final seconds = args['timeout'] == null
+        ? null
+        : _intArg(args, 'timeout', min: 1, max: 86400, fallback: 1);
+    if (seconds == null) return null;
+    final requested = Duration(seconds: seconds);
+    final limit = background
+        ? ctx.limits.backgroundMaxRuntime
+        : ctx.limits.foregroundExecTimeout;
+    if (requested > limit) {
+      throw ArgumentError('timeout must not exceed ${limit.inSeconds} seconds');
+    }
+    return requested;
+  }
 
   /// Каталог команд. Папка чата, папка хоста или дом. Дом в проект не записывается.
   String _commandCwd(ToolContext ctx) =>

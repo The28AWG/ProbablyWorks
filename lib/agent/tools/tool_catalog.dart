@@ -126,10 +126,13 @@ abstract final class ToolCatalog {
       name: ToolNames.runCommand,
       description:
           'Run a shell command on the host. On a local or SSH host this is a real terminal (PTY): the user sees the output live and can type into it. '
+          'Each call starts a fresh shell; cd and exports do not persist, so pass cwd or chain commands. '
           'On a virtual host there is no PTY. Each call starts a fresh bash subset (functions, if/while/for/select/case, [[ ]], (( )), arrays, traps). '
           'State does not survive the call, background=true is refused, and job control, shopt, exec, coproc and extglob fail before any command. '
           'Read-only commands run automatically; others need user approval. '
-          'You cannot type input: a command that waits for input blocks until it times out, so use non-interactive flags (for example -y or --no-pager). '
+          'You cannot type input; a command that waits for input blocks until it times out, so use non-interactive flags (for example -y or --no-pager). '
+          'Pager defaults PAGER=cat, GIT_PAGER=cat and CI=1 are exported unless already set. '
+          'With stdin the command runs through a pipe without a PTY and receives the text as input. '
           'Privilege escalation (sudo, su, doas, pkexec, sudoedit) is forbidden. '
           'Also forbidden: wiping a filesystem root or system directory, writing a block device, and piping a download into a shell. '
           'Set background=true for long-running commands on a local or SSH host; '
@@ -143,6 +146,14 @@ abstract final class ToolCatalog {
             'description': 'Working directory (optional)',
           },
           'background': {'type': 'boolean'},
+          'timeout': {
+            'type': 'integer',
+            'description': 'Timeout in seconds for this run; cannot exceed the configured limit',
+          },
+          'stdin': {
+            'type': 'string',
+            'description': 'Optional input sent to the command. With stdin the command runs through a pipe without a PTY',
+          },
         },
         'required': ['command'],
       },

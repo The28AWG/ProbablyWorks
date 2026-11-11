@@ -70,11 +70,13 @@ class CommandExecutor {
     required String toolCallId,
     required HostRuntime runtime,
     required String command,
+    String? displayCommand,
     required AppLimits limits,
     required bool background,
     String? cwd,
     bool inTerminal = false,
     Uint8List? stdin,
+    Duration? timeout,
     HostOp? op,
   }) async {
     final release = await _registry.acquireSlot(
@@ -86,7 +88,7 @@ class CommandExecutor {
       chatId: chatId,
       hostId: hostId,
       runtime: runtime,
-      command: command,
+      command: displayCommand ?? command,
       background: background,
       startedAt: DateTime.now(),
     );
@@ -108,9 +110,11 @@ class CommandExecutor {
     final errDecoder = Utf8ChunkDecoder();
     var finalized = false;
 
-    final limit = background
-        ? limits.backgroundMaxRuntime
-        : limits.foregroundExecTimeout;
+    final limit =
+        timeout ??
+        (background
+            ? limits.backgroundMaxRuntime
+            : limits.foregroundExecTimeout);
     Timer? watchdog;
     var timedOut = false;
 

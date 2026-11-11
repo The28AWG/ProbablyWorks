@@ -287,6 +287,31 @@ class _FakeHostTerminal implements HostTerminal {
 }
 
 void _liveGroup() {
+  testWidgets('live terminal accepts input and saved output stays read-only', (
+    tester,
+  ) async {
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(
+        CommandOutput(text: '', active: true, terminal: host, maxHeight: 200),
+      ),
+    );
+
+    final terminal = _terminalOf(tester);
+    expect(
+      tester.widget<TerminalView>(find.byType(TerminalView)).readOnly,
+      isFalse,
+    );
+    terminal.onOutput?.call('yes\n');
+    expect(host.input, ['yes\n']);
+
+    await tester.pumpWidget(_TestHost(const CommandOutput(text: 'done')));
+    expect(
+      tester.widget<TerminalView>(find.byType(TerminalView)).readOnly,
+      isTrue,
+    );
+  });
+
   testWidgets('scrolled-up view keeps its line when the buffer drops lines', (
     tester,
   ) async {
@@ -387,25 +412,6 @@ void _liveGroup() {
     expect(_lines(tester), ['\$ echo hello', 'hello']);
   });
 
-  testWidgets(
-    'the live terminal is display-only: keys never reach the process',
-    (tester) async {
-      final host = _FakeHostTerminal();
-      await tester.pumpWidget(
-        _TestHost(CommandOutput(text: '', active: true, terminal: host)),
-      );
-      expect(
-        tester.widget<TerminalView>(find.byType(TerminalView)).readOnly,
-        isTrue,
-      );
-      expect(_terminalOf(tester).onOutput, isNull);
-      _terminalOf(tester).onOutput?.call('ls\r');
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
-      expect(host.input, isEmpty);
-    },
-  );
-
   testWidgets('the terminal reports its size to the process', (tester) async {
     final host = _FakeHostTerminal();
     await tester.pumpWidget(
@@ -426,9 +432,7 @@ void _liveGroup() {
       host.print('done\r\n');
       await host.finish(0);
       await tester.pumpWidget(
-        _TestHost(
-          CommandOutput(text: '', active: false, exitCode: 0, terminal: host),
-        ),
+        _TestHost(const CommandOutput(text: 'done', exitCode: 0)),
       );
       await tester.pump();
       expect(_lines(tester), ['done']);

@@ -1315,6 +1315,67 @@ void main() {
     expect(runs.where((run) => run.status != ToolRunStatus.done), isEmpty);
   });
 
+  test('run_command accepts stdin, timeout and pager defaults', () async {
+    final chatId = await createChat();
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'stdin',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'cat', 'stdin': 'hello from stdin'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'pager',
+              ToolNames.runCommand,
+              jsonEncode({'command': r'printf "%s" "$PAGER"'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'timeout',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'echo no', 'timeout': 99999}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'short-timeout',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'sleep 2', 'timeout': 1}),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'check run options');
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(tools.first.text, contains('hello from stdin'));
+    expect(tools[1].text, contains('cat'));
+    expect(tools[2].text, contains('timeout'));
+    expect(tools[3].text, contains('timedOut'));
+  });
+
   test('list_runs and read_run_output expose stored output by pages', () async {
     final chatId = await createChat();
     final now = DateTime.now();
