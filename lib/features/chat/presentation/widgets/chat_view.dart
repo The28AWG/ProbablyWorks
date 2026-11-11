@@ -781,7 +781,7 @@ class _ChatBodyState extends State<ChatBody> {
     final l10n = AppLocalizations.of(context);
     final picked = await showModelPickerDialog(
       context,
-      catalog: getIt<ModelCatalogService>(),
+      catalog: bloc.modelCatalog,
       pinned: state.pinnedModels,
       currentId: state.effectiveModelId,
       onTogglePin: (id) => bloc.add(ChatModelPinToggled(id)),

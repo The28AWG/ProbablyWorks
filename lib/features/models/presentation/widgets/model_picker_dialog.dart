@@ -20,7 +20,7 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 /// Недоступная текущая модель показывается отдельно и не выбирается.
 Future<LlmModelInfo?> showModelPickerDialog(
   BuildContext context, {
-  required ModelCatalogService catalog,
+  required ModelCatalogSource catalog,
   required List<String> pinned,
   required String? currentId,
   void Function(String modelId)? onTogglePin,
@@ -51,7 +51,7 @@ class _ModelPickerDialog extends StatefulWidget {
     required this.managePins,
   });
 
-  final ModelCatalogService catalog;
+  final ModelCatalogSource catalog;
   final List<String> pinned;
   final String? currentId;
   final void Function(String modelId)? onTogglePin;

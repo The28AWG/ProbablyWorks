@@ -695,6 +695,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   static const _liveThrottle = Duration(milliseconds: 100);
 
+  /// Каталог моделей профиля для диалога выбора в композере.
+  ModelCatalogSource get modelCatalog => _hub.models;
+
   /// Терминал, в котором сейчас выполняется запуск; `null`, если он не выполняется в PTY или уже завершён.
   HostTerminal? terminalFor(String runId) =>
       _hub.registry.find(runId)?.terminal;

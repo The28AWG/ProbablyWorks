@@ -22,6 +22,7 @@ import 'package:probably_works/features/settings/presentation/widgets/settings_f
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -147,11 +148,15 @@ class _SettingsViewState extends State<_SettingsView> {
   }
 
   /// Закрепления в настройках: тот же диалог, что в композере, с кнопками закрепления.
-  void _managePins(SettingsState state, SettingsCubit cubit) {
+  void _managePins(
+    SettingsState state,
+    SettingsCubit cubit,
+    ModelCatalogSource source,
+  ) {
     unawaited(
       showModelPickerDialog(
         context,
-        catalog: getIt<ModelCatalogService>(),
+        catalog: source,
         pinned: state.pinnedModels,
         currentId: null,
         onTogglePin: (id) => unawaited(cubit.togglePin(id)),
@@ -165,6 +170,9 @@ class _SettingsViewState extends State<_SettingsView> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final source =
+        ProfileScope.maybeOf(context)?.chatApi.models ??
+        getIt<ChatApi>().models;
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -180,7 +188,7 @@ class _SettingsViewState extends State<_SettingsView> {
         }
         final cubit = context.read<SettingsCubit>();
         final groups = <_Group, List<Widget>>{
-          _Group.account: _accountSections(state, cubit, l10n),
+          _Group.account: _accountSections(state, cubit, l10n, source),
           _Group.agents: const [AgentProfilesSection()],
           _Group.interface: _interfaceSections(state, cubit, l10n),
           _Group.safety: _safetySections(state, cubit, l10n),
@@ -320,6 +328,7 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n,
+    ModelCatalogSource source,
   ) {
     final scheme = Theme.of(context).colorScheme;
     final catalog = state.catalog;
@@ -331,6 +340,7 @@ class _SettingsViewState extends State<_SettingsView> {
           ModelSettingField(
             modelId: state.defaultModel,
             catalog: catalog,
+            source: source,
             pinned: state.pinnedModels,
             onSelected: (id) => cubit.saveModels(
               defaultModel: id,
@@ -346,6 +356,7 @@ class _SettingsViewState extends State<_SettingsView> {
           ModelSettingField(
             modelId: state.titleModel,
             catalog: catalog,
+            source: source,
             pinned: state.pinnedModels,
             requireTools: false,
             onSelected: (id) => cubit.saveModels(
@@ -362,6 +373,7 @@ class _SettingsViewState extends State<_SettingsView> {
           ModelSettingField(
             modelId: state.subagentModel,
             catalog: catalog,
+            source: source,
             pinned: state.pinnedModels,
             onSelected: cubit.saveSubagentModel,
           ),
@@ -374,6 +386,7 @@ class _SettingsViewState extends State<_SettingsView> {
           ModelSettingField(
             modelId: state.fallbackModel,
             catalog: catalog,
+            source: source,
             pinned: state.pinnedModels,
             onSelected: cubit.saveFallbackModel,
           ),
@@ -421,7 +434,7 @@ class _SettingsViewState extends State<_SettingsView> {
         trailing: IconButton(
           icon: const Icon(Icons.edit_outlined),
           tooltip: l10n.settingsPinnedManage,
-          onPressed: () => _managePins(state, cubit),
+          onPressed: () => _managePins(state, cubit, source),
         ),
         children: [
           if (state.pinnedModels.isEmpty)

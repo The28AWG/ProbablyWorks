@@ -81,9 +81,7 @@ abstract interface class ProjectsStore {
   Future<void> trustWorkspace(String projectId);
 }
 
-abstract interface class ModelStore {
-  ModelCatalogState get state;
-  Stream<ModelCatalogState> watch();
+abstract interface class ModelStore implements ModelCatalogSource {
   Future<void> remember(List<String> ids);
 }
 

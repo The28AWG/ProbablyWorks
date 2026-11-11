@@ -96,7 +96,16 @@ class ModelCatalogState extends Equatable {
 /// Каталог моделей. Список OpenRouter живёт в памяти и обновляется при старте, по таймеру,
 /// вручную и с повтором после ошибки. В БД попадают только выбранные модели ([remember]).
 @lazySingleton
-class ModelCatalogService {
+/// Источник каталога моделей для диалогов выбора: локальный сервис или
+/// удалённый профиль агента. Состояние и обновление отдают сами данные,
+/// поэтому UI не зависит от конкретной реализации каталога.
+abstract interface class ModelCatalogSource {
+  ModelCatalogState get state;
+  Stream<ModelCatalogState> watch();
+  Future<void> refresh();
+}
+
+class ModelCatalogService implements ModelCatalogSource {
   ModelCatalogService(this._repository, this._llm);
 
   static final _log = Logger('ModelCatalog');
@@ -124,9 +133,11 @@ class ModelCatalogService {
   bool _started = false;
   Future<bool> Function() _hasKey = () async => false;
 
+  @override
   ModelCatalogState get state => _state;
 
   /// Текущее состояние и все последующие изменения.
+  @override
   Stream<ModelCatalogState> watch() => Stream.multi((controller) {
     controller.add(_state);
     final sub = _changes.stream.listen(
@@ -160,6 +171,7 @@ class ModelCatalogService {
 
   /// Загружает список из OpenRouter. Параллельные вызовы делят один запрос.
   /// Ошибка выбрасывается наружу, прежний список сохраняется, а загрузка повторяется с паузой.
+  @override
   Future<void> refresh() =>
       _refreshing ??= _load().whenComplete(() => _refreshing = null);
 

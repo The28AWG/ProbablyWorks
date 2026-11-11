@@ -1683,6 +1683,9 @@ final class _RemoteModels implements ModelStore {
   }
 
   @override
+  Future<void> refresh() => _api.refreshModels();
+
+  @override
   Future<void> remember(List<String> ids) async {
     await _api.sendJson('POST', '/models/remember', body: {'ids': ids});
   }

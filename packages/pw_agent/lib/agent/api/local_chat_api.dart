@@ -367,6 +367,9 @@ final class _LocalModels implements ModelStore {
   Stream<ModelCatalogState> watch() => _models.watch();
 
   @override
+  Future<void> refresh() => _models.refresh();
+
+  @override
   Future<void> remember(List<String> ids) => _models.remember(ids);
 }
 

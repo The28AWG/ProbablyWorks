@@ -1,5 +1,4 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -14,6 +13,7 @@ class ModelSettingField extends StatelessWidget {
   const ModelSettingField({
     required this.modelId,
     required this.catalog,
+    required this.source,
     required this.pinned,
     required this.onSelected,
     this.requireTools = true,
@@ -26,6 +26,9 @@ class ModelSettingField extends StatelessWidget {
   /// Состояние каталога: из него берутся название, статус и данные о tool calling.
   final ModelCatalogState catalog;
 
+  /// Источник каталога профиля: локальный сервис или удалённый агент.
+  final ModelCatalogSource source;
+
   /// Закреплённые модели показываются в диалоге первыми.
   final List<String> pinned;
 
@@ -37,7 +40,7 @@ class ModelSettingField extends StatelessWidget {
   Future<void> _open(BuildContext context) async {
     final picked = await showModelPickerDialog(
       context,
-      catalog: getIt<ModelCatalogService>(),
+      catalog: source,
       pinned: pinned,
       currentId: modelId,
       requireTools: requireTools,
