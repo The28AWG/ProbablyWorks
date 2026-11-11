@@ -51,24 +51,31 @@ GET    /api/v1/hosts
 GET    /api/v1/chats
 POST   /api/v1/chats                 {"hostId": "local"}
 GET    /api/v1/chats/{id}
-POST   /api/v1/chats/{id}/open
-POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false}
-POST   /api/v1/chats/{id}/stop
 
-POST   /api/v1/approvals/{id}         {"action": "allowOnce|allowTurn|allowChat|deny"}
-POST   /api/v1/questions/{id}         {"answer": "..."}
-POST   /api/v1/edit-file-changes/{id} {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
+PUT    /api/v1/chats/{id}/presence   зарегистрировать карточки после перезапуска
+DELETE /api/v1/chats/{id}/turn       остановить текущий ход
+
+GET    /api/v1/chats/{id}/messages
+POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false}
+GET    /api/v1/chats/{id}/runs
+GET    /api/v1/chats/{id}/events     Server-Sent Events по чату
+
+PUT    /api/v1/approvals/{id}/decision         {"action": "allowOnce|allowTurn|allowChat|deny"}
+PUT    /api/v1/questions/{id}/answer           {"answer": "..."}
+PUT    /api/v1/edit-file-changes/{id}/decision {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
 
 GET    /api/v1/schedules
 POST   /api/v1/schedules              {"chatId": "...", "prompt": "...", "dueAt": "ISO-8601"}
+GET    /api/v1/schedules/{id}
 DELETE /api/v1/schedules/{id}
 
-GET    /api/v1/events?chatId=...      Server-Sent Events
+GET    /api/v1/events?chatId=...      SSE по всем чатам или одному
 ```
 
 `GET /chats/{id}` отдаёт чат, сообщения, запуски инструментов и текущие
-карточки (`approvals`, `questions`, `editFileChanges`). `POST /open`
-регистрирует карточки после перезапуска — как открытие чата в GUI.
+карточки (`approvals`, `questions`, `editFileChanges`). `PUT /chats/{id}/presence`
+идемпотентно регистрирует карточки после перезапуска — как открытие чата в GUI.
+`DELETE /chats/{id}/turn` останавливает текущий ход; повторный вызов безопасен.
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `runChanged`, `queueChanged`, `failure`, `trustNeeded`,

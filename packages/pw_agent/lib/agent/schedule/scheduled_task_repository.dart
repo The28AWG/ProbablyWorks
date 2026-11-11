@@ -15,6 +15,13 @@ class ScheduledTaskRepository {
 
   $ScheduledTasksTable get _table => _db.scheduledTasks;
 
+  Future<ScheduledTask?> byId(String id) async {
+    final row = await (_db.select(
+      _table,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    return row == null ? null : _task(row);
+  }
+
   Future<List<ScheduledTask>> all() async {
     final rows = await (_db.select(
       _table,

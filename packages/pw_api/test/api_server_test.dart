@@ -136,14 +136,82 @@ void main() {
     final (status, _) = await _request(
       client,
       base,
-      'POST',
-      '/api/v1/approvals/a1',
+      'PUT',
+      '/api/v1/approvals/a1/decision',
       token: _token,
       body: {'action': 'allowTurn'},
     );
 
     expect(status, HttpStatus.noContent);
     expect(backend.approvals, [ApprovalAction.allowTurn]);
+  });
+
+  test('exposes messages and runs as subresources', () async {
+    final (messagesStatus, messagesBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1/messages',
+      token: _token,
+    );
+    final (runsStatus, runsBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1/runs',
+      token: _token,
+    );
+
+    expect(messagesStatus, HttpStatus.ok);
+    expect((jsonDecode(messagesBody) as Map)['messages'], hasLength(1));
+    expect(runsStatus, HttpStatus.ok);
+    expect((jsonDecode(runsBody) as Map)['runs'], isEmpty);
+  });
+
+  test('uses resources for presence and stopping a turn', () async {
+    final (presence, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/chats/c1/presence',
+      token: _token,
+    );
+    final (turn, _) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/chats/c1/turn',
+      token: _token,
+    );
+
+    expect(presence, HttpStatus.noContent);
+    expect(turn, HttpStatus.noContent);
+    expect(backend.opened, 1);
+    expect(backend.stopped, 1);
+  });
+
+  test('answers questions and resolves edit changes', () async {
+    final (answer, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/questions/q1/answer',
+      token: _token,
+      body: {'answer': 'yes'},
+    );
+    final (choice, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/edit-file-changes/e1/decision',
+      token: _token,
+      body: {'choice': 'cancel'},
+    );
+
+    expect(answer, HttpStatus.noContent);
+    expect(choice, HttpStatus.noContent);
+    expect(backend.answers, ['yes']);
+    expect(backend.choices, [EditFileChangesChoice.cancel]);
   });
 
   test('creates a scheduled task', () async {
@@ -221,6 +289,10 @@ final class _FakeBackend implements ApiBackend {
   final sent = <(String, String, bool)>[];
   final approvals = <ApprovalAction>[];
   final scheduled = <ScheduledTask>[];
+  final answers = <String?>[];
+  final choices = <EditFileChangesChoice>[];
+  var opened = 0;
+  var stopped = 0;
 
   final _chat = Chat(
     id: 'c1',
@@ -276,7 +348,9 @@ final class _FakeBackend implements ApiBackend {
   Future<List<ToolRun>> runs(String id) async => const [];
 
   @override
-  Future<void> openChat(String id) => Future<void>.value();
+  Future<void> openChat(String id) async {
+    opened++;
+  }
 
   @override
   Future<void> send(String chatId, String text, {bool sendNow = false}) async {
@@ -284,7 +358,9 @@ final class _FakeBackend implements ApiBackend {
   }
 
   @override
-  Future<void> stop(String chatId) => Future<void>.value();
+  Future<void> stop(String chatId) async {
+    stopped++;
+  }
 
   @override
   Future<void> resolveApproval(
@@ -296,13 +372,17 @@ final class _FakeBackend implements ApiBackend {
   }
 
   @override
-  Future<void> answerQuestion(String id, String? text) => Future<void>.value();
+  Future<void> answerQuestion(String id, String? text) async {
+    answers.add(text);
+  }
 
   @override
   Future<void> resolveEditFileChanges(
     String id,
     EditFileChangesChoice choice,
-  ) => Future<void>.value();
+  ) async {
+    choices.add(choice);
+  }
 
   @override
   List<ApprovalRequest> pendingApprovals(String chatId) => const [
@@ -326,6 +406,14 @@ final class _FakeBackend implements ApiBackend {
 
   @override
   Future<List<ScheduledTask>> schedules() async => scheduled;
+
+  @override
+  Future<ScheduledTask?> scheduledTask(String id) async {
+    for (final task in scheduled) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
 
   @override
   Future<ScheduledTask> schedule({

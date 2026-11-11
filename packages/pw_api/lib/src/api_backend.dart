@@ -44,6 +44,7 @@ abstract interface class ApiBackend {
   List<EditFileChangesRequest> pendingEditFileChanges(String chatId);
 
   Future<List<ScheduledTask>> schedules();
+  Future<ScheduledTask?> scheduledTask(String id);
   Future<ScheduledTask> schedule({
     required String chatId,
     required String prompt,

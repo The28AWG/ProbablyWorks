@@ -111,20 +111,29 @@ final class ApiServer {
       case 'chats':
         return _routeChats(request, rest);
       case 'approvals':
-        if (rest.length == 1 && request.method == 'POST') {
+        if (rest.length == 2 &&
+            rest[1] == 'decision' &&
+            request.method == 'PUT') {
           return _approval(request, rest.first);
         }
       case 'questions':
-        if (rest.length == 1 && request.method == 'POST') {
+        if (rest.length == 2 &&
+            rest[1] == 'answer' &&
+            request.method == 'PUT') {
           return _answer(request, rest.first);
         }
       case 'edit-file-changes':
-        if (rest.length == 1 && request.method == 'POST') {
+        if (rest.length == 2 &&
+            rest[1] == 'decision' &&
+            request.method == 'PUT') {
           return _editFileChanges(request, rest.first);
         }
       case 'schedules':
         if (rest.isEmpty && request.method == 'GET') return _schedules(request);
         if (rest.isEmpty && request.method == 'POST') return _schedule(request);
+        if (rest.length == 1 && request.method == 'GET') {
+          return _scheduleItem(request, rest.first);
+        }
         if (rest.length == 1 && request.method == 'DELETE') {
           await _backend.cancelSchedule(rest.first);
           return _json(request.response, HttpStatus.noContent, {});
@@ -141,16 +150,29 @@ final class ApiServer {
     if (rest.length == 1 && request.method == 'GET') {
       return _chat(request, rest.first);
     }
-    if (rest.length == 2 && rest[1] == 'open' && request.method == 'POST') {
-      await _backend.openChat(rest.first);
-      return _json(request.response, HttpStatus.ok, {'ok': true});
-    }
-    if (rest.length == 2 && rest[1] == 'messages' && request.method == 'POST') {
-      return _send(request, rest.first);
-    }
-    if (rest.length == 2 && rest[1] == 'stop' && request.method == 'POST') {
-      await _backend.stop(rest.first);
-      return _json(request.response, HttpStatus.accepted, {'ok': true});
+    if (rest.length == 2) {
+      final chatId = rest.first;
+      switch (rest[1]) {
+        case 'messages':
+          if (request.method == 'GET') return _messages(request, chatId);
+          if (request.method == 'POST') return _send(request, chatId);
+        case 'runs':
+          if (request.method == 'GET') return _runs(request, chatId);
+        case 'events':
+          if (request.method == 'GET') {
+            return _events(request, chatId: chatId);
+          }
+        case 'presence':
+          if (request.method == 'PUT') {
+            await _backend.openChat(chatId);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
+        case 'turn':
+          if (request.method == 'DELETE') {
+            await _backend.stop(chatId);
+            return _json(request.response, HttpStatus.noContent, {});
+          }
+      }
     }
     throw const ApiError(
       HttpStatus.notFound,
@@ -208,6 +230,20 @@ final class ApiServer {
     });
   }
 
+  Future<void> _messages(HttpRequest request, String chatId) async {
+    final messages = await _backend.messages(chatId);
+    _json(request.response, HttpStatus.ok, {
+      'messages': [for (final message in messages) _messageJson(message)],
+    });
+  }
+
+  Future<void> _runs(HttpRequest request, String chatId) async {
+    final runs = await _backend.runs(chatId);
+    _json(request.response, HttpStatus.ok, {
+      'runs': [for (final run in runs) _runJson(run)],
+    });
+  }
+
   Future<void> _send(HttpRequest request, String chatId) async {
     final body = await _body(request);
     final text = _string(body, 'text');
@@ -260,6 +296,18 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
+  Future<void> _scheduleItem(HttpRequest request, String id) async {
+    final task = await _backend.scheduledTask(id);
+    if (task == null) {
+      throw ApiError(
+        HttpStatus.notFound,
+        'schedule_not_found',
+        'schedule $id not found',
+      );
+    }
+    _json(request.response, HttpStatus.ok, _taskJson(task));
+  }
+
   Future<void> _schedules(HttpRequest request) async {
     final tasks = await _backend.schedules();
     _json(request.response, HttpStatus.ok, {
@@ -287,9 +335,9 @@ final class ApiServer {
   }
 
   /// SSE-поток всех событий или одного чата (`?chatId=`).
-  Future<void> _events(HttpRequest request) async {
+  Future<void> _events(HttpRequest request, {String? chatId}) async {
     final response = request.response;
-    final chatId = request.uri.queryParameters['chatId'];
+    final filterChatId = chatId ?? request.uri.queryParameters['chatId'];
     response
       ..bufferOutput = false
       ..statusCode = HttpStatus.ok
@@ -305,7 +353,7 @@ final class ApiServer {
     _clients.add(response);
 
     final subscription = _backend.events().listen((event) {
-      if (!_matchesChat(event, chatId)) return;
+      if (!_matchesChat(event, filterChatId)) return;
       final encoded = _event(event);
       response.write(
         'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',

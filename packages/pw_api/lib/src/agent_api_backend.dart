@@ -107,6 +107,9 @@ final class AgentApiBackend implements ApiBackend {
   Future<List<ScheduledTask>> schedules() => _tasks.all();
 
   @override
+  Future<ScheduledTask?> scheduledTask(String id) => _tasks.byId(id);
+
+  @override
   Future<ScheduledTask> schedule({
     required String chatId,
     required String prompt,
