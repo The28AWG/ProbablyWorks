@@ -1573,10 +1573,6 @@
   "@agentProfilesTitle": {
     "description": "Agent profiles UI."
   },
-  "agentProfileLocal": "Этот компьютер",
-  "@agentProfileLocal": {
-    "description": "Agent profiles UI."
-  },
   "agentProfilesManage": "Управление подключениями…",
   "@agentProfilesManage": {
     "description": "Agent profiles UI."

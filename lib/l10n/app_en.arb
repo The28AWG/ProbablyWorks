@@ -1573,10 +1573,6 @@
   "@agentProfilesTitle": {
     "description": "Agent profiles UI."
   },
-  "agentProfileLocal": "This computer",
-  "@agentProfileLocal": {
-    "description": "Agent profiles UI."
-  },
   "agentProfilesManage": "Manage connections…",
   "@agentProfilesManage": {
     "description": "Agent profiles UI."

@@ -2,6 +2,7 @@ import 'package:app_ui/app_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
+import 'package:probably_works/app/profiles/agent_profile_presentation.dart';
 import 'package:probably_works/app/profiles/profiles_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -139,17 +140,14 @@ class _ProfileCard extends StatelessWidget {
     return AppCard(
       child: Row(
         children: [
-          Icon(
-            profile.isLocal ? Icons.computer_outlined : Icons.cloud_outlined,
-            color: scheme.onSurfaceVariant,
-          ),
+          Icon(agentProfileIcon(profile), color: scheme.onSurfaceVariant),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  profile.name,
+                  agentProfileTitle(profile, l10n),
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 Text(

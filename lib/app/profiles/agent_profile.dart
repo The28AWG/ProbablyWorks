@@ -12,7 +12,8 @@ final class AgentProfile {
 
   factory AgentProfile.local() => const AgentProfile(
     id: 'local',
-    name: 'This computer',
+    // Имя локального профиля локализуется в интерфейсе через localHostTitle.
+    name: '',
     kind: AgentProfileKind.local,
   );
 

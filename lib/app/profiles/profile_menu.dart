@@ -3,6 +3,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
+import 'package:probably_works/app/profiles/agent_profile_presentation.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/profiles/profiles_cubit.dart';
 import 'package:probably_works/app/router/app_router.dart';
@@ -103,9 +104,8 @@ class ProfileMenu extends StatelessWidget {
     );
   }
 
-  String _name(BuildContext context, AgentProfile profile) => profile.isLocal
-      ? AppLocalizations.of(context).agentProfileLocal
-      : profile.name;
+  String _name(BuildContext context, AgentProfile profile) =>
+      agentProfileTitle(profile, AppLocalizations.of(context));
 }
 
 class _StatusDot extends StatelessWidget {
