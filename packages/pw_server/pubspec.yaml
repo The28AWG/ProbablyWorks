@@ -1,5 +1,5 @@
 name: pw_server
-description: "Headless HTTP-сервер ProbablyWorks: API и запуск без Flutter."
+description: "Сервер ProbablyWorks: локальный HTTP API для управления агентом и headless-запуск без Flutter."
 publish_to: none
 version: 0.1.0
 resolution: workspace

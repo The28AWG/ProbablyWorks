@@ -8,7 +8,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_server/src/api_backend.dart';
+import 'package:pw_server/src/api/api_backend.dart';
 
 /// Локальный HTTP API поверх агента.
 ///

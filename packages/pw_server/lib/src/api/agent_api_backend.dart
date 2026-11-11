@@ -8,7 +8,7 @@ import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_server/src/api_backend.dart';
+import 'package:pw_server/src/api/api_backend.dart';
 
 /// Реализация [ApiBackend] поверх живого [AgentHub].
 final class AgentApiBackend implements ApiBackend {
