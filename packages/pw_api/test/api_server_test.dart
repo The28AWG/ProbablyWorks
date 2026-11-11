@@ -102,6 +102,37 @@ void main() {
     expect((jsonDecode(createBody) as Map)['hostId'], 'local');
   });
 
+  test('unknown chat subresources return 404', () async {
+    for (final path in [
+      '/api/v1/chats/missing/messages',
+      '/api/v1/chats/missing/runs',
+      '/api/v1/chats/missing/events',
+    ]) {
+      final (status, _) = await _request(
+        client,
+        base,
+        'GET',
+        path,
+        token: _token,
+      );
+      expect(status, HttpStatus.notFound, reason: path);
+    }
+  });
+
+  test('unknown host is rejected when creating a chat', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/chats',
+      token: _token,
+      body: {'hostId': 'missing'},
+    );
+
+    expect(status, HttpStatus.notFound);
+    expect((jsonDecode(body) as Map)['error'], contains('code'));
+  });
+
   test('returns chat journal and pending cards', () async {
     final (status, body) = await _request(
       client,
@@ -234,6 +265,47 @@ void main() {
     expect(backend.scheduled, hasLength(1));
   });
 
+  test('serializes schedule timestamps as UTC', () async {
+    final local = DateTime(2030, 1, 1, 5);
+    backend.scheduled.add(
+      ScheduledTask(
+        id: 'local',
+        chatId: 'c1',
+        prompt: 'later',
+        dueAt: local,
+        status: ScheduledTaskStatus.pending,
+        createdAt: local,
+        updatedAt: local,
+      ),
+    );
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/schedules/local',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final dueRaw = (jsonDecode(body) as Map)['dueAt'] as String;
+    expect(dueRaw, endsWith('Z'));
+    expect(DateTime.parse(dueRaw).isAtSameMomentAs(local), isTrue);
+  });
+
+  test('returns 404 for an unknown schedule', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/schedules/missing',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.notFound);
+    expect((jsonDecode(body) as Map)['error'], contains('code'));
+  });
+
   test('streams agent events over SSE', () async {
     final request = await client.getUrl(
       Uri.parse('$base/api/v1/events?chatId=c1'),
@@ -321,31 +393,42 @@ final class _FakeBackend implements ApiBackend {
   Future<List<Chat>> chats() async => [_chat];
 
   @override
-  Future<Chat> createChat(String hostId) async => Chat(
-    id: 'c2',
-    hostId: hostId,
-    title: '',
-    createdAt: DateTime(2026, 11, 11),
-    updatedAt: DateTime(2026, 11, 11),
-  );
+  Future<Chat> createChat(String hostId) async {
+    if (hostId != 'local') {
+      throw ApiError(404, 'host_not_found', 'host $hostId not found');
+    }
+    return Chat(
+      id: 'c2',
+      hostId: hostId,
+      title: '',
+      createdAt: DateTime(2026, 11, 11),
+      updatedAt: DateTime(2026, 11, 11),
+    );
+  }
 
   @override
   Future<Chat?> chat(String id) async => id == 'c1' ? _chat : null;
 
   @override
-  Future<List<ChatMessage>> messages(String id) async => [
-    ChatMessage(
-      id: 'm1',
-      chatId: id,
-      seq: 1,
-      role: MessageRole.user,
-      createdAt: DateTime(2026, 11, 11),
-      text: 'hello',
-    ),
-  ];
+  Future<List<ChatMessage>> messages(String id) async {
+    if (id != 'c1') throw ApiError(404, 'chat_not_found', 'chat $id not found');
+    return [
+      ChatMessage(
+        id: 'm1',
+        chatId: id,
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: DateTime(2026, 11, 11),
+        text: 'hello',
+      ),
+    ];
+  }
 
   @override
-  Future<List<ToolRun>> runs(String id) async => const [];
+  Future<List<ToolRun>> runs(String id) async {
+    if (id != 'c1') throw ApiError(404, 'chat_not_found', 'chat $id not found');
+    return const [];
+  }
 
   @override
   Future<void> openChat(String id) async {

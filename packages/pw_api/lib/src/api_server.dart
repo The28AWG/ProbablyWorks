@@ -338,6 +338,13 @@ final class ApiServer {
   Future<void> _events(HttpRequest request, {String? chatId}) async {
     final response = request.response;
     final filterChatId = chatId ?? request.uri.queryParameters['chatId'];
+    if (filterChatId != null && await _backend.chat(filterChatId) == null) {
+      throw ApiError(
+        HttpStatus.notFound,
+        'chat_not_found',
+        'chat $filterChatId not found',
+      );
+    }
     response
       ..bufferOutput = false
       ..statusCode = HttpStatus.ok
@@ -520,7 +527,7 @@ Map<String, Object?> _taskJson(ScheduledTask task) => {
   'id': task.id,
   'chatId': task.chatId,
   'prompt': task.prompt,
-  'dueAt': task.dueAt.toIso8601String(),
+  'dueAt': task.dueAt.toUtc().toIso8601String(),
   'status': task.status.name,
   'error': task.error,
   'createdAt': task.createdAt.toUtc().toIso8601String(),

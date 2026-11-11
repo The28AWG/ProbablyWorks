@@ -34,13 +34,24 @@ final class AgentApiBackend implements ApiBackend {
   Future<Chat?> chat(String id) => _hub.chats.chat(id);
 
   @override
-  Future<Chat> createChat(String hostId) => _hub.newChat(hostId: hostId);
+  Future<Chat> createChat(String hostId) async {
+    if (await _hub.hosts.byId(hostId) == null) {
+      throw ApiError(404, 'host_not_found', 'host $hostId not found');
+    }
+    return _hub.newChat(hostId: hostId);
+  }
 
   @override
-  Future<List<ChatMessage>> messages(String id) => _hub.chats.messages(id);
+  Future<List<ChatMessage>> messages(String id) async {
+    await _requireChat(id);
+    return _hub.chats.messages(id);
+  }
 
   @override
-  Future<List<ToolRun>> runs(String id) => _hub.chats.toolRunsForChat(id);
+  Future<List<ToolRun>> runs(String id) async {
+    await _requireChat(id);
+    return _hub.chats.toolRunsForChat(id);
+  }
 
   @override
   Future<void> openChat(String id) async {
