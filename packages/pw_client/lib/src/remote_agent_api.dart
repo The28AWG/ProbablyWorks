@@ -110,7 +110,7 @@ class RemoteAgentApi
   Future<bool> checkConnection() async {
     try {
       final response = await _client
-          .get(_url('/health'))
+          .get(_url('/health'), headers: {'x-request-id': _uuid.v4()})
           .timeout(const Duration(seconds: 5));
       final online = response.statusCode == 200;
       _setStatus(online ? AgentStatus.online : AgentStatus.offline);
@@ -1038,6 +1038,7 @@ class RemoteAgentApi
     final request = http.Request(method, _url(path));
     request.headers['Authorization'] = 'Bearer $token';
     request.headers['Accept'] = 'application/json';
+    request.headers['x-request-id'] = _uuid.v4();
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -1075,6 +1076,8 @@ class RemoteAgentApi
   }
 
   AgentApiException _error(http.Response response) {
+    final requestId =
+        response.headers['x-request-id'] ?? _requestIdFromBody(response.body);
     try {
       final decoded = jsonDecode(response.body);
       if (decoded is Map && decoded['error'] is Map) {
@@ -1083,6 +1086,7 @@ class RemoteAgentApi
           response.statusCode,
           '${error['code'] ?? 'http_error'}',
           '${error['message'] ?? response.reasonPhrase ?? 'HTTP error'}',
+          requestId: requestId,
         );
       }
     } on FormatException {
@@ -1092,7 +1096,20 @@ class RemoteAgentApi
       response.statusCode,
       'http_${response.statusCode}',
       response.reasonPhrase ?? 'HTTP ${response.statusCode}',
+      requestId: requestId,
     );
+  }
+
+  static String? _requestIdFromBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['requestId'] is String) {
+        return decoded['requestId'] as String;
+      }
+    } on FormatException {
+      // Не JSON — заголовок остаётся единственным источником.
+    }
+    return null;
   }
 
   Uri _url(String path) => baseUri.resolve('/api/v1$path');
@@ -1108,6 +1125,7 @@ class RemoteAgentApi
       try {
         final request = await _eventsClient.getUrl(_url('/events'));
         request.headers.set('Authorization', 'Bearer $token');
+        request.headers.set('x-request-id', _uuid.v4());
         final response = await request.close();
         if (response.statusCode != 200) {
           throw AgentApiException(

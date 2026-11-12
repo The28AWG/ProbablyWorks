@@ -71,6 +71,7 @@ final class ApiServer {
   HttpServer? _server;
   final _clients = <HttpResponse>{};
   static final _random = Random.secure();
+  static final _requestIdPattern = RegExp(r'^[A-Za-z0-9._:-]{1,64}$');
   final _stateEvents = StreamController<Object>.broadcast();
 
   /// Запускает сервер и возвращает фактический порт (0 превращается в выбранный ОС).
@@ -96,7 +97,7 @@ final class ApiServer {
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     final stopwatch = Stopwatch()..start();
-    final requestId = _newRequestId();
+    final requestId = _requestId(request);
     response.headers.set('x-request-id', requestId);
     var audit = true;
     var auth = 'ok';
@@ -125,6 +126,7 @@ final class ApiServer {
           HttpStatus.unauthorized,
           'unauthorized',
           'invalid token',
+          requestId: requestId,
         );
         return;
       }
@@ -144,10 +146,22 @@ final class ApiServer {
       _publishState(request);
     } on AgentApiException catch (error) {
       errorCode = error.code;
-      _error(response, error.status, error.code, error.message);
+      _error(
+        response,
+        error.status,
+        error.code,
+        error.message,
+        requestId: requestId,
+      );
     } on FormatException catch (error) {
       errorCode = 'bad_json';
-      _error(response, HttpStatus.badRequest, 'bad_json', error.message);
+      _error(
+        response,
+        HttpStatus.badRequest,
+        'bad_json',
+        error.message,
+        requestId: requestId,
+      );
     } on Object catch (error) {
       errorCode = 'internal_error';
       _error(
@@ -155,6 +169,7 @@ final class ApiServer {
         HttpStatus.internalServerError,
         'internal_error',
         '$error',
+        requestId: requestId,
       );
     } finally {
       try {
@@ -175,6 +190,14 @@ final class ApiServer {
         );
       }
     }
+  }
+
+  static String _requestId(HttpRequest request) {
+    final supplied = request.headers.value('x-request-id');
+    if (supplied != null && _requestIdPattern.hasMatch(supplied)) {
+      return supplied;
+    }
+    return _newRequestId();
   }
 
   static String _newRequestId() => [
@@ -1516,10 +1539,12 @@ final class ApiServer {
     HttpResponse response,
     int status,
     String code,
-    String message,
-  ) {
+    String message, {
+    String? requestId,
+  }) {
     _json(response, status, {
       'error': {'code': code, 'message': message},
+      'requestId': ?requestId,
     });
   }
 }

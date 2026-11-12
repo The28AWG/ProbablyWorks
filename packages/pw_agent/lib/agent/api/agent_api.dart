@@ -13,14 +13,24 @@ enum AgentStatus { online, offline, connecting }
 /// Локальный адаптер берёт [status] из доменной ошибки или ставит 500,
 /// удалённый — из HTTP-ответа. UI обрабатывает один тип.
 final class AgentApiException implements Exception {
-  const AgentApiException(this.status, this.code, this.message);
+  const AgentApiException(
+    this.status,
+    this.code,
+    this.message, {
+    this.requestId,
+  });
 
   final int status;
   final String code;
   final String message;
 
+  /// Идентификатор HTTP-запроса для сопоставления с журналом доступа сервера.
+  final String? requestId;
+
   @override
-  String toString() => 'AgentApiException($status, $code): $message';
+  String toString() =>
+      'AgentApiException($status, $code)'
+      '${requestId == null ? '' : ' [$requestId]'}: $message';
 }
 
 /// Единый типизированный API агента для клиента.

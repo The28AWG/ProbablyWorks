@@ -966,6 +966,42 @@ void main() {
       expect(entries.map((entry) => entry['event']), contains('api.sse.open'));
     });
 
+    test('accepts and echoes a valid request id', () async {
+      final request = await client.openUrl(
+        'GET',
+        Uri.parse('$logBase/api/v1/chats'),
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+      request.headers.set('x-request-id', 'client-request-1');
+      final response = await request.close();
+      await response.drain<void>();
+
+      expect(response.headers.value('x-request-id'), 'client-request-1');
+      final entries = [
+        for (final line in File(
+          p.join(temp.path, 'api-access.log'),
+        ).readAsLinesSync())
+          jsonDecode(line) as Map<String, dynamic>,
+      ];
+      expect(entries.single['requestId'], 'client-request-1');
+    });
+
+    test('replaces an invalid request id', () async {
+      final request = await client.openUrl(
+        'GET',
+        Uri.parse('$logBase/api/v1/chats'),
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+      request.headers.set('x-request-id', 'bad id with spaces');
+      final response = await request.close();
+      await response.drain<void>();
+
+      final echoed = response.headers.value('x-request-id');
+      expect(echoed, isNotNull);
+      expect(echoed, isNot('bad id with spaces'));
+      expect(echoed, matches(RegExp(r'^[a-f0-9]{16}$')));
+    });
+
     test('logs metadata without health, bodies, query or token', () async {
       await _request(client, logBase, 'GET', '/api/v1/health', token: _token);
       await _request(client, logBase, 'GET', '/api/v1/chats');

@@ -139,7 +139,9 @@ void main() {
     await expectLater(
       remote.messages('missing'),
       throwsA(
-        isA<AgentApiException>().having((error) => error.status, 'status', 404),
+        isA<AgentApiException>()
+            .having((error) => error.status, 'status', 404)
+            .having((error) => error.requestId, 'requestId', isNotNull),
       ),
     );
   });
