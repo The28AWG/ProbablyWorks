@@ -197,6 +197,16 @@ dart analyze lib test
 flutter build linux --release
 ```
 
+Для установочных пакетов используется Fastforge:
+
+```bash
+dart run tool/package/package.dart linux appimage,deb,tar.gz
+```
+
+Команда собирает GUI, добавляет AOT-демон в bundle и кладёт готовые файлы в
+`dist/<version>/`. Требования, форматы и подпись описаны в
+[docs/agent/PACKAGING.md](docs/agent/PACKAGING.md).
+
 Приложение нацелено на настольные платформы (Linux, macOS, Windows); остальные папки платформ в проекте
 созданы стандартным шаблоном Flutter.
 
@@ -215,6 +225,7 @@ git config commit.template .gitmessage
 
 - [docs/agent/ISSUES.md](docs/agent/ISSUES.md) — backlog: задачи, приоритеты и критерии приёмки.
 - [docs/agent/DAEMON.md](docs/agent/DAEMON.md) — headless-демон, HTTP API и планировщик.
+- [docs/agent/PACKAGING.md](docs/agent/PACKAGING.md) — сборка AppImage, DEB, EXE, DMG и архивов.
 
 ## Безопасность
 

@@ -46,6 +46,7 @@ pubspec_overrides.yaml
 .pub/
 /build/
 /coverage/
+/dist/
 
 # Картинки расхождения golden-тестов: Flutter пишет их рядом с упавшим тестом.
 test/**/failures/

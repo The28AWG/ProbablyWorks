@@ -1,0 +1,19 @@
+display_name: ProbablyWorks
+package_name: probably-works
+maintainer:
+  name: Ruslan Gabdrafikov
+  email: the28awg@gmail.com
+priority: optional
+section: utils
+# Оценка установленного размера: Flutter bundle и AOT-демон.
+installed_size: 250000
+icon: assets/icon/app_icon.png
+generic_name: AI-агент для локальных и SSH-задач
+keywords:
+  - AI
+  - agent
+  - SSH
+  - developer tools
+categories:
+  - Development
+startup_notify: true

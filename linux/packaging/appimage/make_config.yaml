@@ -1,0 +1,12 @@
+display_name: ProbablyWorks
+icon: assets/icon/app_icon.png
+generic_name: AI-агент для локальных и SSH-задач
+keywords:
+  - AI
+  - agent
+  - SSH
+  - developer tools
+categories:
+  - Development
+startup_notify: true
+include: []

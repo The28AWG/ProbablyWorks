@@ -1,0 +1,12 @@
+app_id: 95C0D21C-A781-4092-AE44-EFFACB1EDCB3
+publisher_name: The28AWG
+publisher_url: https://github.com/The28AWG/ProbablyWorks
+display_name: ProbablyWorks
+setup_icon_file: windows/runner/resources/app_icon.ico
+create_desktop_icon: true
+launch_at_startup: false
+locales:
+  - en
+  - ru
+architectures_allowed: x64compatible
+architectures_install_in_64bit_mode: x64compatible

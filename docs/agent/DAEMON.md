@@ -265,9 +265,10 @@ GUI при старте:
   packages/pw_server/bin/pw_server.dart --data-dir <support> --port 0`;
   скрипт ищется вверх от текущей директории, поэтому запуск работает и из
   корня репозитория, и из подкаталога;
-- **сборка** — готовый бинарник `pw_server` рядом с исполняемым файлом GUI
-  (`pw_server.exe` на Windows, `Resources` на macOS, `APPDIR`/`SNAP` для
-  AppImage и Snap).
+- **сборка** — готовый бинарник `daemon/bin/pw_server` внутри пакета GUI
+  (`daemon/bin/pw_server.exe` на Windows, `Contents/MacOS/daemon` на macOS).
+  Демон собирается как `dart build cli` и несёт рядом `daemon/lib` с
+  нативными библиотеками; подробности — в [PACKAGING.md](PACKAGING.md).
 
 Перед запуском GUI проверяет, свободна ли блокировка БД. Если её держит другой
 процесс, новый демон не запускается: GUI ждёт готовый `daemon.json` и
