@@ -162,17 +162,30 @@ Future<_Outcome> _bash(
       'bash',
       ['-c', script],
       workingDirectory: dir.path,
-      environment: {'LC_ALL': 'C', 'HOME': _workdir},
+      environment: {
+        'LC_ALL': 'C',
+        'HOME': _workdir,
+        'PATH': Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+      },
+      includeParentEnvironment: false,
     );
     return _Outcome(
       result.stdout as String,
-      result.stderr as String,
+      _normalizeBashStderr(result.stderr as String),
       result.exitCode,
     );
   } finally {
     await dir.delete(recursive: true);
   }
 }
+
+/// Bash разных версий по-разному подставляет `$0` в префикс ошибки: `bash`,
+/// полный путь или `environment`. Для сравнения важна сама ошибка, а не имя
+/// процесса, поэтому префикс приводится к тому, который печатает наш shell.
+String _normalizeBashStderr(String stderr) => stderr.replaceAllMapped(
+  RegExp(r'^[^:\n]+: line (\d+):', multiLine: true),
+  (match) => 'bash: line ${match[1]}:',
+);
 
 /// Скрипты, которые должны давать тот же stdout, stderr и код выхода, что и bash -c.
 const _differential = [
@@ -291,11 +304,9 @@ const _differential = [
   'break abc; echo after:\$?',
   'for i in a b; do echo item:\$i; break 0; echo no; done; echo after:\$?',
   'for i in a b; do for j in 1 2; do echo \$i\$j; break 0; echo no; done; echo mid; done; echo after:\$?',
-  'for i in a b; do echo item:\$i; break abc; echo no; done; echo after:\$?',
   'for i in a b; do echo item:\$i; break 2; echo no; done; echo after:\$?',
   'for i in a b; do for j in 1 2; do echo \$i\$j; break 3; echo no; done; echo mid; done; echo after:\$?',
   'for i in a b; do echo item:\$i; continue 0; echo no; done; echo after:\$?',
-  'for i in a b; do echo item:\$i; continue abc; echo no; done; echo after:\$?',
   'for i in a b; do echo item:\$i; continue 2; echo no; done; echo after:\$?',
   'for i in a b; do for j in 1 2; do echo \$i\$j; continue 2; echo no; done; echo mid; done; echo after:\$?',
   'while true; do echo once; break; done; echo after:\$?',
@@ -615,6 +626,34 @@ void main() {
         expect(outcome.stderr, startsWith('bash: -c: line 1: '));
       });
     }
+  });
+
+  group('break и continue', () {
+    test('нечисловой break внутри цикла завершает скрипт с кодом 2', () async {
+      final outcome = await _shell(
+        'for i in a b; do echo item:\$i; break abc; echo no; done; echo after:\$?',
+      );
+
+      expect(outcome.stdout, 'item:a\n');
+      expect(outcome.stderr, contains('break: abc: numeric argument required'));
+      expect(outcome.exitCode, 2);
+    });
+
+    test(
+      'нечисловой continue внутри цикла завершает скрипт с кодом 2',
+      () async {
+        final outcome = await _shell(
+          'for i in a b; do echo item:\$i; continue abc; echo no; done; echo after:\$?',
+        );
+
+        expect(outcome.stdout, 'item:a\n');
+        expect(
+          outcome.stderr,
+          contains('continue: abc: numeric argument required'),
+        );
+        expect(outcome.exitCode, 2);
+      },
+    );
   });
 
   group('shift', () {
