@@ -39,6 +39,7 @@ import '../../core/settings/client_settings.dart' as _i47;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/appearance_port_adapter.dart' as _i395;
 import '../locale/locale_controller.dart' as _i675;
+import '../profiles/local_agent_apis.dart' as _i412;
 import '../profiles/profile_service.dart' as _i740;
 import '../router/app_router.dart' as _i81;
 import '../theme/theme_controller.dart' as _i699;
@@ -57,14 +58,27 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i810.PluginUiRegistry>(() => coreModule.pluginUiRegistry());
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
-    gh.lazySingleton<_i144.AgentApi>(
-      () => coreModule.agentApi(gh<_i995.LocalAgentApi>()),
-    );
-    gh.lazySingleton<_i891.ChatApi>(
-      () => coreModule.chatApi(gh<_i326.LocalChatApi>()),
+    gh.lazySingleton<_i412.LocalAgentApis>(
+      () => coreModule.localAgentApis(
+        gh<_i995.LocalAgentApi>(),
+        gh<_i326.LocalChatApi>(),
+        gh<_i358.HostsApi>(),
+        gh<_i415.ProjectsApi>(),
+        gh<_i246.AgentSettingsApi>(),
+        gh<_i733.McpApi>(),
+        gh<_i166.PluginApi>(),
+        gh<_i648.SecurityAuditApi>(),
+        gh<_i95.PushApi>(),
+      ),
     );
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
+    );
+    gh.lazySingleton<_i144.AgentApi>(
+      () => coreModule.agentApi(gh<_i412.LocalAgentApis>()),
+    );
+    gh.lazySingleton<_i891.ChatApi>(
+      () => coreModule.chatApi(gh<_i412.LocalAgentApis>()),
     );
     gh.lazySingleton<_i1054.ExternalUrlOpener>(
       () => const _i224.UrlLauncherOpener(),
@@ -82,15 +96,7 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i740.ProfileService(
         gh<_i47.ClientSettings>(),
         gh<_i564.SecretStore>(),
-        gh<_i144.AgentApi>(),
-        gh<_i891.ChatApi>(),
-        gh<_i358.HostsApi>(),
-        gh<_i415.ProjectsApi>(),
-        gh<_i246.AgentSettingsApi>(),
-        gh<_i733.McpApi>(),
-        gh<_i166.PluginApi>(),
-        gh<_i648.SecurityAuditApi>(),
-        gh<_i95.PushApi>(),
+        gh<_i412.LocalAgentApis>(),
         gh<_i734.ClientInfo>(),
         gh<_i641.AppNotifier>(),
       ),

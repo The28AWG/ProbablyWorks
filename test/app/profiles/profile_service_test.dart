@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
+import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
@@ -37,15 +38,17 @@ void main() {
   ProfileService service() => ProfileService(
     clientSettings,
     secrets,
-    _FakeAgentApi(),
-    _FakeChatApi(),
-    _FakeHostsApi(),
-    _FakeProjectsApi(),
-    _FakeSettingsApi(),
-    _FakeMcpApi(),
-    _FakePluginApi(),
-    _FakeSecurityAuditApi(),
-    _FakePushApi(),
+    LocalAgentApis(
+      agent: _FakeAgentApi(),
+      chat: _FakeChatApi(),
+      hosts: _FakeHostsApi(),
+      projects: _FakeProjectsApi(),
+      settings: _FakeSettingsApi(),
+      mcp: _FakeMcpApi(),
+      plugins: _FakePluginApi(),
+      audit: _FakeSecurityAuditApi(),
+      push: _FakePushApi(),
+    ),
     const ClientInfo.fallback(),
     _FakeNotifier(),
   );

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
+import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -30,15 +31,7 @@ class ProfileService {
   ProfileService(
     this._settings,
     this._secrets,
-    this._localApi,
-    this._localChat,
-    this._localHosts,
-    this._localProjects,
-    this._localSettings,
-    this._localMcp,
-    this._localPlugins,
-    this._localSecurityAudit,
-    this._localPush,
+    this._local,
     this._clientInfo,
     this._notifier,
   );
@@ -47,15 +40,7 @@ class ProfileService {
 
   final ClientSettings _settings;
   final SecretStore _secrets;
-  final AgentApi _localApi;
-  final ChatApi _localChat;
-  final HostsApi _localHosts;
-  final ProjectsApi _localProjects;
-  final AgentSettingsApi _localSettings;
-  final McpApi _localMcp;
-  final PluginApi _localPlugins;
-  final SecurityAuditApi _localSecurityAudit;
-  final PushApi _localPush;
+  final LocalAgentApis _local;
   final ClientInfo _clientInfo;
   final AppNotifier _notifier;
 
@@ -135,31 +120,31 @@ class ProfileService {
       _profiles.where((profile) => profile.id == id).firstOrNull;
 
   AgentApi agentApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localApi : _remoteFor(profile);
+      profile.isLocal ? _local.agent : _remoteFor(profile);
 
   ChatApi chatApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localChat : _remoteFor(profile);
+      profile.isLocal ? _local.chat : _remoteFor(profile);
 
   HostsApi hostsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localHosts : _remoteFor(profile);
+      profile.isLocal ? _local.hosts : _remoteFor(profile);
 
   ProjectsApi projectsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localProjects : _remoteFor(profile);
+      profile.isLocal ? _local.projects : _remoteFor(profile);
 
   AgentSettingsApi settingsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localSettings : _remoteFor(profile);
+      profile.isLocal ? _local.settings : _remoteFor(profile);
 
   McpApi mcpApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localMcp : _remoteFor(profile);
+      profile.isLocal ? _local.mcp : _remoteFor(profile);
 
   PluginApi pluginApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localPlugins : _remoteFor(profile);
+      profile.isLocal ? _local.plugins : _remoteFor(profile);
 
   SecurityAuditApi securityAuditApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localSecurityAudit : _remoteFor(profile);
+      profile.isLocal ? _local.audit : _remoteFor(profile);
 
   PushApi pushApiFor(AgentProfile profile) =>
-      profile.isLocal ? _localPush : _remoteFor(profile);
+      profile.isLocal ? _local.push : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 
