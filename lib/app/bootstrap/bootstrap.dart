@@ -6,6 +6,7 @@ import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/local_daemon_discovery.dart';
+import 'package:probably_works/app/profiles/local_daemon_launcher.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
@@ -32,8 +33,9 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Порядок старта: discovery локального демона → embedded или local daemon →
-/// восстановление → локальный Host → настройки интерфейса → каталог моделей.
+/// Порядок старта: поиск или автозапуск локального демона → embedded или
+/// local daemon → восстановление → локальный Host → настройки интерфейса →
+/// каталог моделей.
 ///
 /// Возвращает false, если другой экземпляр уже работает с этой базой.
 Future<bool> bootstrap() async {
@@ -49,13 +51,55 @@ Future<bool> bootstrap() async {
     ..registerSingleton<ClientInfo>(clientInfo)
     ..registerSingleton<ClientSettings>(clientSettings);
 
-  final discovery = LocalDaemonDiscovery(paths);
-  final daemon = await discovery.find();
-  discovery.dispose();
-  if (daemon != null) {
-    return _bootstrapDaemon(daemon, clientSettings);
+  // На телефоне локального демона нет: там либо embedded, либо удалённый
+  // профиль. Переменная окружения выключает демон и на desktop — для отладки.
+  if (AppPlatform.current.isMobile || localDaemonDisabled()) {
+    return _bootstrapEmbedded(paths, clientSettings);
   }
-  return _bootstrapEmbedded(paths, clientSettings);
+
+  final discovery = LocalDaemonDiscovery(paths);
+  final starter = LocalDaemonStarter(discovery);
+  try {
+    final running = await discovery.find();
+    if (running != null) {
+      return await _bootstrapDaemon(running, clientSettings);
+    }
+    // Если БД уже занята, второй процесс запускать нельзя. Скорее всего, это
+    // другой embedded-GUI; но демон мог захватить lock до записи daemon.json.
+    if (!_databaseLockFree(paths)) {
+      final late = await starter.waitForStartup(
+        timeout: const Duration(seconds: 2),
+      );
+      if (late != null) return await _bootstrapDaemon(late, clientSettings);
+      return false;
+    }
+    final daemon = await starter.ensureRunning(paths);
+    if (daemon != null) {
+      return await _bootstrapDaemon(daemon, clientSettings);
+    }
+    final embedded = await _bootstrapEmbedded(paths, clientSettings);
+    if (embedded) return true;
+    // Демон мог занять БД чуть позже таймаута автозапуска. Тогда embedded
+    // не получил блокировку, но подключиться к демону всё ещё можно.
+    final late = await starter.waitForStartup(
+      timeout: const Duration(seconds: 3),
+    );
+    if (late != null) return await _bootstrapDaemon(late, clientSettings);
+    return false;
+  } finally {
+    discovery.dispose();
+  }
+}
+
+/// Проверяет, свободна ли блокировка БД, не удерживая её постоянно.
+///
+/// Между проверкой и фактическим запуском возможна гонка, но она приводит лишь
+/// к неудачному старту демона, а не к повреждению базы.
+bool _databaseLockFree(AppPaths paths) {
+  final lock = SingleInstanceLock(paths.lockFile);
+  if (!lock.acquire()) return false;
+  lock.release();
+  return true;
 }
 
 Future<bool> _bootstrapEmbedded(

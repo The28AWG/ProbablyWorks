@@ -76,7 +76,9 @@ void main() {
 
   test('ignores a stale protocol and a missing file', () async {
     final paths = AppPaths.forSupport(temp);
-    expect(await LocalDaemonDiscovery(paths).find(), isNull);
+    final missing = LocalDaemonDiscovery(paths);
+    addTearDown(missing.dispose);
+    expect(await missing.find(), isNull);
 
     paths.daemonInfo.writeAsStringSync(
       LocalDaemonInfo(
@@ -89,6 +91,16 @@ void main() {
     );
     final discovery = LocalDaemonDiscovery(paths);
     addTearDown(discovery.dispose);
+    expect(await discovery.find(), isNull);
+  });
+
+  test('ignores an unreadable discovery file', () async {
+    final paths = AppPaths.forSupport(temp);
+    paths.daemonInfo.createSync(recursive: true);
+
+    final discovery = LocalDaemonDiscovery(paths);
+    addTearDown(discovery.dispose);
+
     expect(await discovery.find(), isNull);
   });
 }

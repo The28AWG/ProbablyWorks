@@ -16,12 +16,12 @@ final class LocalDaemonDiscovery {
   static const _timeout = Duration(seconds: 2);
 
   Future<LocalDaemonInfo?> find() async {
-    final file = _paths.daemonInfo;
-    if (!file.existsSync()) return null;
-    final info = LocalDaemonInfo.decode(file.readAsStringSync());
-    if (info == null) return null;
-    final base = Uri.parse('http://127.0.0.1:${info.port}');
     try {
+      final file = _paths.daemonInfo;
+      if (!file.existsSync()) return null;
+      final info = LocalDaemonInfo.decode(file.readAsStringSync());
+      if (info == null) return null;
+      final base = Uri.parse('http://127.0.0.1:${info.port}');
       final health = await _client
           .get(base.resolve('/api/v1/health'))
           .timeout(_timeout);
