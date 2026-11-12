@@ -93,9 +93,6 @@ class ModelCatalogState extends Equatable {
   List<Object?> get props => [models, syncedAt, loading, error, saved];
 }
 
-/// Каталог моделей. Список OpenRouter живёт в памяти и обновляется при старте, по таймеру,
-/// вручную и с повтором после ошибки. В БД попадают только выбранные модели ([remember]).
-@lazySingleton
 /// Источник каталога моделей для диалогов выбора: локальный сервис или
 /// удалённый профиль агента. Состояние и обновление отдают сами данные,
 /// поэтому UI не зависит от конкретной реализации каталога.
@@ -105,6 +102,9 @@ abstract interface class ModelCatalogSource {
   Future<void> refresh();
 }
 
+/// Каталог моделей. Список OpenRouter живёт в памяти и обновляется при старте, по таймеру,
+/// вручную и с повтором после ошибки. В БД попадают только выбранные модели ([remember]).
+@lazySingleton
 class ModelCatalogService implements ModelCatalogSource {
   ModelCatalogService(this._repository, this._llm);
 
