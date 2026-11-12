@@ -14,7 +14,7 @@ final class LocalMcpApi implements McpApi {
   final McpService _service;
 
   @override
-  Future<McpSnapshot> snapshot() async {
+  Future<McpSnapshot> mcpSnapshot() async {
     final servers = await _repository.all();
     return McpSnapshot(
       servers: servers,

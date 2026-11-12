@@ -23,7 +23,7 @@ final class McpSnapshot {
 /// через HTTP профиля. В JSON не попадают значения секретов: только ссылки
 /// вида `${secret:name}` внутри [McpServerConfig.env] и headers.
 abstract interface class McpApi {
-  Future<McpSnapshot> snapshot();
+  Future<McpSnapshot> mcpSnapshot();
   Stream<McpServerState> watchStates();
 
   /// Подключает включённые серверы, если они ещё не подключены.

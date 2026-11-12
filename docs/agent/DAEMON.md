@@ -94,6 +94,14 @@ GET    /api/v1/models
 POST   /api/v1/models/refresh
 POST   /api/v1/models/remember                {"ids": ["..."]}
 
+GET    /api/v1/plugins
+PUT    /api/v1/plugins/enabled                {"ids": ["..."], "enabled": false}
+GET    /api/v1/plugins/{id}/missing-dependencies
+GET    /api/v1/plugins/{id}/dependents
+GET    /api/v1/plugins/{id}/settings
+PUT    /api/v1/plugins/{id}/settings          {"value": {...}}
+POST   /api/v1/plugins/refresh
+
 GET    /api/v1/mcp
 POST   /api/v1/mcp/ready
 PUT    /api/v1/mcp/servers/{id}
@@ -167,7 +175,7 @@ OpenRouter и токен API можно задать переменными ок
   TLS reverse proxy;
 - нет TLS внутри демона;
 - нет OS-keyring в headless-режиме;
-- плагины в демоне работают через общий `pw_agent`; их включение задаётся в общей базе, а API управления плагинами пока не вынесен;
+- плагины в демоне работают через общий `pw_agent`; управление — через `/plugins`, Flutter-представления остаются в клиенте;
 - GUI не подключается к демону как клиент, процессы взаимоисключающие;
 - аудит API-запросов ограничен журналом приложения; отдельного файла доступа
   пока нет.

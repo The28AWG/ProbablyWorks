@@ -21,9 +21,11 @@ import 'package:probably_works/features/settings/presentation/widgets/security_p
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -174,6 +176,8 @@ class _SettingsViewState extends State<_SettingsView> {
     final scope = ProfileScope.maybeOf(context);
     final source = scope?.chatApi.models ?? getIt<ChatApi>().models;
     final mcpApi = scope?.mcpApi ?? getIt<McpApi>();
+    final pluginApi = scope?.pluginApi ?? getIt<PluginApi>();
+    final agentApi = scope?.agentApi ?? getIt<AgentApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -193,7 +197,7 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.agents: const [AgentProfilesSection()],
           _Group.interface: _interfaceSections(state, cubit, l10n),
           _Group.safety: _safetySections(state, cubit, l10n),
-          _Group.plugins: _pluginSections(),
+          _Group.plugins: _pluginSections(pluginApi, agentApi),
           _Group.mcp: _mcpSections(mcpApi),
           _Group.advanced: _advancedSections(state, cubit, l10n),
         };
@@ -721,7 +725,9 @@ class _SettingsViewState extends State<_SettingsView> {
     ),
   ];
 
-  List<Widget> _pluginSections() => const [PluginSettingsSection()];
+  List<Widget> _pluginSections(PluginApi pluginApi, AgentApi agentApi) => [
+    PluginSettingsSection(api: pluginApi, agentApi: agentApi),
+  ];
 
   List<Widget> _mcpSections(McpApi api) => [McpSettingsSection(api: api)];
 

@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -39,6 +40,7 @@ final class ApiServer {
     ProjectsApi? projects,
     this.settingsApi,
     this.mcpApi,
+    this.pluginApi,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -53,6 +55,7 @@ final class ApiServer {
   final ProjectsApi? _projectsApi;
   final AgentSettingsApi? settingsApi;
   final McpApi? mcpApi;
+  final PluginApi? pluginApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -167,6 +170,33 @@ final class ApiServer {
               rest[3] == 'refresh' &&
               request.method == 'POST') {
             return _refreshMcpTools(request, id);
+          }
+        }
+      case 'plugins':
+        if (rest.isEmpty && request.method == 'GET') return _plugins(request);
+        if (rest.length == 1 &&
+            rest.first == 'enabled' &&
+            request.method == 'PUT') {
+          return _setPluginsEnabled(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'refresh' &&
+            request.method == 'POST') {
+          return _refreshPlugins(request);
+        }
+        if (rest.length == 2) {
+          final id = rest.first;
+          if (rest[1] == 'settings') {
+            if (request.method == 'GET') return _pluginSettings(request, id);
+            if (request.method == 'PUT') {
+              return _savePluginSettings(request, id);
+            }
+          }
+          if (rest[1] == 'missing-dependencies' && request.method == 'GET') {
+            return _pluginMissing(request, id);
+          }
+          if (rest[1] == 'dependents' && request.method == 'GET') {
+            return _pluginDependents(request, id);
           }
         }
       case 'hosts':
@@ -505,7 +535,7 @@ final class ApiServer {
   }
 
   Future<void> _mcp(HttpRequest request) async {
-    final snapshot = await _requireMcpApi().snapshot();
+    final snapshot = await _requireMcpApi().mcpSnapshot();
     _json(request.response, HttpStatus.ok, {
       'servers': [
         for (final server in snapshot.servers) mcpServerToJson(server),
@@ -566,7 +596,7 @@ final class ApiServer {
   }
 
   Future<McpServerConfig> _mcpServer(McpApi api, String id) async {
-    final snapshot = await api.snapshot();
+    final snapshot = await api.mcpSnapshot();
     for (final server in snapshot.servers) {
       if (server.id == id) return server;
     }
@@ -584,6 +614,77 @@ final class ApiServer {
         HttpStatus.notImplemented,
         'not_supported',
         'MCP API is not available',
+      );
+    }
+    return api;
+  }
+
+  Future<void> _plugins(HttpRequest request) async {
+    final snapshot = await _requirePluginApi().pluginSnapshot();
+    _json(request.response, HttpStatus.ok, pluginSnapshotToJson(snapshot));
+  }
+
+  Future<void> _pluginMissing(HttpRequest request, String id) async {
+    final ids = await _requirePluginApi().missingDependencies(id);
+    _json(request.response, HttpStatus.ok, {'ids': ids.toList()..sort()});
+  }
+
+  Future<void> _pluginDependents(HttpRequest request, String id) async {
+    final ids = await _requirePluginApi().dependents(id);
+    _json(request.response, HttpStatus.ok, {'ids': ids.toList()..sort()});
+  }
+
+  Future<void> _setPluginsEnabled(HttpRequest request) async {
+    final body = await _body(request);
+    final rawIds = body['ids'];
+    final enabled = body['enabled'];
+    if (rawIds is! List || enabled is! bool) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_plugins',
+        'ids must be a list and enabled must be a boolean',
+      );
+    }
+    await _requirePluginApi().setEnabled({
+      for (final id in rawIds)
+        if (id is String) id,
+    }, enabled: enabled);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _pluginSettings(HttpRequest request, String id) async {
+    final value = await _requirePluginApi().settingsFor(id).read();
+    _json(request.response, HttpStatus.ok, value);
+  }
+
+  Future<void> _savePluginSettings(HttpRequest request, String id) async {
+    final body = await _body(request);
+    final raw = body['value'];
+    if (raw is! Map) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_settings',
+        'value must be an object',
+      );
+    }
+    await _requirePluginApi()
+        .settingsFor(id)
+        .save(Map<String, Object?>.from(raw));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _refreshPlugins(HttpRequest request) async {
+    await _requirePluginApi().refresh();
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  PluginApi _requirePluginApi() {
+    final api = pluginApi;
+    if (api == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'plugin API is not available',
       );
     }
     return api;

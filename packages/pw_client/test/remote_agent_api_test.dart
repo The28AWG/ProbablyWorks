@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -28,6 +30,7 @@ void main() {
   late _FakeAgent backend;
   late _FakeSettings settings;
   late _FakeMcp mcp;
+  late _FakePlugins pluginsApi;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -35,12 +38,14 @@ void main() {
     backend = _FakeAgent();
     settings = _FakeSettings();
     mcp = _FakeMcp();
+    pluginsApi = _FakePlugins();
     server = ApiServer(
       backend,
       _token,
       port: 0,
       settingsApi: settings,
       mcpApi: mcp,
+      pluginApi: pluginsApi,
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -235,7 +240,7 @@ void main() {
   });
 
   test('manages MCP servers through the remote API', () async {
-    final snapshot = await remote.snapshot();
+    final snapshot = await remote.mcpSnapshot();
     expect(snapshot.servers.single.id, 'mcp-1');
     expect(snapshot.servers.single.createdAt.isUtc, isTrue);
     expect(snapshot.states['mcp-1']?.status, McpConnectionStatus.connected);
@@ -262,6 +267,36 @@ void main() {
     expect(mcp.importedText, '{"mcpServers":{}}');
     expect(mcp.importedFrom, '/tmp/mcp.json');
     expect(exported, '{"mcpServers":{}}');
+  });
+
+  test('manages plugins through the remote API', () async {
+    final snapshot = await remote.pluginSnapshot();
+    expect(snapshot.plugins.first.id, 'first');
+    expect(snapshot.enabled, {'first'});
+    expect(await remote.missingDependencies('second'), {'first'});
+    expect(await remote.dependents('first'), {'second'});
+
+    await remote.setEnabled({'first', 'second'}, enabled: false);
+    expect(pluginsApi.lastIds, {'first', 'second'});
+
+    final settings = remote.settingsFor('first');
+    expect(await settings.read(), {'version': 1});
+    await settings.save({'commands': []});
+    expect(pluginsApi.savedSettings, {'commands': []});
+    await remote.refresh();
+    expect(pluginsApi.refreshed, 1);
+
+    pluginsApi.busy = true;
+    await expectLater(
+      remote.setEnabled({'first'}, enabled: false),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'agent_busy',
+        ),
+      ),
+    );
   });
 
   test('streams SSE events into typed streams', () async {
@@ -524,6 +559,68 @@ final class _FakeAgent implements AgentApi {
   Future<void> resumeAfterRestart() => Future<void>.value();
 }
 
+final class _FakePlugins implements PluginApi {
+  var busy = false;
+  var refreshed = 0;
+  Set<String>? lastIds;
+  Map<String, Object?>? savedSettings;
+
+  @override
+  Future<PluginSnapshot> pluginSnapshot() async => const PluginSnapshot(
+    plugins: [
+      PluginDescriptor(id: 'first', dependsOn: {}, defaultEnabled: false),
+      PluginDescriptor(
+        id: 'second',
+        dependsOn: {'first'},
+        defaultEnabled: false,
+      ),
+    ],
+    enabled: {'first'},
+  );
+
+  @override
+  Future<Set<String>> missingDependencies(String id) async =>
+      id == 'second' ? {'first'} : {};
+
+  @override
+  Future<Set<String>> dependents(String id) async =>
+      id == 'first' ? {'second'} : {};
+
+  @override
+  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+    if (busy) {
+      throw const AgentApiException(
+        409,
+        'agent_busy',
+        'cannot change plugins while the agent is running',
+      );
+    }
+    lastIds = ids;
+  }
+
+  @override
+  plugins.PluginSettings settingsFor(String id) => _FakePluginSettings(this);
+
+  @override
+  Future<void> refresh() async {
+    refreshed++;
+  }
+}
+
+final class _FakePluginSettings implements plugins.PluginSettings {
+  _FakePluginSettings(this._api);
+
+  final _FakePlugins _api;
+
+  @override
+  Future<Map<String, Object?>> read() async => {'version': 1};
+
+  @override
+  Future<void> save(Map<String, Object?> value) async {
+    _api.savedSettings = value;
+  }
+}
+
 final class _FakeMcp implements McpApi {
   McpServerConfig? saved;
   String? deleted;
@@ -543,7 +640,7 @@ final class _FakeMcp implements McpApi {
   );
 
   @override
-  Future<McpSnapshot> snapshot() async => McpSnapshot(
+  Future<McpSnapshot> mcpSnapshot() async => McpSnapshot(
     servers: [_server],
     states: const {
       'mcp-1': McpServerState(

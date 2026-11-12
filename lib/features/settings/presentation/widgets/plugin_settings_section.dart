@@ -1,11 +1,10 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:plugin_api/plugin_api.dart';
 import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
-import 'package:pw_agent/agent/plugins/plugin_service.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 
 PluginUi? _uiOf(String pluginId) => getIt<PluginUiRegistry>().byId(pluginId);
 
@@ -14,17 +13,28 @@ String _titleOf(BuildContext context, String pluginId) =>
 
 /// Вкладка плагинов: включение, зависимости и настройки конкретного плагина.
 class PluginSettingsSection extends StatefulWidget {
-  const PluginSettingsSection({super.key});
+  const PluginSettingsSection({
+    required this.api,
+    required this.agentApi,
+    super.key,
+  });
+
+  /// API профиля: локальный сервис или удалённый агент.
+  final PluginApi api;
+
+  /// Профиль нужен для подсказки до запроса; сервер повторно проверяет
+  /// активные ходы и отвечает `409 agent_busy`.
+  final AgentApi agentApi;
 
   @override
   State<PluginSettingsSection> createState() => _PluginSettingsSectionState();
 }
 
 class _PluginSettingsSectionState extends State<PluginSettingsSection> {
-  final _service = getIt<PluginService>();
   var _loading = true;
+  var _busy = false;
   var _enabled = <String>{};
-  List<Plugin> _plugins = const [];
+  List<PluginDescriptor> _plugins = const [];
 
   @override
   void initState() {
@@ -33,25 +43,29 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
   }
 
   Future<void> _load() async {
-    final plugins = _service.all;
-    final enabled = _service.enabledIds;
-    if (!mounted) return;
-    setState(() {
-      _plugins = plugins;
-      _enabled = enabled;
-      _loading = false;
-    });
+    try {
+      final snapshot = await widget.api.pluginSnapshot();
+      if (!mounted) return;
+      setState(() {
+        _plugins = snapshot.plugins;
+        _enabled = snapshot.enabled;
+        _loading = false;
+      });
+    } on Object {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  Future<void> _toggle(Plugin plugin, bool value) async {
+  Future<void> _toggle(PluginDescriptor plugin, bool value) async {
     final l10n = AppLocalizations.of(context);
-    if (getIt<AgentApi>().runningChatIds.isNotEmpty) {
+    if (widget.agentApi.runningChatIds.isNotEmpty) {
       AppSnackBar.show(context, l10n.pluginsRunning);
       return;
     }
     final affected = value
-        ? _service.missingDependencies(plugin.id)
-        : _service.dependents(plugin.id);
+        ? await widget.api.missingDependencies(plugin.id)
+        : await widget.api.dependents(plugin.id);
+    if (!mounted) return;
     if (affected.isNotEmpty) {
       final names = [for (final id in affected) _titleOf(context, id)];
       final confirmed = await ConfirmDialog.confirm(
@@ -65,13 +79,21 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
       );
       if (!confirmed || !mounted) return;
     }
-    final ids = {plugin.id, ...affected};
-    if (value) {
-      await _service.enable(ids);
-    } else {
-      await _service.disable(ids);
+    setState(() => _busy = true);
+    try {
+      await widget.api.setEnabled({plugin.id, ...affected}, enabled: value);
+      await _load();
+    } on AgentApiException catch (error) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        error.status == 409
+            ? l10n.pluginsRunning
+            : l10n.commonError(error.message),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    await _load();
   }
 
   @override
@@ -92,6 +114,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
               plugin: plugin,
               ui: _uiOf(plugin.id),
               enabled: _enabled.contains(plugin.id),
+              busy: _busy,
               onToggle: (value) => _toggle(plugin, value),
               onSettings: _uiOf(plugin.id) == null
                   ? null
@@ -102,8 +125,8 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
     );
   }
 
-  Future<void> _openSettings(Plugin plugin) async {
-    final settings = _service.settingsFor(plugin.id);
+  Future<void> _openSettings(PluginDescriptor plugin) async {
+    final settings = widget.api.settingsFor(plugin.id);
     final child = _uiOf(plugin.id)?.buildSettings(context, settings);
     if (child == null) return;
     await showDialog<void>(
@@ -126,7 +149,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
         ],
       ),
     );
-    await _service.refresh();
+    await widget.api.refresh();
     await _load();
   }
 }
@@ -136,13 +159,15 @@ class _PluginCard extends StatelessWidget {
     required this.plugin,
     required this.ui,
     required this.enabled,
+    required this.busy,
     required this.onToggle,
     required this.onSettings,
   });
 
-  final Plugin plugin;
+  final PluginDescriptor plugin;
   final PluginUi? ui;
   final bool enabled;
+  final bool busy;
   final ValueChanged<bool> onToggle;
   final VoidCallback? onSettings;
 
@@ -184,7 +209,7 @@ class _PluginCard extends StatelessWidget {
               onPressed: onSettings,
               icon: const Icon(Icons.tune),
             ),
-          Switch(value: enabled, onChanged: onToggle),
+          Switch(value: enabled, onChanged: busy ? null : onToggle),
         ],
       ),
     );

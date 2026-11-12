@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -32,6 +33,7 @@ class ProfileService {
     this._localProjects,
     this._localSettings,
     this._localMcp,
+    this._localPlugins,
     this._notifier,
   );
 
@@ -45,6 +47,7 @@ class ProfileService {
   final ProjectsApi _localProjects;
   final AgentSettingsApi _localSettings;
   final McpApi _localMcp;
+  final PluginApi _localPlugins;
   final AppNotifier _notifier;
 
   final _changes = StreamController<void>.broadcast();
@@ -137,6 +140,9 @@ class ProfileService {
 
   McpApi mcpApiFor(AgentProfile profile) =>
       profile.isLocal ? _localMcp : _remoteFor(profile);
+
+  PluginApi pluginApiFor(AgentProfile profile) =>
+      profile.isLocal ? _localPlugins : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 

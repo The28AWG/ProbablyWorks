@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
+import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -43,7 +45,8 @@ class RemoteAgentApi
         HostsApi,
         ProjectsApi,
         AgentSettingsApi,
-        McpApi {
+        McpApi,
+        PluginApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -777,7 +780,7 @@ class RemoteAgentApi
   }
 
   @override
-  Future<McpSnapshot> snapshot() async {
+  Future<McpSnapshot> mcpSnapshot() async {
     final snapshot = mcpSnapshotFromJson(await _get('/mcp'));
     _mcpSnapshot = snapshot;
     for (final state in snapshot.states.values) {
@@ -845,6 +848,40 @@ class RemoteAgentApi
   Future<String> exportConfig() async {
     final json = await _get('/mcp/export');
     return '${json['text'] ?? ''}';
+  }
+
+  @override
+  Future<PluginSnapshot> pluginSnapshot() async =>
+      pluginSnapshotFromJson(await _get('/plugins'));
+
+  @override
+  Future<Set<String>> missingDependencies(String id) async {
+    final json = await _get('/plugins/$id/missing-dependencies');
+    return _ids(json);
+  }
+
+  @override
+  Future<Set<String>> dependents(String id) async {
+    final json = await _get('/plugins/$id/dependents');
+    return _ids(json);
+  }
+
+  @override
+  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+    await _send(
+      'PUT',
+      '/plugins/enabled',
+      body: {'ids': ids.toList()..sort(), 'enabled': enabled},
+    );
+  }
+
+  @override
+  plugins.PluginSettings settingsFor(String id) =>
+      _RemotePluginSettings(this, id);
+
+  @override
+  Future<void> refresh() async {
+    await _send('POST', '/plugins/refresh');
   }
 
   @override
@@ -1602,12 +1639,39 @@ int _int(Map<String, dynamic> json, String key) {
 
 double? _double(Object? value) => value is num ? value.toDouble() : null;
 
+Set<String> _ids(Map<String, dynamic> json) => {
+  for (final id in (json['ids'] as List? ?? const []))
+    if (id is String) id,
+};
+
 DateTime? _date(Object? value) => value is String && value.isNotEmpty
     ? DateTime.tryParse(value)?.toUtc()
     : null;
 
 DateTime _time(Map<String, dynamic> json, String key) =>
     DateTime.parse(_string(json, key)).toUtc();
+
+final class _RemotePluginSettings implements plugins.PluginSettings {
+  _RemotePluginSettings(this._api, this._pluginId);
+
+  final RemoteAgentApi _api;
+  final String _pluginId;
+
+  @override
+  Future<Map<String, Object?>> read() async {
+    final json = await _api._get('/plugins/$_pluginId/settings');
+    return Map<String, Object?>.from(json);
+  }
+
+  @override
+  Future<void> save(Map<String, Object?> value) async {
+    await _api._send(
+      'PUT',
+      '/plugins/$_pluginId/settings',
+      body: {'value': value},
+    );
+  }
+}
 
 final class _RemoteChatStore implements ChatStore {
   _RemoteChatStore(this._api);

@@ -27,7 +27,7 @@ final class _FakeMcp implements McpApi {
   McpServerConfig? saved;
 
   @override
-  Future<McpSnapshot> snapshot() async =>
+  Future<McpSnapshot> mcpSnapshot() async =>
       McpSnapshot(servers: servers, states: states);
 
   @override

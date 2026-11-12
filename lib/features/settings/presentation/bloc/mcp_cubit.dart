@@ -75,7 +75,7 @@ class McpCubit extends Cubit<McpState> {
   Future<void> load() async {
     emit(state.copyWith(loading: true, clearError: true));
     try {
-      final snapshot = await _api.snapshot();
+      final snapshot = await _api.mcpSnapshot();
       emit(
         state.copyWith(
           servers: snapshot.servers,
@@ -154,7 +154,7 @@ class McpCubit extends Cubit<McpState> {
   }
 
   Future<void> _reload() async {
-    final snapshot = await _api.snapshot();
+    final snapshot = await _api.mcpSnapshot();
     emit(
       state.copyWith(
         servers: snapshot.servers,

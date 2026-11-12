@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -27,6 +29,7 @@ const _token = 'test-token';
 void main() {
   late _FakeBackend backend;
   late _FakeMcp mcp;
+  late _FakePlugins pluginApi;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -34,7 +37,14 @@ void main() {
   setUp(() async {
     backend = _FakeBackend();
     mcp = _FakeMcp();
-    server = ApiServer(backend, _token, port: 0, mcpApi: mcp);
+    pluginApi = _FakePlugins();
+    server = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      mcpApi: mcp,
+      pluginApi: pluginApi,
+    );
     final port = await server.start();
     base = 'http://127.0.0.1:$port';
     client = HttpClient();
@@ -252,6 +262,102 @@ void main() {
     expect(mcp.importedFrom, '/tmp/mcp.json');
     expect(exportStatus, HttpStatus.ok);
     expect((jsonDecode(exportBody) as Map)['text'], '{"mcpServers":{}}');
+  });
+
+  test('returns plugin cores and enabled state', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/plugins',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final json = jsonDecode(body) as Map;
+    expect((json['plugins'] as List), hasLength(2));
+    expect(json['enabled'], ['first']);
+  });
+
+  test('returns plugin dependencies and updates enabled state', () async {
+    final (missingStatus, missingBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/plugins/second/missing-dependencies',
+      token: _token,
+    );
+    final (dependentsStatus, dependentsBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/plugins/first/dependents',
+      token: _token,
+    );
+    final (setStatus, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/plugins/enabled',
+      token: _token,
+      body: {
+        'ids': ['first', 'second'],
+        'enabled': false,
+      },
+    );
+
+    expect(missingStatus, HttpStatus.ok);
+    expect((jsonDecode(missingBody) as Map)['ids'], ['first']);
+    expect(dependentsStatus, HttpStatus.ok);
+    expect((jsonDecode(dependentsBody) as Map)['ids'], ['second']);
+    expect(setStatus, HttpStatus.noContent);
+    expect(pluginApi.lastIds, {'first', 'second'});
+    expect(pluginApi.lastEnabled, isFalse);
+  });
+
+  test('rejects plugin changes while the agent is running', () async {
+    pluginApi.busy = true;
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/plugins/enabled',
+      token: _token,
+      body: {
+        'ids': ['first'],
+        'enabled': false,
+      },
+    );
+
+    expect(status, HttpStatus.conflict);
+    expect((jsonDecode(body) as Map)['error']['code'], 'agent_busy');
+    expect(pluginApi.lastIds, isNull);
+  });
+
+  test('reads and writes plugin settings', () async {
+    final (readStatus, readBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/plugins/first/settings',
+      token: _token,
+    );
+    final (writeStatus, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/plugins/first/settings',
+      token: _token,
+      body: {
+        'value': {'commands': []},
+      },
+    );
+
+    expect(readStatus, HttpStatus.ok);
+    expect((jsonDecode(readBody) as Map)['version'], 1);
+    expect(writeStatus, HttpStatus.noContent);
+    expect(pluginApi.savedSettings, {'commands': []});
   });
 
   test('unknown chat subresources return 404', () async {
@@ -1051,6 +1157,67 @@ final class _FakeBackend implements AgentApi {
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
 }
 
+final class _FakePlugins implements PluginApi {
+  var busy = false;
+  Set<String>? lastIds;
+  bool? lastEnabled;
+  Map<String, Object?>? savedSettings;
+
+  @override
+  Future<PluginSnapshot> pluginSnapshot() async => const PluginSnapshot(
+    plugins: [
+      PluginDescriptor(id: 'first', dependsOn: {}, defaultEnabled: false),
+      PluginDescriptor(
+        id: 'second',
+        dependsOn: {'first'},
+        defaultEnabled: false,
+      ),
+    ],
+    enabled: {'first'},
+  );
+
+  @override
+  Future<Set<String>> missingDependencies(String id) async =>
+      id == 'second' ? {'first'} : {};
+
+  @override
+  Future<Set<String>> dependents(String id) async =>
+      id == 'first' ? {'second'} : {};
+
+  @override
+  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+    if (busy) {
+      throw const AgentApiException(
+        409,
+        'agent_busy',
+        'cannot change plugins while the agent is running',
+      );
+    }
+    lastIds = ids;
+    lastEnabled = enabled;
+  }
+
+  @override
+  plugins.PluginSettings settingsFor(String id) => _FakePluginSettings(this);
+
+  @override
+  Future<void> refresh() => Future<void>.value();
+}
+
+final class _FakePluginSettings implements plugins.PluginSettings {
+  _FakePluginSettings(this._api);
+
+  final _FakePlugins _api;
+
+  @override
+  Future<Map<String, Object?>> read() async => {'version': 1};
+
+  @override
+  Future<void> save(Map<String, Object?> value) async {
+    _api.savedSettings = value;
+  }
+}
+
 final class _FakeMcp implements McpApi {
   var servers = <McpServerConfig>[
     McpServerConfig(
@@ -1079,7 +1246,7 @@ final class _FakeMcp implements McpApi {
   String? importedFrom;
 
   @override
-  Future<McpSnapshot> snapshot() async =>
+  Future<McpSnapshot> mcpSnapshot() async =>
       McpSnapshot(servers: servers, states: states, configError: null);
 
   @override

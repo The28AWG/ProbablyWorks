@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
@@ -111,6 +112,7 @@ Future<int> runDaemon(List<String> args) async {
     projects: getIt<ProjectsApi>(),
     settingsApi: getIt<AgentSettingsApi>(),
     mcpApi: getIt<McpApi>(),
+    pluginApi: getIt<PluginApi>(),
   );
   final port = await server.start();
   final scheduler = getIt<TaskScheduler>()..start();
