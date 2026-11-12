@@ -505,8 +505,10 @@ ID стабильны, статусы обновляются по мере вы�
   Windows EXE и macOS DMG. В пакет попадает AOT-демон с нативными
   библиотеками (`daemon/bin` и `daemon/lib`).
 - Добавлены GitHub Actions: CI с format/analyze/тестами и release-workflow,
-  который по тегу `v<version>` собирает Linux x64, Windows x64, macOS arm64 и
-  macOS x64, публикует GitHub Release и SHA256SUMS.
+  который по тегу `v<version>` собирает Linux x64, Windows x64, macOS arm64,
+  macOS x64 и Snap amd64, публикует GitHub Release и SHA256SUMS.
+- Snap собирается отдельно через `snapcraft` в classic-режиме и публикуется в
+  канал `edge`; GTK3 и зависимости входят в stage-packages.
 - Ведётся отдельный JSONL-журнал доступа к API с метаданными запросов,
   fingerprint токена, ротацией и CLI-анализом (`summary`, `problems`,
   `filter`).
@@ -518,8 +520,9 @@ ID стабильны, статусы обновляются по мере вы�
   в [SECURITY.md](SECURITY.md).
 
 **Осталось.**
-- Snap-пакет: Fastforge его не поддерживает, нужен отдельный `snapcraft.yaml`
-  и решение по confinement.
+- Snap-пакет ещё не собран и не установлен на реальной системе: локальная
+  сборка блокируется Ubuntu Pro, проверка будет в CI. Classic-режим требует
+  ручной проверки Snap Store.
 - Windows EXE и macOS DMG собираются в CI, но установка и запуск ещё не
   проверены на реальных ОС; для публичного релиза нужна подпись Authenticode
   и notarization macOS.

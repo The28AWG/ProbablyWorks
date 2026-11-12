@@ -207,9 +207,9 @@ dart run tool/package/package.dart linux appimage,deb,tar.gz
 `dist/<version>/`. Требования, форматы и подпись описаны в
 [docs/agent/PACKAGING.md](docs/agent/PACKAGING.md).
 
-Релизы собираются в GitHub Actions по тегу `v<version>`: Linux x64, Windows x64
-и macOS arm64/x64. Артефакты и `SHA256SUMS.txt` автоматически прикрепляются к
-GitHub Release.
+Релизы собираются в GitHub Actions по тегу `v<version>`: Linux x64, Windows x64,
+macOS arm64/x64 и Snap amd64. Артефакты и `SHA256SUMS.txt` автоматически
+прикрепляются к GitHub Release, Snap публикуется в канал `edge`.
 
 Приложение нацелено на настольные платформы (Linux, macOS, Windows); остальные папки платформ в проекте
 созданы стандартным шаблоном Flutter.

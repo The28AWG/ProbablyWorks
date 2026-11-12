@@ -48,6 +48,13 @@ pubspec_overrides.yaml
 /coverage/
 /dist/
 
+# Snapcraft staging
+/parts/
+/prime/
+/stage/
+/snap/.snapcraft/
+/*.snap
+
 # Картинки расхождения golden-тестов: Flutter пишет их рядом с упавшим тестом.
 test/**/failures/
 

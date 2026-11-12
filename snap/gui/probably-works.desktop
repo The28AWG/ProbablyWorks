@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=ProbablyWorks
+Comment=AI-агент для локальных и SSH-задач
+Exec=probably_works %U
+Icon=${SNAP}/meta/gui/probably-works.png
+Terminal=false
+Type=Application
+Categories=Development;
+StartupWMClass=com.the28awg.probably_works

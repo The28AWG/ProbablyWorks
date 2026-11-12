@@ -1,0 +1,41 @@
+name: probably-works
+base: core24
+adopt-info: probably-works
+summary: AI-агент для локальных и SSH-задач
+description: |
+  Настольный агент, который выполняет команды на локальной машине или по SSH.
+  GUI подключается к локальному демону, а модели запрашиваются через OpenRouter.
+
+grade: stable
+confinement: classic
+icon: snap/gui/probably-works.png
+license: BSD-3-Clause
+contact: https://github.com/The28AWG/ProbablyWorks/issues
+issues: https://github.com/The28AWG/ProbablyWorks/issues
+source-code: https://github.com/The28AWG/ProbablyWorks
+website: https://github.com/The28AWG/ProbablyWorks
+
+apps:
+  probably-works:
+    command: probably_works
+    desktop: probably-works.desktop
+    environment:
+      # GTK3 и его зависимости приходят из stage-packages Ubuntu 24.04,
+      # а не из хоста: так snap не зависит от версии glibc пользователя.
+      LD_LIBRARY_PATH: $SNAP/usr/lib/x86_64-linux-gnu:$SNAP/usr/lib:$SNAP/lib
+
+parts:
+  probably-works:
+    plugin: dump
+    source: build/linux/x64/release/bundle
+    stage-packages:
+      - libblkid1
+      - libepoxy0
+      - libgtk-3-0t64
+      - libjsoncpp25
+      - liblzma5
+      - libnotify4
+      - libsecret-1-0
+    override-pull: |
+      craftctl default
+      craftctl set version="$(sed -n 's/^version: //p' '$SNAPCRAFT_PROJECT_DIR/pubspec.yaml')"
