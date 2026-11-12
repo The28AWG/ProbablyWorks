@@ -9,6 +9,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -41,6 +42,7 @@ void main() {
     _FakeMcpApi(),
     _FakePluginApi(),
     _FakeSecurityAuditApi(),
+    _FakePushApi(),
     const ClientInfo.fallback(),
     _FakeNotifier(),
   );
@@ -146,4 +148,10 @@ final class _FakeSecurityAuditApi implements SecurityAuditApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('SecurityAuditApi is not used in profile tests');
+}
+
+final class _FakePushApi implements PushApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('PushApi is not used in profile tests');
 }

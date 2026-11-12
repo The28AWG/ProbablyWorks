@@ -16,6 +16,7 @@ import 'package:probably_works/features/settings/presentation/widgets/api_key_se
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/push_notifications_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_audit_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
@@ -26,6 +27,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -181,6 +183,7 @@ class _SettingsViewState extends State<_SettingsView> {
     final agentApi = scope?.agentApi ?? getIt<AgentApi>();
     final securityAuditApi =
         scope?.securityAuditApi ?? getIt<SecurityAuditApi>();
+    final pushApi = scope?.pushApi ?? getIt<PushApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -198,7 +201,7 @@ class _SettingsViewState extends State<_SettingsView> {
         final groups = <_Group, List<Widget>>{
           _Group.account: _accountSections(state, cubit, l10n, source),
           _Group.agents: const [AgentProfilesSection()],
-          _Group.interface: _interfaceSections(state, cubit, l10n),
+          _Group.interface: _interfaceSections(state, cubit, l10n, pushApi),
           _Group.safety: _safetySections(state, cubit, l10n, securityAuditApi),
           _Group.plugins: _pluginSections(pluginApi, agentApi),
           _Group.mcp: _mcpSections(mcpApi),
@@ -476,6 +479,7 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n,
+    PushApi pushApi,
   ) => [
     AppSection(
       title: l10n.settingsLanguage,
@@ -640,6 +644,7 @@ class _SettingsViewState extends State<_SettingsView> {
         ),
       ],
     ),
+    PushNotificationsSection(api: pushApi),
   ];
 
   Future<void> _resetSecurityProfile(

@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -46,6 +47,7 @@ final class ApiServer {
     this.mcpApi,
     this.pluginApi,
     this.securityAuditApi,
+    this.pushApi,
     this.accessLog,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
@@ -63,6 +65,7 @@ final class ApiServer {
   final McpApi? mcpApi;
   final PluginApi? pluginApi;
   final SecurityAuditApi? securityAuditApi;
+  final PushApi? pushApi;
   final ApiAccessLog? accessLog;
   final String _token;
   final InternetAddress _address;
@@ -344,6 +347,18 @@ final class ApiServer {
             rest.first == 'audit' &&
             request.method == 'GET') {
           return _securityAudit(request);
+        }
+      case 'push':
+        if (rest.isEmpty && request.method == 'GET') {
+          return _pushSettings(request);
+        }
+        if (rest.isEmpty && request.method == 'PUT') {
+          return _savePushSettings(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'test' &&
+            request.method == 'POST') {
+          return _testPush(request);
         }
       case 'hosts':
         if (rest.isEmpty && request.method == 'GET') return _hosts(request);
@@ -850,6 +865,45 @@ final class ApiServer {
         HttpStatus.notImplemented,
         'not_supported',
         'security audit API is not available',
+      );
+    }
+    return api;
+  }
+
+  Future<void> _pushSettings(HttpRequest request) async {
+    final settings = await _requirePushApi().pushSettings();
+    _json(request.response, HttpStatus.ok, {
+      'enabled': settings.enabled,
+      'relayUrl': settings.relayUrl,
+      'hasToken': settings.hasToken,
+    });
+  }
+
+  Future<void> _savePushSettings(HttpRequest request) async {
+    final body = await _body(request);
+    await _requirePushApi().savePush(
+      PushSettings(
+        enabled: body['enabled'] == true,
+        relayUrl: body['relayUrl'] is String ? body['relayUrl'] as String : '',
+      ),
+      token: body['token'] as String?,
+      clearToken: body['clearToken'] == true,
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _testPush(HttpRequest request) async {
+    await _requirePushApi().testPush();
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  PushApi _requirePushApi() {
+    final api = pushApi;
+    if (api == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'push API is not available',
       );
     }
     return api;

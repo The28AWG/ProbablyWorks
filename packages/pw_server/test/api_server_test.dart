@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -34,6 +35,7 @@ void main() {
   late _FakeMcp mcp;
   late _FakePlugins pluginApi;
   late _FakeSecurityAudit securityAudit;
+  late _FakePush push;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -43,6 +45,7 @@ void main() {
     mcp = _FakeMcp();
     pluginApi = _FakePlugins();
     securityAudit = _FakeSecurityAudit();
+    push = _FakePush();
     server = ApiServer(
       backend,
       _token,
@@ -50,6 +53,7 @@ void main() {
       mcpApi: mcp,
       pluginApi: pluginApi,
       securityAuditApi: securityAudit,
+      pushApi: push,
     );
     final port = await server.start();
     base = 'http://127.0.0.1:$port';
@@ -382,6 +386,59 @@ void main() {
     expect(json['generatedAt'], endsWith('Z'));
     expect((json['findings'] as List).single['code'], 'headlessApi');
     expect(securityAudit.mode, SecurityRunMode.headless);
+  });
+
+  test('reads and saves push settings', () async {
+    final (getStatus, getBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/push',
+      token: _token,
+    );
+    final (putStatus, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/push',
+      token: _token,
+      body: {
+        'enabled': true,
+        'relayUrl': 'https://relay.test',
+        'token': 'relay-token',
+      },
+    );
+    final (testStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/push/test',
+      token: _token,
+    );
+
+    expect(getStatus, HttpStatus.ok);
+    expect((jsonDecode(getBody) as Map)['hasToken'], isFalse);
+    expect(putStatus, HttpStatus.noContent);
+    expect(push.saved?.enabled, isTrue);
+    expect(push.saved?.relayUrl, 'https://relay.test');
+    expect(push.token, 'relay-token');
+    expect(testStatus, HttpStatus.noContent);
+    expect(push.tested, isTrue);
+  });
+
+  test('rejects a push test without configuration', () async {
+    push.busy = true;
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/push/test',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.conflict);
+    expect((jsonDecode(body) as Map)['error']['code'], 'push_not_configured');
   });
 
   test('unknown chat subresources return 404', () async {
@@ -1425,6 +1482,38 @@ final class _FakePluginSettings implements plugins.PluginSettings {
   @override
   Future<void> save(Map<String, Object?> value) async {
     _api.savedSettings = value;
+  }
+}
+
+final class _FakePush implements PushApi {
+  PushSettings? saved;
+  String? token;
+  var tested = false;
+  var busy = false;
+
+  @override
+  Future<PushSettings> pushSettings() async => const PushSettings();
+
+  @override
+  Future<void> savePush(
+    PushSettings settings, {
+    String? token,
+    bool clearToken = false,
+  }) async {
+    saved = settings;
+    this.token = token;
+  }
+
+  @override
+  Future<void> testPush() async {
+    if (busy) {
+      throw const AgentApiException(
+        409,
+        'push_not_configured',
+        'configure push relay URL and token first',
+      );
+    }
+    tested = true;
   }
 }
 

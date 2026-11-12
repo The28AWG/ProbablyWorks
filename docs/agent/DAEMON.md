@@ -80,6 +80,9 @@ PUT    /api/v1/approvals/{id}/decision         {"action": "allowOnce|allowTurn|a
 PUT    /api/v1/questions/{id}/answer           {"answer": "..."}
 PUT    /api/v1/edit-file-changes/{id}/decision {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
 
+GET    /api/v1/push
+PUT    /api/v1/push                           {"enabled": true, "relayUrl": "...", "token": "..."}
+POST   /api/v1/push/test
 GET    /api/v1/settings
 PUT    /api/v1/settings/{key}                 {"value": "..." | null}
 PUT    /api/v1/settings/pinned                {"pinnedModels": ["..."]}
@@ -152,6 +155,24 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `editFileChanges`. `stateAreaChanged` сообщает, что после изменяющего запроса
 нужно перечитать список (`chats`, `projects` или `hosts`); клиент обновляет
 watcher без периодического polling-а.
+
+## Push-уведомления
+
+Push выключен по умолчанию. Демон не делает ни одного сетевого запроса,
+пока в настройках профиля не сохранены одновременно:
+
+- `enabled: true`;
+- URL relay;
+- токен relay в `SecretStore`.
+
+`GET /push` возвращает `enabled`, `relayUrl` и `hasToken`; сам токен никогда
+не возвращается. `PUT /push` сохраняет настройки, `POST /push/test` отправляет
+тестовое событие. Если конфигурация неполная, тест завершается ошибкой
+`push_not_configured`, а обычные уведомления молча пропускаются.
+
+Relay получает JSON с типом события, заголовком чата, detail и временем.
+Тело сообщений и вложения не передаются. Внешний relay сам доставляет событие
+в FCM/APNs или другой транспорт.
 
 ## Журнал доступа к API
 

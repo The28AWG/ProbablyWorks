@@ -10,6 +10,7 @@ import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
@@ -25,6 +26,7 @@ import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
+import 'package:pw_agent/core/notify/push_service.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -34,9 +36,9 @@ import 'package:pw_server/src/api/api_token.dart';
 import 'package:pw_server/src/daemon/daemon_options.dart';
 import 'package:pw_server/src/daemon/daemon_paths.dart';
 import 'package:pw_server/src/daemon/daemon_secret_store.dart';
-import 'package:pw_server/src/daemon/noop_app_notifier.dart';
 import 'package:pw_server/src/daemon/noop_appearance.dart';
 import 'package:pw_server/src/daemon/process_url_opener.dart';
+import 'package:pw_server/src/daemon/push_app_notifier.dart';
 
 /// Запускает headless-демон. Возвращает код выхода.
 Future<int> runDaemon(List<String> args) async {
@@ -70,7 +72,9 @@ Future<int> runDaemon(List<String> args) async {
   getIt
     ..registerSingleton<AppPaths>(paths)
     ..registerSingleton<SecretStore>(secrets)
-    ..registerSingleton<AppNotifier>(const NoopAppNotifier())
+    ..registerSingleton<AppNotifier>(
+      PushAppNotifier(() => getIt<PushService>()),
+    )
     ..registerSingleton<AppearancePort>(const NoopAppearance())
     ..registerSingleton<ExternalUrlOpener>(const ProcessUrlOpener())
     ..registerSingleton<PluginRegistry>(
@@ -117,6 +121,7 @@ Future<int> runDaemon(List<String> args) async {
     mcpApi: getIt<McpApi>(),
     pluginApi: getIt<PluginApi>(),
     securityAuditApi: getIt<SecurityAuditApi>(),
+    pushApi: getIt<PushApi>(),
     accessLog: accessLog,
   );
   final port = await server.start();

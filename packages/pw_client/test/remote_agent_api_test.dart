@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -34,6 +35,7 @@ void main() {
   late _FakeMcp mcp;
   late _FakePlugins pluginsApi;
   late _FakeSecurityAudit securityAudit;
+  late _FakePush push;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -43,6 +45,7 @@ void main() {
     mcp = _FakeMcp();
     pluginsApi = _FakePlugins();
     securityAudit = _FakeSecurityAudit();
+    push = _FakePush();
     server = ApiServer(
       backend,
       _token,
@@ -51,6 +54,7 @@ void main() {
       mcpApi: mcp,
       pluginApi: pluginsApi,
       securityAuditApi: securityAudit,
+      pushApi: push,
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -335,6 +339,23 @@ void main() {
     expect(report.findings.single.code, SecurityFindingCode.headlessApi);
   });
 
+  test('reads and saves push settings over HTTP', () async {
+    final current = await remote.pushSettings();
+    expect(current.enabled, isFalse);
+    expect(current.hasToken, isFalse);
+
+    await remote.savePush(
+      const PushSettings(enabled: true, relayUrl: 'https://relay.test'),
+      token: 'relay-token',
+    );
+    expect(push.saved?.enabled, isTrue);
+    expect(push.saved?.relayUrl, 'https://relay.test');
+    expect(push.token, 'relay-token');
+
+    await remote.testPush();
+    expect(push.tested, isTrue);
+  });
+
   test('streams SSE events into typed streams', () async {
     final events = <AgentEvent>[];
     final approvals = <ApprovalRequest>[];
@@ -611,6 +632,30 @@ final class _FakeSecurityAudit implements SecurityAuditApi {
       ),
     ],
   );
+}
+
+final class _FakePush implements PushApi {
+  PushSettings? saved;
+  String? token;
+  var tested = false;
+
+  @override
+  Future<PushSettings> pushSettings() async => saved ?? const PushSettings();
+
+  @override
+  Future<void> savePush(
+    PushSettings settings, {
+    String? token,
+    bool clearToken = false,
+  }) async {
+    saved = settings.copyWith(hasToken: token != null || !clearToken);
+    this.token = token;
+  }
+
+  @override
+  Future<void> testPush() async {
+    tested = true;
+  }
 }
 
 final class _FakePlugins implements PluginApi {

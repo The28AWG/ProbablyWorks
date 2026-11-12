@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -37,6 +38,7 @@ class ProfileService {
     this._localMcp,
     this._localPlugins,
     this._localSecurityAudit,
+    this._localPush,
     this._clientInfo,
     this._notifier,
   );
@@ -53,6 +55,7 @@ class ProfileService {
   final McpApi _localMcp;
   final PluginApi _localPlugins;
   final SecurityAuditApi _localSecurityAudit;
+  final PushApi _localPush;
   final ClientInfo _clientInfo;
   final AppNotifier _notifier;
 
@@ -152,6 +155,9 @@ class ProfileService {
 
   SecurityAuditApi securityAuditApiFor(AgentProfile profile) =>
       profile.isLocal ? _localSecurityAudit : _remoteFor(profile);
+
+  PushApi pushApiFor(AgentProfile profile) =>
+      profile.isLocal ? _localPush : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 

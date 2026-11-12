@@ -22,10 +22,12 @@ import 'agent/api/local_hosts_api.dart' as _i915;
 import 'agent/api/local_mcp_api.dart' as _i300;
 import 'agent/api/local_plugin_api.dart' as _i929;
 import 'agent/api/local_projects_api.dart' as _i623;
+import 'agent/api/local_push_api.dart' as _i979;
 import 'agent/api/local_security_audit_api.dart' as _i967;
 import 'agent/api/mcp_api.dart' as _i151;
 import 'agent/api/plugin_api.dart' as _i60;
 import 'agent/api/projects_api.dart' as _i346;
+import 'agent/api/push_api.dart' as _i52;
 import 'agent/api/security_audit_api.dart' as _i796;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
@@ -62,6 +64,7 @@ import 'core/data/settings_repository.dart' as _i384;
 import 'core/data/virtual_host_provisioner.dart' as _i400;
 import 'core/db/app_database.dart' as _i232;
 import 'core/notify/app_notifier.dart' as _i14;
+import 'core/notify/push_service.dart' as _i737;
 import 'core/platform/external_url_opener.dart' as _i1019;
 import 'core/security/secret_store.dart' as _i249;
 import 'core/security/security_audit_service.dart' as _i376;
@@ -167,6 +170,12 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i1055.WorkspaceContextLoader>(
       () => _i1055.WorkspaceContextLoader(gh<_i384.SettingsRepository>()),
     );
+    gh.lazySingleton<_i737.PushService>(
+      () => _i737.PushService(
+        gh<_i384.SettingsRepository>(),
+        gh<_i249.SecretStore>(),
+      ),
+    );
     gh.singleton<_i179.LlmProvider>(
       () => agentCoreModule.llmProvider(gh<_i249.SecretStore>()),
     );
@@ -238,6 +247,9 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i215.PolicyProfileRepository>(),
         gh<_i384.SettingsRepository>(),
       ),
+    );
+    gh.lazySingleton<_i52.PushApi>(
+      () => _i979.LocalPushApi(gh<_i737.PushService>()),
     );
     gh.lazySingleton<_i907.HostsApi>(
       () => _i915.LocalHostsApi(

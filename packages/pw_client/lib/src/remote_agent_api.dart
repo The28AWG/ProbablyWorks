@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -49,7 +50,8 @@ class RemoteAgentApi
         AgentSettingsApi,
         McpApi,
         PluginApi,
-        SecurityAuditApi {
+        SecurityAuditApi,
+        PushApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -854,6 +856,39 @@ class RemoteAgentApi
   Future<SecurityReport> run({
     SecurityRunMode mode = SecurityRunMode.gui,
   }) async => securityReportFromJson(await _get('/security/audit'));
+
+  @override
+  Future<PushSettings> pushSettings() async {
+    final json = await _get('/push');
+    return PushSettings(
+      enabled: json['enabled'] == true,
+      relayUrl: '${json['relayUrl'] ?? ''}',
+      hasToken: json['hasToken'] == true,
+    );
+  }
+
+  @override
+  Future<void> savePush(
+    PushSettings settings, {
+    String? token,
+    bool clearToken = false,
+  }) async {
+    await _send(
+      'PUT',
+      '/push',
+      body: {
+        'enabled': settings.enabled,
+        'relayUrl': settings.relayUrl,
+        'token': ?token,
+        'clearToken': clearToken,
+      },
+    );
+  }
+
+  @override
+  Future<void> testPush() async {
+    await _send('POST', '/push/test');
+  }
 
   @override
   Stream<List<Project>> watchProjects() => _watchStateList(
