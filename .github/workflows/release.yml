@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            targets: appimage,deb,tar.gz,zip
+            artifact: probably-works-linux-x64
+            suffix: '-x64'
+          - os: windows-latest
+            platform: windows
+            targets: exe,zip
+            artifact: probably-works-windows-x64
+            suffix: '-x64'
+          - os: macos-latest
+            platform: macos
+            targets: dmg,zip
+            artifact: probably-works-macos-arm64
+            suffix: '-arm64'
+          - os: macos-15-intel
+            platform: macos
+            targets: dmg,zip
+            artifact: probably-works-macos-x64
+            suffix: '-x64'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches pubspec version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version: //p' pubspec.yaml | head -1)
+          expected="v${version}"
+          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${expected}."
+            echo "Create a tag like v${version} or update pubspec.yaml."
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Install Linux build and packaging dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev \
+            liblzma-dev libsecret-1-dev libjsoncpp-dev libnotify-dev
+          curl -fsSL -o /tmp/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          sudo install -m 0755 /tmp/appimagetool /usr/local/bin/appimagetool
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      - name: Install Windows packaging dependencies
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\Program Files\Git\usr\bin"
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+          }
+
+      - name: Install macOS packaging dependencies
+        if: matrix.platform == 'macos'
+        run: npm install --global appdmg
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate DI and routes
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate agent DI
+        working-directory: packages/pw_agent
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Install Fastforge
+        run: dart pub global activate fastforge 0.6.14
+
+      - name: Add Fastforge to PATH (Unix)
+        if: runner.os != 'Windows'
+        run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: Add Fastforge to PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value "$env:LOCALAPPDATA\Pub\Cache\bin"
+
+      - name: Build packages
+        run: >-
+          dart run tool/package/package.dart
+          ${{ matrix.platform }}
+          ${{ matrix.targets }}
+          --artifact-suffix=${{ matrix.suffix }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: probably-works-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**
+          fail_on_unmatched_files: true
+          generate_release_notes: true

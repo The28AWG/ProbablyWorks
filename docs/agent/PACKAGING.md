@@ -29,6 +29,9 @@ dart run tool/package/package.dart windows exe,zip
 
 # macOS: DMG и zip
 dart run tool/package/package.dart macos dmg,zip
+
+# Добавить архитектуру в имя артефакта (так делает CI)
+dart run tool/package/package.dart linux appimage,deb --artifact-suffix=-x64
 ```
 
 Артефакты складываются в `dist/<version>/`. Каталог `dist/` исключён из git.
@@ -92,6 +95,54 @@ bundle/
 
 DEB-пакет устанавливает всё в `/opt/probably_works`, AppImage — в AppDir,
 Windows EXE — в каталог установки, macOS — в `.app`.
+
+## CI/CD
+
+В репозитории два workflow:
+
+- `.github/workflows/ci.yml` — форматирование, `flutter analyze`, DCM (если
+  задан `DCM_CI_KEY`), `flutter test` и тесты пакетов на каждый push в `main`
+  и pull request;
+- `.github/workflows/release.yml` — сборка релиза по тегу `v<version>`.
+
+Релиз собирается на четырёх runner'ах:
+
+| Runner | Форматы | Суффикс |
+| --- | --- | --- |
+| `ubuntu-latest` | AppImage, DEB, tar.gz, zip | `-x64` |
+| `windows-latest` | EXE, zip | `-x64` |
+| `macos-latest` (arm64) | DMG, zip | `-arm64` |
+| `macos-15-intel` | DMG, zip | `-x64` |
+
+После успешной сборки workflow скачивает все артефакты, создаёт
+`SHA256SUMS.txt` и публикует GitHub Release с автоматическими release notes.
+Имена файлов содержат версию, платформу и архитектуру, например
+`probably_works-1.0.0+1-linux-x64.AppImage` и
+`probably_works-1.0.0+1-windows-x64-setup.exe`.
+
+Порядок выпуска:
+
+```bash
+# 1. Обновить version в pubspec.yaml, например 1.0.0+2
+# 2. Закоммитить изменение
+git tag v1.0.0+2
+git push origin main
+git push origin v1.0.0+2
+```
+
+Тег обязан совпадать с `version` из `pubspec.yaml`: workflow проверяет это до
+сборки. Для проверки без релиза можно запустить `Release` вручную через
+`workflow_dispatch` — артефакты будут доступны в Actions, GitHub Release не
+создаётся.
+
+Секреты CI:
+
+- `DCM_CI_KEY` — необязательный ключ DCM для шагов анализа. Без него DCM
+  пропускается, остальные проверки выполняются;
+- подпись Windows и notarization macOS пока не автоматизированы. CI собирает
+  рабочие артефакты, но для публичного релиза нужно добавить сертификаты
+  Authenticode и Developer ID. Сейчас macOS-приложение получает ad-hoc
+  подпись из `prepare_daemon.dart`.
 
 ## Подпись
 

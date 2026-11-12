@@ -501,9 +501,12 @@ ID стабильны, статусы обновляются по мере вы�
 - На desktop GUI автоматически запускает локальный демон, если его нет: в dev —
   через `dart run`, в сборке — готовый бинарник рядом с GUI. Перед запуском
   проверяется блокировка БД, чтобы не поднять второй процесс на той же базе.
-- Настроена упаковка через Fastforge: AppImage, DEB и tar.gz для Linux уже
-  проверены, конфигурации EXE/DMG подготовлены. В пакет попадает AOT-демон
-  с нативными библиотеками (`daemon/bin` и `daemon/lib`).
+- Настроена упаковка через Fastforge: AppImage, DEB, tar.gz/zip для Linux,
+  Windows EXE и macOS DMG. В пакет попадает AOT-демон с нативными
+  библиотеками (`daemon/bin` и `daemon/lib`).
+- Добавлены GitHub Actions: CI с format/analyze/тестами и release-workflow,
+  который по тегу `v<version>` собирает Linux x64, Windows x64, macOS arm64 и
+  macOS x64, публикует GitHub Release и SHA256SUMS.
 - Ведётся отдельный JSONL-журнал доступа к API с метаданными запросов,
   fingerprint токена, ротацией и CLI-анализом (`summary`, `problems`,
   `filter`).
@@ -515,9 +518,11 @@ ID стабильны, статусы обновляются по мере вы�
   в [SECURITY.md](SECURITY.md).
 
 **Осталось.**
-- Snap-пакет: Fastforge его не поддерживает, нужен отдельный `snapcraft.yaml`.
-- Windows EXE и macOS DMG пока не проверены на своих ОС; для релиза нужна
-  подпись Authenticode и notarization macOS.
+- Snap-пакет: Fastforge его не поддерживает, нужен отдельный `snapcraft.yaml`
+  и решение по confinement.
+- Windows EXE и macOS DMG собираются в CI, но установка и запуск ещё не
+  проверены на реальных ОС; для публичного релиза нужна подпись Authenticode
+  и notarization macOS.
 - Токен discovery-файла пока хранится в файле `0600`, а не в OS-keyring.
 - OS-keyring для демона (libsecret, Keychain, DPAPI). Сейчас headless
   `SecretStore` — JSON-файл `0600`.

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Необязательный ключ DCM. Без него шаг DCM пропускается, чтобы CI
+      # не зависел от платной/активированной лицензии на каждом runner'е.
+      DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            libsecret-1-dev libjsoncpp-dev libnotify-dev
+
+      - name: Install DCM
+        if: env.DCM_CI_KEY != ''
+        run: |
+          curl -fsSL -o /tmp/dcm.zip \
+            https://github.com/CQLabs/homebrew-dcm/releases/download/1.40.4/dcm-linux-x64-release.zip
+          unzip -p /tmp/dcm.zip dcm > /tmp/dcm
+          sudo install -m 0755 /tmp/dcm /usr/local/bin/dcm
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate DI and routes
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate agent DI
+        working-directory: packages/pw_agent
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test tool packages
+
+      - name: Analyze app
+        run: flutter analyze
+
+      - name: DCM app
+        if: env.DCM_CI_KEY != ''
+        run: dcm analyze lib test tool --ci-key "$DCM_CI_KEY"
+
+      - name: Test app
+        run: flutter test
+
+      - name: Analyze and test packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in pw_agent pw_client pw_server virtual_host virtual_git; do
+            echo "::group::$pkg"
+            (
+              cd "packages/$pkg"
+              paths=(lib test)
+              if [ -d bin ]; then paths=(lib bin test); fi
+              dart analyze
+              if [ -n "${DCM_CI_KEY:-}" ]; then
+                dcm analyze "${paths[@]}" --ci-key "$DCM_CI_KEY"
+              else
+                echo "DCM skipped: DCM_CI_KEY is not configured"
+              fi
+              dart test
+            )
+            echo "::endgroup::"
+          done

@@ -52,6 +52,10 @@ Future<void> main(List<String> arguments) async {
     targets.join(','),
     '--hook-pre',
     hook,
+    if (options.artifactSuffix case final suffix?) ...[
+      '--artifact-name',
+      _artifactName(suffix),
+    ],
     if (!options.clean) '--skip-clean',
   ];
   stdout.writeln('> $fastforge ${args.join(' ')}');
@@ -68,13 +72,15 @@ Future<void> main(List<String> arguments) async {
 
 const _usage = '''
 Использование: dart run tool/package/package.dart [platform] [targets] [--no-clean]
+             [--artifact-suffix=-x64]
 
 platform  linux, macos или windows (по умолчанию текущая ОС)
 targets   список форматов через запятую:
           linux   — appimage,deb,tar.gz,zip
           windows — exe,zip
           macos   — dmg,zip
---no-clean  не запускать flutter clean перед сборкой
+--no-clean           не запускать flutter clean перед сборкой
+--artifact-suffix    суффикс имени артефакта, например -x64 или -arm64
 ''';
 
 const _defaultTargets = {
@@ -84,12 +90,19 @@ const _defaultTargets = {
 };
 
 final class _Options {
-  const _Options({this.platform, this.targets, this.clean = true, this.error});
+  const _Options({
+    this.platform,
+    this.targets,
+    this.clean = true,
+    this.artifactSuffix,
+    this.error,
+  });
 
   factory _Options.parse(List<String> arguments) {
     String? platform;
     List<String>? targets;
     var clean = true;
+    String? artifactSuffix;
     for (final argument in arguments) {
       if (argument == '--no-clean') {
         clean = false;
@@ -103,6 +116,10 @@ final class _Options {
         targets = _splitTargets(argument.replaceFirst('--targets=', ''));
         continue;
       }
+      if (argument.startsWith('--artifact-suffix=')) {
+        artifactSuffix = argument.replaceFirst('--artifact-suffix=', '');
+        continue;
+      }
       if (argument.startsWith('-')) {
         return _Options(error: 'Неизвестный флаг: $argument');
       }
@@ -114,12 +131,18 @@ final class _Options {
         return _Options(error: 'Лишний аргумент: $argument');
       }
     }
-    return _Options(platform: platform, targets: targets, clean: clean);
+    return _Options(
+      platform: platform,
+      targets: targets,
+      clean: clean,
+      artifactSuffix: artifactSuffix,
+    );
   }
 
   final String? platform;
   final List<String>? targets;
   final bool clean;
+  final String? artifactSuffix;
   final String? error;
 }
 
@@ -147,6 +170,13 @@ Future<String?> _findFastforge() async {
 }
 
 String _dartPath() => Platform.resolvedExecutable.replaceAll(r'\', '/');
+
+/// Имя артефакта Fastforge с дополнительным суффиксом архитектуры.
+String _artifactName(String suffix) =>
+    '{{name}}-{{build_name}}'
+    '{{#has_build_number}}+{{build_number}}{{/has_build_number}}'
+    '{{#is_profile}}-{{build_mode}}{{/is_profile}}-{{platform}}$suffix'
+    '{{#is_installer}}-setup{{/is_installer}}.{{ext}}';
 
 /// Архитектура для appimagetool в его нотации.
 String _linuxArch() {
