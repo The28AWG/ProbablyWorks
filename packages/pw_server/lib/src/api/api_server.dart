@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -25,6 +26,7 @@ import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_server/src/api/api_access_log.dart';
 
 /// Локальный HTTP API поверх агента.
 ///
@@ -44,6 +46,7 @@ final class ApiServer {
     this.mcpApi,
     this.pluginApi,
     this.securityAuditApi,
+    this.accessLog,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -60,12 +63,14 @@ final class ApiServer {
   final McpApi? mcpApi;
   final PluginApi? pluginApi;
   final SecurityAuditApi? securityAuditApi;
+  final ApiAccessLog? accessLog;
   final String _token;
   final InternetAddress _address;
   final int _port;
 
   HttpServer? _server;
   final _clients = <HttpResponse>{};
+  static final _random = Random.secure();
   final _stateEvents = StreamController<Object>.broadcast();
 
   /// Запускает сервер и возвращает фактический порт (0 превращается в выбранный ОС).
@@ -90,12 +95,27 @@ final class ApiServer {
 
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
+    final stopwatch = Stopwatch()..start();
+    final requestId = _newRequestId();
+    response.headers.set('x-request-id', requestId);
+    var audit = true;
+    var auth = 'ok';
+    String? token;
+    String? errorCode;
+    var sse = false;
     try {
       if (request.method == 'GET' && request.uri.path == '/api/v1/health') {
+        audit = false;
         _json(response, HttpStatus.ok, {'ok': true, 'version': '1'});
         return;
       }
+      final header = request.headers.value(HttpHeaders.authorizationHeader);
+      if (header != null && header.startsWith('Bearer ')) {
+        token = ApiAccessLog.fingerprint(header.replaceFirst('Bearer ', ''));
+      }
       if (!_authorized(request)) {
+        auth = header == null ? 'missing' : 'invalid';
+        errorCode = 'unauthorized';
         response.headers.set(
           HttpHeaders.wwwAuthenticateHeader,
           'Bearer realm="probablyworks"',
@@ -108,13 +128,28 @@ final class ApiServer {
         );
         return;
       }
+      sse = request.method == 'GET' && request.uri.path == '/api/v1/events';
+      if (sse) {
+        _writeAccess(
+          request,
+          requestId: requestId,
+          event: 'api.sse.open',
+          auth: auth,
+          token: token,
+          status: HttpStatus.ok,
+          durationMs: 0,
+        );
+      }
       await _route(request);
       _publishState(request);
     } on AgentApiException catch (error) {
+      errorCode = error.code;
       _error(response, error.status, error.code, error.message);
     } on FormatException catch (error) {
+      errorCode = 'bad_json';
       _error(response, HttpStatus.badRequest, 'bad_json', error.message);
     } on Object catch (error) {
+      errorCode = 'internal_error';
       _error(
         response,
         HttpStatus.internalServerError,
@@ -127,7 +162,51 @@ final class ApiServer {
       } on Object {
         // Соединение уже закрыто клиентом (например, SSE).
       }
+      if (audit) {
+        _writeAccess(
+          request,
+          requestId: requestId,
+          event: sse ? 'api.sse.close' : 'api.request',
+          auth: auth,
+          token: token,
+          error: errorCode,
+          status: response.statusCode,
+          durationMs: stopwatch.elapsedMilliseconds,
+        );
+      }
     }
+  }
+
+  static String _newRequestId() => [
+    for (var i = 0; i < 8; i++)
+      _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+  ].join();
+
+  void _writeAccess(
+    HttpRequest request, {
+    required String requestId,
+    required String event,
+    required String auth,
+    required int status,
+    required int durationMs,
+    String? token,
+    String? error,
+  }) {
+    final log = accessLog;
+    if (log == null) return;
+    log.write({
+      'ts': DateTime.now().toUtc().toIso8601String(),
+      'event': event,
+      'requestId': requestId,
+      'method': request.method,
+      'path': request.uri.path,
+      'status': status,
+      'durationMs': durationMs,
+      'remote': request.connectionInfo?.remoteAddress.address ?? '',
+      'auth': auth,
+      'token': token,
+      'error': error,
+    });
   }
 
   /// Сообщает SSE-клиентам, какие списки могли измениться после запроса.

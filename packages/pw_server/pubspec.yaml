@@ -8,6 +8,7 @@ environment:
   sdk: ^3.13.7
 
 dependencies:
+  crypto: ^3.0.8
   get_it: ^9.2.1
   path: ^1.9.1
   plugin_api:

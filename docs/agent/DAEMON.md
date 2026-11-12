@@ -153,6 +153,47 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 нужно перечитать список (`chats`, `projects` или `hosts`); клиент обновляет
 watcher без периодического polling-а.
 
+## Журнал доступа к API
+
+Демон пишет отдельный JSONL-журнал `logs/api-access.log` с правами `0600`.
+Он не смешивается с `app.log` и ротируется по размеру.
+
+Пишутся только метаданные:
+
+- время в UTC, `requestId`, метод и путь без query;
+- статус, длительность, адрес TCP-клиента;
+- результат авторизации (`ok`, `missing`, `invalid`);
+- короткий fingerprint токена, а не сам токен;
+- код ошибки;
+- для SSE — отдельные события `api.sse.open` и `api.sse.close`.
+
+Тела запросов, заголовки, query-параметры, сообщения и настройки в журнал
+не попадают. Health-check не логируется. Ошибка записи журнала не меняет
+ответ API.
+
+Для разбора есть CLI:
+
+```bash
+# Сводка: события, статусы, авторизация, частые пути, медленные запросы
+dart run packages/pw_server/bin/api_log.dart summary \
+  --file=/path/to/logs/api-access.log
+
+# Ошибки, 401 и запросы медленнее 1000 мс
+dart run packages/pw_server/bin/api_log.dart problems \
+  --file=/path/to/logs/api-access.log --slow-ms=1000
+
+# Фильтрация: только 401, только SSE, конкретный путь
+dart run packages/pw_server/bin/api_log.dart filter \
+  --file=/path/to/logs/api-access.log --status=401
+dart run packages/pw_server/bin/api_log.dart filter \
+  --file=/path/to/logs/api-access.log --event=api.sse.close
+dart run packages/pw_server/bin/api_log.dart filter \
+  --file=/path/to/logs/api-access.log --path=/api/v1/chats --json
+```
+
+Путь по умолчанию — `logs/api-access.log` или значение
+`PROBABLY_WORKS_API_LOG`.
+
 ## Токен
 
 Токен — 32 случайных байта в base64url. Он хранится в `SecretStore` демона и
@@ -183,6 +224,4 @@ OpenRouter и токен API можно задать переменными ок
   `/plugins`, Flutter-представления остаются в клиенте;
 - GUI подключается к удалённому демону как к обычному профилю. Локальный GUI
   и локальный демон по-прежнему взаимоисключающие: они делят БД и
-  single-instance lock;
-- аудит API-запросов ограничен журналом приложения; отдельного файла доступа
-  пока нет.
+  single-instance lock.

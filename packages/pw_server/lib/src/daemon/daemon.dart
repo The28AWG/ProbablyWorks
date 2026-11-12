@@ -28,6 +28,7 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_server.dart';
 import 'package:pw_server/src/api/api_token.dart';
 import 'package:pw_server/src/daemon/daemon_options.dart';
@@ -103,6 +104,7 @@ Future<int> runDaemon(List<String> args) async {
       ? await tokens.rotate()
       : await tokens.ensure();
   final backend = getIt<LocalAgentApi>();
+  final accessLog = ApiAccessLog(paths.logs);
   final server = ApiServer(
     backend,
     token,
@@ -115,6 +117,7 @@ Future<int> runDaemon(List<String> args) async {
     mcpApi: getIt<McpApi>(),
     pluginApi: getIt<PluginApi>(),
     securityAuditApi: getIt<SecurityAuditApi>(),
+    accessLog: accessLog,
   );
   final port = await server.start();
   final scheduler = getIt<TaskScheduler>()..start();

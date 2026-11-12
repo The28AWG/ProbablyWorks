@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
@@ -920,6 +921,93 @@ void main() {
       expect(rememberStatus, HttpStatus.noContent);
       expect(settings.refreshed, 1);
       expect(settings.remembered, ['openai/gpt-4o']);
+    });
+  });
+
+  group('access log', () {
+    late Directory temp;
+    late ApiAccessLog accessLog;
+    late ApiServer logServer;
+    late String logBase;
+
+    setUp(() async {
+      temp = Directory.systemTemp.createTempSync('pw_api_access');
+      accessLog = ApiAccessLog(temp);
+      logServer = ApiServer(backend, _token, port: 0, accessLog: accessLog);
+      final port = await logServer.start();
+      logBase = 'http://127.0.0.1:$port';
+    });
+
+    tearDown(() async {
+      await logServer.stop();
+      temp.deleteSync(recursive: true);
+    });
+
+    test('logs SSE connection open', () async {
+      final eventClient = HttpClient();
+      addTearDown(() => eventClient.close(force: true));
+      final request = await eventClient.getUrl(
+        Uri.parse('$logBase/api/v1/events'),
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+      final response = await request.close();
+      final lines = StreamIterator(
+        response.transform(utf8.decoder).transform(const LineSplitter()),
+      );
+      expect(await lines.moveNext(), isTrue);
+      expect(lines.current, ': connected');
+      await lines.cancel();
+
+      final file = File(p.join(temp.path, 'api-access.log'));
+      final entries = [
+        for (final line in file.readAsLinesSync())
+          jsonDecode(line) as Map<String, dynamic>,
+      ];
+      expect(entries.map((entry) => entry['event']), contains('api.sse.open'));
+    });
+
+    test('logs metadata without health, bodies, query or token', () async {
+      await _request(client, logBase, 'GET', '/api/v1/health', token: _token);
+      await _request(client, logBase, 'GET', '/api/v1/chats');
+      await _request(
+        client,
+        logBase,
+        'GET',
+        '/api/v1/chats?secret=value',
+        token: 'wrong-token',
+      );
+      await _request(
+        client,
+        logBase,
+        'GET',
+        '/api/v1/chats?secret=value',
+        token: _token,
+      );
+
+      final file = File(p.join(temp.path, 'api-access.log'));
+      final entries = [
+        for (final line in file.readAsLinesSync())
+          jsonDecode(line) as Map<String, dynamic>,
+      ];
+      expect(entries, hasLength(3));
+
+      expect(entries.first['status'], HttpStatus.unauthorized);
+      expect(entries.first['auth'], 'missing');
+      expect(entries.first['token'], isNull);
+      expect(entries.first['error'], 'unauthorized');
+      expect(entries.first['path'], '/api/v1/chats');
+
+      expect(entries[1]['auth'], 'invalid');
+      expect(entries[1]['token'], ApiAccessLog.fingerprint('wrong-token'));
+      expect(entries[1]['path'], '/api/v1/chats');
+
+      expect(entries[2]['status'], HttpStatus.ok);
+      expect(entries[2]['auth'], 'ok');
+      expect(entries[2]['token'], ApiAccessLog.fingerprint(_token));
+      expect(entries[2]['method'], 'GET');
+      expect(entries[2]['durationMs'], isA<int>());
+      expect(entries[2].containsKey('body'), isFalse);
+      expect(entries[2]['path'], '/api/v1/chats');
     });
   });
 }
