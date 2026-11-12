@@ -67,3 +67,8 @@ jobs:
             )
             echo "::endgroup::"
           done
+
+      - name: Integration test real daemon
+        env:
+          PW_DAEMON_TEST: '1'
+        run: flutter test test/app/profiles/local_daemon_integration_test.dart

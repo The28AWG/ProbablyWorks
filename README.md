@@ -174,6 +174,15 @@ docker rm -f pw-sshd
 
 Без `PW_SSH_PORT` эти тесты пропускаются.
 
+Интеграционный тест локального демона поднимает настоящий headless-процесс,
+проверяет `daemon.json`, HTTP API и остановку:
+
+```bash
+PW_DAEMON_TEST=1 flutter test test/app/profiles/local_daemon_integration_test.dart
+```
+
+Без `PW_DAEMON_TEST=1` тест пропускается в обычном прогоне.
+
 Проверка кода:
 
 ```bash
