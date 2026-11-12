@@ -17,6 +17,8 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_client/pw_client.dart';
@@ -210,6 +212,83 @@ class ProfileService {
     await _disposeRemote(id);
     await _persist();
     _changes.add(null);
+  }
+
+  /// Одноразово переносит секреты GUI в keyring локального демона.
+  ///
+  /// Нужен при переходе с embedded на daemon-first: до этого ключ OpenRouter
+  /// и пароли SSH лежали в FlutterSecureStorage, а демон их не видел.
+  Future<void> migrateSecretsToLocalDaemon() async {
+    if (_local.modeOrNull != LocalRuntimeMode.localDaemon) return;
+    if (await _settings.read(ClientSettingsKeys.daemonSecretsMigrated) == '1') {
+      return;
+    }
+    final apis = _local.value;
+    try {
+      // Ошибка проверки ключа не должна мешать переносу SSH-секретов.
+      try {
+        await _migrateApiKey(apis.settings);
+      } on Object catch (error) {
+        AppLog.root.warning('cannot migrate OpenRouter key to daemon', error);
+      }
+      await _migrateHostSecrets(apis.hosts);
+      await _settings.write(ClientSettingsKeys.daemonSecretsMigrated, '1');
+      AppLog.root.info('local GUI secrets migrated to daemon');
+    } on Object catch (error) {
+      AppLog.root.warning('cannot migrate local GUI secrets to daemon', error);
+    }
+  }
+
+  Future<void> _migrateApiKey(AgentSettingsApi settings) async {
+    final key = await _secrets.read(openRouterKeyName);
+    if (key == null || key.isEmpty) return;
+    final snapshot = await settings.load();
+    if (snapshot.apiKeyTail.isNotEmpty) return;
+    await settings.saveApiKey(key);
+  }
+
+  Future<void> _migrateHostSecrets(HostsApi hostsApi) async {
+    final hosts = await hostsApi.hosts();
+    for (final host in hosts) {
+      final password = await _secrets.read(hostPasswordKey(host.id));
+      final passphrase = await _secrets.read(hostPassphraseKey(host.id));
+      final privateKey = await _secrets.read(hostPrivateKeyKey(host.id));
+      final environment = _decodeEnvironment(
+        await _secrets.read(hostEnvironmentKey(host.id)),
+      );
+      final secret = host.authType == SshAuthType.password
+          ? _nonEmpty(password)
+          : _nonEmpty(passphrase);
+      final privateKeyPem = _nonEmpty(privateKey);
+      if (secret == null && privateKeyPem == null && environment == null) {
+        continue;
+      }
+      await hostsApi.saveHost(
+        host,
+        secret: secret,
+        privateKeyPem: privateKeyPem,
+        environment: environment,
+      );
+      AppLog.root.info('migrated local secrets for host ${host.id}');
+    }
+  }
+
+  static String? _nonEmpty(String? value) =>
+      value == null || value.isEmpty ? null : value;
+
+  static Map<String, String>? _decodeEnvironment(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final values = {
+        for (final entry in decoded.entries)
+          if (entry.value is String) '${entry.key}': entry.value as String,
+      };
+      return values.isEmpty ? null : values;
+    } on FormatException {
+      return null;
+    }
   }
 
   /// Включает клиентские уведомления для локального демона.

@@ -27,8 +27,11 @@ final class LocalHostsApi implements HostsApi {
     Host host, {
     String? secret,
     String? privateKeyPem,
+    Map<String, String>? environment,
   }) async {
-    await _hosts.save(host);
+    await _hosts.save(
+      environment == null ? host : host.copyWith(environment: environment),
+    );
     if (host.kind == HostKind.virtual) await _virtual.provision(host);
     if (secret != null && secret.isNotEmpty) {
       final key = host.authType == SshAuthType.password

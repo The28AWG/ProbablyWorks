@@ -949,14 +949,16 @@ final class ApiServer {
     final existing = (await api.hosts())
         .where((item) => item.id == id)
         .firstOrNull;
+    final environment = _stringMap(body['environment']);
     await api.saveHost(
-      // Окружение живёт в SecretStore сервера и в JSON хоста не передаётся:
-      // сохраняем его, иначе редактирование удалённого хоста сотрёт переменные.
-      existing == null
+      // Без environment сохраняем прежние переменные: редактирование хоста
+      // не должно их стирать.
+      existing == null || environment != null
           ? host
           : host.copyWith(environment: existing.environment),
       secret: body['secret'] as String?,
       privateKeyPem: body['privateKeyPem'] as String?,
+      environment: environment,
     );
     _json(request.response, HttpStatus.noContent, {});
   }
@@ -1746,6 +1748,14 @@ Map<String, Object?> _keyInfoJson(LlmKeyInfo info) => {
   'isFreeTier': info.isFreeTier,
   'expiresAt': info.expiresAt?.toUtc().toIso8601String(),
 };
+
+Map<String, String>? _stringMap(Object? value) {
+  if (value is! Map) return null;
+  return {
+    for (final entry in value.entries)
+      if (entry.value is String) '${entry.key}': entry.value as String,
+  };
+}
 
 Host _hostFromJson(String id, Map<String, dynamic> json) {
   final now = DateTime.now();

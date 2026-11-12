@@ -8,7 +8,14 @@ abstract interface class HostsApi {
   Future<List<Host>> hosts();
   Stream<List<Host>> watchHosts();
 
-  Future<void> saveHost(Host host, {String? secret, String? privateKeyPem});
+  /// Сохраняет Host и его секреты. `environment` — карта переменных хоста;
+  /// null означает «не менять», пустая карта удаляет переменные.
+  Future<void> saveHost(
+    Host host, {
+    String? secret,
+    String? privateKeyPem,
+    Map<String, String>? environment,
+  });
   Future<void> deleteHost(String id);
   Future<void> testHost(Host host);
 }

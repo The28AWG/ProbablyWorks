@@ -188,6 +188,7 @@ Future<bool> _bootstrapDaemon(
   );
   final profileService = getIt<ProfileService>();
   await profileService.load();
+  await profileService.migrateSecretsToLocalDaemon();
   profileService.attachLocalNotices();
   // Локальный профиль — remote API демона. Начальные хосты придут по SSE,
   // но ChatListCubit должен получить пустой список, а не обращаться к БД.

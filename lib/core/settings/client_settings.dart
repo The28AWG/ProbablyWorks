@@ -9,6 +9,9 @@ abstract final class ClientSettingsKeys {
   static const sidebarWidth = 'sidebarWidth';
   static const agentProfiles = 'agentProfiles';
   static const localAgentProfileId = 'localAgentProfileId';
+
+  /// Одноразовый перенос секретов GUI в keyring локального демона.
+  static const daemonSecretsMigrated = 'daemonSecretsMigrated';
 }
 
 /// Настройки интерфейса и клиентского состояния, не принадлежащие агенту.

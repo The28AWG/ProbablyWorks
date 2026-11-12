@@ -226,6 +226,7 @@ class RemoteAgentApi
     Host host, {
     String? secret,
     String? privateKeyPem,
+    Map<String, String>? environment,
   }) async {
     await _send(
       'PUT',
@@ -234,6 +235,7 @@ class RemoteAgentApi
         ..._hostBody(host),
         'secret': ?secret,
         'privateKeyPem': ?privateKeyPem,
+        'environment': ?environment,
       },
     );
   }
