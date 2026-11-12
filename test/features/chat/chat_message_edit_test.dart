@@ -49,7 +49,9 @@ class _TestApp extends StatelessWidget {
 }
 
 void main() {
-  testWidgets('user message offers edit and copy, not delete', (tester) async {
+  testWidgets('user message opens edit on tap without hover actions', (
+    tester,
+  ) async {
     var edits = 0;
     await tester.pumpWidget(
       _TestApp(
@@ -67,21 +69,19 @@ void main() {
 
     expect(find.byIcon(Icons.delete_outline), findsNothing);
     expect(find.byTooltip(l10n.messageDeleteAfter), findsNothing);
-    expect(find.byTooltip(l10n.messageEdit), findsOneWidget);
-    expect(find.byTooltip(l10n.commonCopy), findsOneWidget);
+    expect(find.byTooltip(l10n.messageEdit), findsNothing);
+    expect(find.byTooltip(l10n.commonCopy), findsNothing);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(-10, -10));
     addTearDown(mouse.removePointer);
     await mouse.moveTo(tester.getCenter(find.text('Fix the login')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip(l10n.messageEdit));
-    await tester.pump();
-    expect(edits, 1);
+    expect(find.byType(IconButton), findsNothing);
 
     await tester.tap(find.text('Fix the login'));
     await tester.pump();
-    expect(edits, 2);
+    expect(edits, 1);
   });
 
   testWidgets('an unsent edit replaces the bubble text and tints it', (

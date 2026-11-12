@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -151,60 +150,51 @@ void main() {
     expect(_fromEnd(position), closeTo(_followOffset, 1));
   });
 
-  testWidgets(
-    'scrolling up pauses following and the jump button returns to the end',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(800, 500));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(
-        _TestApp(SizedBox(height: 500, child: ChatTimeline(state: _state()))),
-      );
-      await tester.pumpAndSettle();
-      final l10n = AppLocalizations.of(
-        tester.element(find.byType(ChatTimeline)),
-      );
-      final position = _position(tester);
+  testWidgets('scrolling up pauses following and keeps the reading position', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(800, 500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      _TestApp(SizedBox(height: 500, child: ChatTimeline(state: _state()))),
+    );
+    await tester.pumpAndSettle();
+    final position = _position(tester);
 
-      await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
-      await tester.pumpAndSettle();
-      expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
-      final away = _fromEnd(position);
-      expect(away, greaterThan(_followOffset + 100));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    final away = _fromEnd(position);
+    expect(away, greaterThan(_followOffset + 100));
 
-      // Новый ответ ассистента не должен увести читателя от места, на котором он остановился.
-      final before = _visibleTops(tester);
-      await tester.pumpWidget(
-        _TestApp(
-          SizedBox(
-            height: 500,
-            child: ChatTimeline(state: _state(count: 21, running: true)),
-          ),
+    // Новый ответ ассистента не должен увести читателя от места, на котором он остановился.
+    final before = _visibleTops(tester);
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          height: 500,
+          child: ChatTimeline(state: _state(count: 21, running: true)),
         ),
-      );
-      // Кнопка копирования уходит с прошлого ответа анимацией. Изменение лежит ниже сообщений, которые
-      // читает пользователь: они стоят на месте (якорь), ход с новым вопросом ниже сдвигается.
-      // Якорь догоняет изменение после кадра, поэтому в кадре отставание до одного шага анимации (16 px).
-      final reading = before.keys.where((id) => id == 'm18');
-      expect(reading, isNotEmpty);
-      for (var frame = 0; frame < 15; frame++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        final now = _visibleTops(tester);
-        for (final id in reading.where(now.containsKey)) {
-          expect(now[id], closeTo(before[id]!, 16), reason: '$id, кадр $frame');
-        }
+      ),
+    );
+    // Кнопка копирования уходит с прошлого ответа анимацией. Изменение лежит ниже сообщений, которые
+    // читает пользователь: они стоят на месте (якорь), ход с новым вопросом ниже сдвигается.
+    // Якорь догоняет изменение после кадра, поэтому в кадре отставание до одного шага анимации (16 px).
+    final reading = before.keys.where((id) => id == 'm18');
+    expect(reading, isNotEmpty);
+    for (var frame = 0; frame < 15; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      final now = _visibleTops(tester);
+      for (final id in reading.where(now.containsKey)) {
+        expect(now[id], closeTo(before[id]!, 16), reason: '$id, кадр $frame');
       }
-      await tester.pumpAndSettle();
-      final after = _visibleTops(tester);
-      for (final id in reading.where(after.containsKey)) {
-        expect(after[id], closeTo(before[id]!, 0.5), reason: id);
-      }
-
-      await tester.tap(find.text(l10n.chatScrollToLatest));
-      await tester.pumpAndSettle();
-      expect(find.text(l10n.chatScrollToLatest), findsNothing);
-      expect(_fromEnd(position), closeTo(_followOffset, 1));
-    },
-  );
+    }
+    await tester.pumpAndSettle();
+    final after = _visibleTops(tester);
+    for (final id in reading.where(after.containsKey)) {
+      expect(after[id], closeTo(before[id]!, 0.5), reason: id);
+    }
+    expect(_fromEnd(position), greaterThan(_followOffset + 100));
+  });
 
   testWidgets('sending a message always brings the reader to the end', (
     tester,
@@ -215,11 +205,9 @@ void main() {
       _TestApp(SizedBox(height: 500, child: ChatTimeline(state: _state()))),
     );
     await tester.pumpAndSettle();
-    final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
     final position = _position(tester);
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
 
     final base = _state();
     await tester.pumpWidget(
@@ -249,7 +237,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text(l10n.chatScrollToLatest), findsNothing);
     expect(_fromEnd(position), closeTo(_followOffset, 1));
   });
 
@@ -875,37 +862,6 @@ void main() {
     expect(find.text('4s'), findsNothing);
   });
 
-  testWidgets('user message actions appear on hover', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(800, 500));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      _TestApp(
-        SizedBox(height: 500, child: ChatTimeline(state: _state(count: 2))),
-      ),
-    );
-    await tester.pumpAndSettle();
-    // Панель действий сообщения пользователя живёт внутри его плитки.
-    double actionsOf(String id) => tester
-        .widget<AnimatedOpacity>(
-          find.descendant(
-            of: find.byWidgetPredicate(
-              (w) => w is ChatMessageTile && w.message.id == id,
-            ),
-            matching: find.byType(AnimatedOpacity),
-          ),
-        )
-        .opacity;
-
-    // Курсор стартует за пределами окна: иначе он попадает на ответ ассистента в углу ленты.
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await mouse.addPointer(location: const Offset(-10, -10));
-    addTearDown(mouse.removePointer);
-    expect(actionsOf('m2'), 0);
-    await mouse.moveTo(tester.getCenter(find.text('Question 2')));
-    await tester.pumpAndSettle();
-    expect(actionsOf('m2'), 1);
-  });
-
   testWidgets(
     'the list keeps a third of its height free below the last message',
     (tester) async {
@@ -966,16 +922,13 @@ void main() {
       _TestApp(SizedBox(height: 600, child: ChatTimeline(state: _state()))),
     );
     await tester.pumpAndSettle();
-    final l10n = AppLocalizations.of(tester.element(find.byType(ChatTimeline)));
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.chatScrollToLatest), findsOneWidget);
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -1000));
     await tester.pumpAndSettle();
     expect(_fromEnd(_position(tester)), closeTo(_followOffset, 1));
-    expect(find.text(l10n.chatScrollToLatest), findsNothing);
   });
 
   testWidgets('an opened step output stays open when a newer message arrives', (
