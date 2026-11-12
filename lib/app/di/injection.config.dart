@@ -55,10 +55,10 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i810.PluginUiRegistry>(() => coreModule.pluginUiRegistry());
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
-    gh.singleton<_i144.AgentApi>(
+    gh.lazySingleton<_i144.AgentApi>(
       () => coreModule.agentApi(gh<_i995.LocalAgentApi>()),
     );
-    gh.singleton<_i891.ChatApi>(
+    gh.lazySingleton<_i891.ChatApi>(
       () => coreModule.chatApi(gh<_i326.LocalChatApi>()),
     );
     gh.lazySingleton<_i564.SecretStore>(
@@ -97,7 +97,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i740.ProfileService>(),
       ),
     );
-    gh.singleton<_i81.AppRouter>(
+    gh.lazySingleton<_i81.AppRouter>(
       () => coreModule.appRouter(gh<_i519.ApiKeyGuard>()),
     );
     return this;

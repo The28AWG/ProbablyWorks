@@ -21,16 +21,16 @@ abstract class CoreModule {
   @singleton
   FlutterSecureStorage get secureStorage => const FlutterSecureStorage();
 
-  @singleton
+  @lazySingleton
   AppRouter appRouter(ApiKeyGuard guard) => AppRouter(apiKeyGuard: guard);
 
   /// Плагины компилируются в клиент. Демон регистрирует свой список.
   /// Полный API агента с расписаниями.
-  @singleton
+  @lazySingleton
   AgentApi agentApi(LocalAgentApi local) => local;
 
   /// API экрана чата; без расписаний и фонового планировщика.
-  @singleton
+  @lazySingleton
   ChatApi chatApi(LocalChatApi local) => local;
 
   @singleton
