@@ -1,7 +1,12 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:injectable/injectable.dart';
+import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:plugin_declarative_commands/declarative_commands_plugin.dart';
+import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dart'
+    as commands_core;
 import 'package:plugin_declarative_http/declarative_http_plugin.dart';
+import 'package:plugin_declarative_http_core/declarative_http_plugin.dart'
+    as http_core;
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -30,7 +35,13 @@ abstract class CoreModule {
 
   @singleton
   PluginRegistry pluginRegistry() => const PluginRegistry([
-    DeclarativeCommandsPlugin(),
-    DeclarativeHttpPlugin(),
+    commands_core.DeclarativeCommandsPlugin(),
+    http_core.DeclarativeHttpPlugin(),
+  ]);
+
+  @singleton
+  PluginUiRegistry pluginUiRegistry() => const PluginUiRegistry([
+    DeclarativeCommandsPluginUi(),
+    DeclarativeHttpPluginUi(),
   ]);
 }

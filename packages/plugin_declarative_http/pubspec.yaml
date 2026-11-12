@@ -10,19 +10,18 @@ environment:
 dependencies:
   app_ui:
     path: ../app_ui
-  characters: ^1.4.0
   flutter:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.3
-  json_path: ^0.9.0
   material_ui: ^1.9.0
-  new_beautiful_soup_dart: ^1.0.0
   plugin_api:
     path: ../plugin_api
   plugin_api_ui:
     path: ../plugin_api_ui
+  plugin_declarative_http_core:
+    path: ../plugin_declarative_http_core
   uuid: ^4.5.3
 
 dev_dependencies:

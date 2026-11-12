@@ -402,7 +402,9 @@ ID стабильны, статусы обновляются по мере вы�
 **Файлы:** `lib/agent/tools/tool_source.dart`,
 `lib/agent/tools/tool_registry.dart`, `lib/agent/mcp/`,
 `lib/agent/plugins/`, `packages/plugin_api/`,
-`packages/plugin_declarative_commands/`,
+`packages/plugin_api_ui/`,
+`packages/plugin_declarative_commands_core/`,
+`packages/plugin_declarative_http_core/`,
 `lib/features/settings/presentation/widgets/mcp_settings_section.dart`,
 `lib/features/settings/presentation/widgets/plugin_settings_section.dart`.
 

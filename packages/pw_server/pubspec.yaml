@@ -10,6 +10,12 @@ environment:
 dependencies:
   get_it: ^9.2.1
   path: ^1.9.1
+  plugin_api:
+    path: ../plugin_api
+  plugin_declarative_commands_core:
+    path: ../plugin_declarative_commands_core
+  plugin_declarative_http_core:
+    path: ../plugin_declarative_http_core
   pw_agent:
     path: ../pw_agent
 

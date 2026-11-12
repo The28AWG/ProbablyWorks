@@ -1,6 +1,6 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_api/plugin_api.dart';
-import 'package:plugin_declarative_http/declarative_http_plugin.dart';
+import 'package:plugin_declarative_http_core/declarative_http_plugin.dart';
+import 'package:test/test.dart';
 
 final class _Settings implements PluginSettings {
   _Settings(this.value);

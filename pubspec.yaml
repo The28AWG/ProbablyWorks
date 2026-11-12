@@ -12,7 +12,9 @@ workspace:
   - packages/plugin_api
   - packages/plugin_api_ui
   - packages/plugin_declarative_commands
+  - packages/plugin_declarative_commands_core
   - packages/plugin_declarative_http
+  - packages/plugin_declarative_http_core
   - packages/pw_agent
   - packages/pw_client
   - packages/pw_server
@@ -62,8 +64,12 @@ dependencies:
     path: packages/plugin_api_ui
   plugin_declarative_commands:
     path: packages/plugin_declarative_commands
+  plugin_declarative_commands_core:
+    path: packages/plugin_declarative_commands_core
   plugin_declarative_http:
     path: packages/plugin_declarative_http
+  plugin_declarative_http_core:
+    path: packages/plugin_declarative_http_core
   portable_pty: 0.0.7-beta.2
   pw_agent:
     path: packages/pw_agent

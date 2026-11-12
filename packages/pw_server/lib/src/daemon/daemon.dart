@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dart';
+import 'package:plugin_declarative_http_core/declarative_http_plugin.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
@@ -68,7 +70,12 @@ Future<int> runDaemon(List<String> args) async {
     ..registerSingleton<AppNotifier>(const NoopAppNotifier())
     ..registerSingleton<AppearancePort>(const NoopAppearance())
     ..registerSingleton<ExternalUrlOpener>(const ProcessUrlOpener())
-    ..registerSingleton<PluginRegistry>(const PluginRegistry([]));
+    ..registerSingleton<PluginRegistry>(
+      const PluginRegistry([
+        DeclarativeCommandsPlugin(),
+        DeclarativeHttpPlugin(),
+      ]),
+    );
   await configureAgentDependencies();
 
   final settings = getIt<SettingsRepository>();

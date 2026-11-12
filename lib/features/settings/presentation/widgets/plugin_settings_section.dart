@@ -7,10 +7,10 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 
-PluginUi? _uiOf(Plugin plugin) => plugin is PluginUi ? plugin : null;
+PluginUi? _uiOf(String pluginId) => getIt<PluginUiRegistry>().byId(pluginId);
 
-String _titleOf(BuildContext context, Plugin? plugin) =>
-    plugin == null ? '' : (_uiOf(plugin)?.titleOf(context) ?? plugin.id);
+String _titleOf(BuildContext context, String pluginId) =>
+    _uiOf(pluginId)?.titleOf(context) ?? pluginId;
 
 /// Вкладка плагинов: включение, зависимости и настройки конкретного плагина.
 class PluginSettingsSection extends StatefulWidget {
@@ -53,9 +53,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
         ? _service.missingDependencies(plugin.id)
         : _service.dependents(plugin.id);
     if (affected.isNotEmpty) {
-      final names = [
-        for (final id in affected) _titleOf(context, _service.pluginById(id)),
-      ];
+      final names = [for (final id in affected) _titleOf(context, id)];
       final confirmed = await ConfirmDialog.confirm(
         context,
         title: value ? l10n.pluginsMissingTitle : l10n.pluginsDependentsTitle,
@@ -92,9 +90,10 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: _PluginCard(
               plugin: plugin,
+              ui: _uiOf(plugin.id),
               enabled: _enabled.contains(plugin.id),
               onToggle: (value) => _toggle(plugin, value),
-              onSettings: _uiOf(plugin) == null
+              onSettings: _uiOf(plugin.id) == null
                   ? null
                   : () => _openSettings(plugin),
             ),
@@ -105,13 +104,13 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
 
   Future<void> _openSettings(Plugin plugin) async {
     final settings = _service.settingsFor(plugin.id);
-    final child = _uiOf(plugin)?.buildSettings(context, settings);
+    final child = _uiOf(plugin.id)?.buildSettings(context, settings);
     if (child == null) return;
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(
-          _titleOf(context, plugin),
+          _titleOf(context, plugin.id),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -135,12 +134,14 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
 class _PluginCard extends StatelessWidget {
   const _PluginCard({
     required this.plugin,
+    required this.ui,
     required this.enabled,
     required this.onToggle,
     required this.onSettings,
   });
 
   final Plugin plugin;
+  final PluginUi? ui;
   final bool enabled;
   final ValueChanged<bool> onToggle;
   final VoidCallback? onSettings;
@@ -149,8 +150,7 @@ class _PluginCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final dependencies = [
-      for (final id in plugin.dependsOn)
-        _titleOf(context, getIt<PluginService>().pluginById(id)),
+      for (final id in plugin.dependsOn) _titleOf(context, id),
     ];
     return AppCard(
       child: Row(
@@ -160,12 +160,12 @@ class _PluginCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _titleOf(context, plugin),
+                  ui?.titleOf(context) ?? plugin.id,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  _uiOf(plugin)?.descriptionOf(context) ?? '',
+                  ui?.descriptionOf(context) ?? '',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 if (dependencies.isNotEmpty) ...[

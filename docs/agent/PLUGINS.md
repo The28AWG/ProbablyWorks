@@ -7,16 +7,24 @@
 ## Пакеты
 
 - `packages/plugin_api` — интерфейсы `Plugin`, `PluginTool`, `PluginHost`,
-  `PluginSettings`.
-- `packages/plugin_declarative_commands` — фиксированные команды становятся
-  инструментами модели.
-- `packages/plugin_declarative_http` — HTTP-инструменты с подстановками
-  аргументов, JSONPath и CSS-селекторами для ответа.
-- Основное приложение содержит реестр, граф зависимостей, флаги включения и
+  `PluginSettings` без Flutter.
+- `packages/plugin_api_ui` — интерфейс `PluginUi` и `PluginUiRegistry`. Это
+  представление, а не плагин: оно привязано к `pluginId` и не влияет на
+  включение инструментов.
+- `packages/plugin_declarative_commands_core` — ядро фиксированных команд:
+  чистый Dart, доступный клиенту и демону.
+- `packages/plugin_declarative_http_core` — ядро HTTP-инструментов: чистый Dart,
+  доступный клиенту и демону.
+- `packages/plugin_declarative_commands` и `packages/plugin_declarative_http` —
+  Flutter-представления: локализация и экраны настроек.
+- Основное приложение содержит реестр ядра (`PluginRegistry`), реестр
+  представлений (`PluginUiRegistry`), граф зависимостей, флаги включения и
   адаптер `PluginToolSource` к общему `ToolExecutor`.
 
-Плагин не импортирует основное приложение. Общие виджеты и токены он берёт из
-`package:app_ui`, интерфейсы — из `package:plugin_api`.
+Ядро плагина не импортирует Flutter и подключается демоном. Представление
+берёт общие виджеты из `package:app_ui`, а интерфейсы — из `plugin_api_ui`.
+Клиент связывает ядро и представление по `pluginId`; если представления нет,
+плагин всё равно можно включать и выключать.
 
 ## Локализация
 
@@ -108,5 +116,6 @@ final l10n = DeclarativeCommandsLocalizations.of(context);
 2. Реализовать `Plugin` и, при необходимости, `PluginTool`.
 3. Добавить ARB, `l10n.yaml` и сгенерировать локализацию.
 4. Зарегистрировать делегат в `app_localization_delegates.dart`.
-5. Добавить экземпляр плагина в `lib/agent/plugins/plugin_catalog.dart`.
-6. Покрыть тестами создание инструментов и граф зависимостей.
+5. Добавить ядро в `PluginRegistry` клиента и демона.
+6. Добавить `PluginUi` в `PluginUiRegistry` клиента, если нужен экран настроек.
+7. Покрыть тестами создание инструментов и граф зависимостей.
