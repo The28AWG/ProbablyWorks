@@ -4,7 +4,7 @@ import 'support/git_parity.dart';
 
 /// Сверка `git commit` с системным git: код, stdout, stderr и объект коммита.
 void main() {
-  test('сообщение, подпись и дата совпадают с git', () async {
+  gitParityTest('сообщение, подпись и дата совпадают с git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -85,7 +85,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('сухой прогон печатает статус и не коммитит', () async {
+  gitParityTest('сухой прогон печатает статус и не коммитит', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -120,7 +120,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('частичный коммит и pathspec совпадают с git', () async {
+  gitParityTest('частичный коммит и pathspec совпадают с git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -163,7 +163,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('amend, fixup и повтор сообщения совпадают с git', () async {
+  gitParityTest('amend, fixup и повтор сообщения совпадают с git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -212,7 +212,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('неподдерживаемые флаги commit дают fatal', () async {
+  gitParityTest('неподдерживаемые флаги commit дают fatal', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);

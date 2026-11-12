@@ -3,7 +3,7 @@ import 'package:test/test.dart';
 import 'support/git_parity.dart';
 
 void main() {
-  test('git log ограничивает историю путями', () async {
+  gitParityTest('git log ограничивает историю путями', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -45,7 +45,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('cherry-pick и revert совпадают с git по сводке и серии', () async {
+  gitParityTest('cherry-pick и revert совпадают с git по сводке и серии', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -110,7 +110,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('rebase печатает ход и up to date как git', () async {
+  gitParityTest('rebase печатает ход и up to date как git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);

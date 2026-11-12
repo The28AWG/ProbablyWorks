@@ -11,175 +11,178 @@ void main() {
   String clock(String text) =>
       text.replaceAll(RegExp(r'\.\d+\.git\.'), '.TIME.git.');
 
-  test('format-patch: серия, заголовки и файлы совпадают с git', () async {
-    final session = GitParitySession();
-    await session.start();
-    addTearDown(session.close);
+  gitParityTest(
+    'format-patch: серия, заголовки и файлы совпадают с git',
+    () async {
+      final session = GitParitySession();
+      await session.start();
+      addTearDown(session.close);
 
-    await session.both(['init', '-b', 'main']);
-    await session.both(['format-patch', '--no-signature']);
-    await session.both(['format-patch', '-1', '--no-signature']);
+      await session.both(['init', '-b', 'main']);
+      await session.both(['format-patch', '--no-signature']);
+      await session.both(['format-patch', '-1', '--no-signature']);
 
-    await session.write('a.txt', 'one\n');
-    await session.both(['add', 'a.txt']);
-    await session.bothExit(['commit', '-m', 'first']);
-    await session.write('b.txt', 'two\n');
-    await session.both(['add', 'b.txt']);
-    await session.bothExit(['commit', '-m', 'second']);
-    await session.write('a.txt', 'one\nchanged\n');
-    await session.both(['add', 'a.txt']);
-    await session.bothExit(['commit', '-m', 'third']);
+      await session.write('a.txt', 'one\n');
+      await session.both(['add', 'a.txt']);
+      await session.bothExit(['commit', '-m', 'first']);
+      await session.write('b.txt', 'two\n');
+      await session.both(['add', 'b.txt']);
+      await session.bothExit(['commit', '-m', 'second']);
+      await session.write('a.txt', 'one\nchanged\n');
+      await session.both(['add', 'a.txt']);
+      await session.bothExit(['commit', '-m', 'third']);
 
-    await session.both(['format-patch', '-1', '--stdout', '--no-signature']);
-    await session.both(['format-patch', '-2', '--stdout', '--no-signature']);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--numbered',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-2',
-      '--stdout',
-      '--no-numbered',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--signoff',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--keep-subject',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--no-stat',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--zero-commit',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--subject-prefix=WIP',
-      '--rfc',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--rfc=DRAFT',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--to=Ann <ann@ex.test>',
-      '--cc=Bob <bob@ex.test>',
-      '--add-header=X-Track: 7',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--from=Commit Bot <bot@ex.test>',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--force-in-body-from',
-      '--no-signature',
-    ]);
-    await session.both(['format-patch', '-1', '--stdout', '--signature=Sig']);
-    await session.both([
-      'format-patch',
-      '-1',
-      'HEAD~2',
-      '--stdout',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      'HEAD~2..HEAD',
-      '--stdout',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--start-number=3',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-2',
-      '--stdout',
-      '-v2',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--base=HEAD~1',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '--stdout',
-      '--quiet',
-      '--no-signature',
-    ]);
+      await session.both(['format-patch', '-1', '--stdout', '--no-signature']);
+      await session.both(['format-patch', '-2', '--stdout', '--no-signature']);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--numbered',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-2',
+        '--stdout',
+        '--no-numbered',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--signoff',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--keep-subject',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--no-stat',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--zero-commit',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--subject-prefix=WIP',
+        '--rfc',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--rfc=DRAFT',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--to=Ann <ann@ex.test>',
+        '--cc=Bob <bob@ex.test>',
+        '--add-header=X-Track: 7',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--from=Commit Bot <bot@ex.test>',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--force-in-body-from',
+        '--no-signature',
+      ]);
+      await session.both(['format-patch', '-1', '--stdout', '--signature=Sig']);
+      await session.both([
+        'format-patch',
+        '-1',
+        'HEAD~2',
+        '--stdout',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        'HEAD~2..HEAD',
+        '--stdout',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--start-number=3',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-2',
+        '--stdout',
+        '-v2',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--base=HEAD~1',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '--stdout',
+        '--quiet',
+        '--no-signature',
+      ]);
 
-    await session.both(['format-patch', '-2', '-o', 'out', '--no-signature']);
-    await session.both([
-      'format-patch',
-      '-1',
-      '-o',
-      'named',
-      '--numbered-files',
-      '--no-signature',
-    ]);
-    await session.both([
-      'format-patch',
-      '-1',
-      '-o',
-      'suf',
-      '--suffix=.mbox',
-      '--no-signature',
-    ]);
-    await session.both(['hash-object', 'out/0001-second.patch']);
-    await session.both(['hash-object', 'out/0002-third.patch']);
-    await session.both(['hash-object', 'named/1']);
-    await session.both(['hash-object', 'suf/0001-third.mbox']);
-    expect(session.realRoot.existsSync(), isTrue);
-  });
+      await session.both(['format-patch', '-2', '-o', 'out', '--no-signature']);
+      await session.both([
+        'format-patch',
+        '-1',
+        '-o',
+        'named',
+        '--numbered-files',
+        '--no-signature',
+      ]);
+      await session.both([
+        'format-patch',
+        '-1',
+        '-o',
+        'suf',
+        '--suffix=.mbox',
+        '--no-signature',
+      ]);
+      await session.both(['hash-object', 'out/0001-second.patch']);
+      await session.both(['hash-object', 'out/0002-third.patch']);
+      await session.both(['hash-object', 'named/1']);
+      await session.both(['hash-object', 'suf/0001-third.mbox']);
+      expect(session.realRoot.existsSync(), isTrue);
+    },
+  );
 
-  test('format-patch: обложка, thread, range-diff и ошибки', () async {
+  gitParityTest('format-patch: обложка, thread, range-diff и ошибки', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -343,7 +346,7 @@ void main() {
     expect(session.realRoot.existsSync(), isTrue);
   });
 
-  test('format-patch: upstream, пути и двоичный файл', () async {
+  gitParityTest('format-patch: upstream, пути и двоичный файл', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);

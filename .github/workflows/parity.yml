@@ -1,0 +1,98 @@
+name: Parity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/virtual_git/**'
+      - 'packages/virtual_host/**'
+      - 'tool/ci/install_parity_tools.sh'
+      - '.github/workflows/parity.yml'
+  pull_request:
+    paths:
+      - 'packages/virtual_git/**'
+      - 'packages/virtual_host/**'
+      - 'tool/ci/install_parity_tools.sh'
+      - '.github/workflows/parity.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'pinned — git 2.53/bash 5.3, latest — системные версии'
+        type: choice
+        options:
+          - pinned
+          - latest
+        default: pinned
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned:
+    name: Pinned git/bash parity
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'pinned'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PARITY_TOOLS: ${{ github.workspace }}/.parity-tools
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Cache pinned git and bash
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PARITY_TOOLS }}
+          key: parity-tools-${{ runner.os }}-git-2.53.0-bash-5.3
+
+      - name: Install pinned git and bash
+        env:
+          PARITY_TOOLS_PREFIX: ${{ env.PARITY_TOOLS }}
+        run: bash tool/ci/install_parity_tools.sh
+
+      - name: Run pinned parity tests
+        run: |
+          export PATH="$PARITY_TOOLS/bash/bin:$PARITY_TOOLS/git/bin:$PATH"
+          export PW_PARITY=1
+          echo "git: $(git --version)"
+          echo "bash: $(bash --version | head -1)"
+          (cd packages/virtual_git && dart test)
+          (cd packages/virtual_host && dart test)
+
+  latest:
+    name: Latest git/bash compatibility (non-blocking)
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'latest'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Run latest compatibility tests
+        run: |
+          export PW_PARITY=latest
+          echo "git: $(git --version)"
+          echo "bash: $(bash --version | head -1)"
+          (cd packages/virtual_git && dart test)
+          (cd packages/virtual_host && dart test)

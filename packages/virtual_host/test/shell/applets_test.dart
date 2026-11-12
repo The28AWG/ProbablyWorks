@@ -11,6 +11,8 @@ import 'package:virtual_host/src/vfs_path.dart';
 import 'package:virtual_host/src/virtual_fs.dart';
 import 'package:virtual_host/src/virtual_profile.dart';
 
+import '../support/parity.dart';
+
 /// Итог запуска: stdout, stderr и код выхода.
 final class _Outcome {
   const _Outcome(this.stdout, this.stderr, this.exitCode);
@@ -100,6 +102,7 @@ Future<_Outcome> _bash(
         'HOME': _workdir,
         'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
       },
+      includeParentEnvironment: false,
     );
     return _Outcome(
       result.stdout as String,
@@ -351,16 +354,20 @@ const _differential = [
 ];
 
 void main() {
-  group('applets: сравнение с настоящими утилитами bash', () {
-    for (final script in _differential) {
-      test(script, () async {
-        final ours = await _shell(script);
-        final real = await _bash(script);
-        expect(ours.stdout, real.stdout, reason: 'stdout');
-        expect(ours.exitCode, real.exitCode, reason: 'exit code');
-      });
-    }
-  });
+  group(
+    'applets: сравнение с настоящими утилитами bash',
+    skip: bashParitySkipReason,
+    () {
+      for (final script in _differential) {
+        test(script, () async {
+          final ours = await _shell(script);
+          final real = await _bash(script);
+          expect(ours.stdout, real.stdout, reason: 'stdout');
+          expect(ours.exitCode, real.exitCode, reason: 'exit code');
+        });
+      }
+    },
+  );
 
   group('applets: поведение, зависящее от профиля и времени', () {
     test('pwd печатает текущий каталог', () async {

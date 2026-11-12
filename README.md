@@ -183,6 +183,13 @@ PW_DAEMON_TEST=1 flutter test test/app/profiles/local_daemon_integration_test.da
 
 Без `PW_DAEMON_TEST=1` тест пропускается в обычном прогоне.
 
+Дифференциальные тесты `virtual_host` и `virtual_git` сравнивают поведение с
+настоящими bash и git. Они выключены в обычном `dart test` и включаются через
+`PW_PARITY=1`; для них нужны закреплённые версии bash 5.3.x и git 2.53.x.
+Отдельный workflow `Parity` запускает их только при изменениях в этих пакетах
+и использует собранные версии оракулов; сравнение с latest git/bash доступно
+вручную через `workflow_dispatch`.
+
 Проверка кода:
 
 ```bash

@@ -6,7 +6,7 @@ import 'support/git_parity.dart';
 
 /// Сверка `git branch` с системным git: код, stdout и stderr.
 void main() {
-  test('список, upstream, формат и ошибки совпадают с git', () async {
+  gitParityTest('список, upstream, формат и ошибки совпадают с git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);
@@ -169,7 +169,7 @@ void main() {
     await session.both(['reflog', 'nologged']);
   });
 
-  test('колонки при COLUMNS=40 совпадают с git', () async {
+  gitParityTest('колонки при COLUMNS=40 совпадают с git', () async {
     final session = GitParitySession(
       environment: {...gitParityEnvironment, 'COLUMNS': '40'},
     );
@@ -191,7 +191,7 @@ void main() {
     await session.both(['branch', '--column=plain']);
   });
 
-  test('пустой репозиторий печатает текущую ветку', () async {
+  gitParityTest('пустой репозиторий печатает текущую ветку', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);

@@ -23,6 +23,38 @@ final class GitParityWaiver {
   final String reason;
 }
 
+/// Переменная включает дифференциальные тесты.
+///
+/// `1` — требуются закреплённые версии оракулов, `latest` — запуск против
+/// системных git/bash (отчёт о расхождениях).
+const parityEnvironment = 'PW_PARITY';
+
+/// Причина пропуска паритетных тестов с git.
+String? get gitParitySkipReason {
+  final mode = Platform.environment[parityEnvironment];
+  if (mode == null || mode.isEmpty) {
+    return 'Set PW_PARITY=1 to run differential tests against git 2.53';
+  }
+  if (mode == 'latest') return null;
+  final result = Process.runSync(
+    'git',
+    ['--version'],
+    environment: const {'LC_ALL': 'C'},
+  );
+  final version = '${result.stdout}'.trim();
+  if (result.exitCode != 0 || !version.startsWith('git version 2.53.')) {
+    return 'Differential tests require git 2.53.x, found '
+        '${version.isEmpty ? 'unknown' : version}';
+  }
+  return null;
+}
+
+/// `test`, который пропускается, если оракул не включён или не той версии.
+void gitParityTest(String description, Future<void> Function() body) {
+  // ignore: missing-test-assertion, утверждение находится в переданном body
+  test(description, body, skip: gitParitySkipReason);
+}
+
 /// Замороженное окружение сверки. Даты одинаковые, чтобы хеши совпали.
 const gitParityEnvironment = {
   'GIT_AUTHOR_NAME': 'Ada',
@@ -32,6 +64,7 @@ const gitParityEnvironment = {
   'GIT_AUTHOR_DATE': '1700000000 +0000',
   'GIT_COMMITTER_DATE': '1700000000 +0000',
   'LC_ALL': 'C',
+  'TERM': 'dumb',
   'GIT_CONFIG_NOSYSTEM': '1',
   'GIT_CONFIG_GLOBAL': '/dev/null',
   'GIT_CONFIG_COUNT': '0',
@@ -181,7 +214,13 @@ final class GitParitySession {
   Future<ProcessResult> _git(List<String> args) => Process.run(
     'git',
     args,
-    environment: {...environment, 'GIT_TEMPLATE_DIR': template.path},
+    environment: {
+      ...environment,
+      'GIT_TEMPLATE_DIR': template.path,
+      'HOME': realRoot.path,
+      'PATH': Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+    },
+    includeParentEnvironment: false,
   );
 
   Future<void> _compareWorkTree(String left, String right) async {

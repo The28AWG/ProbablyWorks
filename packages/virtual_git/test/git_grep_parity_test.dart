@@ -4,7 +4,7 @@ import 'support/git_parity.dart';
 
 /// Сверка `git grep` с системным git: код, stdout и stderr.
 void main() {
-  test('git grep совпадает с git', () async {
+  gitParityTest('git grep совпадает с git', () async {
     final session = GitParitySession();
     await session.start();
     addTearDown(session.close);

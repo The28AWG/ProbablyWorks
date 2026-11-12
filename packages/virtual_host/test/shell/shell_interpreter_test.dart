@@ -13,6 +13,8 @@ import 'package:virtual_host/src/virtual_fs.dart';
 import 'package:virtual_host/src/virtual_limits.dart';
 import 'package:virtual_host/src/virtual_profile.dart';
 
+import '../support/parity.dart';
+
 /// Итог запуска: stdout, stderr и код выхода. У виртуального запуска есть ещё ФС для проверки записи.
 final class _Outcome {
   const _Outcome(this.stdout, this.stderr, this.exitCode, {this.fs});
@@ -599,7 +601,9 @@ const _rejected = [
 ];
 
 void main() {
-  final skip = Platform.isLinux ? false : 'сравнение с bash только на Linux';
+  final skip = Platform.isLinux
+      ? bashParitySkipReason
+      : 'сравнение с bash только на Linux';
 
   group('сравнение с bash -c', () {
     for (final script in _differential) {

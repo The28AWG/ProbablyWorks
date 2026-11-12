@@ -6,27 +6,27 @@ import 'package:test/test.dart';
 import 'package:virtual_git/virtual_git.dart';
 import 'package:virtual_host/virtual_host.dart';
 
-void main() {
-  const env = {
-    'GIT_AUTHOR_NAME': 'Ada',
-    'GIT_AUTHOR_EMAIL': 'ada@ex.test',
-    'GIT_COMMITTER_NAME': 'Ada',
-    'GIT_COMMITTER_EMAIL': 'ada@ex.test',
-    'GIT_AUTHOR_DATE': '1700000000 +0000',
-    'GIT_COMMITTER_DATE': '1700000000 +0000',
-    'LC_ALL': 'C',
-  };
+import 'support/git_parity.dart';
 
-  test('ошибки разбора совпадают с git', () async {
+void main() {
+  const env = gitParityEnvironment;
+
+  gitParityTest('ошибки разбора совпадают с git', () async {
     final realRoot = await Directory.systemTemp.createTemp('git_cli_err_');
     addTearDown(() => realRoot.delete(recursive: true));
 
     Future<({int code, String err})> real(List<String> args) async {
-      final result = await Process.run('git', [
-        '-C',
-        realRoot.path,
-        ...args,
-      ], environment: env);
+      final result = await Process.run(
+        'git',
+        ['-C', realRoot.path, ...args],
+        environment: {
+          ...env,
+          'HOME': realRoot.path,
+          'PATH':
+              Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+        },
+        includeParentEnvironment: false,
+      );
       return (code: result.exitCode, err: result.stderr as String);
     }
 
@@ -57,17 +57,23 @@ void main() {
     expect(outsideReal.err, contains('not a git repository'));
   });
 
-  test('локальная история совпадает с git', () async {
+  gitParityTest('локальная история совпадает с git', () async {
     final realRoot = await Directory.systemTemp.createTemp('git_cli_parity_');
     addTearDown(() => realRoot.delete(recursive: true));
     final virtual = _Virtual(env);
 
     Future<({int code, String out, String err})> real(List<String> args) async {
-      final result = await Process.run('git', [
-        '-C',
-        realRoot.path,
-        ...args,
-      ], environment: env);
+      final result = await Process.run(
+        'git',
+        ['-C', realRoot.path, ...args],
+        environment: {
+          ...env,
+          'HOME': realRoot.path,
+          'PATH':
+              Platform.environment['PATH'] ?? '/usr/local/bin:/usr/bin:/bin',
+        },
+        includeParentEnvironment: false,
+      );
       return (
         code: result.exitCode,
         out: result.stdout as String,
