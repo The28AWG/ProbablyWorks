@@ -93,6 +93,12 @@ class ProjectFact extends Equatable {
     required this.createdAt,
   });
 
+  /// Сколько фактов можно хранить в одном проекте.
+  static const maxPerProject = 50;
+
+  /// Максимальная длина одного факта в символах.
+  static const maxTextChars = 2000;
+
   final String id;
   final String projectId;
   final String text;

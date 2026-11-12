@@ -2769,6 +2769,13 @@
   "@projectsAddFact": {"description": "Кнопка, открывающая диалог нового факта проекта."},
   "projectsFactHint": "Что должен знать каждый чат этого проекта?",
   "@projectsFactHint": {"description": "Подсказка поля нового факта проекта."},
+  "projectsFactsLimit": "Достигнут лимит фактов: {max}.",
+  "@projectsFactsLimit": {
+    "description": "Показывается, когда в проекте максимальное число фактов.",
+    "placeholders": {
+      "max": {"type": "int"}
+    }
+  },
   "projectsFactDeleteConfirm": "Удалить этот факт из проекта?",
   "@projectsFactDeleteConfirm": {"description": "Подтверждение удаления факта проекта."},
   "projectsRename": "Переименовать",

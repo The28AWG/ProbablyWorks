@@ -125,20 +125,14 @@ class ProjectRepository {
           .watch()
           .map((rows) => rows.map(_fact).toList());
 
-  /// Сколько фактов можно хранить в одном проекте.
-  static const maxFactsPerProject = 50;
-
-  /// Максимальная длина одного факта в символах.
-  static const maxFactChars = 2000;
-
   Future<void> addFact(ProjectFact fact) async {
     final text = fact.text.trim();
     if (text.isEmpty) {
       throw ArgumentError('project fact is empty');
     }
-    if (text.length > maxFactChars) {
+    if (text.length > ProjectFact.maxTextChars) {
       throw ArgumentError(
-        'project fact is too long: ${text.length} > $maxFactChars chars',
+        'project fact is too long: ${text.length} > ${ProjectFact.maxTextChars} chars',
       );
     }
     final count = _facts.id.count();
@@ -147,8 +141,10 @@ class ProjectRepository {
               ..addColumns([count])
               ..where(_facts.projectId.equals(fact.projectId)))
             .getSingle();
-    if ((row.read(count) ?? 0) >= maxFactsPerProject) {
-      throw StateError('project fact limit reached: $maxFactsPerProject facts');
+    if ((row.read(count) ?? 0) >= ProjectFact.maxPerProject) {
+      throw StateError(
+        'project fact limit reached: ${ProjectFact.maxPerProject} facts',
+      );
     }
     await _db
         .into(_facts)

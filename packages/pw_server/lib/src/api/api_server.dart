@@ -670,11 +670,14 @@ final class ApiServer {
         final body = await _body(request);
         try {
           await api.addFact(_factFromJson(id, body));
-        } on Object catch (error) {
-          throw AgentApiException(
-            HttpStatus.badRequest,
-            'invalid_project_fact',
-            '$error',
+        } on Object catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            AgentApiException(
+              HttpStatus.badRequest,
+              'invalid_project_fact',
+              '$error',
+            ),
+            stackTrace,
           );
         }
         return _json(request.response, HttpStatus.created, {});

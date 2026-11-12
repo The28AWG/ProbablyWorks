@@ -2769,6 +2769,13 @@
   "@projectsAddFact": {"description": "Button that opens the new project fact dialog."},
   "projectsFactHint": "What should every chat in this project know?",
   "@projectsFactHint": {"description": "Hint of the new project fact field."},
+  "projectsFactsLimit": "Fact limit reached: {max}.",
+  "@projectsFactsLimit": {
+    "description": "Shown when the project has the maximum number of facts.",
+    "placeholders": {
+      "max": {"type": "int"}
+    }
+  },
   "projectsFactDeleteConfirm": "Remove this fact from the project?",
   "@projectsFactDeleteConfirm": {"description": "Confirmation before deleting a project fact."},
   "projectsRename": "Rename",

@@ -571,68 +571,71 @@ class _FactsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    return AppSection(
-      title: l10n.projectsFactsTitle,
-      description: l10n.projectsFactsHint,
-      trailing: TextButton.icon(
-        onPressed: () => _addFact(context),
-        icon: const Icon(Icons.add),
-        label: Text(l10n.projectsAddFact),
-      ),
-      children: [
-        StreamBuilder<List<ProjectFact>>(
-          stream: ProfileScope.of(context).projectsApi.watchFacts(project.id),
-          builder: (context, snapshot) {
-            final facts = snapshot.data ?? const <ProjectFact>[];
-            if (facts.isEmpty) {
-              return Text(
+    return StreamBuilder<List<ProjectFact>>(
+      stream: ProfileScope.of(context).projectsApi.watchFacts(project.id),
+      builder: (context, snapshot) {
+        final facts = snapshot.data ?? const <ProjectFact>[];
+        final atLimit = facts.length >= ProjectFact.maxPerProject;
+        return AppSection(
+          title: l10n.projectsFactsTitle,
+          description: atLimit
+              ? l10n.projectsFactsLimit(ProjectFact.maxPerProject)
+              : l10n.projectsFactsHint,
+          trailing: TextButton.icon(
+            onPressed: atLimit ? null : () => _addFact(context),
+            icon: const Icon(Icons.add),
+            label: Text(l10n.projectsAddFact),
+          ),
+          children: [
+            if (facts.isEmpty)
+              Text(
                 l10n.projectsFactsEmpty,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
-              );
-            }
-            // Тот же зазор, что между детьми секции: карточки не слипаются рамками.
-            return Column(
-              spacing: AppSpacing.md,
-              children: [
-                for (final fact in facts)
-                  AppCard(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                fact.text,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                formatIsoDate(fact.createdAt),
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
+              )
+            else
+              // Тот же зазор, что между детьми секции: карточки не слипаются рамками.
+              Column(
+                spacing: AppSpacing.md,
+                children: [
+                  for (final fact in facts)
+                    AppCard(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  fact.text,
+                                  style: theme.textTheme.bodyMedium,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: AppSpacing.xs),
+                                Text(
+                                  formatIsoDate(fact.createdAt),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          tooltip: l10n.commonDelete,
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _deleteFact(context, fact),
-                        ),
-                      ],
+                          IconButton(
+                            tooltip: l10n.commonDelete,
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _deleteFact(context, fact),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ],
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -646,6 +649,7 @@ class _FactsSection extends StatelessWidget {
       hint: l10n.projectsFactHint,
       minLines: 2,
       maxLines: 4,
+      maxLength: ProjectFact.maxTextChars,
     );
     if (text == null || !context.mounted) return;
     try {

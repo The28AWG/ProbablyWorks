@@ -42,7 +42,7 @@ void main() {
         ProjectFact(
           id: 'long',
           projectId: 'p1',
-          text: 'x' * (ProjectRepository.maxFactChars + 1),
+          text: 'x' * (ProjectFact.maxTextChars + 1),
           createdAt: now,
         ),
       ),
@@ -51,7 +51,7 @@ void main() {
   });
 
   test('limits the number of facts per project', () async {
-    for (var i = 0; i < ProjectRepository.maxFactsPerProject; i++) {
+    for (var i = 0; i < ProjectFact.maxPerProject; i++) {
       await projects.addFact(
         ProjectFact(
           id: 'f$i',

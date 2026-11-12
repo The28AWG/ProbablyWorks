@@ -65,6 +65,7 @@ abstract final class ConfirmDialog {
     String? hint,
     int minLines = 1,
     int maxLines = 1,
+    int? maxLength,
   }) => showDialog<String>(
     context: context,
     builder: (_) => _PromptDialog(
@@ -75,6 +76,7 @@ abstract final class ConfirmDialog {
       hint: hint,
       minLines: minLines,
       maxLines: maxLines,
+      maxLength: maxLength,
     ),
   );
 }
@@ -88,6 +90,7 @@ class _PromptDialog extends StatefulWidget {
     required this.hint,
     required this.minLines,
     required this.maxLines,
+    required this.maxLength,
   });
 
   final String title;
@@ -97,6 +100,7 @@ class _PromptDialog extends StatefulWidget {
   final String? hint;
   final int minLines;
   final int maxLines;
+  final int? maxLength;
 
   @override
   State<_PromptDialog> createState() => _PromptDialogState();
@@ -121,6 +125,7 @@ class _PromptDialogState extends State<_PromptDialog> {
         autofocus: true,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
+        maxLength: widget.maxLength,
         decoration: InputDecoration(hintText: widget.hint),
       ),
     ),
