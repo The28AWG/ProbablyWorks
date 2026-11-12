@@ -55,6 +55,7 @@ class RemoteAgentApi
     required this.token,
     http.Client? client,
     io.HttpClient? eventsClient,
+    this.clientHeaders = const {},
     this.timeout = const Duration(seconds: 30),
   }) : _client = client ?? http.Client(),
        _eventsClient = eventsClient ?? io.HttpClient();
@@ -62,6 +63,9 @@ class RemoteAgentApi
   /// Корень сервера, например `http://127.0.0.1:7787`.
   final Uri baseUri;
   final String token;
+
+  /// Заголовки с информацией о клиенте: приложение, версия, сборка, платформа.
+  final Map<String, String> clientHeaders;
   final Duration timeout;
 
   final http.Client _client;
@@ -110,7 +114,10 @@ class RemoteAgentApi
   Future<bool> checkConnection() async {
     try {
       final response = await _client
-          .get(_url('/health'), headers: {'x-request-id': _uuid.v4()})
+          .get(
+            _url('/health'),
+            headers: {...clientHeaders, 'x-request-id': _uuid.v4()},
+          )
           .timeout(const Duration(seconds: 5));
       final online = response.statusCode == 200;
       _setStatus(online ? AgentStatus.online : AgentStatus.offline);
@@ -1038,6 +1045,9 @@ class RemoteAgentApi
     final request = http.Request(method, _url(path));
     request.headers['Authorization'] = 'Bearer $token';
     request.headers['Accept'] = 'application/json';
+    for (final entry in clientHeaders.entries) {
+      request.headers[entry.key] = entry.value;
+    }
     request.headers['x-request-id'] = _uuid.v4();
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
@@ -1125,6 +1135,9 @@ class RemoteAgentApi
       try {
         final request = await _eventsClient.getUrl(_url('/events'));
         request.headers.set('Authorization', 'Bearer $token');
+        for (final entry in clientHeaders.entries) {
+          request.headers.set(entry.key, entry.value);
+        }
         request.headers.set('x-request-id', _uuid.v4());
         final response = await request.close();
         if (response.statusCode != 200) {

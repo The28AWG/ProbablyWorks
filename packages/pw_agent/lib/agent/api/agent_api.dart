@@ -27,10 +27,12 @@ final class AgentApiException implements Exception {
   /// Идентификатор HTTP-запроса для сопоставления с журналом доступа сервера.
   final String? requestId;
 
+  /// Текст для пользователя: к ошибке добавляется request id, если он есть.
+  String get userMessage =>
+      requestId == null ? message : '$message (request id: $requestId)';
+
   @override
-  String toString() =>
-      'AgentApiException($status, $code)'
-      '${requestId == null ? '' : ' [$requestId]'}: $message';
+  String toString() => userMessage;
 }
 
 /// Единый типизированный API агента для клиента.

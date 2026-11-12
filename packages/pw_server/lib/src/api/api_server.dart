@@ -200,6 +200,12 @@ final class ApiServer {
     return _newRequestId();
   }
 
+  static String? _clientHeader(HttpRequest request, String name) {
+    final value = request.headers.value(name);
+    if (value == null) return null;
+    return String.fromCharCodes(value.codeUnits.take(120));
+  }
+
   static String _newRequestId() => [
     for (var i = 0; i < 8; i++)
       _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
@@ -226,6 +232,11 @@ final class ApiServer {
       'status': status,
       'durationMs': durationMs,
       'remote': request.connectionInfo?.remoteAddress.address ?? '',
+      'clientApp': _clientHeader(request, 'x-client-app'),
+      'clientPackage': _clientHeader(request, 'x-client-package'),
+      'clientVersion': _clientHeader(request, 'x-client-version'),
+      'clientBuild': _clientHeader(request, 'x-client-build'),
+      'clientPlatform': _clientHeader(request, 'x-client-platform'),
       'auth': auth,
       'token': token,
       'error': error,

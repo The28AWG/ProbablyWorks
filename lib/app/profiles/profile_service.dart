@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
+import 'package:probably_works/core/platform/client_info.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -36,6 +37,7 @@ class ProfileService {
     this._localMcp,
     this._localPlugins,
     this._localSecurityAudit,
+    this._clientInfo,
     this._notifier,
   );
 
@@ -51,6 +53,7 @@ class ProfileService {
   final McpApi _localMcp;
   final PluginApi _localPlugins;
   final SecurityAuditApi _localSecurityAudit;
+  final ClientInfo _clientInfo;
   final AppNotifier _notifier;
 
   final _changes = StreamController<void>.broadcast();
@@ -241,6 +244,7 @@ class ProfileService {
     final api = RemoteAgentApi(
       baseUri: baseUri,
       token: _tokens[profile.id] ?? '',
+      clientHeaders: _clientInfo.headers,
     )..startEvents();
     _remote[profile.id] = api;
     _listeners[profile.id] = _listenNotices(api);

@@ -89,7 +89,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
         context,
         error.status == 409
             ? l10n.pluginsRunning
-            : l10n.commonError(error.message),
+            : l10n.commonError(error.userMessage),
       );
     } finally {
       if (mounted) setState(() => _busy = false);

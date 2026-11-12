@@ -32,6 +32,7 @@ import 'package:pw_agent/core/platform/external_url_opener.dart' as _i1054;
 import 'package:pw_agent/core/security/secret_store.dart' as _i564;
 
 import '../../core/notify/app_notifier_plugin.dart' as _i238;
+import '../../core/platform/client_info.dart' as _i734;
 import '../../core/platform/url_launcher_opener.dart' as _i224;
 import '../../core/security/secret_store_plugin.dart' as _i1071;
 import '../guards/api_key_guard.dart' as _i519;
@@ -88,6 +89,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i733.McpApi>(),
         gh<_i166.PluginApi>(),
         gh<_i648.SecurityAuditApi>(),
+        gh<_i734.ClientInfo>(),
         gh<_i641.AppNotifier>(),
       ),
     );

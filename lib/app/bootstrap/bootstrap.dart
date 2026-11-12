@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
 import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
 import 'package:probably_works/app/di/injection.dart';
@@ -6,6 +7,7 @@ import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -33,7 +35,9 @@ Future<bool> bootstrap() async {
   await AppLog.init(paths.logs);
   // Агент получает каталоги снаружи: клиент — из path_provider, демон — из XDG.
   // Регистрация до DI: модуль агента открывает БД через AppPaths.
-  getIt.registerSingleton<AppPaths>(paths);
+  getIt
+    ..registerSingleton<AppPaths>(paths)
+    ..registerSingleton<ClientInfo>(await _loadClientInfo());
   await configureDependencies();
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();
@@ -75,6 +79,15 @@ Future<bool> bootstrap() async {
   // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.
   await getIt<ModelCatalogService>().start(hasKey: _hasOpenRouterKey);
   return true;
+}
+
+Future<ClientInfo> _loadClientInfo() async {
+  try {
+    return ClientInfo.fromPackageInfo(await PackageInfo.fromPlatform());
+  } on Object catch (error) {
+    AppLog.root.warning('cannot read package info', error);
+    return const ClientInfo.fallback();
+  }
 }
 
 Future<bool> _hasOpenRouterKey() async {

@@ -70,6 +70,7 @@ void _summary(_Parsed parsed, _Options options) {
         : '2xx';
   });
   _counts('Авторизация', entries, (entry) => '${entry['auth'] ?? '?'}');
+  _counts('Клиенты', entries, _clientLabel);
 
   final paths = <String, int>{};
   for (final entry in entries) {
@@ -105,6 +106,7 @@ void _problems(_Parsed parsed, _Options options) {
   _counts('Коды ошибок', entries, (entry) => '${entry['error'] ?? '—'}');
   _counts('Статусы', entries, (entry) => '${entry['status'] ?? '?'}');
   _counts('Авторизация', entries, (entry) => '${entry['auth'] ?? '?'}');
+  _counts('Клиенты', entries, _clientLabel);
 
   stdout.writeln('\nЗаписи:');
   for (final entry in entries.take(options.limit)) {
@@ -214,7 +216,7 @@ void _printEntry(Map<String, dynamic> entry) {
     '${entry['ts'] ?? '?'} ${status.toString().padLeft(3)} '
     '${entry['method'] ?? '?'} ${entry['path'] ?? '?'} '
     '${duration}ms auth=${entry['auth'] ?? '?'}'
-    '${error.isEmpty ? '' : error} '
+    '${error.isEmpty ? '' : error} client=${_clientLabel(entry)} '
     'id=${entry['requestId'] ?? '?'}',
   );
 }
@@ -236,6 +238,18 @@ _Parsed _read(String path) {
     }
   }
   return _Parsed(entries, malformed);
+}
+
+String _clientLabel(Map<String, dynamic> entry) {
+  final app = entry['clientApp'] ?? entry['clientPackage'] ?? '?';
+  final version = entry['clientVersion'] ?? '?';
+  final build = entry['clientBuild'];
+  final platform = entry['clientPlatform'];
+  return [
+    '$app/$version',
+    if (build != null) '+$build',
+    if (platform != null) ' ($platform)',
+  ].join();
 }
 
 DateTime? _time(Map<String, dynamic> entry) =>

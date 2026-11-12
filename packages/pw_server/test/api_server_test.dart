@@ -973,6 +973,10 @@ void main() {
       );
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
       request.headers.set('x-request-id', 'client-request-1');
+      request.headers.set('x-client-app', 'ProbablyWorks');
+      request.headers.set('x-client-version', '1.2.3');
+      request.headers.set('x-client-build', '42');
+      request.headers.set('x-client-platform', 'linux');
       final response = await request.close();
       await response.drain<void>();
 
@@ -984,6 +988,10 @@ void main() {
           jsonDecode(line) as Map<String, dynamic>,
       ];
       expect(entries.single['requestId'], 'client-request-1');
+      expect(entries.single['clientApp'], 'ProbablyWorks');
+      expect(entries.single['clientVersion'], '1.2.3');
+      expect(entries.single['clientBuild'], '42');
+      expect(entries.single['clientPlatform'], 'linux');
     });
 
     test('replaces an invalid request id', () async {

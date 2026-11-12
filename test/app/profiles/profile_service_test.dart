@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
+import 'package:probably_works/core/platform/client_info.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -40,6 +41,7 @@ void main() {
     _FakeMcpApi(),
     _FakePluginApi(),
     _FakeSecurityAuditApi(),
+    const ClientInfo.fallback(),
     _FakeNotifier(),
   );
 
