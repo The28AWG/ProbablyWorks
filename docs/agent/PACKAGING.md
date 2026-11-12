@@ -101,8 +101,8 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 В репозитории два workflow:
 
 - `.github/workflows/ci.yml` — форматирование, `flutter analyze`, DCM (если
-  задан `DCM_CI_KEY`), `flutter test` и тесты пакетов на каждый push в `main`
-  и pull request;
+  заданы `DCM_CI_KEY` и `DCM_EMAIL`), `flutter test` и тесты пакетов на каждый
+  push в `main` и pull request;
 - `.github/workflows/release.yml` — сборка релиза по тегу `v<version>`.
 
 Релиз собирается на четырёх runner'ах:
@@ -137,8 +137,8 @@ git push origin v1.0.0+2
 
 Секреты CI:
 
-- `DCM_CI_KEY` — необязательный ключ DCM для шагов анализа. Без него DCM
-  пропускается, остальные проверки выполняются;
+- `DCM_CI_KEY` и `DCM_EMAIL` — CI-ключ и email лицензии DCM. Без обоих шаги
+  DCM пропускаются, остальные проверки выполняются;
 - подпись Windows и notarization macOS пока не автоматизированы. CI собирает
   рабочие артефакты, но для публичного релиза нужно добавить сертификаты
   Authenticode и Developer ID. Сейчас macOS-приложение получает ad-hoc
@@ -155,6 +155,37 @@ git push origin v1.0.0+2
   сертификат Authenticode и подпись установщика.
 - **Linux.** Подпись пакетов не выполняется; при публикации добавьте подпись
   репозитория и контрольные суммы.
+
+## Snap
+
+Fastforge не умеет собирать Snap, поэтому для него нужен отдельный
+`snap/snapcraft.yaml`. Планируемый вариант — `confinement: classic`: агент
+запускает произвольные команды, читает проекты и `~/.ssh`, а GUI поднимает
+долгоживущий локальный демон.
+
+Что нужно для публикации в Snap Store:
+
+1. Аккаунт Snap Store с подтверждённым email и подписанным Developer
+   Agreement (без него `snapcraft register` возвращает `user-not-ready`).
+2. Зарегистрированное имя, сейчас предполагается `probably-works`:
+   ```bash
+   snapcraft login
+   snapcraft register probably-works
+   ```
+3. Для загрузки из CI — экспортированный токен:
+   ```bash
+   snapcraft export-login \
+     --snaps=probably-works \
+     --channels=edge,stable \
+     --acls=package_access,package_push,package_release -
+   ```
+   Его содержимое добавляется в GitHub Secret `SNAPCRAFT_STORE_CREDENTIALS`.
+4. Решение по каналам и архитектурам: минимум `amd64`, при необходимости
+   `arm64` на отдельном runner.
+
+Classic-снапы проходят ручную проверку Store. Если публикация нужна только
+через GitHub Releases, достаточно собирать `.snap` и прикладывать его к
+релизу без загрузки в Store.
 
 ## Ограничения
 

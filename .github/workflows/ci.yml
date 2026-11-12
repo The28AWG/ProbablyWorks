@@ -17,9 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      # Необязательный ключ DCM. Без него шаг DCM пропускается, чтобы CI
-      # не зависел от платной/активированной лицензии на каждом runner'е.
+      # DCM требует и CI-ключ, и email лицензии. Без обоих шаги DCM
+      # пропускаются, чтобы CI не падал на неподключённой лицензии.
       DCM_CI_KEY: ${{ secrets.DCM_CI_KEY }}
+      DCM_EMAIL: ${{ secrets.DCM_EMAIL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +38,7 @@ jobs:
             libsecret-1-dev libjsoncpp-dev libnotify-dev
 
       - name: Install DCM
-        if: env.DCM_CI_KEY != ''
+        if: env.DCM_CI_KEY != '' && env.DCM_EMAIL != ''
         run: |
           curl -fsSL -o /tmp/dcm.zip \
             https://github.com/CQLabs/homebrew-dcm/releases/download/1.40.4/dcm-linux-x64-release.zip
@@ -64,8 +65,8 @@ jobs:
         run: flutter analyze
 
       - name: DCM app
-        if: env.DCM_CI_KEY != ''
-        run: dcm analyze lib test tool --ci-key "$DCM_CI_KEY"
+        if: env.DCM_CI_KEY != '' && env.DCM_EMAIL != ''
+        run: dcm analyze lib test tool --ci-key "$DCM_CI_KEY" --email "$DCM_EMAIL"
 
       - name: Test app
         run: flutter test
@@ -81,10 +82,10 @@ jobs:
               paths=(lib test)
               if [ -d bin ]; then paths=(lib bin test); fi
               dart analyze
-              if [ -n "${DCM_CI_KEY:-}" ]; then
-                dcm analyze "${paths[@]}" --ci-key "$DCM_CI_KEY"
+              if [ -n "${DCM_CI_KEY:-}" ] && [ -n "${DCM_EMAIL:-}" ]; then
+                dcm analyze "${paths[@]}" --ci-key "$DCM_CI_KEY" --email "$DCM_EMAIL"
               else
-                echo "DCM skipped: DCM_CI_KEY is not configured"
+                echo "DCM skipped: DCM_CI_KEY or DCM_EMAIL is not configured"
               fi
               dart test
             )
