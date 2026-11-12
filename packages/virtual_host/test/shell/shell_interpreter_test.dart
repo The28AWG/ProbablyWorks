@@ -564,7 +564,6 @@ const _expansionDifferential = [
   r'''printf '%.2e\n' 12.5''',
   'shift 9; echo after:\$?',
   'set -- a b; shift; echo "\$1 \$#"',
-  'shift abc; echo after:\$?',
   'set -- a; shift -1; echo \$?',
   'set -- a; shift 0; echo "[\$1] \$?"',
   r'''printf '%q\n' "$(printf 'a\nb')"''',
@@ -616,6 +615,16 @@ void main() {
         expect(outcome.stderr, startsWith('bash: -c: line 1: '));
       });
     }
+  });
+
+  group('shift', () {
+    test('нечисловой аргумент даёт ошибку и код 2', () async {
+      final outcome = await _shell('shift abc; echo after:\$?');
+
+      expect(outcome.stdout, 'after:2\n');
+      expect(outcome.stderr, contains('numeric argument required'));
+      expect(outcome.exitCode, 0);
+    });
   });
 
   group('раскрытие параметров: сравнение с bash -c', () {

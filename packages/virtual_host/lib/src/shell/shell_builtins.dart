@@ -148,7 +148,8 @@ abstract final class ShellBuiltins {
   }
 
   /// `shift [N]`: сдвигает позиционные параметры на N. Сдвиг за пределы — код 1 без сообщения:
-  /// bash так делает, когда параметров меньше, чем просят. Нечисло — сообщение и код 2.
+  /// bash так делает, когда параметров меньше, чем просят. Нечисло — сообщение и код 2;
+  /// так ведёт себя bash 5.3, в 5.2 код был 1, поэтому паритетный тест этот код не сравнивает.
   static Future<int> _shift(List<String> args, ShellBuiltinCall call) async {
     final state = call.state;
     if (args.isNotEmpty && int.tryParse(args.first) == null) {
