@@ -312,6 +312,80 @@ OpenRouter и токен API можно задать переменными ок
 переводит в `dispatched`. Результат хода остаётся в журнале чата. Задача с
 `dispatched` после перезапуска повторно не отправляется.
 
+## Удалённый доступ и TLS
+
+Встроенного TLS нет. Демон по умолчанию слушает `127.0.0.1`, а наружу его
+выставляет отдельный reverse proxy. Не публикуйте порт демона напрямую:
+API даёт выполнение команд, поэтому HTTP без TLS и авторизации недопустим.
+
+### SSH-туннель
+
+Самый простой вариант — пробросить loopback-порт:
+
+```bash
+ssh -N -L 7787:127.0.0.1:7787 user@server
+```
+
+В GUI добавьте удалённый профиль `http://127.0.0.1:7787` и токен демона.
+Токен можно получить на сервере через `--print-token` или
+`PROBABLY_WORKS_API_TOKEN`.
+
+### Caddy
+
+Caddy сам получает и обновляет сертификат Let's Encrypt:
+
+```caddyfile
+agent.example.com {
+    reverse_proxy 127.0.0.1:7787 {
+        flush_interval -1
+    }
+}
+```
+
+`flush_interval -1` отключает буферизацию, иначе SSE-события приходят
+пачками.
+
+### nginx
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name agent.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/agent.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/agent.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:7787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE: без буферизации и с длинным таймаутом.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+}
+```
+
+Для SSE не включайте `gzip` и не ставьте короткий `proxy_read_timeout`:
+поток событий может молчать между шагами.
+
+После настройки добавьте в GUI профиль:
+
+```text
+https://agent.example.com
+```
+
+и токен демона. Проверка: `GET /api/v1/health` должен отвечать без токена,
+а `/api/v1/settings` — только с `Authorization: Bearer <token>`.
+
+Рекомендуется также ограничить доступ по IP/VPN, включить rate limit на
+прокси и не открывать порт демона в интернет.
+
 ## Ограничения MVP
 
 - только loopback по умолчанию; удалённый доступ — через SSH-туннель, VPN или
