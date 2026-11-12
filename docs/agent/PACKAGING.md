@@ -165,8 +165,9 @@ D-Bus-сессии. В DEB добавлены зависимости `dbus-user-
 D-Bus-сессию хоста.
 
 На Linux демон хранит токен и секреты в Secret Service через чистый Dart
-(`freedesktop_secret`), на macOS — в Keychain через `security`. Если keyring
-недоступен, включается файловый fallback `0600`.
+(`freedesktop_secret`), на macOS — в Keychain через `security`, на Windows —
+в Credential Manager через FFI. Если keyring недоступен, включается файловый
+fallback `0600`.
 
 ## Snap
 

@@ -302,8 +302,8 @@ OpenRouter и токен API можно задать переменными ок
 - `PROBABLY_WORKS_API_TOKEN`.
 
 На Linux используется Secret Service через D-Bus, на macOS — Keychain через
-`security`. На Windows пока остаётся файловый fallback: Credential Manager
-нужно добавлять вместе с подписью установщика.
+`security`, на Windows — Credential Manager через FFI (`CredWriteW`/`CredReadW`).
+Файловый fallback остаётся для headless-режима и при недоступном keyring.
 
 ## Планировщик
 

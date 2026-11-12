@@ -6,6 +6,7 @@ import 'package:pw_agent/core/security/freedesktop_keyring_backend.dart';
 import 'package:pw_agent/core/security/keyring_backend.dart';
 import 'package:pw_agent/core/security/macos_keyring_backend.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/security/windows_credential_backend.dart';
 
 /// Секреты в системном keyring с файловым fallback.
 ///
@@ -106,8 +107,6 @@ const noKeyringEnvironment = 'PROBABLY_WORKS_NO_KEYRING';
 
 /// Создаёт keyring-store для текущей ОС или файловый fallback.
 ///
-/// На Windows пока возвращается файловый store; Credential Manager будет
-/// отдельным шагом вместе с подписью установщика.
 SecretStore createSystemSecretStore({
   required Directory support,
   Map<String, String>? environment,
@@ -130,5 +129,6 @@ SecretStore createSystemSecretStore({
 KeyringBackend? _defaultKeyringBackend() {
   if (Platform.isLinux) return FreedesktopKeyringBackend();
   if (Platform.isMacOS) return MacOsKeyringBackend();
+  if (Platform.isWindows) return WindowsCredentialBackend();
   return null;
 }

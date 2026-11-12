@@ -62,9 +62,9 @@
 
 - При первом запуске генерируется случайный токен доступа.
 - Токен хранится только в `SecretStore`, не в SQLite и не в логах.
-- На desktop демон использует OS-keyring: Secret Service на Linux и Keychain
-  на macOS. Без доступного keyring остаётся файл `0600` как fallback; Windows
-  Credential Manager пока не подключён.
+- На desktop демон использует OS-keyring: Secret Service на Linux, Keychain
+  на macOS и Credential Manager на Windows. Без доступного keyring остаётся
+  файл `0600` как fallback.
 - Все API-запросы, кроме минимального health-check, требуют
   `Authorization: Bearer <token>`.
 - Сравнение токена — constant-time.
