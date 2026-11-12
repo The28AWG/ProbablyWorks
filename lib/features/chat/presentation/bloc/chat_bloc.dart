@@ -690,6 +690,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
   StreamSubscription<String?>? _pinsSub;
+  StreamSubscription<String>? _draftSub;
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
 
@@ -787,6 +788,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       await sub.cancel();
     }
     await _pinsSub?.cancel();
+    await _draftSub?.cancel();
     await _sessionSub?.cancel();
     await _liveSub?.cancel();
     await _approvalSub?.cancel();
@@ -834,6 +836,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _catalogSub = _hub.models.watch().listen(
       (catalog) => add(_CatalogChanged(catalog)),
     );
+    _draftSub = _hub.chatStore.watchDraftChanges().listen(
+      (chatId) => unawaited(_refreshDraft(chatId)),
+    );
+  }
+
+  Future<void> _refreshDraft(String chatId) async {
+    if (chatId != state.chatId) return;
+    final chat = await _hub.chatStore.chat(chatId);
+    if (chat == null || isClosed) return;
+    if (!_drafts.applyRemote(chatId, chat)) return;
+    // ignore: invalid_use_of_visible_for_testing_member, состояние меняет внешний SSE-поток
+    emit(_pushDraft(state, chat.draft));
   }
 
   /// Снимает подписки на сессию чата, если они были.

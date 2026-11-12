@@ -190,6 +190,7 @@ class Chat {
     this.currentRevisionId,
     this.draft = ChatDraft.empty,
     this.messageEdits = const {},
+    this.draftRevision = 0,
   });
 
   final String id;
@@ -231,6 +232,9 @@ class Chat {
   /// пузырь показывает этот текст и окрашен, пока правку не отправят.
   final Map<String, ChatDraft> messageEdits;
 
+  /// Версия черновика и неотправленных правок. Растёт при каждом сохранении.
+  final int draftRevision;
+
   Chat copyWith({
     String? id,
     String? hostId,
@@ -257,6 +261,7 @@ class Chat {
     DateTime? updatedAt,
     ChatDraft? draft,
     Map<String, ChatDraft>? messageEdits,
+    int? draftRevision,
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
@@ -282,6 +287,7 @@ class Chat {
     updatedAt: updatedAt ?? DateTime.now(),
     draft: draft ?? this.draft,
     messageEdits: messageEdits ?? this.messageEdits,
+    draftRevision: draftRevision ?? this.draftRevision,
   );
 }
 

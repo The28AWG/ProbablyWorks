@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
-import 'package:pw_agent/core/data/chat_repository.dart';
 
 /// Черновики полей ввода и неотправленных правок по чатам. Актуальная версия держится в памяти:
 /// переключение чата и создание нового читают её сразу, без ожидания БД. В БД запись идёт с небольшой
@@ -11,12 +12,25 @@ import 'package:pw_agent/core/data/chat_repository.dart';
 class ChatDraftStore {
   ChatDraftStore(this._chats);
 
-  final ChatRepository _chats;
+  DraftPersistence _chats;
 
   final _drafts = <String, ChatDraft>{};
   final _edits = <String, Map<String, ChatDraft>>{};
+  final _revisions = <String, int>{};
   final _dirty = <String>{};
   final _editsDirty = <String>{};
+
+  /// Привязывает хранилище к backend'у профиля: локальной БД или HTTP API.
+  ///
+  /// Незаписанный черновик предыдущего профиля отправляется в старый backend
+  /// до переключения, иначе он мог бы уйти в чужой профиль.
+  void bind(DraftPersistence backend) {
+    if (identical(_chats, backend)) return;
+    final previous = _chats;
+    _chats = backend;
+    unawaited(_flushTo(previous));
+  }
+
   Timer? _timer;
 
   static const _saveDelay = Duration(milliseconds: 500);
@@ -29,6 +43,14 @@ class ChatDraftStore {
   /// Возвращает true, если запомнил хотя бы одно.
   bool prime(String chatId, Chat? stored) {
     if (stored == null) return false;
+    final revision = _revisions[chatId];
+    final dirty = _dirty.contains(chatId) || _editsDirty.contains(chatId);
+    if (revision != null && stored.draftRevision > revision && !dirty) {
+      _drafts[chatId] = stored.draft;
+      _edits[chatId] = stored.messageEdits;
+      _revisions[chatId] = stored.draftRevision;
+      return true;
+    }
     var added = false;
     if (!_drafts.containsKey(chatId)) {
       _drafts[chatId] = stored.draft;
@@ -38,6 +60,7 @@ class ChatDraftStore {
       _edits[chatId] = stored.messageEdits;
       added = true;
     }
+    _revisions.putIfAbsent(chatId, () => stored.draftRevision);
     return added;
   }
 
@@ -91,8 +114,10 @@ class ChatDraftStore {
     await flush();
   }
 
-  /// Записывает в БД все изменённые черновики.
-  Future<void> flush() async {
+  /// Записывает все изменённые черновики в текущий backend.
+  Future<void> flush() => _flushTo(_chats);
+
+  Future<void> _flushTo(DraftPersistence backend) async {
     _timer?.cancel();
     _timer = null;
     final ids = _dirty.toList();
@@ -100,10 +125,66 @@ class ChatDraftStore {
     _dirty.clear();
     _editsDirty.clear();
     for (final id in ids) {
-      await _chats.saveDraft(id, _drafts[id] ?? ChatDraft.empty);
+      await _saveDraft(id, backend);
     }
     for (final id in editIds) {
-      await _chats.saveMessageEdits(id, _edits[id] ?? const {});
+      await _saveEdits(id, backend);
+    }
+  }
+
+  Future<void> _saveDraft(String id, DraftPersistence backend) async {
+    try {
+      _revisions[id] = await backend.saveDraft(
+        id,
+        _drafts[id] ?? ChatDraft.empty,
+        expectedRevision: _revisions[id],
+      );
+    } on AgentApiException catch (error) {
+      if (error.code == 'draft_conflict') {
+        await _reload(id, backend);
+      } else {
+        _dirty.add(id);
+      }
+    }
+  }
+
+  Future<void> _saveEdits(String id, DraftPersistence backend) async {
+    try {
+      _revisions[id] = await backend.saveMessageEdits(
+        id,
+        _edits[id] ?? const {},
+        expectedRevision: _revisions[id],
+      );
+    } on AgentApiException catch (error) {
+      if (error.code == 'draft_conflict') {
+        await _reload(id, backend);
+      } else {
+        _editsDirty.add(id);
+      }
+    }
+  }
+
+  /// Принимает версию чата с сервера: например, после SSE о чужом изменении.
+  /// Возвращает true, если версия действительно новее локальной.
+  bool applyRemote(String chatId, Chat chat) {
+    // Пока пользователь печатает, его неотправленный текст не затираем чужим SSE.
+    if (_dirty.contains(chatId) || _editsDirty.contains(chatId)) return false;
+    final current = _revisions[chatId];
+    if (current != null && chat.draftRevision <= current) return false;
+    _drafts[chatId] = chat.draft;
+    _edits[chatId] = chat.messageEdits;
+    _revisions[chatId] = chat.draftRevision;
+    _dirty.remove(chatId);
+    _editsDirty.remove(chatId);
+    return true;
+  }
+
+  Future<void> _reload(String chatId, DraftPersistence backend) async {
+    try {
+      final chat = await backend.chat(chatId);
+      if (chat != null) applyRemote(chatId, chat);
+    } on Object {
+      // Следующее открытие или SSE попробует снова.
     }
   }
 
@@ -113,5 +194,6 @@ class ChatDraftStore {
     _dirty.remove(chatId);
     _edits.remove(chatId);
     _editsDirty.remove(chatId);
+    _revisions.remove(chatId);
   }
 }

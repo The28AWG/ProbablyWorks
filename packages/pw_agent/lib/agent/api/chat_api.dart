@@ -1,3 +1,4 @@
+import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -36,11 +37,15 @@ abstract interface class ChatApi {
   Chat draftChat({required String hostId, Host? host});
 }
 
-abstract interface class ChatStore {
+abstract interface class ChatStore implements DraftPersistence {
+  @override
   Future<Chat?> chat(String id);
   Future<List<ChatMessage>> messages(String id);
   Future<List<ToolRun>> toolRunsForChat(String id);
   Future<void> saveChat(Chat chat);
+
+  /// Изменения черновиков, сделанные другим клиентом.
+  Stream<String> watchDraftChanges();
 }
 
 abstract interface class SettingsStore {

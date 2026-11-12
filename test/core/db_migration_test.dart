@@ -341,6 +341,18 @@ void main() {
     );
   });
 
+  test('v15 → v16 adds the draft revision column', () async {
+    final db = _openAtVersion(15);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(chats)')
+        .map((row) => row.read<String>('name'))
+        .get();
+
+    expect(columns, contains('draft_revision'));
+  });
+
   test('v14 → v15 creates scheduled tasks table and index', () async {
     final db = _openAtVersion(14);
     addTearDown(db.close);

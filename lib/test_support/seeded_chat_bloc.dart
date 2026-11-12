@@ -43,8 +43,11 @@ class _UnusedBus implements LiveOutputBus {
 /// Черновики в виджет-тестах не нужно хранить: запись просто не происходит.
 class _DiscardingChats implements ChatRepository {
   @override
-  Future<void> saveDraft(String chatId, ChatDraft draft) =>
-      Future<void>.value();
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async => 0;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

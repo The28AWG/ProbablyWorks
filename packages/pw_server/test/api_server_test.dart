@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
@@ -1111,6 +1112,67 @@ void main() {
       expect(entries[2]['path'], '/api/v1/chats');
     });
   });
+
+  group('draft api', () {
+    late _FakeDraftStore store;
+    late _FakeDraftChatApi chatApi;
+    late ApiServer draftServer;
+    late String draftBase;
+
+    setUp(() async {
+      store = _FakeDraftStore();
+      chatApi = _FakeDraftChatApi(store);
+      draftServer = ApiServer(backend, _token, port: 0, chat: chatApi);
+      final port = await draftServer.start();
+      draftBase = 'http://127.0.0.1:$port';
+    });
+
+    tearDown(() => draftServer.stop());
+
+    test('saves drafts and rejects a stale revision', () async {
+      final (status, body) = await _request(
+        client,
+        draftBase,
+        'PUT',
+        '/api/v1/chats/c1/draft',
+        token: _token,
+        body: {'text': 'hello', 'attachments': [], 'revision': 0},
+      );
+      expect(status, HttpStatus.ok);
+      expect((jsonDecode(body) as Map)['revision'], 1);
+      expect(store.draft?.text, 'hello');
+
+      final (conflict, _) = await _request(
+        client,
+        draftBase,
+        'PUT',
+        '/api/v1/chats/c1/draft',
+        token: _token,
+        body: {'text': 'stale', 'attachments': [], 'revision': 0},
+      );
+      expect(conflict, HttpStatus.conflict);
+    });
+
+    test('saves message edits', () async {
+      final (status, body) = await _request(
+        client,
+        draftBase,
+        'PUT',
+        '/api/v1/chats/c1/message-edits',
+        token: _token,
+        body: {
+          'edits': {
+            'm1': {'text': 'edited', 'attachments': []},
+          },
+          'revision': 0,
+        },
+      );
+
+      expect(status, HttpStatus.ok);
+      expect((jsonDecode(body) as Map)['revision'], 1);
+      expect(store.edits['m1']?.text, 'edited');
+    });
+  });
 }
 
 Future<(int, String)> _request(
@@ -1514,6 +1576,77 @@ final class _FakePush implements PushApi {
       );
     }
     tested = true;
+  }
+}
+
+final class _FakeDraftChatApi implements ChatApi {
+  _FakeDraftChatApi(this.store);
+
+  final _FakeDraftStore store;
+
+  @override
+  ChatStore get chatStore => store;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ChatApi is not used in draft tests');
+}
+
+final class _FakeDraftStore implements ChatStore {
+  var revision = 0;
+  ChatDraft? draft;
+  Map<String, ChatDraft> edits = {};
+
+  @override
+  Future<Chat?> chat(String id) async => Chat(
+    id: id,
+    hostId: 'local',
+    title: 'Chat',
+    createdAt: DateTime.utc(2026, 11, 11),
+    updatedAt: DateTime.utc(2026, 11, 11),
+    draft: draft ?? ChatDraft.empty,
+    messageEdits: edits,
+    draftRevision: revision,
+  );
+
+  @override
+  Future<List<ChatMessage>> messages(String id) async => const [];
+
+  @override
+  Future<List<ToolRun>> toolRunsForChat(String id) async => const [];
+
+  @override
+  Future<void> saveChat(Chat chat) => Future<void>.value();
+
+  @override
+  Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft value, {
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != revision) {
+      throw const AgentApiException(409, 'draft_conflict', 'draft changed');
+    }
+    revision++;
+    draft = value;
+    return revision;
+  }
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> value, {
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != revision) {
+      throw const AgentApiException(409, 'draft_conflict', 'draft changed');
+    }
+    revision++;
+    edits = value;
+    return revision;
   }
 }
 

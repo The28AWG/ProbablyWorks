@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
@@ -75,6 +76,30 @@ void main() {
     expect(emissions, hasLength(2));
     expect(emissions.last.single.title, 'Новый');
     expect(emissions.last.single.draft.text, 'набираю');
+  });
+
+  test('rejects a stale draft revision', () async {
+    final first = await chats.saveDraft(
+      'c1',
+      const ChatDraft(text: 'one'),
+      expectedRevision: 0,
+    );
+    expect(first, 1);
+
+    await expectLater(
+      chats.saveDraft(
+        'c1',
+        const ChatDraft(text: 'stale'),
+        expectedRevision: 0,
+      ),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'draft_conflict',
+        ),
+      ),
+    );
   });
 
   test('attachments of a draft are stored redacted', () async {

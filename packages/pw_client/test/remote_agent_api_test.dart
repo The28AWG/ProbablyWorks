@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
@@ -55,6 +56,7 @@ void main() {
       pluginApi: pluginsApi,
       securityAuditApi: securityAudit,
       pushApi: push,
+      chat: _FakeDraftChatApi(store: _FakeDraftStore()),
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -354,6 +356,35 @@ void main() {
 
     await remote.testPush();
     expect(push.tested, isTrue);
+  });
+
+  test('saves draft revisions through the remote chat store', () async {
+    final revision = await remote.chatStore.saveDraft(
+      'c1',
+      const ChatDraft(text: 'hello'),
+    );
+    expect(revision, 1);
+    final editsRevision = await remote.chatStore.saveMessageEdits('c1', {
+      'm1': const ChatDraft(text: 'edited'),
+    });
+    expect(editsRevision, 2);
+  });
+
+  test('streams draft changes from another client', () async {
+    await remote.startEvents();
+    await remote.eventsReady;
+    final changed = Completer<String>();
+    final sub = remote.chatStore.watchDraftChanges().listen((chatId) {
+      if (!changed.isCompleted) changed.complete(chatId);
+    });
+    addTearDown(sub.cancel);
+
+    await remote.chatStore.saveDraft(
+      'c1',
+      const ChatDraft(text: 'from another client'),
+    );
+
+    expect(await changed.future.timeout(const Duration(seconds: 3)), 'c1');
   });
 
   test('streams SSE events into typed streams', () async {
@@ -717,6 +748,77 @@ final class _FakePluginSettings implements plugins.PluginSettings {
   @override
   Future<void> save(Map<String, Object?> value) async {
     _api.savedSettings = value;
+  }
+}
+
+final class _FakeDraftChatApi implements ChatApi {
+  _FakeDraftChatApi({required this.store});
+
+  final _FakeDraftStore store;
+
+  @override
+  ChatStore get chatStore => store;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ChatApi is not used in remote tests');
+}
+
+final class _FakeDraftStore implements ChatStore {
+  var revision = 0;
+  ChatDraft? draft;
+  Map<String, ChatDraft> edits = {};
+
+  @override
+  Future<Chat?> chat(String id) async => Chat(
+    id: id,
+    hostId: 'local',
+    title: 'Chat',
+    createdAt: DateTime.utc(2026, 11, 11),
+    updatedAt: DateTime.utc(2026, 11, 11),
+    draft: draft ?? ChatDraft.empty,
+    messageEdits: edits,
+    draftRevision: revision,
+  );
+
+  @override
+  Future<List<ChatMessage>> messages(String id) async => const [];
+
+  @override
+  Future<List<ToolRun>> toolRunsForChat(String id) async => const [];
+
+  @override
+  Future<void> saveChat(Chat chat) => Future<void>.value();
+
+  @override
+  Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft value, {
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != revision) {
+      throw const AgentApiException(409, 'draft_conflict', 'draft changed');
+    }
+    revision++;
+    draft = value;
+    return revision;
+  }
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> value, {
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != revision) {
+      throw const AgentApiException(409, 'draft_conflict', 'draft changed');
+    }
+    revision++;
+    edits = value;
+    return revision;
   }
 }
 

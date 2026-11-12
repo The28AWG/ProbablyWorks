@@ -28,7 +28,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 15;
+  static const currentSchemaVersion = 16;
 
   static const _uuid = Uuid();
 
@@ -116,6 +116,8 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(scheduledTasks);
         await _createScheduledTasksIndex();
       }
+      // Версия 16: версия черновика для синхронизации между клиентами.
+      if (from < 16) await m.addColumn(chats, chats.draftRevision);
     },
   );
 

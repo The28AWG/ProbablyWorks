@@ -255,6 +255,27 @@ final class _LocalChatStore implements ChatStore {
 
   @override
   Future<void> saveChat(Chat chat) => _chats.saveChat(chat);
+
+  @override
+  Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) => _chats.saveDraft(chatId, draft, expectedRevision: expectedRevision);
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) => _chats.saveMessageEdits(
+    chatId,
+    edits,
+    expectedRevision: expectedRevision,
+  );
 }
 
 final class _LocalSettings implements SettingsStore {

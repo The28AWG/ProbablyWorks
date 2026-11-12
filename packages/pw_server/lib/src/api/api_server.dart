@@ -251,6 +251,12 @@ final class ApiServer {
     if (request.method == 'GET') return;
     final path = request.uri.pathSegments;
     if (path.length < 3 || path.first != 'api' || path[1] != 'v1') return;
+    // Черновик обновляется часто; для него есть отдельное SSE-событие, список чатов не трогаем.
+    if (path[2] == 'chats' &&
+        path.length > 3 &&
+        (path[3] == 'draft' || path[3] == 'message-edits')) {
+      return;
+    }
     switch (path[2]) {
       case 'hosts':
         _emitState('hosts');
@@ -505,6 +511,14 @@ final class ApiServer {
     if (rest.length >= 2) {
       final chatId = rest.first;
       switch (rest[1]) {
+        case 'draft':
+          if (rest.length == 2 && request.method == 'PUT') {
+            return _saveDraft(request, chatId);
+          }
+        case 'message-edits':
+          if (rest.length == 2 && request.method == 'PUT') {
+            return _saveMessageEdits(request, chatId);
+          }
         case 'messages':
           if (rest.length == 2 && request.method == 'GET') {
             return _messages(request, chatId);
@@ -1291,6 +1305,59 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
+  Future<void> _saveDraft(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    final revision = await _requireChatApi().chatStore.saveDraft(
+      chatId,
+      ChatDraft(
+        text: body['text'] is String ? body['text'] as String : '',
+        attachments: _attachments(body['attachments']),
+      ),
+      expectedRevision: _revisionOf(body),
+    );
+    _publishDraft(chatId, revision);
+    _json(request.response, HttpStatus.ok, {'revision': revision});
+  }
+
+  Future<void> _saveMessageEdits(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    final raw = body['edits'];
+    if (raw is! Map) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_edits',
+        'edits must be an object',
+      );
+    }
+    final edits = <String, ChatDraft>{
+      for (final entry in raw.entries)
+        '${entry.key}': ChatDraft(
+          text: entry.value is Map && entry.value['text'] is String
+              ? entry.value['text'] as String
+              : '',
+          attachments: entry.value is Map
+              ? _attachments(entry.value['attachments'])
+              : const [],
+        ),
+    };
+    final revision = await _requireChatApi().chatStore.saveMessageEdits(
+      chatId,
+      edits,
+      expectedRevision: _revisionOf(body),
+    );
+    _publishDraft(chatId, revision);
+    _json(request.response, HttpStatus.ok, {'revision': revision});
+  }
+
+  int? _revisionOf(Map<String, dynamic> body) =>
+      body['revision'] is num ? (body['revision'] as num).toInt() : null;
+
+  void _publishDraft(String chatId, int revision) {
+    if (!_stateEvents.isClosed) {
+      _stateEvents.add(_DraftChanged(chatId, revision));
+    }
+  }
+
   Future<void> _messages(HttpRequest request, String chatId) async {
     final messages = await _backend.messages(chatId);
     _json(request.response, HttpStatus.ok, {
@@ -1851,8 +1918,24 @@ Map<String, Object?> _chatJson(
   'lastPromptTokens': chat.lastPromptTokens,
   'lastCompletionTokens': chat.lastCompletionTokens,
   'contextLength': chat.contextLength,
+  'draft': _draftJson(chat.draft),
+  'messageEdits': encodeMessageEdits(chat.messageEdits),
+  'draftRevision': chat.draftRevision,
   'createdAt': chat.createdAt.toUtc().toIso8601String(),
   'updatedAt': chat.updatedAt.toUtc().toIso8601String(),
+};
+
+Map<String, Object?> _draftJson(ChatDraft draft) => {
+  'text': draft.text,
+  'attachments': [
+    for (final attachment in draft.attachments)
+      {
+        'name': attachment.name,
+        'mode': attachment.mode.name,
+        'mimeType': attachment.mimeType,
+        'sizeBytes': attachment.sizeBytes,
+      },
+  ],
 };
 
 Map<String, Object?> _messageJson(ChatMessage message) => {
@@ -1999,6 +2082,10 @@ bool _matchesChat(Object event, String? chatId) {
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
+  _DraftChanged value => (
+    'draftChanged',
+    {'chatId': value.chatId, 'revision': value.revision},
+  ),
   _ => ('unknown', {'type': event.runtimeType.toString()}),
 };
 
@@ -2006,4 +2093,11 @@ final class _StateChanged {
   const _StateChanged(this.area);
 
   final String area;
+}
+
+final class _DraftChanged {
+  const _DraftChanged(this.chatId, this.revision);
+
+  final String chatId;
+  final int revision;
 }

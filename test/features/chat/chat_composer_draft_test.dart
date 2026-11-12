@@ -20,9 +20,13 @@ class _RecordingChats implements ChatRepository {
   final saved = <String, ChatDraft>{};
 
   @override
-  Future<void> saveDraft(String chatId, ChatDraft draft) {
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async {
     saved[chatId] = draft;
-    return Future<void>.value();
+    return 0;
   }
 
   @override

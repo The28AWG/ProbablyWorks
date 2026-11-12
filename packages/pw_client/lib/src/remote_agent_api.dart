@@ -98,6 +98,7 @@ class RemoteAgentApi
   final _settingsChanges = StreamController<void>.broadcast();
   final _mcpStateChanges = StreamController<McpServerState>.broadcast();
   final _stateChanges = StreamController<String>.broadcast();
+  final _draftChanges = StreamController<String>.broadcast();
   McpSnapshot? _mcpSnapshot;
 
   static const _uuid = Uuid();
@@ -215,6 +216,7 @@ class RemoteAgentApi
     await _settingsChanges.close();
     await _mcpStateChanges.close();
     await _stateChanges.close();
+    await _draftChanges.close();
     _client.close();
     _eventsClient.close(force: true);
   }
@@ -1337,6 +1339,10 @@ class RemoteAgentApi
         _events.add(AgentStateChanged(_string(json, 'chatId')));
       case 'stateAreaChanged':
         _publishState(_string(json, 'area'));
+      case 'draftChanged':
+        if (!_draftChanges.isClosed) {
+          _draftChanges.add(_string(json, 'chatId'));
+        }
     }
   }
 }
@@ -1527,8 +1533,21 @@ Chat _chat(Map<String, dynamic> json) => Chat(
   lastPromptTokens: json['lastPromptTokens'] as int?,
   lastCompletionTokens: json['lastCompletionTokens'] as int?,
   contextLength: json['contextLength'] as int?,
+  draft: json['draft'] is Map
+      ? _draft(Map<String, dynamic>.from(json['draft'] as Map))
+      : ChatDraft.empty,
+  messageEdits: decodeMessageEdits('${json['messageEdits'] ?? ''}'),
+  draftRevision: _int(json, 'draftRevision'),
   createdAt: _time(json, 'createdAt'),
   updatedAt: _time(json, 'updatedAt'),
+);
+
+ChatDraft _draft(Map<String, dynamic> json) => ChatDraft(
+  text: '${json['text'] ?? ''}',
+  attachments: [
+    for (final item in (json['attachments'] as List? ?? const []))
+      if (item is Map) AttachmentRef.fromJson(Map<String, dynamic>.from(item)),
+  ],
 );
 
 ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
@@ -1693,6 +1712,30 @@ int _int(Map<String, dynamic> json, String key) {
 
 double? _double(Object? value) => value is num ? value.toDouble() : null;
 
+Map<String, Object?> _draftBody(ChatDraft draft) => {
+  'text': draft.text,
+  'attachments': [
+    for (final attachment in draft.attachments)
+      {
+        'name': attachment.name,
+        'mode': attachment.mode.name,
+        'mimeType': attachment.mimeType,
+        'sizeBytes': attachment.sizeBytes,
+      },
+  ],
+};
+
+int _revision(Object? json) {
+  if (json is Map && json['revision'] is num) {
+    return (json['revision'] as num).toInt();
+  }
+  throw const AgentApiException(
+    500,
+    'bad_response',
+    'revision is missing in draft response',
+  );
+}
+
 Set<String> _ids(Map<String, dynamic> json) => {
   for (final id in (json['ids'] as List? ?? const []))
     if (id is String) id,
@@ -1754,6 +1797,42 @@ final class _RemoteChatStore implements ChatStore {
       },
     );
   }
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async {
+    final json = await _api.sendJson(
+      'PUT',
+      '/chats/$chatId/draft',
+      body: {..._draftBody(draft), 'revision': ?expectedRevision},
+    );
+    return _revision(json);
+  }
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) async {
+    final json = await _api.sendJson(
+      'PUT',
+      '/chats/$chatId/message-edits',
+      body: {
+        'edits': {
+          for (final entry in edits.entries) entry.key: _draftBody(entry.value),
+        },
+        'revision': ?expectedRevision,
+      },
+    );
+    return _revision(json);
+  }
+
+  @override
+  Stream<String> watchDraftChanges() => _api._draftChanges.stream;
 }
 
 final class _RemoteSettings implements SettingsStore {

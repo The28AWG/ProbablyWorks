@@ -27,10 +27,12 @@ class WorkspacePage extends StatelessWidget {
     final service = getIt<ProfileService>();
     final profile = service.byId(profileId) ?? AgentProfile.local();
     final agentApi = service.agentApiFor(profile);
+    final chatApi = service.chatApiFor(profile);
+    getIt<ChatDraftStore>().bind(chatApi.chatStore);
     return ProfileScope(
       profile: profile,
       agentApi: agentApi,
-      chatApi: service.chatApiFor(profile),
+      chatApi: chatApi,
       hostsApi: service.hostsApiFor(profile),
       projectsApi: service.projectsApiFor(profile),
       settingsApi: service.settingsApiFor(profile),

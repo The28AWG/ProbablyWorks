@@ -67,6 +67,8 @@ POST   /api/v1/chats/{id}/regenerations
 POST   /api/v1/chats/{id}/compactions
 PATCH  /api/v1/chats/{id}/messages/{messageId}
 DELETE /api/v1/chats/{id}/messages/{messageId}/following
+PUT    /api/v1/chats/{id}/draft            {"text": "...", "attachments": [...], "revision": 1}
+PUT    /api/v1/chats/{id}/message-edits    {"edits": {...}, "revision": 1}
 GET    /api/v1/chats/{id}/session
 PATCH  /api/v1/chats/{id}/queue/{index}
 DELETE /api/v1/chats/{id}/queue/{index}
@@ -151,10 +153,12 @@ GET    /api/v1/events?chatId=...      SSE по всем чатам или одн
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `runChanged`, `queueChanged`, `failure`, `trustNeeded`,
-`usage`, `stateChanged`, `stateAreaChanged`, `approval`, `question`,
-`editFileChanges`. `stateAreaChanged` сообщает, что после изменяющего запроса
-нужно перечитать список (`chats`, `projects` или `hosts`); клиент обновляет
-watcher без периодического polling-а.
+`usage`, `stateChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
+`question`, `editFileChanges`. `stateAreaChanged` сообщает, что после
+изменяющего запроса нужно перечитать список (`chats`, `projects` или
+`hosts`); клиент обновляет watcher без периодического polling-а.
+`draftChanged` сообщает, что черновик чата изменил другой клиент; поле ввода
+обновляется по `draftRevision`.
 
 ## Push-уведомления
 

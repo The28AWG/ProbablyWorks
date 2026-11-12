@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -9,7 +11,7 @@ import 'package:pw_agent/core/db/app_database.dart';
 /// Чаты, сообщения, tool runs и ревизии состояния. Все многотабличные
 /// изменения выполняются через [transaction].
 @lazySingleton
-class ChatRepository {
+class ChatRepository implements DraftPersistence {
   ChatRepository(this._db);
 
   final AppDatabase _db;
@@ -41,8 +43,12 @@ class ChatRepository {
     return true;
   }
 
-  static ChatRow _withoutDraft(ChatRow row) =>
-      row.copyWith(draft: '', draftAttachments: '[]', messageEdits: '{}');
+  static ChatRow _withoutDraft(ChatRow row) => row.copyWith(
+    draft: '',
+    draftAttachments: '[]',
+    messageEdits: '{}',
+    draftRevision: 0,
+  );
 
   /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
   Stream<List<Chat>> watchByProject(String projectId) =>
@@ -57,24 +63,57 @@ class ChatRepository {
           .map((rows) => rows.map(_chat).toList());
 
   /// Неотправленные правки сообщений. Как [saveDraft], не трогает updatedAt.
-  Future<void> saveMessageEdits(String chatId, Map<String, ChatDraft> edits) =>
-      (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
-        ChatsCompanion(messageEdits: Value(encodeMessageEdits(edits))),
-      );
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) => _saveDraftFields(
+    chatId,
+    ChatsCompanion(messageEdits: Value(encodeMessageEdits(edits))),
+    expectedRevision,
+  );
 
   /// Черновик пишется отдельно от записи чата: не трогает updatedAt, поэтому порядок списка не меняется.
-  Future<void> saveDraft(String chatId, ChatDraft draft) =>
-      (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
-        ChatsCompanion(
-          draft: Value(draft.text),
-          draftAttachments: Value(
-            jsonEncode([
-              for (final attachment in draft.attachments)
-                attachment.redacted().toJson(),
-            ]),
-          ),
-        ),
-      );
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) => _saveDraftFields(
+    chatId,
+    ChatsCompanion(
+      draft: Value(draft.text),
+      draftAttachments: Value(
+        jsonEncode([
+          for (final attachment in draft.attachments)
+            attachment.redacted().toJson(),
+        ]),
+      ),
+    ),
+    expectedRevision,
+  );
+
+  Future<int> _saveDraftFields(
+    String chatId,
+    ChatsCompanion fields,
+    int? expectedRevision,
+  ) => _db.transaction(() async {
+    final row = await (_db.select(
+      _chatsTable,
+    )..where((t) => t.id.equals(chatId))).getSingleOrNull();
+    if (row == null) {
+      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
+    }
+    if (expectedRevision != null && expectedRevision != row.draftRevision) {
+      throw AgentApiException(409, 'draft_conflict', 'draft revision changed');
+    }
+    final next = row.draftRevision + 1;
+    await (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
+      fields.copyWith(draftRevision: Value(next)),
+    );
+    return next;
+  });
 
   /// Id всех чатов. После старта по ним ищут незакрытый шаг: у него может не быть
   /// активного запуска, если процесс уже прерван, а остальные вызовы не начались.
@@ -89,6 +128,7 @@ class ChatRepository {
     return [for (final row in rows) _chat(row)];
   }
 
+  @override
   Future<Chat?> chat(String id) async {
     final row = await (_db.select(
       _chatsTable,
@@ -392,6 +432,7 @@ class ChatRepository {
       ],
     ),
     messageEdits: decodeMessageEdits(row.messageEdits),
+    draftRevision: row.draftRevision,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
