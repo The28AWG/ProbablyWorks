@@ -5,7 +5,11 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
-/// Локальное управление плагинами поверх [PluginService].
+/// Реализация [PluginApi] внутри процесса агента.
+///
+/// Используется локальным профилем в GUI и демоном для удалённых профилей.
+/// Удалённый клиент обращается к этому же коду через HTTP, поэтому проверка
+/// активного хода находится здесь, а не только в интерфейсе.
 @LazySingleton(as: PluginApi)
 final class LocalPluginApi implements PluginApi {
   LocalPluginApi(this._service, this._hub);

@@ -108,9 +108,25 @@ final l10n = DeclarativeCommandsLocalizations.of(context);
 - `settingsFor` — `PluginSettings` для экрана представления;
 - `refresh` — пересборка источников инструментов после настроек.
 
-Локальная реализация работает с `PluginService`, удалённая — через HTTP
-демона. Названия, описания и экраны настроек остаются в `PluginUiRegistry`
-клиента и подбираются по `pluginId`.
+Реализаций две, и они относятся к разным процессам, а не к разным типам
+профиля в UI:
+
+- `LocalPluginApi` живёт внутри процесса агента. Её использует GUI для
+  локального профиля и демон для всех удалённых профилей.
+- удалённая реализация — `RemoteAgentApi implements PluginApi`. Это тот же
+  HTTP/SSE-клиент, который реализует `AgentApi`, `ChatApi`, `McpApi` и другие
+  удалённые контракты; отдельного класса `RemotePluginApi` нет, чтобы не
+  дублировать транспорт и кэши.
+
+`ProfileService.pluginApiFor` выбирает реализацию:
+
+```dart
+PluginApi pluginApiFor(AgentProfile profile) =>
+    profile.isLocal ? _localPluginApi : _remoteFor(profile);
+```
+
+Названия, описания и экраны настроек остаются в `PluginUiRegistry` клиента и
+подбираются по `pluginId`.
 
 ## Инструменты
 
