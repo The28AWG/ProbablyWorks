@@ -27,7 +27,6 @@ import 'package:pw_agent/agent/api/push_api.dart' as _i95;
 import 'package:pw_agent/agent/api/security_audit_api.dart' as _i648;
 import 'package:pw_agent/agent/plugins/plugin_registry.dart' as _i1065;
 import 'package:pw_agent/core/appearance/appearance_port.dart' as _i598;
-import 'package:pw_agent/core/data/settings_repository.dart' as _i370;
 import 'package:pw_agent/core/notify/app_notifier.dart' as _i641;
 import 'package:pw_agent/core/platform/external_url_opener.dart' as _i1054;
 import 'package:pw_agent/core/security/secret_store.dart' as _i564;
@@ -36,6 +35,7 @@ import '../../core/notify/app_notifier_plugin.dart' as _i238;
 import '../../core/platform/client_info.dart' as _i734;
 import '../../core/platform/url_launcher_opener.dart' as _i224;
 import '../../core/security/secret_store_plugin.dart' as _i1071;
+import '../../core/settings/client_settings.dart' as _i47;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/appearance_port_adapter.dart' as _i395;
 import '../locale/locale_controller.dart' as _i675;
@@ -80,7 +80,7 @@ extension GetItInjectableX on _i174.GetIt {
     );
     gh.lazySingleton<_i740.ProfileService>(
       () => _i740.ProfileService(
-        gh<_i370.SettingsRepository>(),
+        gh<_i47.ClientSettings>(),
         gh<_i564.SecretStore>(),
         gh<_i144.AgentApi>(),
         gh<_i891.ChatApi>(),

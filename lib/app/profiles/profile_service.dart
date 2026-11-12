@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/core/platform/client_info.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -15,7 +16,6 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_client/pw_client.dart';
@@ -45,7 +45,7 @@ class ProfileService {
 
   static const _uuid = Uuid();
 
-  final SettingsRepository _settings;
+  final ClientSettings _settings;
   final SecretStore _secrets;
   final AgentApi _localApi;
   final ChatApi _localChat;
@@ -74,13 +74,15 @@ class ProfileService {
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
-    final raw = await _settings.read(agentProfilesKey);
-    final storedLocal = await _settings.read(localAgentProfileKey);
+    final raw = await _settings.read(ClientSettingsKeys.agentProfiles);
+    final storedLocal = await _settings.read(
+      ClientSettingsKeys.localAgentProfileId,
+    );
     final localId = storedLocal == null || storedLocal.isEmpty
         ? 'p-${_uuid.v4()}'
         : storedLocal;
     if (storedLocal == null || storedLocal.isEmpty) {
-      await _settings.write(localAgentProfileKey, localId);
+      await _settings.write(ClientSettingsKeys.localAgentProfileId, localId);
     }
     final locals = <AgentProfile>[];
     if (raw != null && raw.isNotEmpty) {
@@ -299,7 +301,7 @@ class ProfileService {
   }
 
   Future<void> _persist() => _settings.write(
-    agentProfilesKey,
+    ClientSettingsKeys.agentProfiles,
     jsonEncode([
       for (final profile in _profiles)
         if (!profile.isLocal) profile.toJson(),

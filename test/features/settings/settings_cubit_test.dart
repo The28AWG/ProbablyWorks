@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:pw_agent/agent/api/local_agent_settings_api.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
@@ -45,6 +46,7 @@ class _KeyLlm implements LlmProvider {
 void main() {
   late AppDatabase db;
   late SettingsRepository settings;
+  late MemoryClientSettings clientSettings;
   late MemorySecretStore secrets;
   late _KeyLlm llm;
   late ModelCatalogService catalog;
@@ -54,12 +56,13 @@ void main() {
   setUp(() {
     db = openInMemoryDatabase();
     settings = SettingsRepository(db);
+    clientSettings = MemoryClientSettings();
     secrets = MemorySecretStore();
     llm = _KeyLlm();
     catalog = ModelCatalogService(SavedModelRepository(db), llm);
     theme = ThemeController();
     cubit = SettingsCubit(
-      settings,
+      clientSettings,
       LocalAgentSettingsApi(settings, secrets, catalog),
       LocaleController(),
       theme,
@@ -153,10 +156,10 @@ void main() {
 
     expect(cubit.state.themeMode, ThemeMode.dark);
     expect(theme.value, ThemeMode.dark);
-    expect(await settings.read(SettingsRepository.keyThemeMode), 'dark');
+    expect(await clientSettings.read(ClientSettingsKeys.themeMode), 'dark');
 
     final reopened = SettingsCubit(
-      settings,
+      clientSettings,
       LocalAgentSettingsApi(settings, secrets, catalog),
       LocaleController(),
       ThemeController(),

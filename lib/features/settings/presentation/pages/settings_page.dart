@@ -8,6 +8,7 @@ import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
@@ -33,7 +34,6 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 @RoutePage()
@@ -51,7 +51,7 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => BlocProvider(
     create: (_) => SettingsCubit(
-      getIt<SettingsRepository>(),
+      getIt<ClientSettings>(),
       ProfileScope.maybeOf(context)?.settingsApi ?? getIt<AgentSettingsApi>(),
       getIt<LocaleController>(),
       getIt<ThemeController>(),

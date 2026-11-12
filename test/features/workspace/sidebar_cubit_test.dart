@@ -1,10 +1,10 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
 
 /// Настройки в памяти: кубит работает с ними так же, как с kv-таблицей.
-class _FakeSettings implements SettingsRepository {
+class _FakeSettings implements ClientSettings {
   _FakeSettings([Map<String, String>? values]) : values = values ?? {};
 
   final Map<String, String> values;
@@ -36,25 +36,19 @@ void main() {
     });
 
     test('returns the stored width', () async {
-      final settings = _FakeSettings({
-        SettingsRepository.keySidebarWidth: '350',
-      });
+      final settings = _FakeSettings({ClientSettingsKeys.sidebarWidth: '350'});
 
       expect(await SidebarCubit.loadWidth(settings), 350);
     });
 
     test('clamps a stored width that is out of bounds', () async {
-      final settings = _FakeSettings({
-        SettingsRepository.keySidebarWidth: '9999',
-      });
+      final settings = _FakeSettings({ClientSettingsKeys.sidebarWidth: '9999'});
 
       expect(await SidebarCubit.loadWidth(settings), AppLayout.sidebarMaxWidth);
     });
 
     test('ignores a stored value that is not a number', () async {
-      final settings = _FakeSettings({
-        SettingsRepository.keySidebarWidth: 'wide',
-      });
+      final settings = _FakeSettings({ClientSettingsKeys.sidebarWidth: 'wide'});
 
       expect(await SidebarCubit.loadWidth(settings), AppLayout.sidebarWidth);
     });
@@ -84,7 +78,7 @@ void main() {
       cubit.resizeBy(-100);
       await cubit.commit();
       expect(
-        settings.values[SettingsRepository.keySidebarWidth],
+        settings.values[ClientSettingsKeys.sidebarWidth],
         (AppLayout.sidebarMaxWidth - 100).round().toString(),
       );
     },

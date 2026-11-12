@@ -8,6 +8,7 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/platform/client_info.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -22,6 +23,7 @@ import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Порядок старта: один экземпляр → журнал → DI (БД, секреты) → восстановление → локальный Host →
 /// настройки интерфейса (язык, ширина панели) → фоновое обновление каталога моделей. Возвращает false, если другой экземпляр уже работает с этой базой.
@@ -37,15 +39,22 @@ Future<bool> bootstrap() async {
   // Регистрация до DI: модуль агента открывает БД через AppPaths.
   getIt
     ..registerSingleton<AppPaths>(paths)
-    ..registerSingleton<ClientInfo>(await _loadClientInfo());
+    ..registerSingleton<ClientInfo>(await _loadClientInfo())
+    ..registerSingleton<ClientSettings>(
+      SharedPreferencesClientSettings(SharedPreferencesAsync()),
+    );
   await configureDependencies();
   // Настройки в память до любого чтения: первый кадр нового чата берёт модель и политику синхронно.
   await getIt<SettingsRepository>().preload();
+  await migrateClientSettings(
+    getIt<ClientSettings>(),
+    getIt<SettingsRepository>(),
+  );
   await getIt<ProfileService>().load();
   // До чтения mcp.json: старые версии оставили 0644, и аудит считал бы это изменением.
   await migrateFilePermissions(paths, getIt<SettingsRepository>());
-  final language = await getIt<SettingsRepository>().read(
-    SettingsRepository.keyLanguage,
+  final language = await getIt<ClientSettings>().read(
+    ClientSettingsKeys.language,
   );
   final closedText = lookupAppLocalizations(resolveAppLocale(language))
       .runInterruptedByClose;
@@ -66,14 +75,12 @@ Future<bool> bootstrap() async {
   getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
   // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.
   getIt.registerSingleton(
-    SidebarStartupWidth(
-      await SidebarCubit.loadWidth(getIt<SettingsRepository>()),
-    ),
+    SidebarStartupWidth(await SidebarCubit.loadWidth(getIt<ClientSettings>())),
   );
   getIt<LocaleController>().apply(language);
   // Тема применяется до первого кадра, иначе приложение сначала мелькает в системной теме.
-  final themeMode = await getIt<SettingsRepository>().read(
-    SettingsRepository.keyThemeMode,
+  final themeMode = await getIt<ClientSettings>().read(
+    ClientSettingsKeys.themeMode,
   );
   getIt<ThemeController>().apply(ThemeController.modeFrom(themeMode));
   // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.

@@ -1,7 +1,7 @@
 import 'package:app_ui/app_ui.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 
 class SidebarState extends Equatable {
   const SidebarState({this.width = AppLayout.sidebarWidth});
@@ -26,16 +26,16 @@ class SidebarCubit extends Cubit<SidebarState> {
   SidebarCubit(this._settings, double initialWidth)
     : super(SidebarState(width: clampWidth(initialWidth)));
 
-  final SettingsRepository _settings;
+  final ClientSettings _settings;
 
   static double clampWidth(double width) => width
       .clamp(AppLayout.sidebarMinWidth, AppLayout.sidebarMaxWidth)
       .toDouble();
 
   /// Читает сохранённую ширину. Вызывается один раз при старте, до показа интерфейса.
-  static Future<double> loadWidth(SettingsRepository settings) async {
+  static Future<double> loadWidth(ClientSettings settings) async {
     final stored = double.tryParse(
-      await settings.read(SettingsRepository.keySidebarWidth) ?? '',
+      await settings.read(ClientSettingsKeys.sidebarWidth) ?? '',
     );
     return stored == null ? AppLayout.sidebarWidth : clampWidth(stored);
   }
@@ -48,7 +48,7 @@ class SidebarCubit extends Cubit<SidebarState> {
 
   /// Фиксирует ширину после жеста или шага с клавиатуры, чтобы она пережила перезапуск.
   Future<void> commit() => _settings.write(
-    SettingsRepository.keySidebarWidth,
+    ClientSettingsKeys.sidebarWidth,
     state.width.round().toString(),
   );
 }

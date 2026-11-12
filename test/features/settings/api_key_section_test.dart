@@ -4,6 +4,7 @@ import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -61,7 +62,7 @@ void main() {
     db = openInMemoryDatabase();
     final settings = SettingsRepository(db);
     cubit = SettingsCubit(
-      settings,
+      MemoryClientSettings(),
       LocalAgentSettingsApi(
         settings,
         MemorySecretStore(),
@@ -71,7 +72,6 @@ void main() {
       ThemeController(),
     );
   });
-
   tearDown(() async {
     await cubit.close();
     await db.close();

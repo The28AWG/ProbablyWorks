@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -163,7 +164,7 @@ class SettingsCubit extends Cubit<SettingsState> {
   SettingsCubit(this._settings, this._agentSettings, this._locale, this._theme)
     : super(const SettingsState());
 
-  final SettingsRepository _settings;
+  final ClientSettings _settings;
   final AgentSettingsApi _agentSettings;
   final LocaleController _locale;
   final ThemeController _theme;
@@ -194,10 +195,9 @@ class SettingsCubit extends Cubit<SettingsState> {
         pinnedModels: snapshot.pinnedModels,
         stepsDisplay: snapshot.stepsDisplay,
         catalog: snapshot.catalog,
-        language:
-            await _settings.read(SettingsRepository.keyLanguage) ?? 'system',
+        language: await _settings.read(ClientSettingsKeys.language) ?? 'system',
         themeMode: ThemeController.modeFrom(
-          await _settings.read(SettingsRepository.keyThemeMode),
+          await _settings.read(ClientSettingsKeys.themeMode),
         ),
       ),
     );
@@ -318,13 +318,13 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> saveLanguage(String code) async {
-    await _settings.write(SettingsRepository.keyLanguage, code);
+    await _settings.write(ClientSettingsKeys.language, code);
     _locale.apply(code);
     emit(state.copyWith(language: code, saved: state.saved + 1));
   }
 
   Future<void> saveThemeMode(ThemeMode mode) async {
-    await _settings.write(SettingsRepository.keyThemeMode, mode.name);
+    await _settings.write(ClientSettingsKeys.themeMode, mode.name);
     _theme.apply(mode);
     emit(state.copyWith(themeMode: mode, saved: state.saved + 1));
   }

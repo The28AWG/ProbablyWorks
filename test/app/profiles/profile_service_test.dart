@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/core/platform/client_info.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -20,19 +21,21 @@ import 'package:pw_agent/core/security/secret_store.dart';
 void main() {
   late AppDatabase db;
   late SettingsRepository settings;
+  late MemoryClientSettings clientSettings;
   late MemorySecretStore secrets;
 
   setUp(() async {
     db = openInMemoryDatabase();
     settings = SettingsRepository(db);
     await settings.preload();
+    clientSettings = MemoryClientSettings();
     secrets = MemorySecretStore();
   });
 
   tearDown(() => db.close());
 
   ProfileService service() => ProfileService(
-    settings,
+    clientSettings,
     secrets,
     _FakeAgentApi(),
     _FakeChatApi(),

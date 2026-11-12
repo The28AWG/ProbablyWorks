@@ -6,12 +6,12 @@ import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
-import 'package:pw_agent/core/data/settings_repository.dart';
 
 /// Рабочая область: оболочка с вкладками «Чаты», «Хосты», «Настройки». Вкладки — вложенные маршруты,
 /// поэтому выбранный чат — это путь маршрута, а не отдельное состояние экрана.
@@ -54,7 +54,7 @@ class WorkspacePage extends StatelessWidget {
           ),
           BlocProvider(
             create: (_) => SidebarCubit(
-              getIt<SettingsRepository>(),
+              getIt<ClientSettings>(),
               getIt<SidebarStartupWidth>().value,
             ),
           ),

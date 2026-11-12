@@ -76,6 +76,7 @@ dependencies:
     path: packages/pw_agent
   pw_client:
     path: packages/pw_client
+  shared_preferences: ^2.5.6
   sqlite3: ^3.6.0
   url_launcher: ^6.3.3
   uuid: ^4.5.3
