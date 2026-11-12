@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -52,16 +51,21 @@ final class DisabledDaemonLauncher implements DaemonLauncher {
 /// Скрипт ищется вверх от текущего каталога: IDE и `flutter run` могут держать
 /// рабочую директорию как в корне репозитория, так и в подкаталоге.
 final class DevelopmentDaemonLauncher implements DaemonLauncher {
-  const DevelopmentDaemonLauncher();
+  const DevelopmentDaemonLauncher({this.environment});
+
+  /// Переопределение окружения для тестов; null — реальное окружение.
+  final Map<String, String>? environment;
+
+  Map<String, String> get _env => environment ?? Platform.environment;
 
   @override
   Future<bool> start(AppPaths paths) async {
-    final override = Platform.environment['PROBABLY_WORKS_SERVER'];
+    final override = _env['PROBABLY_WORKS_SERVER'];
     if (override != null) {
       // Переопределение может указывать и на скрипт, и на собранный бинарник.
       return override.endsWith('.dart')
           ? _runScript(_dartExecutable(), override, paths)
-          : _detached(override, _daemonArgs(paths), override);
+          : _detached(override, _daemonArgs(paths), p.dirname(override));
     }
     final script = _findServerScript();
     if (script == null) return false;
@@ -69,10 +73,10 @@ final class DevelopmentDaemonLauncher implements DaemonLauncher {
   }
 
   /// Ищет Dart из Flutter SDK, если `dart` нет в PATH.
-  static String _dartExecutable() {
-    final override = Platform.environment['PROBABLY_WORKS_DART'];
+  String _dartExecutable() {
+    final override = _env['PROBABLY_WORKS_DART'];
     if (override != null) return override;
-    final root = Platform.environment['FLUTTER_ROOT'];
+    final root = _env['FLUTTER_ROOT'];
     if (root != null) {
       final dart = p.join(
         root,
@@ -134,20 +138,39 @@ final class PackagedDaemonLauncher implements DaemonLauncher {
     final override = Platform.environment['PROBABLY_WORKS_SERVER'];
     if (override != null && File(override).existsSync()) return override;
     final app = File(Platform.resolvedExecutable).parent.path;
-    final candidates = [
-      p.join(app, 'pw_server'),
-      p.join(app, 'pw_server.exe'),
-      p.join(app, '..', 'Resources', 'pw_server'),
-      if (Platform.environment['APPDIR'] case final dir?)
-        p.join(dir, 'usr', 'bin', 'pw_server'),
-      if (Platform.environment['SNAP'] case final dir?)
-        p.join(dir, 'current', 'bin', 'pw_server'),
-    ];
-    for (final candidate in candidates) {
+    for (final candidate in packagedDaemonCandidates(appDirectory: app)) {
       if (File(candidate).existsSync()) return candidate;
     }
     return null;
   }
+}
+
+/// Пути к демону внутри установленного пакета.
+///
+/// Основной вариант — каталог `daemon/bin` с нативными библиотеками в
+/// соседнем `daemon/lib`: так `dart build cli` кладёт AOT-бинарник и его
+/// зависимости. Одиночный `pw_server` рядом с GUI оставлен для совместимости
+/// со старыми пакетами.
+@visibleForTesting
+List<String> packagedDaemonCandidates({
+  required String appDirectory,
+  Map<String, String>? environment,
+}) {
+  final env = environment ?? Platform.environment;
+  final executable = Platform.isWindows ? 'pw_server.exe' : 'pw_server';
+  return [
+    p.join(appDirectory, 'daemon', 'bin', executable),
+    p.join(appDirectory, 'pw_server'),
+    p.join(appDirectory, 'pw_server.exe'),
+    p.join(appDirectory, '..', 'Resources', 'daemon', 'bin', executable),
+    p.join(appDirectory, '..', 'Resources', 'pw_server'),
+    if (env['APPDIR'] case final dir?)
+      p.join(dir, 'usr', 'bin', 'daemon', 'bin', executable),
+    if (env['APPDIR'] case final dir?) p.join(dir, 'usr', 'bin', 'pw_server'),
+    if (env['SNAP'] case final dir?)
+      p.join(dir, 'current', 'bin', 'daemon', 'bin', executable),
+    if (env['SNAP'] case final dir?) p.join(dir, 'current', 'bin', 'pw_server'),
+  ];
 }
 
 List<String> _daemonArgs(AppPaths paths) => [
@@ -167,14 +190,14 @@ Future<bool> _detached(
   String workingDirectory,
 ) async {
   try {
-    final process = await Process.start(
+    await Process.start(
       executable,
       arguments,
       workingDirectory: workingDirectory,
       mode: ProcessStartMode.detached,
     );
-    // Ссылка на exitCode нужна, чтобы поток завершения не считался ошибкой.
-    unawaited(process.exitCode);
+    // У detached-процесса нельзя читать exitCode: Dart бросает
+    // StateError «Process is detached». Демон живёт отдельно от GUI.
     return true;
   } on Object catch (error) {
     AppLog.root.warning('cannot start local daemon', error);

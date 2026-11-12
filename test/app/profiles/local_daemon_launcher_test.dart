@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:probably_works/app/profiles/local_daemon_discovery.dart';
 import 'package:probably_works/app/profiles/local_daemon_launcher.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
@@ -156,6 +157,53 @@ void main() {
     expect(
       localDaemonDisabled(const {'PROBABLY_WORKS_NO_DAEMON': '1'}),
       isTrue,
+    );
+  });
+
+  test('starts a detached process without reading its exit code', () async {
+    final script = File(p.join(temp.path, 'fake_daemon.sh'))
+      ..writeAsStringSync('#!/bin/sh\nexit 0\n');
+    final chmod = Process.runSync('chmod', ['755', script.path]);
+    expect(chmod.exitCode, 0);
+    final launcher = DevelopmentDaemonLauncher(
+      environment: {'PROBABLY_WORKS_SERVER': script.path},
+    );
+
+    expect(await launcher.start(paths), isTrue);
+  }, skip: Platform.isWindows ? 'Нужен POSIX-скрипт' : false);
+
+  test('prefers the daemon bundle with its native libraries', () {
+    final candidates = packagedDaemonCandidates(
+      appDirectory: '/opt/probably_works',
+      environment: const {
+        'APPDIR': '/tmp/.mount_app',
+        'SNAP': '/snap/probably-works',
+      },
+    );
+    final executable = Platform.isWindows ? 'pw_server.exe' : 'pw_server';
+
+    expect(
+      candidates.first,
+      p.join('/opt/probably_works', 'daemon', 'bin', executable),
+    );
+    expect(
+      candidates,
+      contains(
+        p.join('/tmp/.mount_app', 'usr', 'bin', 'daemon', 'bin', executable),
+      ),
+    );
+    expect(
+      candidates,
+      contains(
+        p.join(
+          '/snap/probably-works',
+          'current',
+          'bin',
+          'daemon',
+          'bin',
+          executable,
+        ),
+      ),
     );
   });
 }
