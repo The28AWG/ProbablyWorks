@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -11,8 +13,12 @@ import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/host/host_op.dart';
+import 'package:pw_agent/host/host_runtime.dart';
 import 'package:pw_agent/host/host_runtime_factory.dart';
+import 'package:pw_agent/host/host_terminal.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
 
 final _at = DateTime.utc(2026, 3, 1);
@@ -112,8 +118,23 @@ void main() {
   test('недоступный хост оставляет лексический ключ', () async {
     final host = _host('down', HostKind.ssh, address: '127.0.0.1', timeout: 1);
     await hosts.save(host);
+    final failingLife = ProjectLifecycleService(
+      db,
+      projects,
+      hosts,
+      _FailingRuntimeFactory(
+        SshConnectionPool(
+          hosts,
+          MemorySecretStore(),
+          SettingsRepository(db),
+          HostKeyConfirmations(),
+        ),
+        const PipePtyLauncher(),
+        provisioner,
+      ),
+    );
 
-    expect(await life.canonicalKey(host, '~/repo/../repo/'), '~/repo');
+    expect(await failingLife.canonicalKey(host, '~/repo/../repo/'), '~/repo');
   });
 
   test('чаты без папки не делят домашний проект', () async {
@@ -263,4 +284,49 @@ void main() {
     expect(loose.projectId, isNull);
     expect(loose.workspace, isNull);
   });
+}
+
+final class _FailingRuntimeFactory extends HostRuntimeFactory {
+  // ignore: use_super_parameters, параметры HostRuntimeFactory приватные и из другого пакета
+  _FailingRuntimeFactory(
+    SshConnectionPool pool,
+    PipePtyLauncher pty,
+    VirtualHostProvisioner virtual,
+  ) : super(pool, pty, virtual);
+
+  @override
+  HostRuntime forHost(Host host) => _FailingRuntime(host.os);
+}
+
+final class _FailingRuntime implements HostRuntime {
+  _FailingRuntime(this.os);
+
+  @override
+  final HostOs os;
+
+  @override
+  bool get hasTerminal => false;
+
+  @override
+  Stream<ExecEvent> perform(HostOp op, {String? cwd, Uint8List? stdin}) =>
+      _failure();
+
+  @override
+  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
+      _failure();
+
+  @override
+  Future<HostTerminal> openTerminal(
+    String command, {
+    String? cwd,
+    int columns = defaultTerminalColumns,
+    int rows = defaultTerminalRows,
+  }) async => throw _failureError;
+
+  Stream<ExecEvent> _failure() => Stream.error(_failureError);
+
+  static const _failureError = HostFailure(
+    'host is unavailable',
+    kind: HostFailureKind.connectionLost,
+  );
 }
