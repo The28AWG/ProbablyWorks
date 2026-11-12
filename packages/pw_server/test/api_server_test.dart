@@ -657,6 +657,38 @@ void main() {
     expect(data, hasLength(2));
   });
 
+  test('publishes state changes after mutating requests', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    final (status, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/chats/c1',
+      token: _token,
+      body: {'title': 'Renamed'},
+    );
+    expect(status, HttpStatus.noContent);
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: stateAreaChanged');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['area'], 'chats');
+  });
+
   test('serializes schedule timestamps as UTC', () async {
     final local = DateTime(2030, 1, 1, 5);
     backend.scheduled.add(

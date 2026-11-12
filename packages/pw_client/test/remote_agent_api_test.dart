@@ -304,6 +304,26 @@ void main() {
     );
   });
 
+  test('refreshes watched chats after a state change', () async {
+    await remote.startEvents();
+    await remote.eventsReady;
+    final snapshots = <List<Chat>>[];
+    final changed = Completer<void>();
+    final sub = remote.watchChats().listen((chats) {
+      snapshots.add(chats);
+      if (snapshots.length > 1 && !changed.isCompleted) changed.complete();
+    });
+    addTearDown(sub.cancel);
+    await remote.chats();
+    await Future<void>.delayed(Duration.zero);
+
+    await remote.updateChat('c1', model: 'vendor/model');
+    await changed.future.timeout(const Duration(seconds: 3));
+
+    expect(snapshots.length, greaterThan(1));
+    expect(snapshots.last.single.id, 'c1');
+  });
+
   test('reads the server security report', () async {
     final report = await remote.run();
 

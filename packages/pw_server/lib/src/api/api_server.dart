@@ -66,6 +66,7 @@ final class ApiServer {
 
   HttpServer? _server;
   final _clients = <HttpResponse>{};
+  final _stateEvents = StreamController<Object>.broadcast();
 
   /// Запускает сервер и возвращает фактический порт (0 превращается в выбранный ОС).
   Future<int> start() async {
@@ -108,6 +109,7 @@ final class ApiServer {
         return;
       }
       await _route(request);
+      _publishState(request);
     } on AgentApiException catch (error) {
       _error(response, error.status, error.code, error.message);
     } on FormatException catch (error) {
@@ -126,6 +128,27 @@ final class ApiServer {
         // Соединение уже закрыто клиентом (например, SSE).
       }
     }
+  }
+
+  /// Сообщает SSE-клиентам, какие списки могли измениться после запроса.
+  void _publishState(HttpRequest request) {
+    if (request.method == 'GET') return;
+    final path = request.uri.pathSegments;
+    if (path.length < 3 || path.first != 'api' || path[1] != 'v1') return;
+    switch (path[2]) {
+      case 'hosts':
+        _emitState('hosts');
+      case 'chats':
+        _emitState('chats');
+        _emitState('projects');
+      case 'projects':
+      case 'policy-profiles':
+        _emitState('projects');
+    }
+  }
+
+  void _emitState(String area) {
+    if (!_stateEvents.isClosed) _stateEvents.add(_StateChanged(area));
   }
 
   Future<void> _route(HttpRequest request) async {
@@ -1348,6 +1371,7 @@ final class ApiServer {
       _backend.approvals.listen(controller.add),
       _backend.questions.listen(controller.add),
       _backend.editChanges.listen(controller.add),
+      _stateEvents.stream.listen(controller.add),
     ];
     controller.onCancel = () async {
       for (final subscription in subscriptions) {
@@ -1805,5 +1829,12 @@ bool _matchesChat(Object event, String? chatId) {
   ApprovalRequest value => ('approval', _approvalJson(value)),
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
+  _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _ => ('unknown', {'type': event.runtimeType.toString()}),
 };
+
+final class _StateChanged {
+  const _StateChanged(this.area);
+
+  final String area;
+}

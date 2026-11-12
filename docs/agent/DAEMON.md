@@ -148,7 +148,10 @@ GET    /api/v1/events?chatId=...      SSE по всем чатам или одн
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `runChanged`, `queueChanged`, `failure`, `trustNeeded`,
-`usage`, `stateChanged`, `approval`, `question`, `editFileChanges`.
+`usage`, `stateChanged`, `stateAreaChanged`, `approval`, `question`,
+`editFileChanges`. `stateAreaChanged` сообщает, что после изменяющего запроса
+нужно перечитать список (`chats`, `projects` или `hosts`); клиент обновляет
+watcher без периодического polling-а.
 
 ## Токен
 

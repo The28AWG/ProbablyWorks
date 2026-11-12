@@ -91,6 +91,7 @@ class RemoteAgentApi
   final _pinnedChanges = StreamController<List<String>>.broadcast();
   final _settingsChanges = StreamController<void>.broadcast();
   final _mcpStateChanges = StreamController<McpServerState>.broadcast();
+  final _stateChanges = StreamController<String>.broadcast();
   McpSnapshot? _mcpSnapshot;
 
   static const _uuid = Uuid();
@@ -204,6 +205,7 @@ class RemoteAgentApi
     await _pinnedChanges.close();
     await _settingsChanges.close();
     await _mcpStateChanges.close();
+    await _stateChanges.close();
     _client.close();
     _eventsClient.close(force: true);
   }
@@ -245,58 +247,12 @@ class RemoteAgentApi
   }
 
   @override
-  Stream<List<Chat>> watchChats() {
-    late final StreamController<List<Chat>> controller;
-    Timer? timer;
-    Future<void> refresh() async {
-      try {
-        controller.add(await chats());
-      } on Object {
-        // Следующий тик попробует снова.
-      }
-    }
-
-    controller = StreamController<List<Chat>>(
-      onListen: () {
-        unawaited(refresh());
-        timer = Timer.periodic(
-          const Duration(seconds: 2),
-          (_) => unawaited(refresh()),
-        );
-      },
-      onCancel: () {
-        timer?.cancel();
-      },
-    );
-    return controller.stream;
-  }
+  Stream<List<Chat>> watchChats() =>
+      _watchStateList(load: chats, relevant: (area) => area == 'chats');
 
   @override
-  Stream<List<Host>> watchHosts() {
-    late final StreamController<List<Host>> controller;
-    Timer? timer;
-    Future<void> refresh() async {
-      try {
-        controller.add(await hosts());
-      } on Object {
-        // Следующий тик попробует снова.
-      }
-    }
-
-    controller = StreamController<List<Host>>(
-      onListen: () {
-        unawaited(refresh());
-        timer = Timer.periodic(
-          const Duration(seconds: 10),
-          (_) => unawaited(refresh()),
-        );
-      },
-      onCancel: () {
-        timer?.cancel();
-      },
-    );
-    return controller.stream;
-  }
+  Stream<List<Host>> watchHosts() =>
+      _watchStateList(load: hosts, relevant: (area) => area == 'hosts');
 
   @override
   Future<List<Chat>> chats() async {
@@ -893,57 +849,75 @@ class RemoteAgentApi
   }) async => securityReportFromJson(await _get('/security/audit'));
 
   @override
-  Stream<List<Project>> watchProjects() =>
-      _pollList('/projects', 'projects', _project, const Duration(seconds: 2));
-
-  @override
-  Stream<Map<String, int>> watchChatCounts() async* {
-    while (!_disposed) {
-      try {
-        final json = await _get('/projects/counts');
-        yield {
-          for (final entry in (json['counts'] as Map? ?? const {}).entries)
-            '${entry.key}': entry.value is num
-                ? (entry.value as num).toInt()
-                : 0,
-        };
-      } on AgentApiException {
-        // Следующий тик попробует снова.
-      }
-      await Future<void>.delayed(const Duration(seconds: 2));
-    }
-  }
-
-  @override
-  Stream<List<PolicyProfile>> watchPolicyProfiles() => _pollList(
-    '/policy-profiles',
-    'profiles',
-    _policy,
-    const Duration(seconds: 5),
+  Stream<List<Project>> watchProjects() => _watchStateList(
+    load: () async {
+      final json = await _get('/projects');
+      return [
+        for (final item in (json['projects'] as List? ?? const []))
+          if (item is Map) _project(Map<String, dynamic>.from(item)),
+      ];
+    },
+    relevant: _projectListChanged,
   );
 
   @override
-  Stream<List<ProjectFact>> watchFacts(String projectId) => _pollList(
-    '/projects/$projectId/facts',
-    'facts',
-    _fact,
-    const Duration(seconds: 2),
+  Stream<Map<String, int>> watchChatCounts() => _watchStateList(
+    load: () async {
+      final json = await _get('/projects/counts');
+      return {
+        for (final entry in (json['counts'] as Map? ?? const {}).entries)
+          '${entry.key}': entry.value is num ? (entry.value as num).toInt() : 0,
+      };
+    },
+    relevant: _projectListChanged,
   );
 
   @override
-  Stream<List<ProjectSkill>> watchSkills(String projectId) => _pollList(
-    '/projects/$projectId/skills',
-    'skills',
-    _skill,
-    const Duration(seconds: 5),
+  Stream<List<PolicyProfile>> watchPolicyProfiles() => _watchStateList(
+    load: () async {
+      final json = await _get('/policy-profiles');
+      return [
+        for (final item in (json['profiles'] as List? ?? const []))
+          if (item is Map) _policy(Map<String, dynamic>.from(item)),
+      ];
+    },
+    relevant: (area) => area == 'projects',
   );
 
   @override
-  Stream<List<Chat>> watchProjectChats(String projectId) => _pollList(
-    '/projects/$projectId/chats',
-    'chats',
-    _chat,
-    const Duration(seconds: 2),
+  Stream<List<ProjectFact>> watchFacts(String projectId) => _watchStateList(
+    load: () async {
+      final json = await _get('/projects/$projectId/facts');
+      return [
+        for (final item in (json['facts'] as List? ?? const []))
+          if (item is Map) _fact(Map<String, dynamic>.from(item)),
+      ];
+    },
+    relevant: _projectListChanged,
+  );
+
+  @override
+  Stream<List<ProjectSkill>> watchSkills(String projectId) => _watchStateList(
+    load: () async {
+      final json = await _get('/projects/$projectId/skills');
+      return [
+        for (final item in (json['skills'] as List? ?? const []))
+          if (item is Map) _skill(Map<String, dynamic>.from(item)),
+      ];
+    },
+    relevant: (area) => area == 'projects',
+  );
+
+  @override
+  Stream<List<Chat>> watchProjectChats(String projectId) => _watchStateList(
+    load: () async {
+      final json = await _get('/projects/$projectId/chats');
+      return [
+        for (final item in (json['chats'] as List? ?? const []))
+          if (item is Map) _chat(Map<String, dynamic>.from(item)),
+      ];
+    },
+    relevant: _projectListChanged,
   );
 
   @override
@@ -1036,24 +1010,25 @@ class RemoteAgentApi
     throw AgentApiException(404, 'project_not_found', 'project $id not found');
   }
 
-  Stream<List<T>> _pollList<T>(
-    String path,
-    String key,
-    T Function(Map<String, dynamic>) parse,
-    Duration interval,
-  ) async* {
-    while (!_disposed) {
+  bool _projectListChanged(String area) => area == 'projects';
+
+  /// Начальное значение и обновления после SSE `stateAreaChanged`.
+  Stream<T> _watchStateList<T>({
+    required Future<T> Function() load,
+    required bool Function(String area) relevant,
+  }) async* {
+    yield await load();
+    yield* _stateChanges.stream.where(relevant).asyncExpand((_) async* {
       try {
-        final json = await _get(path);
-        yield [
-          for (final item in (json[key] as List? ?? const []))
-            if (item is Map) parse(Map<String, dynamic>.from(item)),
-        ];
+        yield await load();
       } on AgentApiException {
-        // Следующий тик попробует снова.
+        // Следующее событие попробует снова.
       }
-      await Future<void>.delayed(interval);
-    }
+    });
+  }
+
+  void _publishState(String area) {
+    if (!_stateChanges.isClosed) _stateChanges.add(area);
   }
 
   Future<Map<String, dynamic>> _get(String path) async =>
@@ -1231,6 +1206,8 @@ class RemoteAgentApi
             TurnEnd.values.byName(_string(json, 'end')),
           ),
         );
+        _publishState('chats');
+        _publishState('projects');
       case 'messageAdded':
         _events.add(
           AgentMessageAdded(
@@ -1238,6 +1215,7 @@ class RemoteAgentApi
             _message(Map<String, dynamic>.from(json['message'] as Map)),
           ),
         );
+        _publishState('chats');
       case 'textDelta':
         _events.add(
           AgentTextDelta(
@@ -1291,6 +1269,8 @@ class RemoteAgentApi
         );
       case 'stateChanged':
         _events.add(AgentStateChanged(_string(json, 'chatId')));
+      case 'stateAreaChanged':
+        _publishState(_string(json, 'area'));
     }
   }
 }
