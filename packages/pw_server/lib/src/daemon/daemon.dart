@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dart';
 import 'package:plugin_declarative_http_core/declarative_http_plugin.dart';
-import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
@@ -97,7 +96,10 @@ Future<int> runDaemon(List<String> args) async {
   await projects.repairOrphans();
   await projects.purgeExpired();
   await getIt<McpService>().start(configFile: paths.mcpConfig);
-  await getIt<AgentApi>().resumeAfterRestart();
+  // В daemon-процессе регистрируется локальная реализация, алиас AgentApi
+  // создаёт только клиент. Поэтому берём конкретный тип, чтобы не зависеть
+  // от клиентской регистрации.
+  await getIt<LocalAgentApi>().resumeAfterRestart();
   await getIt<ModelCatalogService>().start(
     hasKey: () async {
       final key = await secrets.read(openRouterKeyName);
