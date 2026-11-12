@@ -72,3 +72,22 @@ jobs:
         env:
           PW_DAEMON_TEST: '1'
         run: flutter test test/app/profiles/local_daemon_integration_test.dart
+
+  windows-keyring:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Credential Manager smoke test
+        working-directory: packages/pw_agent
+        run: dart test test/core/windows_credential_backend_test.dart
