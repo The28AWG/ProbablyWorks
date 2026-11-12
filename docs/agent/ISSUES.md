@@ -505,8 +505,9 @@ ID стабильны, статусы обновляются по мере вы�
   Windows EXE и macOS DMG. В пакет попадает AOT-демон с нативными
   библиотеками (`daemon/bin` и `daemon/lib`).
 - Добавлены GitHub Actions: CI с format/analyze/тестами и release-workflow,
-  который по тегу `v<version>` собирает Linux x64, Windows x64, macOS arm64,
-  macOS x64 и Snap amd64, публикует GitHub Release и SHA256SUMS.
+  который по тегу `v<version>` собирает GUI для Linux x64, Windows x64,
+  macOS arm64/x64, Snap amd64 и отдельные standalone-архивы сервера,
+  публикует GitHub Release и SHA256SUMS.
 - Snap собирается отдельно через `snapcraft` в classic-режиме и публикуется в
   канал `edge`; GTK3 и зависимости входят в stage-packages.
 - Добавлен интеграционный тест реального демона: процесс стартует, пишет

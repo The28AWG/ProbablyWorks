@@ -156,6 +156,35 @@ git push origin v1.0.0+2
 - **Linux.** Подпись пакетов не выполняется; при публикации добавьте подпись
   репозитория и контрольные суммы.
 
+## Standalone-сервер
+
+Сервер собирается отдельно от GUI, чтобы его можно было поставить на машину
+без desktop-клиента:
+
+```bash
+dart run tool/package/package_server.dart --platform=linux --arch=x64
+```
+
+Артефакты кладутся в `dist/<version>/`:
+
+- `probably-works-server-<version>-linux-x64.tar.gz`;
+- `probably-works-server_<version>_amd64.deb`;
+- `probably-works-server-<version>-macos-arm64.tar.gz`;
+- `probably-works-server-<version>-macos-x64.tar.gz`;
+- `probably-works-server-<version>-windows-x64.zip`.
+
+Внутри архива — `probably-works-server/bin/pw_server`, `lib/` с нативными
+библиотеками и README. Запуск:
+
+```bash
+./probably-works-server/bin/pw_server --data-dir <path> --port 7787
+```
+
+DEB ставит бинарник в `/opt/probably-works-server`, а команду — в
+`/usr/bin/pw-server`. Сервер не требует GTK и работает headless. Release
+workflow собирает сервер для Linux x64, Windows x64, macOS arm64 и x64 и
+прикладывает архивы к GitHub Release.
+
 ## OS-keyring в пакетах
 
 Приложение создаёт записи в keyring при первом запуске, а не в `postinst`:

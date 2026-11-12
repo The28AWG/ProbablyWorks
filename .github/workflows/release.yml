@@ -129,6 +129,60 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  server:
+    name: Server ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            arch: x64
+            artifact: probably-works-server-linux-x64
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            artifact: probably-works-server-windows-x64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+            artifact: probably-works-server-macos-arm64
+          - os: macos-15-intel
+            platform: macos
+            arch: x64
+            artifact: probably-works-server-macos-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate agent DI
+        working-directory: packages/pw_agent
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Package standalone server
+        run: >-
+          dart run tool/package/package_server.dart
+          --platform=${{ matrix.platform }}
+          --arch=${{ matrix.arch }}
+
+      - name: Upload server packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
   snap:
     name: Build Snap
     runs-on: ubuntu-24.04
@@ -217,7 +271,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, snap]
+    needs: [build, server, snap]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
