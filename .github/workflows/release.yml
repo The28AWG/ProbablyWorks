@@ -172,7 +172,22 @@ jobs:
         run: dart run tool/package/prepare_daemon.dart
 
       - name: Install Snapcraft
-        run: sudo snap install snapcraft --classic
+        run: |
+          set -euo pipefail
+          if command -v snapcraft >/dev/null 2>&1; then
+            snapcraft --version
+            exit 0
+          fi
+          sudo snap wait system seed.loaded || true
+          for attempt in 1 2 3; do
+            if sudo snap install snapcraft --classic; then
+              snapcraft --version
+              exit 0
+            fi
+            echo "snap install failed (attempt $attempt), retrying..."
+            sleep 10
+          done
+          exit 1
 
       - name: Build snap
         run: |

@@ -63,6 +63,8 @@ Future<void> main(List<String> arguments) async {
     fastforge,
     args,
     mode: ProcessStartMode.inheritStdio,
+    // На Windows pub ставит fastforge.bat, а Process.start без shell ищет exe.
+    runInShell: Platform.isWindows,
     // appimagetool не угадывает архитектуру AppDir и без ARCH отказывается
     // собирать образ.
     environment: platform == 'linux' ? {'ARCH': _linuxArch()} : null,
@@ -162,7 +164,9 @@ String _hostPlatform() {
 /// Ищет `fastforge` в PATH и возвращает путь к исполняемому файлу.
 Future<String?> _findFastforge() async {
   try {
-    final result = await Process.run('fastforge', ['--version']);
+    final result = await Process.run('fastforge', [
+      '--version',
+    ], runInShell: Platform.isWindows);
     return result.exitCode == 0 ? 'fastforge' : null;
   } on ProcessException {
     return null;
