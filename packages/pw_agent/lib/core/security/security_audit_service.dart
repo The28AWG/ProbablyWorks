@@ -85,10 +85,7 @@ class SecurityAuditService {
   void _checkSecretStore(List<SecurityFinding> findings) {
     final (severity, backend) = switch (_secrets.kind) {
       SecretStoreKind.memory => (SecuritySeverity.critical, 'memory'),
-      SecretStoreKind.osKeychain => (
-        SecuritySeverity.info,
-        'flutter_secure_storage',
-      ),
+      SecretStoreKind.osKeychain => (SecuritySeverity.info, 'os_keychain'),
       SecretStoreKind.headlessFile => (
         SecuritySeverity.warning,
         'headless_file',

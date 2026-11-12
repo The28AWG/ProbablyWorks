@@ -30,13 +30,13 @@ import 'package:pw_agent/core/notify/push_service.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/security/system_secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_server.dart';
 import 'package:pw_server/src/api/api_token.dart';
 import 'package:pw_server/src/daemon/daemon_options.dart';
 import 'package:pw_server/src/daemon/daemon_paths.dart';
-import 'package:pw_server/src/daemon/daemon_secret_store.dart';
 import 'package:pw_server/src/daemon/noop_appearance.dart';
 import 'package:pw_server/src/daemon/process_url_opener.dart';
 import 'package:pw_server/src/daemon/push_app_notifier.dart';
@@ -66,8 +66,8 @@ Future<int> runDaemon(List<String> args) async {
     return 1;
   }
   await AppLog.init(paths.logs);
-  final secrets = DaemonSecretStore(
-    paths.support,
+  final secrets = createSystemSecretStore(
+    support: paths.support,
     environment: Platform.environment,
   );
   getIt
@@ -129,12 +129,15 @@ Future<int> runDaemon(List<String> args) async {
     accessLog: accessLog,
   );
   final port = await server.start();
+  // Токен в файле нужен только как fallback: если keyring сработал, GUI
+  // прочитает его оттуда.
+  final tokenInFile = secrets.kind != SecretStoreKind.osKeychain;
   _writeDaemonInfo(
     paths.daemonInfo,
     LocalDaemonInfo(
       pid: pid,
       port: port,
-      token: token,
+      token: tokenInFile ? token : '',
       startedAt: DateTime.now().toUtc(),
     ),
   );

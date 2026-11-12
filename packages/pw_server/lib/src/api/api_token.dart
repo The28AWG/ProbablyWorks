@@ -3,9 +3,6 @@ import 'dart:math';
 
 import 'package:pw_agent/core/security/secret_store.dart';
 
-/// Ключ токена API в [SecretStore].
-const apiTokenKey = 'api.token';
-
 /// Токен доступа к HTTP API. Хранится в защищённом хранилище и не пишется в логи.
 final class ApiTokenStore {
   ApiTokenStore(this._secrets);

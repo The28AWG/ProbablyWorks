@@ -241,21 +241,25 @@ dart run packages/pw_server/bin/api_log.dart filter \
   "protocol": 1,
   "pid": 1234,
   "port": 7787,
-  "token": "...",
   "startedAt": "2026-11-12T10:00:00.000Z"
 }
 ```
+
+Если OS-keyring доступен (Secret Service на Linux, Keychain на macOS), токен
+хранится там и в файл не попадает. При headless-запуске без keyring или
+`PROBABLY_WORKS_NO_KEYRING=1` в файле остаётся поле `token` как fallback.
 
 GUI при старте:
 
 1. читает файл;
 2. проверяет protocol;
-3. проверяет `/health`;
-4. проверяет токен через `/settings`;
-5. при успехе собирает `LocalAgentApis` из `RemoteAgentApi` на
+3. берёт токен из файла или OS-keyring;
+4. проверяет `/health`;
+5. проверяет токен через `/settings`;
+6. при успехе собирает `LocalAgentApis` из `RemoteAgentApi` на
    `127.0.0.1` и **не открывает БД**;
-6. при отсутствии демона запускает его и ждёт `daemon.json` до 15 секунд;
-7. если запуск не удался, переходит в embedded-режим.
+7. при отсутствии демона запускает его и ждёт `daemon.json` до 15 секунд;
+8. если запуск не удался, переходит в embedded-режим.
 
 ### Автозапуск
 
@@ -283,9 +287,8 @@ GUI при старте:
 - `PROBABLY_WORKS_DART` — интерпретатор для development-запуска;
   если не задан, берётся `dart` из `FLUTTER_ROOT` или из `PATH`.
 
-Токен в discovery-файле — MVP-компромисс: файл доступен только владельцу,
-но позже его нужно перенести в OS-keyring. При остановке демон удаляет
-`daemon.json`.
+Когда keyring недоступен, токен остаётся в `daemon.json` с правами `0600`.
+При остановке демон удаляет `daemon.json`.
 
 ## Токен
 
@@ -298,7 +301,9 @@ OpenRouter и токен API можно задать переменными ок
 - `PROBABLY_WORKS_OPENROUTER_KEY` или `OPENROUTER_API_KEY`;
 - `PROBABLY_WORKS_API_TOKEN`.
 
-Полноценный OS-keyring для демона (libsecret, Keychain, DPAPI) — следующий шаг.
+На Linux используется Secret Service через D-Bus, на macOS — Keychain через
+`security`. На Windows пока остаётся файловый fallback: Credential Manager
+нужно добавлять вместе с подписью установщика.
 
 ## Планировщик
 
@@ -312,7 +317,7 @@ OpenRouter и токен API можно задать переменными ок
 - только loopback по умолчанию; удалённый доступ — через SSH-туннель, VPN или
   TLS reverse proxy;
 - нет TLS внутри демона;
-- нет OS-keyring в headless-режиме;
+- без доступного keyring секреты и токен лежат в файлах `0600`;
 - плагины в демоне работают через общий `pw_agent`; управление — через
   `/plugins`, Flutter-представления остаются в клиенте;
 - GUI подключается к удалённому демону как к обычному профилю, а к локальному —

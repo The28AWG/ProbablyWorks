@@ -4,17 +4,14 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
-import 'package:pw_server/src/api/api_token.dart';
 
-/// `SecretStore` headless-демона.
+/// Файловый fallback для headless-режима.
 ///
-/// Это MVP без OS-keyring: значения лежат в JSON-файле `0600` внутри каталога
-/// приложения `0700`. Ключ OpenRouter и токен API можно переопределить
-/// переменными окружения — так демон запускается на сервере без графической
-/// сессии. Для полноценного keyring нужен отдельный провайдер (libsecret,
-/// Keychain, DPAPI).
-final class DaemonSecretStore implements SecretStore {
-  DaemonSecretStore(Directory support, {this.environment = const {}})
+/// Значения лежат в JSON-файле `0600` внутри каталога приложения `0700`.
+/// Ключ OpenRouter и токен API можно переопределить переменными окружения —
+/// так демон запускается на сервере без графической сессии и без keyring.
+final class FileSecretStore implements SecretStore {
+  FileSecretStore(Directory support, {this.environment = const {}})
     : _file = File(p.join(support.path, 'secrets.json'));
 
   static const openRouterEnvironment = 'PROBABLY_WORKS_OPENROUTER_KEY';
@@ -48,16 +45,8 @@ final class DaemonSecretStore implements SecretStore {
     await _save(values);
   }
 
-  String? _environmentValue(String key) {
-    if (key == openRouterKeyName) {
-      return _nonEmpty(environment[openRouterEnvironment]) ??
-          _nonEmpty(environment[openRouterFallbackEnvironment]);
-    }
-    if (key == apiTokenKey) {
-      return _nonEmpty(environment[apiTokenEnvironment]);
-    }
-    return null;
-  }
+  String? _environmentValue(String key) =>
+      secretFromEnvironment(key, environment);
 
   Future<Map<String, String>> _load() async {
     if (!_file.existsSync()) return {};
@@ -82,7 +71,21 @@ final class DaemonSecretStore implements SecretStore {
     FilePermissions.file(temp);
     await temp.rename(_file.path);
   }
+}
 
-  static String? _nonEmpty(String? value) =>
+/// Переопределения секретов переменными окружения.
+///
+/// Нужны для серверного запуска без GUI и keyring. Возвращает null, если
+/// переменная не задана или пуста.
+String? secretFromEnvironment(String key, Map<String, String> environment) {
+  String? nonEmpty(String? value) =>
       value == null || value.isEmpty ? null : value;
+  if (key == openRouterKeyName) {
+    return nonEmpty(environment[FileSecretStore.openRouterEnvironment]) ??
+        nonEmpty(environment[FileSecretStore.openRouterFallbackEnvironment]);
+  }
+  if (key == apiTokenKey) {
+    return nonEmpty(environment[FileSecretStore.apiTokenEnvironment]);
+  }
+  return null;
 }

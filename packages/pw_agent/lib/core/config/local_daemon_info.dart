@@ -6,12 +6,12 @@ const localDaemonProtocol = 1;
 /// Данные, которые демон публикует для локального GUI.
 ///
 /// Файл с этими данными имеет права `0600`. Токен нужен для доступа к
-/// loopback API; позже его можно перенести в OS-keyring.
+/// loopback API; если он не помещается в файл, GUI читает его из OS-keyring.
 final class LocalDaemonInfo {
   const LocalDaemonInfo({
     required this.pid,
     required this.port,
-    required this.token,
+    this.token = '',
     required this.startedAt,
     this.protocol = localDaemonProtocol,
   });
@@ -32,20 +32,32 @@ final class LocalDaemonInfo {
   final int protocol;
   final int pid;
   final int port;
+
+  /// Токен API. Пустая строка означает, что токен лежит в keyring.
   final String token;
   final DateTime startedAt;
 
-  bool get isValid =>
-      protocol == localDaemonProtocol &&
-      pid > 0 &&
-      port > 0 &&
-      token.isNotEmpty;
+  bool get isValid => protocol == localDaemonProtocol && pid > 0 && port > 0;
+
+  LocalDaemonInfo copyWith({
+    int? protocol,
+    int? pid,
+    int? port,
+    String? token,
+    DateTime? startedAt,
+  }) => LocalDaemonInfo(
+    protocol: protocol ?? this.protocol,
+    pid: pid ?? this.pid,
+    port: port ?? this.port,
+    token: token ?? this.token,
+    startedAt: startedAt ?? this.startedAt,
+  );
 
   Map<String, Object?> toJson() => {
     'protocol': protocol,
     'pid': pid,
     'port': port,
-    'token': token,
+    if (token.isNotEmpty) 'token': token,
     'startedAt': startedAt.toUtc().toIso8601String(),
   };
 

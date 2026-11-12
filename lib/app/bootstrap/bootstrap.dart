@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
@@ -28,6 +30,7 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/security/system_secret_store.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_client/pw_client.dart';
@@ -57,7 +60,14 @@ Future<bool> bootstrap() async {
     return _bootstrapEmbedded(paths, clientSettings);
   }
 
-  final discovery = LocalDaemonDiscovery(paths);
+  final daemonSecrets = createSystemSecretStore(
+    support: paths.support,
+    environment: Platform.environment,
+    // Не переносим токен старого файлового демона в keyring: он ещё
+    // работает и не увидит новый ключ.
+    migrate: false,
+  );
+  final discovery = LocalDaemonDiscovery(paths, secrets: daemonSecrets);
   final starter = LocalDaemonStarter(discovery);
   try {
     final running = await discovery.find();

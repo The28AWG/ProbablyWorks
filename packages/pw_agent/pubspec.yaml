@@ -13,6 +13,7 @@ dependencies:
   dartssh2: ^4.1.0
   drift: ^2.35.0
   equatable: ^2.0.8
+  freedesktop_secret: ^0.1.6
   get_it: ^9.2.1
   http: ^1.5.0
   injectable: ^3.0.0

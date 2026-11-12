@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:probably_works/app/profiles/local_daemon_discovery.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/config/local_daemon_info.dart';
+import 'package:pw_agent/core/security/system_secret_store.dart';
 
 /// Запускает настоящий демон и проверяет discovery, API и остановку.
 ///
@@ -18,14 +19,20 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('pw_daemon_integration');
     final paths = AppPaths.forSupport(temp);
     final dart = _dartExecutable();
-    final process = await Process.start(dart, [
-      'run',
-      'packages/pw_server/bin/pw_server.dart',
-      '--data-dir',
-      temp.path,
-      '--port',
-      '0',
-    ], workingDirectory: Directory.current.path);
+    final process = await Process.start(
+      dart,
+      [
+        'run',
+        'packages/pw_server/bin/pw_server.dart',
+        '--data-dir',
+        temp.path,
+        '--port',
+        '0',
+      ],
+      workingDirectory: Directory.current.path,
+      // Тест проверяет файловый fallback независимо от keyring на машине.
+      environment: {...Platform.environment, noKeyringEnvironment: '1'},
+    );
     final stdoutBuffer = StringBuffer();
     final stderrBuffer = StringBuffer();
     final subscriptions = [

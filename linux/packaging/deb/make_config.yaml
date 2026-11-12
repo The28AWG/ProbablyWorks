@@ -5,6 +5,14 @@ maintainer:
   email: the28awg@gmail.com
 priority: optional
 section: utils
+# D-Bus/keyring и системные библиотеки, которых нет в Flutter bundle.
+dependencies:
+  - dbus-user-session
+  - libgtk-3-0 | libgtk-3-0t64
+  - libjsoncpp25
+  - libnotify4
+  - libsecret-1-0
+  - libstdc++6
 # Оценка установленного размера: Flutter bundle и AOT-демон.
 installed_size: 250000
 icon: assets/icon/app_icon.png

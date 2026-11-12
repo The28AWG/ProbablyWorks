@@ -14,6 +14,9 @@ abstract interface class SecretStore {
 
 const openRouterKeyName = 'openrouter.apiKey';
 
+/// Ключ токена HTTP API в [SecretStore].
+const apiTokenKey = 'api.token';
+
 String hostPasswordKey(String hostId) => 'host.$hostId.password';
 String hostPassphraseKey(String hostId) => 'host.$hostId.passphrase';
 

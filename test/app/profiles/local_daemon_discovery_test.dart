@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/profiles/local_daemon_discovery.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/config/local_daemon_info.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
   late Directory temp;
@@ -91,6 +92,43 @@ void main() {
     );
     final discovery = LocalDaemonDiscovery(paths);
     addTearDown(discovery.dispose);
+    expect(await discovery.find(), isNull);
+  });
+
+  test(
+    'reads the token from the secret store when it is absent in file',
+    () async {
+      final paths = AppPaths.forSupport(temp);
+      paths.daemonInfo.writeAsStringSync(
+        LocalDaemonInfo(
+          pid: 42,
+          port: server.port,
+          startedAt: DateTime.utc(2026, 11, 12),
+        ).encode(),
+      );
+      final secrets = MemorySecretStore()..values[apiTokenKey] = token;
+      final discovery = LocalDaemonDiscovery(paths, secrets: secrets);
+      addTearDown(discovery.dispose);
+
+      final info = await discovery.find();
+
+      expect(info?.token, token);
+      expect(info?.port, server.port);
+    },
+  );
+
+  test('ignores a daemon without a token in file and secret store', () async {
+    final paths = AppPaths.forSupport(temp);
+    paths.daemonInfo.writeAsStringSync(
+      LocalDaemonInfo(
+        pid: 42,
+        port: server.port,
+        startedAt: DateTime.utc(2026, 11, 12),
+      ).encode(),
+    );
+    final discovery = LocalDaemonDiscovery(paths, secrets: MemorySecretStore());
+    addTearDown(discovery.dispose);
+
     expect(await discovery.find(), isNull);
   });
 
