@@ -125,16 +125,42 @@ class ProjectRepository {
           .watch()
           .map((rows) => rows.map(_fact).toList());
 
-  Future<void> addFact(ProjectFact fact) => _db
-      .into(_facts)
-      .insert(
-        ProjectFactsCompanion.insert(
-          id: fact.id,
-          projectId: fact.projectId,
-          content: fact.text,
-          createdAt: fact.createdAt,
-        ),
+  /// Сколько фактов можно хранить в одном проекте.
+  static const maxFactsPerProject = 50;
+
+  /// Максимальная длина одного факта в символах.
+  static const maxFactChars = 2000;
+
+  Future<void> addFact(ProjectFact fact) async {
+    final text = fact.text.trim();
+    if (text.isEmpty) {
+      throw ArgumentError('project fact is empty');
+    }
+    if (text.length > maxFactChars) {
+      throw ArgumentError(
+        'project fact is too long: ${text.length} > $maxFactChars chars',
       );
+    }
+    final count = _facts.id.count();
+    final row =
+        await (_db.selectOnly(_facts)
+              ..addColumns([count])
+              ..where(_facts.projectId.equals(fact.projectId)))
+            .getSingle();
+    if ((row.read(count) ?? 0) >= maxFactsPerProject) {
+      throw StateError('project fact limit reached: $maxFactsPerProject facts');
+    }
+    await _db
+        .into(_facts)
+        .insert(
+          ProjectFactsCompanion.insert(
+            id: fact.id,
+            projectId: fact.projectId,
+            content: text,
+            createdAt: fact.createdAt,
+          ),
+        );
+  }
 
   Future<void> deleteFact(String id) =>
       (_db.delete(_facts)..where((t) => t.id.equals(id))).go();

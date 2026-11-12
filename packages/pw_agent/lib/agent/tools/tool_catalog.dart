@@ -379,11 +379,20 @@ abstract final class ToolCatalog {
     ),
     const LlmToolSpec(
       name: ToolNames.chatHistorySearch,
-      description: 'Full-text search over earlier messages of this chat.',
+      description:
+          'Full-text search over earlier messages. scope=chat searches this chat, '
+          'scope=project searches every chat in the current project, scope=all '
+          'searches all chats. Use project scope when looking for a solution from '
+          'another chat in the same project.',
       parameters: {
         'type': 'object',
         'properties': {
           'query': {'type': 'string'},
+          'scope': {
+            'type': 'string',
+            'enum': ['chat', 'project', 'all'],
+            'description': 'Default: chat.',
+          },
         },
         'required': ['query'],
       },

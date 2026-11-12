@@ -232,12 +232,8 @@ class ChatRepository implements DraftPersistence {
     String query, {
     int limit = 20,
   }) async {
-    final terms = query
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .map((t) => '"${t.replaceAll('"', '""')}"')
-        .join(' ');
-    if (terms.isEmpty) return const [];
+    final terms = _ftsQuery(query);
+    if (terms == null) return const [];
     final rows = await _db
         .customSelect(
           'SELECT message_id FROM message_search WHERE message_search MATCH ? AND chat_id = ? ORDER BY rank LIMIT ?',
@@ -254,6 +250,61 @@ class ChatRepository implements DraftPersistence {
       _messagesTable,
     )..where((t) => t.id.isIn(ids))).get();
     return found.map(_message).toList();
+  }
+
+  /// FTS-поиск по всем основным чатам или по чатам одного проекта.
+  ///
+  /// Возвращает сообщения в порядке релевантности вместе с названием чата,
+  /// чтобы модель могла сослаться на решение из другого чата.
+  Future<List<ChatSearchHit>> searchMessagesAll(
+    String query, {
+    String? projectId,
+    int limit = 20,
+  }) async {
+    final terms = _ftsQuery(query);
+    if (terms == null) return const [];
+    final projectClause = projectId == null ? '' : ' AND c.project_id = ?';
+    final variables = [
+      Variable.withString(terms),
+      Variable.withString(ChatKind.main.name),
+      if (projectId != null) Variable.withString(projectId),
+      Variable.withInt(limit),
+    ];
+    final rows = await _db
+        .customSelect(
+          'SELECT message_search.message_id AS message_id, '
+          'message_search.chat_id AS chat_id, c.title AS chat_title '
+          'FROM message_search '
+          'JOIN chats c ON c.id = message_search.chat_id '
+          'WHERE message_search MATCH ? AND c.kind = ?$projectClause '
+          'ORDER BY rank LIMIT ?',
+          variables: variables,
+        )
+        .get();
+    if (rows.isEmpty) return const [];
+    final ids = rows.map((r) => r.read<String>('message_id')).toList();
+    final found = await (_db.select(
+      _messagesTable,
+    )..where((t) => t.id.isIn(ids))).get();
+    final messages = {for (final row in found) row.id: _message(row)};
+    return [
+      for (final row in rows)
+        if (messages[row.read<String>('message_id')] case final message?)
+          ChatSearchHit(
+            chatId: row.read<String>('chat_id'),
+            chatTitle: row.read<String>('chat_title'),
+            message: message,
+          ),
+    ];
+  }
+
+  static String? _ftsQuery(String query) {
+    final terms = query
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((t) => '"${t.replaceAll('"', '""')}"')
+        .join(' ');
+    return terms.isEmpty ? null : terms;
   }
 
   /// Удаляет сообщения с seq >= [fromSeq] и связанные записи. Возвращает удалённые id.
@@ -484,4 +535,17 @@ class ChatRepository implements DraftPersistence {
 
   Map<String, dynamic> _decodeState(String raw) =>
       jsonDecode(raw) as Map<String, dynamic>;
+}
+
+/// Результат FTS-поиска по нескольким чатам.
+final class ChatSearchHit {
+  const ChatSearchHit({
+    required this.chatId,
+    required this.chatTitle,
+    required this.message,
+  });
+
+  final String chatId;
+  final String chatTitle;
+  final ChatMessage message;
 }

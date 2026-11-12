@@ -668,7 +668,15 @@ final class ApiServer {
       }
       if (rest[1] == 'facts' && request.method == 'POST') {
         final body = await _body(request);
-        await api.addFact(_factFromJson(id, body));
+        try {
+          await api.addFact(_factFromJson(id, body));
+        } on Object catch (error) {
+          throw AgentApiException(
+            HttpStatus.badRequest,
+            'invalid_project_fact',
+            '$error',
+          );
+        }
         return _json(request.response, HttpStatus.created, {});
       }
       if (rest[1] == 'trust' && request.method == 'POST') {

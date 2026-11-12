@@ -648,7 +648,13 @@ class _FactsSection extends StatelessWidget {
       maxLines: 4,
     );
     if (text == null || !context.mounted) return;
-    await context.read<ProjectsCubit>().addFact(project, text);
+    try {
+      await context.read<ProjectsCubit>().addFact(project, text);
+    } on Object catch (error) {
+      if (context.mounted) {
+        AppSnackBar.show(context, l10n.commonError('$error'));
+      }
+    }
   }
 
   Future<void> _deleteFact(BuildContext context, ProjectFact fact) async {

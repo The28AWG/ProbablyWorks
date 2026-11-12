@@ -1019,7 +1019,11 @@ class ToolExecutor {
         text: _str(args, 'text').trim(),
         createdAt: DateTime.now(),
       );
-      await _projects.addFact(fact);
+      try {
+        await _projects.addFact(fact);
+      } on Object catch (error) {
+        return ToolResult('cannot save project fact: $error', isError: true);
+      }
       summary = 'project fact ${fact.id} saved';
     } else {
       final id = _str(args, 'id');
@@ -1244,12 +1248,40 @@ class ToolExecutor {
           }),
         );
       case ToolNames.chatHistorySearch:
-        final found = await _chats.searchMessages(chat.id, _str(args, 'query'));
+        final query = _str(args, 'query');
+        final scope = _str(args, 'scope');
+        if (scope.isEmpty || scope == 'chat') {
+          final found = await _chats.searchMessages(chat.id, query);
+          if (found.isEmpty) return const ToolResult('no matches');
+          return ToolResult(
+            [
+              for (final m in found)
+                '#${m.seq} ${m.role.name}: ${_preview(m.text, max: 300)}',
+            ].join('\n'),
+          );
+        }
+        if (scope != 'project' && scope != 'all') {
+          return const ToolResult(
+            'scope must be chat, project or all',
+            isError: true,
+          );
+        }
+        final projectId = scope == 'project' ? ctx.project?.id : null;
+        if (scope == 'project' && projectId == null) {
+          return const ToolResult(
+            'this chat has no project; project search is unavailable',
+            isError: true,
+          );
+        }
+        final found = await _chats.searchMessagesAll(
+          query,
+          projectId: projectId,
+        );
         if (found.isEmpty) return const ToolResult('no matches');
         return ToolResult(
           [
-            for (final m in found)
-              '#${m.seq} ${m.role.name}: ${_preview(m.text, max: 300)}',
+            for (final hit in found)
+              '${hit.chatTitle} #${hit.message.seq} ${hit.message.role.name}: ${_preview(hit.message.text, max: 300)}',
           ].join('\n'),
         );
       case ToolNames.listSkills:
