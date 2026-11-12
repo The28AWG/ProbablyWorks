@@ -484,8 +484,17 @@ final class ApiServer {
 
   Future<void> _saveHost(HttpRequest request, String id) async {
     final body = await _body(request);
-    await _requireHostsApi().saveHost(
-      _hostFromJson(id, body),
+    final api = _requireHostsApi();
+    final host = _hostFromJson(id, body);
+    final existing = (await api.hosts())
+        .where((item) => item.id == id)
+        .firstOrNull;
+    await api.saveHost(
+      // Окружение живёт в SecretStore сервера и в JSON хоста не передаётся:
+      // сохраняем его, иначе редактирование удалённого хоста сотрёт переменные.
+      existing == null
+          ? host
+          : host.copyWith(environment: existing.environment),
       secret: body['secret'] as String?,
       privateKeyPem: body['privateKeyPem'] as String?,
     );
@@ -1014,7 +1023,7 @@ final class ApiServer {
   Future<void> _schedule(HttpRequest request) async {
     final body = await _body(request);
     final dueAtRaw = _string(body, 'dueAt');
-    final dueAt = DateTime.tryParse(dueAtRaw);
+    final dueAt = DateTime.tryParse(dueAtRaw)?.toUtc();
     if (dueAt == null) {
       throw const AgentApiException(
         HttpStatus.badRequest,
@@ -1235,7 +1244,17 @@ Host _hostFromJson(String id, Map<String, dynamic> json) {
     keyPath: json['keyPath'] as String?,
     os: HostOs.values.byName('${json['os'] ?? 'posix'}'),
     defaultWorkspace: json['defaultWorkspace'] as String?,
+    shellOverride: json['shellOverride'] as String?,
     notes: json['notes'] as String?,
+    connectTimeoutSeconds: json['connectTimeoutSeconds'] is num
+        ? (json['connectTimeoutSeconds'] as num).toInt()
+        : null,
+    hostKeyFingerprint: json['hostKeyFingerprint'] as String?,
+    lastCheckAt: _date(json['lastCheckAt']),
+    lastLatencyMs: json['lastLatencyMs'] is num
+        ? (json['lastLatencyMs'] as num).toInt()
+        : null,
+    lastCheckError: json['lastCheckError'] as String?,
     createdAt: _date(json['createdAt']) ?? now,
     updatedAt: _date(json['updatedAt']) ?? now,
   );
@@ -1248,9 +1267,19 @@ Map<String, Object?> _hostJson(Host host) => {
   'address': host.address,
   'port': host.port,
   'username': host.username,
+  'authType': host.authType.name,
+  'keyPath': host.keyPath,
+  'hostKeyFingerprint': host.hostKeyFingerprint,
   'os': host.os.name,
   'defaultWorkspace': host.defaultWorkspace,
+  'shellOverride': host.shellOverride,
   'notes': host.notes,
+  'connectTimeoutSeconds': host.connectTimeoutSeconds,
+  'lastCheckAt': host.lastCheckAt?.toUtc().toIso8601String(),
+  'lastLatencyMs': host.lastLatencyMs,
+  'lastCheckError': host.lastCheckError,
+  'createdAt': host.createdAt.toUtc().toIso8601String(),
+  'updatedAt': host.updatedAt.toUtc().toIso8601String(),
 };
 
 Map<String, Object?> _stepsJson(StepsDisplay steps) => {
@@ -1347,8 +1376,9 @@ Chat _chatFromJson(String id, Map<String, dynamic> json) {
   );
 }
 
-DateTime? _date(Object? value) =>
-    value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
+DateTime? _date(Object? value) => value is String && value.isNotEmpty
+    ? DateTime.tryParse(value)?.toUtc()
+    : null;
 
 Map<String, Object?> _chatJson(
   Chat chat, {

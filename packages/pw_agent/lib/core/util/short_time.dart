@@ -21,3 +21,13 @@ String formatShortTime(DateTime value, {DateTime? now}) {
   }
   return '${two(local.day)}.${two(local.month)}';
 }
+
+/// Календарная дата в локальном времени: `2026-11-12`.
+///
+/// Сервер присылает метки в UTC, поэтому перед разбором полей даты
+/// значение нужно перевести в локальную зону.
+String formatIsoDate(DateTime value) {
+  final local = value.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${local.year}-${two(local.month)}-${two(local.day)}';
+}

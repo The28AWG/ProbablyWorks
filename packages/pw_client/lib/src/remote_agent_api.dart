@@ -1352,8 +1352,8 @@ Chat _chat(Map<String, dynamic> json) => Chat(
   lastPromptTokens: json['lastPromptTokens'] as int?,
   lastCompletionTokens: json['lastCompletionTokens'] as int?,
   contextLength: json['contextLength'] as int?,
-  createdAt: DateTime.parse(_string(json, 'createdAt')),
-  updatedAt: DateTime.parse(_string(json, 'updatedAt')),
+  createdAt: _time(json, 'createdAt'),
+  updatedAt: _time(json, 'updatedAt'),
 );
 
 ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
@@ -1377,7 +1377,7 @@ ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
         sizeBytes: _int(Map<String, dynamic>.from(attachment), 'sizeBytes'),
       ),
   ],
-  createdAt: DateTime.parse(_string(json, 'createdAt')),
+  createdAt: _time(json, 'createdAt'),
 );
 
 ToolRun _run(Map<String, dynamic> json) => ToolRun(
@@ -1395,7 +1395,7 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
   outputText: json['outputText'] as String?,
   outputTruncated: json['outputTruncated'] == true,
   resultPreview: json['resultPreview'] as String?,
-  startedAt: DateTime.parse(_string(json, 'startedAt')),
+  startedAt: _time(json, 'startedAt'),
   finishedAt: _date(json['finishedAt']),
   toolCallId: json['toolCallId'] as String?,
   pendingCard: json['pendingCard'] == null
@@ -1421,9 +1421,15 @@ Map<String, Object?> _hostBody(Host host) => {
   'username': host.username,
   'authType': host.authType.name,
   'keyPath': host.keyPath,
+  'hostKeyFingerprint': host.hostKeyFingerprint,
   'os': host.os.name,
   'defaultWorkspace': host.defaultWorkspace,
+  'shellOverride': host.shellOverride,
   'notes': host.notes,
+  'connectTimeoutSeconds': host.connectTimeoutSeconds,
+  'lastCheckAt': host.lastCheckAt?.toUtc().toIso8601String(),
+  'lastLatencyMs': host.lastLatencyMs,
+  'lastCheckError': host.lastCheckError,
   'createdAt': host.createdAt.toUtc().toIso8601String(),
   'updatedAt': host.updatedAt.toUtc().toIso8601String(),
 };
@@ -1435,22 +1441,38 @@ Host _host(Map<String, dynamic> json) => Host(
   address: json['address'] as String?,
   port: _int(json, 'port'),
   username: json['username'] as String?,
+  authType: SshAuthType.values.byName('${json['authType'] ?? 'key'}'),
+  keyPath: json['keyPath'] as String?,
+  hostKeyFingerprint: json['hostKeyFingerprint'] as String?,
   os: HostOs.values.byName('${json['os'] ?? 'posix'}'),
   defaultWorkspace: json['defaultWorkspace'] as String?,
+  shellOverride: json['shellOverride'] as String?,
   notes: json['notes'] as String?,
-  createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
-  updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+  connectTimeoutSeconds: json['connectTimeoutSeconds'] is num
+      ? (json['connectTimeoutSeconds'] as num).toInt()
+      : null,
+  lastCheckAt: _date(json['lastCheckAt']),
+  lastLatencyMs: json['lastLatencyMs'] is num
+      ? (json['lastLatencyMs'] as num).toInt()
+      : null,
+  lastCheckError: json['lastCheckError'] as String?,
+  createdAt:
+      _date(json['createdAt']) ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+  updatedAt:
+      _date(json['updatedAt']) ??
+      DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
 );
 
 ScheduledTask _task(Map<String, dynamic> json) => ScheduledTask(
   id: _string(json, 'id'),
   chatId: _string(json, 'chatId'),
   prompt: _string(json, 'prompt'),
-  dueAt: DateTime.parse(_string(json, 'dueAt')),
+  dueAt: _time(json, 'dueAt'),
   status: ScheduledTaskStatus.values.byName(_string(json, 'status')),
   error: json['error'] as String?,
-  createdAt: DateTime.parse(_string(json, 'createdAt')),
-  updatedAt: DateTime.parse(_string(json, 'updatedAt')),
+  createdAt: _time(json, 'createdAt'),
+  updatedAt: _time(json, 'updatedAt'),
 );
 
 ApprovalRequest _approval(Map<String, dynamic> json) => ApprovalRequest(
@@ -1496,8 +1518,12 @@ int _int(Map<String, dynamic> json, String key) {
 
 double? _double(Object? value) => value is num ? value.toDouble() : null;
 
-DateTime? _date(Object? value) =>
-    value is String && value.isNotEmpty ? DateTime.tryParse(value) : null;
+DateTime? _date(Object? value) => value is String && value.isNotEmpty
+    ? DateTime.tryParse(value)?.toUtc()
+    : null;
+
+DateTime _time(Map<String, dynamic> json, String key) =>
+    DateTime.parse(_string(json, key)).toUtc();
 
 final class _RemoteChatStore implements ChatStore {
   _RemoteChatStore(this._api);
@@ -1628,7 +1654,7 @@ final class _RemoteSettings implements SettingsStore {
     if (raw is! Map) return null;
     final map = Map<String, dynamic>.from(raw);
     return ChatCompactionInfo(
-      at: DateTime.parse('${map['at']}'),
+      at: DateTime.parse('${map['at']}').toUtc(),
       reason: '${map['reason'] ?? 'threshold'}',
       cutoffSeq: _int(map, 'cutoffSeq'),
       summaryChars: _int(map, 'summaryChars'),

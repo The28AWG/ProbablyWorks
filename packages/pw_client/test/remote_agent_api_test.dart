@@ -55,6 +55,20 @@ void main() {
     expect(runs, isEmpty);
   });
 
+  test('parses server timestamps as UTC', () async {
+    final chat = (await remote.chats()).single;
+    final host = (await remote.hosts()).single;
+    final message = (await remote.messages('c1')).single;
+
+    expect(chat.createdAt.isUtc, isTrue);
+    expect(chat.updatedAt.isUtc, isTrue);
+    expect(message.createdAt.isUtc, isTrue);
+    expect(host.createdAt.isUtc, isTrue);
+    expect(host.updatedAt.isUtc, isTrue);
+    expect(host.lastCheckAt?.isUtc, isTrue);
+    expect(host.lastLatencyMs, 12);
+  });
+
   test('sends a message and resolves a card', () async {
     await remote.send('c1', 'do it', sendNow: true);
     await remote.resolveApproval('a1', ApprovalAction.allowTurn);
@@ -318,6 +332,8 @@ final class _FakeAgent implements AgentApi {
       kind: HostKind.local,
       createdAt: DateTime.utc(2026, 11, 11),
       updatedAt: DateTime.utc(2026, 11, 11),
+      lastCheckAt: DateTime(2026, 11, 11, 12, 30),
+      lastLatencyMs: 12,
     ),
   ];
 

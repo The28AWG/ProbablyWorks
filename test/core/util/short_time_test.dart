@@ -37,4 +37,17 @@ void main() {
       expect(formatShortTime(DateTime(2026, 3, 7, 9, 5), now: now), '07.03');
     });
   });
+
+  group('formatIsoDate', () {
+    test('переводит UTC в локальную календарную дату', () {
+      final utc = DateTime.utc(2026, 11, 12, 23, 30);
+      final local = utc.toLocal();
+
+      expect(
+        formatIsoDate(utc),
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}',
+      );
+    });
+  });
 }

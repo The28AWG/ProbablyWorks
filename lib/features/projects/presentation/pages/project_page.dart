@@ -16,6 +16,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/short_time.dart';
 
 /// Карточка проекта: имя, неизменяемые хост и папка, профиль политики, доверие,
 /// skills и общая память. Факты меняются только здесь или подтверждённым инструментом агента.
@@ -611,7 +612,7 @@ class _FactsSection extends StatelessWidget {
                               ),
                               const SizedBox(height: AppSpacing.xs),
                               Text(
-                                _formatDate(fact.createdAt),
+                                formatIsoDate(fact.createdAt),
                                 style: theme.textTheme.labelSmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
@@ -873,6 +874,3 @@ double _policyMenuWidth(BuildContext context, double anchorWidth) {
 
 /// Меню профиля не выше этого: длинный список прокручивается внутри рамки.
 const double _policyMenuMaxHeight = 250;
-
-String _formatDate(DateTime value) =>
-    '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';

@@ -45,6 +45,9 @@ dart run packages/pw_server/bin/pw_server.dart --print-token
 Все endpoint'ы, кроме `/api/v1/health`, требуют
 `Authorization: Bearer <token>`.
 
+Все метки времени в JSON — ISO-8601 в UTC с суффиксом `Z`. Клиент хранит
+их как UTC и переводит в локальную зону только при отображении.
+
 ```
 GET    /api/v1/health
 GET    /api/v1/hosts

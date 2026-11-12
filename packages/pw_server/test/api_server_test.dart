@@ -109,6 +109,51 @@ void main() {
     expect((jsonDecode(createBody) as Map)['hostId'], 'local');
   });
 
+  test('serializes host timestamps as UTC', () async {
+    final source = (await backend.hosts()).single;
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/hosts',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final host = ((jsonDecode(body) as Map)['hosts'] as List).single as Map;
+    for (final key in ['createdAt', 'updatedAt', 'lastCheckAt']) {
+      expect(host[key], endsWith('Z'), reason: key);
+    }
+    expect(
+      DateTime.parse(host['createdAt'] as String)
+          .isAtSameMomentAs(source.createdAt),
+      isTrue,
+    );
+    expect(
+      DateTime.parse(host['lastCheckAt'] as String)
+          .isAtSameMomentAs(source.lastCheckAt!),
+      isTrue,
+    );
+  });
+
+  test('serializes chat and message timestamps as UTC', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final json = jsonDecode(body) as Map;
+    final chat = json['chat'] as Map;
+    final messages = json['messages'] as List;
+    expect(chat['createdAt'], endsWith('Z'));
+    expect(chat['updatedAt'], endsWith('Z'));
+    expect((messages.single as Map)['createdAt'], endsWith('Z'));
+  });
+
   test('unknown chat subresources return 404', () async {
     for (final path in [
       '/api/v1/chats/missing/messages',
@@ -714,6 +759,8 @@ final class _FakeBackend implements AgentApi {
       kind: HostKind.local,
       createdAt: DateTime(2026, 11, 11),
       updatedAt: DateTime(2026, 11, 11),
+      lastCheckAt: DateTime(2026, 11, 11, 12, 30),
+      lastLatencyMs: 12,
     ),
   ];
 
