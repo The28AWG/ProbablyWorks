@@ -1,5 +1,6 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:injectable/injectable.dart';
+import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.gr.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
@@ -11,10 +12,11 @@ import 'package:pw_agent/core/security/secret_store.dart';
 /// при каждом переходе внутри неё.
 @lazySingleton
 class ApiKeyGuard extends AutoRouteGuard {
-  ApiKeyGuard(this._secrets, this._profiles);
+  ApiKeyGuard(this._secrets, this._profiles, this._local);
 
   final SecretStore _secrets;
   final ProfileService _profiles;
+  final LocalAgentApisProvider _local;
 
   @override
   Future<void> onNavigation(
@@ -24,7 +26,8 @@ class ApiKeyGuard extends AutoRouteGuard {
     final args = resolver.route.args;
     final profileId = args is WorkspaceRouteArgs ? args.profileId : null;
     final profile = profileId == null ? null : _profiles.byId(profileId);
-    if (profile != null && !profile.isLocal) {
+    final localDaemon = _local.modeOrNull == LocalRuntimeMode.localDaemon;
+    if (profile != null && (!profile.isLocal || localDaemon)) {
       resolver.next();
       return;
     }

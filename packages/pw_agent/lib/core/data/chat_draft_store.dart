@@ -12,6 +12,9 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 class ChatDraftStore {
   ChatDraftStore(this._chats);
 
+  /// Черновик без backend'а: нужен в daemon-режиме до привязки профиля.
+  ChatDraftStore.unbound() : _chats = const _NoopDraftPersistence();
+
   DraftPersistence _chats;
 
   final _drafts = <String, ChatDraft>{};
@@ -196,4 +199,25 @@ class ChatDraftStore {
     _editsDirty.remove(chatId);
     _revisions.remove(chatId);
   }
+}
+
+final class _NoopDraftPersistence implements DraftPersistence {
+  const _NoopDraftPersistence();
+
+  @override
+  Future<Chat?> chat(String id) async => null;
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async => expectedRevision ?? 0;
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) async => expectedRevision ?? 0;
 }

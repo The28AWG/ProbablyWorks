@@ -40,7 +40,7 @@ class ProfileService {
 
   final ClientSettings _settings;
   final SecretStore _secrets;
-  final LocalAgentApis _local;
+  final LocalAgentApisProvider _local;
   final ClientInfo _clientInfo;
   final AppNotifier _notifier;
 
@@ -120,31 +120,31 @@ class ProfileService {
       _profiles.where((profile) => profile.id == id).firstOrNull;
 
   AgentApi agentApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.agent : _remoteFor(profile);
+      profile.isLocal ? _local.value.agent : _remoteFor(profile);
 
   ChatApi chatApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.chat : _remoteFor(profile);
+      profile.isLocal ? _local.value.chat : _remoteFor(profile);
 
   HostsApi hostsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.hosts : _remoteFor(profile);
+      profile.isLocal ? _local.value.hosts : _remoteFor(profile);
 
   ProjectsApi projectsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.projects : _remoteFor(profile);
+      profile.isLocal ? _local.value.projects : _remoteFor(profile);
 
   AgentSettingsApi settingsApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.settings : _remoteFor(profile);
+      profile.isLocal ? _local.value.settings : _remoteFor(profile);
 
   McpApi mcpApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.mcp : _remoteFor(profile);
+      profile.isLocal ? _local.value.mcp : _remoteFor(profile);
 
   PluginApi pluginApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.plugins : _remoteFor(profile);
+      profile.isLocal ? _local.value.plugins : _remoteFor(profile);
 
   SecurityAuditApi securityAuditApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.audit : _remoteFor(profile);
+      profile.isLocal ? _local.value.audit : _remoteFor(profile);
 
   PushApi pushApiFor(AgentProfile profile) =>
-      profile.isLocal ? _local.push : _remoteFor(profile);
+      profile.isLocal ? _local.value.push : _remoteFor(profile);
 
   AgentStatus statusFor(AgentProfile profile) => agentApiFor(profile).status;
 
@@ -212,6 +212,13 @@ class ProfileService {
     _changes.add(null);
   }
 
+  /// Включает клиентские уведомления для локального демона.
+  void attachLocalNotices() {
+    if (_local.modeOrNull != LocalRuntimeMode.localDaemon) return;
+    final id = localProfile.id;
+    _listeners.putIfAbsent(id, () => _listenNotices(_local.value.agent));
+  }
+
   Future<void> dispose() async {
     for (final id in _listeners.keys.toList()) {
       await _disposeRemote(id);
@@ -247,7 +254,7 @@ class ProfileService {
   /// Сервер не умеет показывать системные уведомления GUI, поэтому клиент
   /// повторяет их по SSE и потокам карточек удалённого профиля. Локальный
   /// агент уведомляет сам через `ChatSession`, здесь его нет.
-  List<StreamSubscription<Object?>> _listenNotices(RemoteAgentApi api) => [
+  List<StreamSubscription<Object?>> _listenNotices(AgentApi api) => [
     api.events.listen((event) {
       final kind = switch (event) {
         AgentTurnFinished(end: TurnEnd.completed) =>
@@ -272,7 +279,7 @@ class ProfileService {
   ];
 
   Future<void> _notify(
-    RemoteAgentApi api,
+    AgentApi api,
     String chatId,
     AgentNoticeKind kind,
   ) async {

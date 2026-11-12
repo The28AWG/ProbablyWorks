@@ -40,3 +40,25 @@ final class LocalAgentApis {
   final PushApi push;
   final LocalRuntimeMode mode;
 }
+
+/// Позволяет выбрать backend локального профиля до первого обращения UI.
+///
+/// Bootstrap заполняет provider либо embedded-адаптерами, либо remote-клиентом
+/// локального демона.
+final class LocalAgentApisProvider {
+  LocalAgentApis? _value;
+
+  LocalAgentApis get value {
+    final value = _value;
+    if (value == null) {
+      throw StateError('LocalAgentApis is not configured');
+    }
+    return value;
+  }
+
+  LocalRuntimeMode? get modeOrNull => _value?.mode;
+
+  void set(LocalAgentApis value) {
+    _value = value;
+  }
+}

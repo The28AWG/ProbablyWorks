@@ -20,6 +20,7 @@ import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 import 'package:pw_agent/agent_di.dart';
 import 'package:pw_agent/core/appearance/appearance_port.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
+import 'package:pw_agent/core/config/local_daemon_info.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -28,6 +29,7 @@ import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/notify/push_service.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
+import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
@@ -125,6 +127,15 @@ Future<int> runDaemon(List<String> args) async {
     accessLog: accessLog,
   );
   final port = await server.start();
+  _writeDaemonInfo(
+    paths.daemonInfo,
+    LocalDaemonInfo(
+      pid: pid,
+      port: port,
+      token: token,
+      startedAt: DateTime.now().toUtc(),
+    ),
+  );
   final scheduler = getIt<TaskScheduler>()..start();
 
   final address = options.bind?.address ?? InternetAddress.loopbackIPv4.address;
@@ -155,9 +166,18 @@ Future<int> runDaemon(List<String> args) async {
   }
   scheduler.stop();
   await server.stop();
+  if (paths.daemonInfo.existsSync()) paths.daemonInfo.deleteSync();
   await getIt<AppDatabase>().close();
   lock.release();
   return 0;
+}
+
+void _writeDaemonInfo(File file, LocalDaemonInfo info) {
+  final temp = File('${file.path}.tmp');
+  // ignore: cascade_invocations, права выставляются между записью и переименованием
+  temp.writeAsStringSync(info.encode(), flush: true);
+  FilePermissions.file(temp);
+  temp.renameSync(file.path);
 }
 
 bool _isLoopback(InternetAddress? address) =>

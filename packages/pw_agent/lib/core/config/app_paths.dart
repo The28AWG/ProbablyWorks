@@ -23,4 +23,7 @@ class AppPaths {
   /// Пользовательская конфигурация MCP. Импортируется при старте и на desktop
   /// перечитывается при изменении файла.
   File get mcpConfig => File(p.join(support.path, 'mcp.json'));
+
+  /// Discovery-файл локального демона. Содержит токен, поэтому `0600`.
+  File get daemonInfo => File(p.join(support.path, 'daemon.json'));
 }

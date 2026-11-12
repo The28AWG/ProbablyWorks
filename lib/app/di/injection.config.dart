@@ -15,16 +15,7 @@ import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 import 'package:plugin_api_ui/plugin_api_ui.dart' as _i810;
 import 'package:pw_agent/agent/api/agent_api.dart' as _i144;
-import 'package:pw_agent/agent/api/agent_settings_api.dart' as _i246;
 import 'package:pw_agent/agent/api/chat_api.dart' as _i891;
-import 'package:pw_agent/agent/api/hosts_api.dart' as _i358;
-import 'package:pw_agent/agent/api/local_agent_api.dart' as _i995;
-import 'package:pw_agent/agent/api/local_chat_api.dart' as _i326;
-import 'package:pw_agent/agent/api/mcp_api.dart' as _i733;
-import 'package:pw_agent/agent/api/plugin_api.dart' as _i166;
-import 'package:pw_agent/agent/api/projects_api.dart' as _i415;
-import 'package:pw_agent/agent/api/push_api.dart' as _i95;
-import 'package:pw_agent/agent/api/security_audit_api.dart' as _i648;
 import 'package:pw_agent/agent/plugins/plugin_registry.dart' as _i1065;
 import 'package:pw_agent/core/appearance/appearance_port.dart' as _i598;
 import 'package:pw_agent/core/notify/app_notifier.dart' as _i641;
@@ -32,7 +23,7 @@ import 'package:pw_agent/core/platform/external_url_opener.dart' as _i1054;
 import 'package:pw_agent/core/security/secret_store.dart' as _i564;
 
 import '../../core/notify/app_notifier_plugin.dart' as _i238;
-import '../../core/platform/client_info.dart' as _i734;
+import '../../core/platform/client_info.dart' as _i733;
 import '../../core/platform/url_launcher_opener.dart' as _i224;
 import '../../core/security/secret_store_plugin.dart' as _i1071;
 import '../../core/settings/client_settings.dart' as _i47;
@@ -58,27 +49,17 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i810.PluginUiRegistry>(() => coreModule.pluginUiRegistry());
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
-    gh.lazySingleton<_i412.LocalAgentApis>(
-      () => coreModule.localAgentApis(
-        gh<_i995.LocalAgentApi>(),
-        gh<_i326.LocalChatApi>(),
-        gh<_i358.HostsApi>(),
-        gh<_i415.ProjectsApi>(),
-        gh<_i246.AgentSettingsApi>(),
-        gh<_i733.McpApi>(),
-        gh<_i166.PluginApi>(),
-        gh<_i648.SecurityAuditApi>(),
-        gh<_i95.PushApi>(),
-      ),
+    gh.lazySingleton<_i412.LocalAgentApisProvider>(
+      () => coreModule.localAgentApisProvider(),
     );
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
     );
     gh.lazySingleton<_i144.AgentApi>(
-      () => coreModule.agentApi(gh<_i412.LocalAgentApis>()),
+      () => coreModule.agentApi(gh<_i412.LocalAgentApisProvider>()),
     );
     gh.lazySingleton<_i891.ChatApi>(
-      () => coreModule.chatApi(gh<_i412.LocalAgentApis>()),
+      () => coreModule.chatApi(gh<_i412.LocalAgentApisProvider>()),
     );
     gh.lazySingleton<_i1054.ExternalUrlOpener>(
       () => const _i224.UrlLauncherOpener(),
@@ -96,8 +77,8 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i740.ProfileService(
         gh<_i47.ClientSettings>(),
         gh<_i564.SecretStore>(),
-        gh<_i412.LocalAgentApis>(),
-        gh<_i734.ClientInfo>(),
+        gh<_i412.LocalAgentApisProvider>(),
+        gh<_i733.ClientInfo>(),
         gh<_i641.AppNotifier>(),
       ),
     );
@@ -105,6 +86,7 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i519.ApiKeyGuard(
         gh<_i564.SecretStore>(),
         gh<_i740.ProfileService>(),
+        gh<_i412.LocalAgentApisProvider>(),
       ),
     );
     gh.lazySingleton<_i81.AppRouter>(

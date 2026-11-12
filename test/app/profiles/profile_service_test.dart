@@ -38,17 +38,19 @@ void main() {
   ProfileService service() => ProfileService(
     clientSettings,
     secrets,
-    LocalAgentApis(
-      agent: _FakeAgentApi(),
-      chat: _FakeChatApi(),
-      hosts: _FakeHostsApi(),
-      projects: _FakeProjectsApi(),
-      settings: _FakeSettingsApi(),
-      mcp: _FakeMcpApi(),
-      plugins: _FakePluginApi(),
-      audit: _FakeSecurityAuditApi(),
-      push: _FakePushApi(),
-    ),
+    (LocalAgentApisProvider()..set(
+      LocalAgentApis(
+        agent: _FakeAgentApi(),
+        chat: _FakeChatApi(),
+        hosts: _FakeHostsApi(),
+        projects: _FakeProjectsApi(),
+        settings: _FakeSettingsApi(),
+        mcp: _FakeMcpApi(),
+        plugins: _FakePluginApi(),
+        audit: _FakeSecurityAuditApi(),
+        push: _FakePushApi(),
+      ),
+    )),
     const ClientInfo.fallback(),
     _FakeNotifier(),
   );
