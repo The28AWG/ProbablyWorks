@@ -10,6 +10,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -21,6 +22,7 @@ import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
@@ -41,6 +43,7 @@ final class ApiServer {
     this.settingsApi,
     this.mcpApi,
     this.pluginApi,
+    this.securityAuditApi,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -56,6 +59,7 @@ final class ApiServer {
   final AgentSettingsApi? settingsApi;
   final McpApi? mcpApi;
   final PluginApi? pluginApi;
+  final SecurityAuditApi? securityAuditApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -198,6 +202,12 @@ final class ApiServer {
           if (rest[1] == 'dependents' && request.method == 'GET') {
             return _pluginDependents(request, id);
           }
+        }
+      case 'security':
+        if (rest.length == 1 &&
+            rest.first == 'audit' &&
+            request.method == 'GET') {
+          return _securityAudit(request);
         }
       case 'hosts':
         if (rest.isEmpty && request.method == 'GET') return _hosts(request);
@@ -685,6 +695,25 @@ final class ApiServer {
         HttpStatus.notImplemented,
         'not_supported',
         'plugin API is not available',
+      );
+    }
+    return api;
+  }
+
+  Future<void> _securityAudit(HttpRequest request) async {
+    final report = await _requireSecurityAuditApi().run(
+      mode: SecurityRunMode.headless,
+    );
+    _json(request.response, HttpStatus.ok, securityReportToJson(report));
+  }
+
+  SecurityAuditApi _requireSecurityAuditApi() {
+    final api = securityAuditApi;
+    if (api == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'security audit API is not available',
       );
     }
     return api;

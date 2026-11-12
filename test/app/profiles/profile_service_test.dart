@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
@@ -38,6 +39,7 @@ void main() {
     _FakeSettingsApi(),
     _FakeMcpApi(),
     _FakePluginApi(),
+    _FakeSecurityAuditApi(),
     _FakeNotifier(),
   );
 
@@ -136,4 +138,10 @@ final class _FakePluginApi implements PluginApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('PluginApi is not used in profile tests');
+}
+
+final class _FakeSecurityAuditApi implements SecurityAuditApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('SecurityAuditApi is not used in profile tests');
 }

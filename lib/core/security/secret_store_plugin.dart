@@ -10,6 +10,9 @@ class FlutterSecretStore implements SecretStore {
   final FlutterSecureStorage _storage;
 
   @override
+  SecretStoreKind get kind => SecretStoreKind.osKeychain;
+
+  @override
   Future<String?> read(String key) => _storage.read(key: key);
 
   @override

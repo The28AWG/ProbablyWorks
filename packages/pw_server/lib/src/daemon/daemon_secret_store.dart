@@ -25,6 +25,9 @@ final class DaemonSecretStore implements SecretStore {
   final Map<String, String> environment;
 
   @override
+  SecretStoreKind get kind => SecretStoreKind.headlessFile;
+
+  @override
   Future<String?> read(String key) async {
     final fromEnvironment = _environmentValue(key);
     if (fromEnvironment != null) return fromEnvironment;

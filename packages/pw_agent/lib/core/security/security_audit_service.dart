@@ -1,15 +1,13 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as p;
-import 'package:probably_works/core/security/secret_store_plugin.dart';
-import 'package:probably_works/core/security/security_audit.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 
 /// Детерминированный аудит окружения.
 ///
@@ -37,14 +35,16 @@ class SecurityAuditService {
     SecurityRunMode mode = SecurityRunMode.gui,
   }) async {
     final findings = <SecurityFinding>[
-      const SecurityFinding(
-        code: SecurityFindingCode.guiMode,
-        severity: SecuritySeverity.info,
-      ),
-      const SecurityFinding(
-        code: SecurityFindingCode.headlessApi,
-        severity: SecuritySeverity.info,
-      ),
+      if (mode == SecurityRunMode.gui)
+        const SecurityFinding(
+          code: SecurityFindingCode.guiMode,
+          severity: SecuritySeverity.info,
+        )
+      else
+        const SecurityFinding(
+          code: SecurityFindingCode.headlessApi,
+          severity: SecuritySeverity.info,
+        ),
     ];
     _checkRoot(findings);
     _checkSecretStore(findings);
@@ -83,31 +83,23 @@ class SecurityAuditService {
   }
 
   void _checkSecretStore(List<SecurityFinding> findings) {
-    if (_secrets is MemorySecretStore) {
-      findings.add(
-        const SecurityFinding(
-          code: SecurityFindingCode.secretStore,
-          severity: SecuritySeverity.critical,
-          params: {'backend': 'memory'},
-        ),
-      );
-      return;
-    }
-    if (_secrets is FlutterSecretStore) {
-      findings.add(
-        const SecurityFinding(
-          code: SecurityFindingCode.secretStore,
-          severity: SecuritySeverity.info,
-          params: {'backend': 'flutter_secure_storage'},
-        ),
-      );
-      return;
-    }
+    final (severity, backend) = switch (_secrets.kind) {
+      SecretStoreKind.memory => (SecuritySeverity.critical, 'memory'),
+      SecretStoreKind.osKeychain => (
+        SecuritySeverity.info,
+        'flutter_secure_storage',
+      ),
+      SecretStoreKind.headlessFile => (
+        SecuritySeverity.warning,
+        'headless_file',
+      ),
+      SecretStoreKind.unknown => (SecuritySeverity.warning, 'unknown'),
+    };
     findings.add(
       SecurityFinding(
         code: SecurityFindingCode.secretStore,
-        severity: SecuritySeverity.warning,
-        params: {'backend': _secrets.runtimeType.toString()},
+        severity: severity,
+        params: {'backend': backend},
       ),
     );
   }
@@ -118,7 +110,6 @@ class SecurityAuditService {
   /// `0644` внутри private storage недоступен другим приложениям. На Windows
   /// ACL пока не проверяются, поэтому честно сообщаем об этом.
   /// `null` означает, что нужно сравнивать POSIX-режимы.
-  @visibleForTesting
   static SecurityFinding? platformPermissionsFinding({
     required bool mobile,
     required bool windows,

@@ -7,6 +7,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -19,6 +20,7 @@ import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/pw_server.dart';
@@ -30,6 +32,7 @@ void main() {
   late _FakeBackend backend;
   late _FakeMcp mcp;
   late _FakePlugins pluginApi;
+  late _FakeSecurityAudit securityAudit;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -38,12 +41,14 @@ void main() {
     backend = _FakeBackend();
     mcp = _FakeMcp();
     pluginApi = _FakePlugins();
+    securityAudit = _FakeSecurityAudit();
     server = ApiServer(
       backend,
       _token,
       port: 0,
       mcpApi: mcp,
       pluginApi: pluginApi,
+      securityAuditApi: securityAudit,
     );
     final port = await server.start();
     base = 'http://127.0.0.1:$port';
@@ -358,6 +363,24 @@ void main() {
     expect((jsonDecode(readBody) as Map)['version'], 1);
     expect(writeStatus, HttpStatus.noContent);
     expect(pluginApi.savedSettings, {'commands': []});
+  });
+
+  test('returns a server-side security report', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/security/audit',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final json = jsonDecode(body) as Map;
+    expect(json['status'], 'baseline');
+    expect(json['mode'], 'headless');
+    expect(json['generatedAt'], endsWith('Z'));
+    expect((json['findings'] as List).single['code'], 'headlessApi');
+    expect(securityAudit.mode, SecurityRunMode.headless);
   });
 
   test('unknown chat subresources return 404', () async {
@@ -1155,6 +1178,29 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+}
+
+final class _FakeSecurityAudit implements SecurityAuditApi {
+  SecurityRunMode? mode;
+
+  @override
+  Future<SecurityReport> run({
+    SecurityRunMode mode = SecurityRunMode.gui,
+  }) async {
+    this.mode = mode;
+    return SecurityReport(
+      generatedAt: DateTime.utc(2026, 11, 12, 10, 0),
+      mode: mode,
+      platform: 'test',
+      status: SecurityStatus.baseline,
+      findings: const [
+        SecurityFinding(
+          code: SecurityFindingCode.headlessApi,
+          severity: SecuritySeverity.info,
+        ),
+      ],
+    );
+  }
 }
 
 final class _FakePlugins implements PluginApi {

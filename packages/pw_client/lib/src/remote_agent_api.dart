@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -30,6 +31,7 @@ import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:uuid/uuid.dart';
@@ -46,7 +48,8 @@ class RemoteAgentApi
         ProjectsApi,
         AgentSettingsApi,
         McpApi,
-        PluginApi {
+        PluginApi,
+        SecurityAuditApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -883,6 +886,11 @@ class RemoteAgentApi
   Future<void> refresh() async {
     await _send('POST', '/plugins/refresh');
   }
+
+  @override
+  Future<SecurityReport> run({
+    SecurityRunMode mode = SecurityRunMode.gui,
+  }) async => securityReportFromJson(await _get('/security/audit'));
 
   @override
   Stream<List<Project>> watchProjects() =>

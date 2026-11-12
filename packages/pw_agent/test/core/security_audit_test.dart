@@ -1,10 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/core/security/secret_store_plugin.dart';
-import 'package:probably_works/core/security/security_audit.dart';
-import 'package:probably_works/core/security/security_audit_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/data/mcp_server_repository.dart';
@@ -12,6 +7,9 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/core/security/security_audit_service.dart';
+import 'package:test/test.dart';
 
 void main() {
   late AppDatabase db;
@@ -61,6 +59,24 @@ void main() {
     ]);
   });
 
+  test('headless mode reports the API instead of GUI mode', () async {
+    final report = await service(const _SecureStore())
+        .run(mode: SecurityRunMode.headless);
+
+    expect(
+      report.findings.any(
+        (finding) => finding.code == SecurityFindingCode.headlessApi,
+      ),
+      isTrue,
+    );
+    expect(
+      report.findings.any(
+        (finding) => finding.code == SecurityFindingCode.guiMode,
+      ),
+      isFalse,
+    );
+  });
+
   test('memory secret store is a critical finding', () async {
     final report = await service(MemorySecretStore()).run();
 
@@ -76,9 +92,7 @@ void main() {
   });
 
   test('secure store without critical findings is baseline only', () async {
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     expect(report.status, SecurityStatus.baseline);
     expect(
@@ -100,9 +114,7 @@ void main() {
     _chmod(paths.logs.path, '700');
     _chmod(paths.mcpConfig.path, '600');
 
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     expect(report.status, SecurityStatus.baseline);
     expect(
@@ -120,9 +132,7 @@ void main() {
     _chmod(tmp.path, '700');
     _chmod(paths.database.path, '644');
 
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     final finding = report.findings.singleWhere(
       (finding) => finding.code == SecurityFindingCode.dataPermissions,
@@ -140,9 +150,7 @@ void main() {
     _chmod(tmp.path, '755');
     _chmod(paths.database.path, '644');
 
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     expect(report.status, SecurityStatus.unsafe);
     expect(
@@ -180,9 +188,7 @@ void main() {
     if (Platform.isWindows) return;
     _chmod(tmp.path, '777');
 
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     expect(report.status, SecurityStatus.unsafe);
     expect(
@@ -198,9 +204,7 @@ void main() {
 
   test('yolo policy is reported', () async {
     await settings.write(SettingsRepository.keyDefaultPolicy, 'yolo');
-    final report = await service(
-      FlutterSecretStore(const FlutterSecureStorage()),
-    ).run();
+    final report = await service(const _SecureStore()).run();
 
     expect(
       report.findings.any(
@@ -209,6 +213,22 @@ void main() {
       isTrue,
     );
   });
+}
+
+final class _SecureStore implements SecretStore {
+  const _SecureStore();
+
+  @override
+  SecretStoreKind get kind => SecretStoreKind.osKeychain;
+
+  @override
+  Future<String?> read(String key) async => null;
+
+  @override
+  Future<void> write(String key, String value) => Future<void>.value();
+
+  @override
+  Future<void> delete(String key) => Future<void>.value();
 }
 
 /// Меняет POSIX-режим и падает, если `chmod` недоступен.

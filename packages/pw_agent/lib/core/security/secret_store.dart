@@ -1,6 +1,12 @@
+/// Тип backend'а секретов. Нужен аудиту, чтобы не зависеть от Flutter-классов.
+enum SecretStoreKind { memory, osKeychain, headlessFile, unknown }
+
 /// Доступ к секретам приложения. Реализация зависит от платформы:
 /// в GUI это защищённое хранилище ОС, в headless-демоне — отдельный провайдер.
 abstract interface class SecretStore {
+  /// Тип хранилища для отчёта безопасности.
+  SecretStoreKind get kind;
+
   Future<String?> read(String key);
   Future<void> write(String key, String value);
   Future<void> delete(String key);
@@ -20,6 +26,9 @@ String hostEnvironmentKey(String hostId) => 'host.$hostId.environment';
 /// Хранилище в памяти: для тестов и интеграционных сценариев.
 class MemorySecretStore implements SecretStore {
   final Map<String, String> values = {};
+
+  @override
+  SecretStoreKind get kind => SecretStoreKind.memory;
 
   @override
   Future<String?> read(String key) async => values[key];

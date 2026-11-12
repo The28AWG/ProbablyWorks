@@ -22,9 +22,11 @@ import 'agent/api/local_hosts_api.dart' as _i915;
 import 'agent/api/local_mcp_api.dart' as _i300;
 import 'agent/api/local_plugin_api.dart' as _i929;
 import 'agent/api/local_projects_api.dart' as _i623;
+import 'agent/api/local_security_audit_api.dart' as _i967;
 import 'agent/api/mcp_api.dart' as _i151;
 import 'agent/api/plugin_api.dart' as _i60;
 import 'agent/api/projects_api.dart' as _i346;
+import 'agent/api/security_audit_api.dart' as _i796;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
 import 'agent/exec/active_exec_registry.dart' as _i1048;
@@ -62,6 +64,7 @@ import 'core/db/app_database.dart' as _i232;
 import 'core/notify/app_notifier.dart' as _i14;
 import 'core/platform/external_url_opener.dart' as _i1019;
 import 'core/security/secret_store.dart' as _i249;
+import 'core/security/security_audit_service.dart' as _i376;
 import 'host/host_diagnostics.dart' as _i1011;
 import 'host/host_runtime_factory.dart' as _i611;
 import 'host/portable_pty_launcher.dart' as _i480;
@@ -139,6 +142,15 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i384.SettingsRepository>(),
       ),
     );
+    gh.lazySingleton<_i376.SecurityAuditService>(
+      () => _i376.SecurityAuditService(
+        gh<_i342.AppPaths>(),
+        gh<_i384.SettingsRepository>(),
+        gh<_i249.SecretStore>(),
+        gh<_i7.McpServerRepository>(),
+        gh<_i408.PluginRegistry>(),
+      ),
+    );
     gh.lazySingleton<_i993.CommandExecutor>(
       () => _i993.CommandExecutor(
         gh<_i473.ExecLogStore>(),
@@ -163,6 +175,9 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i249.SecretStore>(),
         gh<_i1019.ExternalUrlOpener>(),
       ),
+    );
+    gh.lazySingleton<_i796.SecurityAuditApi>(
+      () => _i967.LocalSecurityAuditApi(gh<_i376.SecurityAuditService>()),
     );
     gh.lazySingleton<_i370.ModelCatalogService>(
       () => _i370.ModelCatalogService(

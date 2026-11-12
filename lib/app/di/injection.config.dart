@@ -17,16 +17,15 @@ import 'package:plugin_api_ui/plugin_api_ui.dart' as _i810;
 import 'package:pw_agent/agent/api/agent_api.dart' as _i144;
 import 'package:pw_agent/agent/api/agent_settings_api.dart' as _i246;
 import 'package:pw_agent/agent/api/chat_api.dart' as _i891;
-import 'package:pw_agent/agent/api/hosts_api.dart' as _i359;
+import 'package:pw_agent/agent/api/hosts_api.dart' as _i358;
 import 'package:pw_agent/agent/api/local_agent_api.dart' as _i995;
 import 'package:pw_agent/agent/api/local_chat_api.dart' as _i326;
 import 'package:pw_agent/agent/api/mcp_api.dart' as _i733;
 import 'package:pw_agent/agent/api/plugin_api.dart' as _i166;
 import 'package:pw_agent/agent/api/projects_api.dart' as _i415;
+import 'package:pw_agent/agent/api/security_audit_api.dart' as _i648;
 import 'package:pw_agent/agent/plugins/plugin_registry.dart' as _i1065;
 import 'package:pw_agent/core/appearance/appearance_port.dart' as _i598;
-import 'package:pw_agent/core/config/app_paths.dart' as _i515;
-import 'package:pw_agent/core/data/mcp_server_repository.dart' as _i358;
 import 'package:pw_agent/core/data/settings_repository.dart' as _i370;
 import 'package:pw_agent/core/notify/app_notifier.dart' as _i641;
 import 'package:pw_agent/core/platform/external_url_opener.dart' as _i1054;
@@ -35,7 +34,6 @@ import 'package:pw_agent/core/security/secret_store.dart' as _i564;
 import '../../core/notify/app_notifier_plugin.dart' as _i238;
 import '../../core/platform/url_launcher_opener.dart' as _i224;
 import '../../core/security/secret_store_plugin.dart' as _i1071;
-import '../../core/security/security_audit_service.dart' as _i388;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/appearance_port_adapter.dart' as _i395;
 import '../locale/locale_controller.dart' as _i675;
@@ -66,15 +64,6 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),
     );
-    gh.lazySingleton<_i388.SecurityAuditService>(
-      () => _i388.SecurityAuditService(
-        gh<_i515.AppPaths>(),
-        gh<_i370.SettingsRepository>(),
-        gh<_i564.SecretStore>(),
-        gh<_i358.McpServerRepository>(),
-        gh<_i1065.PluginRegistry>(),
-      ),
-    );
     gh.lazySingleton<_i1054.ExternalUrlOpener>(
       () => const _i224.UrlLauncherOpener(),
     );
@@ -93,11 +82,12 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i564.SecretStore>(),
         gh<_i144.AgentApi>(),
         gh<_i891.ChatApi>(),
-        gh<_i359.HostsApi>(),
+        gh<_i358.HostsApi>(),
         gh<_i415.ProjectsApi>(),
         gh<_i246.AgentSettingsApi>(),
         gh<_i733.McpApi>(),
         gh<_i166.PluginApi>(),
+        gh<_i648.SecurityAuditApi>(),
         gh<_i641.AppNotifier>(),
       ),
     );

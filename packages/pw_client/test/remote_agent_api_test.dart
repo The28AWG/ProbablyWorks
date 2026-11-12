@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -18,6 +19,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_client/pw_client.dart';
@@ -31,6 +33,7 @@ void main() {
   late _FakeSettings settings;
   late _FakeMcp mcp;
   late _FakePlugins pluginsApi;
+  late _FakeSecurityAudit securityAudit;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -39,6 +42,7 @@ void main() {
     settings = _FakeSettings();
     mcp = _FakeMcp();
     pluginsApi = _FakePlugins();
+    securityAudit = _FakeSecurityAudit();
     server = ApiServer(
       backend,
       _token,
@@ -46,6 +50,7 @@ void main() {
       settingsApi: settings,
       mcpApi: mcp,
       pluginApi: pluginsApi,
+      securityAuditApi: securityAudit,
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -297,6 +302,15 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('reads the server security report', () async {
+    final report = await remote.run();
+
+    expect(report.status, SecurityStatus.baseline);
+    expect(report.mode, SecurityRunMode.headless);
+    expect(report.generatedAt.isUtc, isTrue);
+    expect(report.findings.single.code, SecurityFindingCode.headlessApi);
   });
 
   test('streams SSE events into typed streams', () async {
@@ -557,6 +571,24 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();
+}
+
+final class _FakeSecurityAudit implements SecurityAuditApi {
+  @override
+  Future<SecurityReport> run({
+    SecurityRunMode mode = SecurityRunMode.gui,
+  }) async => SecurityReport(
+    generatedAt: DateTime.utc(2026, 11, 12, 10, 0),
+    mode: SecurityRunMode.headless,
+    platform: 'test',
+    status: SecurityStatus.baseline,
+    findings: const [
+      SecurityFinding(
+        code: SecurityFindingCode.headlessApi,
+        severity: SecuritySeverity.info,
+      ),
+    ],
+  );
 }
 
 final class _FakePlugins implements PluginApi {

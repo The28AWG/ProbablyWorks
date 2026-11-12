@@ -26,6 +26,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -178,6 +179,8 @@ class _SettingsViewState extends State<_SettingsView> {
     final mcpApi = scope?.mcpApi ?? getIt<McpApi>();
     final pluginApi = scope?.pluginApi ?? getIt<PluginApi>();
     final agentApi = scope?.agentApi ?? getIt<AgentApi>();
+    final securityAuditApi =
+        scope?.securityAuditApi ?? getIt<SecurityAuditApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -196,7 +199,7 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.account: _accountSections(state, cubit, l10n, source),
           _Group.agents: const [AgentProfilesSection()],
           _Group.interface: _interfaceSections(state, cubit, l10n),
-          _Group.safety: _safetySections(state, cubit, l10n),
+          _Group.safety: _safetySections(state, cubit, l10n, securityAuditApi),
           _Group.plugins: _pluginSections(pluginApi, agentApi),
           _Group.mcp: _mcpSections(mcpApi),
           _Group.advanced: _advancedSections(state, cubit, l10n),
@@ -659,6 +662,7 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n,
+    SecurityAuditApi securityAuditApi,
   ) => [
     AppSection(
       title: l10n.settingsDefaultPolicy,
@@ -702,7 +706,7 @@ class _SettingsViewState extends State<_SettingsView> {
         ),
       ],
     ),
-    const SecurityAuditSection(),
+    SecurityAuditSection(api: securityAuditApi),
     AppCard(
       child: SettingsFormRow(
         title: l10n.settingsDenylist,

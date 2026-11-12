@@ -36,6 +36,7 @@ class WorkspacePage extends StatelessWidget {
       settingsApi: service.settingsApiFor(profile),
       mcpApi: service.mcpApiFor(profile),
       pluginApi: service.pluginApiFor(profile),
+      securityAuditApi: service.securityAuditApiFor(profile),
       child: MultiBlocProvider(
         providers: [
           BlocProvider(

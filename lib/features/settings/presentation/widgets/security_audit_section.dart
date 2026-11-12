@@ -1,21 +1,22 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/core/security/security_audit.dart';
-import 'package:probably_works/core/security/security_audit_service.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/core/util/short_time.dart';
 
 /// Секция настроек с детерминированным аудитом окружения.
 class SecurityAuditSection extends StatefulWidget {
-  const SecurityAuditSection({super.key});
+  const SecurityAuditSection({required this.api, super.key});
+
+  /// API профиля: локальный сервис или удалённый агент.
+  final SecurityAuditApi api;
 
   @override
   State<SecurityAuditSection> createState() => _SecurityAuditSectionState();
 }
 
 class _SecurityAuditSectionState extends State<SecurityAuditSection> {
-  final _service = getIt<SecurityAuditService>();
   SecurityReport? _report;
   var _running = false;
   String? _error;
@@ -26,7 +27,7 @@ class _SecurityAuditSectionState extends State<SecurityAuditSection> {
       _error = null;
     });
     try {
-      final report = await _service.run();
+      final report = await widget.api.run();
       if (!mounted) return;
       setState(() => _report = report);
     } on Object catch (error) {

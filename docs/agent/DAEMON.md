@@ -94,6 +94,7 @@ GET    /api/v1/models
 POST   /api/v1/models/refresh
 POST   /api/v1/models/remember                {"ids": ["..."]}
 
+GET    /api/v1/security/audit
 GET    /api/v1/plugins
 PUT    /api/v1/plugins/enabled                {"ids": ["..."], "enabled": false}
 GET    /api/v1/plugins/{id}/missing-dependencies

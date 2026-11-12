@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
+import 'package:pw_agent/agent/api/security_audit_api.dart';
 
 /// Профиль, привязанный к ветке маршрута `/a/<profileId>/...`.
 ///
@@ -23,6 +24,7 @@ class ProfileScope extends InheritedWidget {
     required this.settingsApi,
     required this.mcpApi,
     required this.pluginApi,
+    required this.securityAuditApi,
     required super.child,
     super.key,
   });
@@ -35,6 +37,7 @@ class ProfileScope extends InheritedWidget {
   final AgentSettingsApi settingsApi;
   final McpApi mcpApi;
   final PluginApi pluginApi;
+  final SecurityAuditApi securityAuditApi;
 
   static ProfileScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ProfileScope>();
@@ -54,5 +57,6 @@ class ProfileScope extends InheritedWidget {
       projectsApi != oldWidget.projectsApi ||
       settingsApi != oldWidget.settingsApi ||
       mcpApi != oldWidget.mcpApi ||
-      pluginApi != oldWidget.pluginApi;
+      pluginApi != oldWidget.pluginApi ||
+      securityAuditApi != oldWidget.securityAuditApi;
 }
