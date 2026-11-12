@@ -171,28 +171,14 @@ jobs:
           BUILD_OUTPUT_DIRECTORY: ${{ github.workspace }}/build/linux/x64/release/bundle
         run: dart run tool/package/prepare_daemon.dart
 
-      - name: Install Snapcraft
-        run: |
-          set -euo pipefail
-          if command -v snapcraft >/dev/null 2>&1; then
-            snapcraft --version
-            exit 0
-          fi
-          sudo snap wait system seed.loaded || true
-          for attempt in 1 2 3; do
-            if sudo snap install snapcraft --classic; then
-              snapcraft --version
-              exit 0
-            fi
-            echo "snap install failed (attempt $attempt), retrying..."
-            sleep 10
-          done
-          exit 1
-
       - name: Build snap
         run: |
           set -euo pipefail
-          sudo /snap/bin/snapcraft pack --destructive-mode
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
+            snapcraft pack --destructive-mode
           sudo chown -R "$USER:$USER" .
           mkdir -p dist
           mv ./*.snap dist/
@@ -209,7 +195,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: /snap/bin/snapcraft upload --release=edge dist/*.snap
+        run: |
+          docker run --rm \
+            -e SNAPCRAFT_STORE_CREDENTIALS \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
+            snapcraft upload --release=edge dist/*.snap
 
   publish:
     name: Publish GitHub Release

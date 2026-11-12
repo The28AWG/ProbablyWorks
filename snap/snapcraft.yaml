@@ -1,4 +1,5 @@
 name: probably-works
+title: ProbablyWorks
 base: core24
 adopt-info: probably-works
 summary: AI-агент для локальных и SSH-задач
@@ -39,3 +40,10 @@ parts:
     override-pull: |
       craftctl default
       craftctl set version="$(sed -n 's/^version: //p' '$SNAPCRAFT_PROJECT_DIR/pubspec.yaml')"
+  # Snapcraft 8 ищет desktop-файл в prime, поэтому кладём его и в корень.
+  desktop:
+    plugin: dump
+    source: snap/gui
+    organize:
+      probably-works.desktop: probably-works.desktop
+      probably-works.png: probably-works.png

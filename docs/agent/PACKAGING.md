@@ -188,7 +188,9 @@ snapcraft pack --destructive-mode
 ```
 
 `--destructive-mode` требует Ubuntu 24.04 без подключённого Ubuntu Pro.
-Snap получается для `amd64`.
+Snap получается для `amd64`. В CI Snap собирается в закреплённом Docker-образе
+Snapcraft: GitHub runner не может достучаться до Snap Store, чтобы установить
+Snapcraft через snapd.
 
 Что нужно для публикации в Snap Store:
 

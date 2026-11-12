@@ -53,6 +53,7 @@ pubspec_overrides.yaml
 /prime/
 /stage/
 /snap/.snapcraft/
+/.craft/
 /*.snap
 
 # Картинки расхождения golden-тестов: Flutter пишет их рядом с упавшим тестом.
