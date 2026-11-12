@@ -14,8 +14,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    name: Prepare sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.9
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate DI and routes
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate agent DI
+        working-directory: packages/pw_agent
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Test app
+        run: flutter test
+
+      - name: Archive generated sources
+        run: |
+          tar -czf generated-sources.tar.gz \
+            lib/app/router/app_router.gr.dart \
+            lib/app/di/injection.config.dart \
+            lib/l10n/generated \
+            packages/pw_agent/lib/agent_di.config.dart \
+            packages/pw_agent/lib/core/db/app_database.g.dart
+
+      - name: Upload generated sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-sources
+          path: generated-sources.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     name: Build ${{ matrix.artifact }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     strategy:
@@ -44,6 +91,15 @@ jobs:
             suffix: '-x64'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download generated sources
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: .
+
+      - name: Extract generated sources
+        run: tar -xzf generated-sources.tar.gz
 
       - name: Check tag matches pubspec version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -92,16 +148,6 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
-      - name: Generate localization
-        run: flutter gen-l10n
-
-      - name: Generate DI and routes
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      - name: Generate agent DI
-        working-directory: packages/pw_agent
-        run: dart run build_runner build --delete-conflicting-outputs
-
       - name: Install Fastforge
         run: dart pub global activate fastforge 0.6.14
 
@@ -131,6 +177,7 @@ jobs:
 
   server:
     name: Server ${{ matrix.artifact }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -156,6 +203,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Download generated sources
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: .
+
+      - name: Extract generated sources
+        run: tar -xzf generated-sources.tar.gz
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.9
@@ -164,10 +220,6 @@ jobs:
 
       - name: Resolve dependencies
         run: flutter pub get
-
-      - name: Generate agent DI
-        working-directory: packages/pw_agent
-        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Package standalone server
         run: >-
@@ -185,10 +237,20 @@ jobs:
 
   snap:
     name: Build Snap
+    needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download generated sources
+        uses: actions/download-artifact@v4
+        with:
+          name: generated-sources
+          path: .
+
+      - name: Extract generated sources
+        run: tar -xzf generated-sources.tar.gz
 
       - uses: subosito/flutter-action@v2
         with:
@@ -205,16 +267,6 @@ jobs:
 
       - name: Resolve dependencies
         run: flutter pub get
-
-      - name: Generate localization
-        run: flutter gen-l10n
-
-      - name: Generate DI and routes
-        run: dart run build_runner build --delete-conflicting-outputs
-
-      - name: Generate agent DI
-        working-directory: packages/pw_agent
-        run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build Linux bundle
         run: flutter build linux --release

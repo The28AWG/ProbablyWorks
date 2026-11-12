@@ -116,6 +116,12 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 | `macos-15-intel` | DMG, zip | `-x64` |
 | `ubuntu-24.04` (snap) | Snap (`amd64`) | — |
 
+Сначала один job `prepare` делает `flutter pub get`, генерацию l10n/DI,
+`build_runner` и прогоняет `flutter test`. Готовые сгенерированные файлы
+уходят в artifact `generated-sources`; платформенные job'ы скачивают его и
+не повторяют генерацию и тесты. `flutter pub get` в них остаётся: package
+config привязан к ОС и путям runner'а.
+
 После успешной сборки workflow скачивает все артефакты, создаёт
 `SHA256SUMS.txt` и публикует GitHub Release с автоматическими release notes.
 Имена файлов содержат версию, платформу и архитектуру, например
