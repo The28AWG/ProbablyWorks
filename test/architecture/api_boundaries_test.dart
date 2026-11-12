@@ -3,16 +3,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Импорты, которые не должны появляться в продакшен-коде клиента:
-/// монолитное ядро и удалённые старые пакеты.
-const _forbidden = <String>[
-  'package:pw_agent/src/',
-  'AgentHub',
-  'package:pw_api/',
-  'package:pw_daemon/',
-];
+/// монолитное ядро агента. Удалённые пакеты сюда не входят: их отсутствие
+/// и так проверяет анализатор зависимостей.
+const _forbidden = <String>['package:pw_agent/src/', 'AgentHub'];
 
 void main() {
-  test('клиент не импортирует монолитное ядро и старые пакеты', () {
+  test('клиент не импортирует монолитное ядро агента', () {
     final violations = <String>[];
     for (final directory in [
       Directory('lib'),
