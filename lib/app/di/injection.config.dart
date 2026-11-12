@@ -19,6 +19,7 @@ import 'package:pw_agent/agent/api/chat_api.dart' as _i891;
 import 'package:pw_agent/agent/api/hosts_api.dart' as _i359;
 import 'package:pw_agent/agent/api/local_agent_api.dart' as _i995;
 import 'package:pw_agent/agent/api/local_chat_api.dart' as _i326;
+import 'package:pw_agent/agent/api/mcp_api.dart' as _i733;
 import 'package:pw_agent/agent/api/projects_api.dart' as _i415;
 import 'package:pw_agent/agent/plugins/plugin_registry.dart' as _i1065;
 import 'package:pw_agent/core/appearance/appearance_port.dart' as _i598;
@@ -92,6 +93,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i359.HostsApi>(),
         gh<_i415.ProjectsApi>(),
         gh<_i246.AgentSettingsApi>(),
+        gh<_i733.McpApi>(),
         gh<_i641.AppNotifier>(),
       ),
     );

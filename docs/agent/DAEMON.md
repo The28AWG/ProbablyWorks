@@ -94,6 +94,15 @@ GET    /api/v1/models
 POST   /api/v1/models/refresh
 POST   /api/v1/models/remember                {"ids": ["..."]}
 
+GET    /api/v1/mcp
+POST   /api/v1/mcp/ready
+PUT    /api/v1/mcp/servers/{id}
+DELETE /api/v1/mcp/servers/{id}
+POST   /api/v1/mcp/servers/{id}/restart
+POST   /api/v1/mcp/servers/{id}/tools/refresh
+POST   /api/v1/mcp/import                     {"text": "...", "sourcePath": "..."}
+GET    /api/v1/mcp/export
+
 GET    /api/v1/projects
 GET    /api/v1/projects/counts
 PUT    /api/v1/projects/{id}

@@ -7,6 +7,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -18,6 +19,7 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
@@ -36,6 +38,7 @@ final class ApiServer {
     HostsApi? hosts,
     ProjectsApi? projects,
     this.settingsApi,
+    this.mcpApi,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -49,6 +52,7 @@ final class ApiServer {
   final HostsApi? _hostsApi;
   final ProjectsApi? _projectsApi;
   final AgentSettingsApi? settingsApi;
+  final McpApi? mcpApi;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -128,6 +132,43 @@ final class ApiServer {
     }
     final rest = path.sublist(3);
     switch (path[2]) {
+      case 'mcp':
+        if (rest.isEmpty && request.method == 'GET') return _mcp(request);
+        if (rest.firstOrNull == 'import' &&
+            rest.length == 1 &&
+            request.method == 'POST') {
+          return _mcpImport(request);
+        }
+        if (rest.firstOrNull == 'export' &&
+            rest.length == 1 &&
+            request.method == 'GET') {
+          return _mcpExport(request);
+        }
+        if (rest.firstOrNull == 'ready' &&
+            rest.length == 1 &&
+            request.method == 'POST') {
+          return _mcpReady(request);
+        }
+        if (rest.length >= 2 && rest.first == 'servers') {
+          final id = rest[1];
+          if (rest.length == 2) {
+            if (request.method == 'PUT') return _saveMcpServer(request, id);
+            if (request.method == 'DELETE') {
+              return _deleteMcpServer(request, id);
+            }
+          }
+          if (rest.length == 3 &&
+              rest[2] == 'restart' &&
+              request.method == 'POST') {
+            return _restartMcpServer(request, id);
+          }
+          if (rest.length == 4 &&
+              rest[2] == 'tools' &&
+              rest[3] == 'refresh' &&
+              request.method == 'POST') {
+            return _refreshMcpTools(request, id);
+          }
+        }
       case 'hosts':
         if (rest.isEmpty && request.method == 'GET') return _hosts(request);
         if (rest.length == 1) {
@@ -461,6 +502,91 @@ final class ApiServer {
     final body = await _body(request);
     await _requireProjectsApi().savePolicyProfile(_policyFromJson(id, body));
     _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _mcp(HttpRequest request) async {
+    final snapshot = await _requireMcpApi().snapshot();
+    _json(request.response, HttpStatus.ok, {
+      'servers': [
+        for (final server in snapshot.servers) mcpServerToJson(server),
+      ],
+      'states': {
+        for (final entry in snapshot.states.entries)
+          entry.key: mcpStateToJson(entry.value),
+      },
+      'configError': snapshot.configError,
+    });
+  }
+
+  Future<void> _saveMcpServer(HttpRequest request, String id) async {
+    final body = await _body(request);
+    await _requireMcpApi().save(mcpServerFromJson(id, body));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _deleteMcpServer(HttpRequest request, String id) async {
+    final api = _requireMcpApi();
+    await api.delete(await _mcpServer(api, id));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _restartMcpServer(HttpRequest request, String id) async {
+    final api = _requireMcpApi();
+    await api.restart(await _mcpServer(api, id));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _refreshMcpTools(HttpRequest request, String id) async {
+    final api = _requireMcpApi();
+    await api.refreshTools(await _mcpServer(api, id));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _mcpReady(HttpRequest request) async {
+    await _requireMcpApi().ensureReady();
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _mcpImport(HttpRequest request) async {
+    final body = await _body(request);
+    final text = body['text'];
+    final api = _requireMcpApi();
+    final result = text is String
+        ? await api.importConfigText(
+            text,
+            sourcePath: body['sourcePath'] as String?,
+          )
+        : await api.importConfig();
+    _json(request.response, HttpStatus.ok, mcpImportToJson(result));
+  }
+
+  Future<void> _mcpExport(HttpRequest request) async {
+    final text = await _requireMcpApi().exportConfig();
+    _json(request.response, HttpStatus.ok, {'text': text});
+  }
+
+  Future<McpServerConfig> _mcpServer(McpApi api, String id) async {
+    final snapshot = await api.snapshot();
+    for (final server in snapshot.servers) {
+      if (server.id == id) return server;
+    }
+    throw AgentApiException(
+      HttpStatus.notFound,
+      'mcp_server_not_found',
+      'MCP server $id not found',
+    );
+  }
+
+  McpApi _requireMcpApi() {
+    final api = mcpApi;
+    if (api == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'MCP API is not available',
+      );
+    }
+    return api;
   }
 
   Future<void> _hosts(HttpRequest request) async {

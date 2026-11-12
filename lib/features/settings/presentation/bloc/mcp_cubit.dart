@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
-import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 
 /// Какая операция с `mcp.json` сейчас выполняется.
@@ -63,74 +63,65 @@ class McpState extends Equatable {
   ];
 }
 
-/// Загружает MCP-серверы и управляет их подключениями из настроек.
+/// Загружает MCP-серверы профиля и управляет их подключениями из настроек.
 class McpCubit extends Cubit<McpState> {
-  McpCubit(this._repository, this._service) : super(const McpState()) {
-    _changes = _service.changes.listen(_onState);
+  McpCubit(this._api) : super(const McpState()) {
+    _changes = _api.watchStates().listen(_onState);
   }
 
-  final McpServerRepository _repository;
-  final McpService _service;
+  final McpApi _api;
   late final StreamSubscription<McpServerState> _changes;
 
   Future<void> load() async {
     emit(state.copyWith(loading: true, clearError: true));
     try {
-      final servers = await _repository.all();
+      final snapshot = await _api.snapshot();
       emit(
         state.copyWith(
-          servers: servers,
-          states: {
-            for (final server in servers)
-              server.id: _service.stateOf(server.id),
-          },
+          servers: snapshot.servers,
+          states: snapshot.states,
           loading: false,
-          configError: _service.configError,
+          configError: snapshot.configError,
+          clearError: true,
         ),
       );
-      await _service.ensureReady();
-      await _reloadStates();
+      // Список уже виден: подключение серверов может занять время и не должно
+      // задерживать первый кадр вкладки.
+      await _api.ensureReady();
+      await _reload();
     } on Object catch (error) {
       emit(state.copyWith(loading: false, error: '$error'));
     }
   }
 
   Future<void> save(McpServerConfig server) async {
-    final now = DateTime.now();
-    final updated = server.copyWith(updatedAt: now);
-    await _repository.upsert(updated);
-    if (updated.enabled) {
-      await _service.restart(updated);
-    } else {
-      await _service.disconnect(updated);
-    }
-    await _reloadStates();
+    await _api.save(server);
+    await _reload();
   }
 
   Future<void> delete(McpServerConfig server) async {
-    await _repository.delete(server.id);
-    await _service.disconnect(server);
-    await _reloadStates();
+    await _api.delete(server);
+    await _reload();
   }
 
   Future<void> toggle(McpServerConfig server, bool enabled) =>
       save(server.copyWith(enabled: enabled));
 
   Future<void> restart(McpServerConfig server) async {
-    await _service.restart(server);
-    await _reloadStates();
+    await _api.restart(server);
+    await _reload();
   }
 
   Future<void> refreshTools(McpServerConfig server) async {
-    await _service.refreshServer(server);
-    await _reloadStates();
+    await _api.refreshTools(server);
+    await _reload();
   }
 
   Future<McpImportResult> importConfig() async {
     emit(state.copyWith(busyAction: McpBusyAction.import));
     try {
-      final result = await _service.importConfig();
-      await _reloadStates();
+      final result = await _api.importConfig();
+      await _reload();
       return result;
     } finally {
       emit(state.copyWith(clearBusy: true));
@@ -143,44 +134,33 @@ class McpCubit extends Cubit<McpState> {
   }) async {
     emit(state.copyWith(busyAction: McpBusyAction.import));
     try {
-      final result = await _service.importConfigText(
-        raw,
-        sourcePath: sourcePath,
-      );
-      await _reloadStates();
+      final result = await _api.importConfigText(raw, sourcePath: sourcePath);
+      await _reload();
       return result;
     } finally {
       emit(state.copyWith(clearBusy: true));
     }
   }
 
+  /// Возвращает текст `mcp.json`. Файл на диск пишет экран: для удалённого
+  /// профиля путь принадлежит клиенту, а конфигурация — серверу.
   Future<String> exportConfig() async {
     emit(state.copyWith(busyAction: McpBusyAction.export));
     try {
-      return await _service.exportConfig();
+      return await _api.exportConfig();
     } finally {
       emit(state.copyWith(clearBusy: true));
     }
   }
 
-  Future<String> exportConfigTo(String path) async {
-    emit(state.copyWith(busyAction: McpBusyAction.export));
-    try {
-      return await _service.exportConfigTo(path);
-    } finally {
-      emit(state.copyWith(clearBusy: true));
-    }
-  }
-
-  Future<void> _reloadStates() async {
-    final servers = await _repository.all();
+  Future<void> _reload() async {
+    final snapshot = await _api.snapshot();
     emit(
       state.copyWith(
-        servers: servers,
-        states: {
-          for (final server in servers) server.id: _service.stateOf(server.id),
-        },
-        configError: _service.configError,
+        servers: snapshot.servers,
+        states: snapshot.states,
+        configError: snapshot.configError,
+        clearError: true,
       ),
     );
   }

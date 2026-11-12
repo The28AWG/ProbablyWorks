@@ -23,6 +23,7 @@ import 'package:probably_works/features/workspace/presentation/widgets/workspace
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -170,9 +171,9 @@ class _SettingsViewState extends State<_SettingsView> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final source =
-        ProfileScope.maybeOf(context)?.chatApi.models ??
-        getIt<ChatApi>().models;
+    final scope = ProfileScope.maybeOf(context);
+    final source = scope?.chatApi.models ?? getIt<ChatApi>().models;
+    final mcpApi = scope?.mcpApi ?? getIt<McpApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -193,7 +194,7 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.interface: _interfaceSections(state, cubit, l10n),
           _Group.safety: _safetySections(state, cubit, l10n),
           _Group.plugins: _pluginSections(),
-          _Group.mcp: _mcpSections(),
+          _Group.mcp: _mcpSections(mcpApi),
           _Group.advanced: _advancedSections(state, cubit, l10n),
         };
         final titles = <_Group, (String, String)>{
@@ -722,7 +723,7 @@ class _SettingsViewState extends State<_SettingsView> {
 
   List<Widget> _pluginSections() => const [PluginSettingsSection()];
 
-  List<Widget> _mcpSections() => const [McpSettingsSection()];
+  List<Widget> _mcpSections(McpApi api) => [McpSettingsSection(api: api)];
 
   List<Widget> _advancedSections(
     SettingsState state,

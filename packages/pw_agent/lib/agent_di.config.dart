@@ -19,7 +19,9 @@ import 'agent/api/local_agent_api.dart' as _i269;
 import 'agent/api/local_agent_settings_api.dart' as _i825;
 import 'agent/api/local_chat_api.dart' as _i866;
 import 'agent/api/local_hosts_api.dart' as _i915;
+import 'agent/api/local_mcp_api.dart' as _i300;
 import 'agent/api/local_projects_api.dart' as _i623;
+import 'agent/api/mcp_api.dart' as _i151;
 import 'agent/api/projects_api.dart' as _i346;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
@@ -298,6 +300,12 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i778.TaskScheduler(
         gh<_i667.AgentHub>(),
         gh<_i453.ScheduledTaskRepository>(),
+      ),
+    );
+    gh.lazySingleton<_i151.McpApi>(
+      () => _i300.LocalMcpApi(
+        gh<_i7.McpServerRepository>(),
+        gh<_i176.McpService>(),
       ),
     );
     gh.lazySingleton<_i269.LocalAgentApi>(

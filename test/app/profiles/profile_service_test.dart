@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -34,6 +35,7 @@ void main() {
     _FakeHostsApi(),
     _FakeProjectsApi(),
     _FakeSettingsApi(),
+    _FakeMcpApi(),
     _FakeNotifier(),
   );
 
@@ -120,4 +122,10 @@ final class _FakeNotifier implements AppNotifier {
     required String chatTitle,
     String? detail,
   }) => Future<void>.value();
+}
+
+final class _FakeMcpApi implements McpApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('McpApi is not used in profile tests');
 }

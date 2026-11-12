@@ -4,15 +4,19 @@ import 'dart:io';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/pw_server.dart';
@@ -22,13 +26,15 @@ const _token = 'test-token';
 
 void main() {
   late _FakeBackend backend;
+  late _FakeMcp mcp;
   late ApiServer server;
   late HttpClient client;
   late String base;
 
   setUp(() async {
     backend = _FakeBackend();
-    server = ApiServer(backend, _token, port: 0);
+    mcp = _FakeMcp();
+    server = ApiServer(backend, _token, port: 0, mcpApi: mcp);
     final port = await server.start();
     base = 'http://127.0.0.1:$port';
     client = HttpClient();
@@ -152,6 +158,100 @@ void main() {
     expect(chat['createdAt'], endsWith('Z'));
     expect(chat['updatedAt'], endsWith('Z'));
     expect((messages.single as Map)['createdAt'], endsWith('Z'));
+  });
+
+  test('returns MCP servers and states', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/mcp',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final json = jsonDecode(body) as Map;
+    final server = (json['servers'] as List).single as Map;
+    final state = (json['states'] as Map)['mcp-1'] as Map;
+    expect(server['id'], 'mcp-1');
+    expect(server['createdAt'], endsWith('Z'));
+    expect(state['status'], 'connected');
+    expect((state['tools'] as List).single['name'], 'search');
+  });
+
+  test('saves, restarts and deletes an MCP server', () async {
+    final server = {
+      'name': 'Docs',
+      'transport': 'stdio',
+      'source': 'user',
+      'command': 'npx',
+      'args': ['-y', 'docs'],
+      'enabled': true,
+    };
+    final (saveStatus, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/mcp/servers/mcp-1',
+      token: _token,
+      body: server,
+    );
+    final (restartStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/mcp/servers/mcp-1/restart',
+      token: _token,
+    );
+    final (toolsStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/mcp/servers/mcp-1/tools/refresh',
+      token: _token,
+    );
+    final (deleteStatus, _) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/mcp/servers/mcp-1',
+      token: _token,
+    );
+
+    expect(saveStatus, HttpStatus.noContent);
+    expect(restartStatus, HttpStatus.noContent);
+    expect(toolsStatus, HttpStatus.noContent);
+    expect(deleteStatus, HttpStatus.noContent);
+    expect(mcp.saved?.name, 'Docs');
+    expect(mcp.restarted, 'mcp-1');
+    expect(mcp.refreshed, 'mcp-1');
+    expect(mcp.deleted, 'mcp-1');
+  });
+
+  test('imports and exports MCP config', () async {
+    const raw = '{"mcpServers":{}}';
+    final (importStatus, importBody) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/mcp/import',
+      token: _token,
+      body: {'text': raw, 'sourcePath': '/tmp/mcp.json'},
+    );
+    final (exportStatus, exportBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/mcp/export',
+      token: _token,
+    );
+
+    expect(importStatus, HttpStatus.ok);
+    expect((jsonDecode(importBody) as Map)['status'], 'imported');
+    expect(mcp.importedText, raw);
+    expect(mcp.importedFrom, '/tmp/mcp.json');
+    expect(exportStatus, HttpStatus.ok);
+    expect((jsonDecode(exportBody) as Map)['text'], '{"mcpServers":{}}');
   });
 
   test('unknown chat subresources return 404', () async {
@@ -949,6 +1049,82 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+}
+
+final class _FakeMcp implements McpApi {
+  var servers = <McpServerConfig>[
+    McpServerConfig(
+      id: 'mcp-1',
+      name: 'Search',
+      transport: McpTransport.http,
+      source: McpServerSource.user,
+      url: 'https://example.test/mcp',
+      createdAt: DateTime.utc(2026, 11, 11),
+      updatedAt: DateTime.utc(2026, 11, 11),
+    ),
+  ];
+  var states = <String, McpServerState>{
+    'mcp-1': const McpServerState(
+      serverId: 'mcp-1',
+      status: McpConnectionStatus.connected,
+      tools: [McpToolInfo(name: 'search', inputSchema: {})],
+    ),
+  };
+  String? savedId;
+  McpServerConfig? saved;
+  String? deleted;
+  String? restarted;
+  String? refreshed;
+  String? importedText;
+  String? importedFrom;
+
+  @override
+  Future<McpSnapshot> snapshot() async =>
+      McpSnapshot(servers: servers, states: states, configError: null);
+
+  @override
+  Stream<McpServerState> watchStates() => const Stream.empty();
+
+  @override
+  Future<void> ensureReady() => Future<void>.value();
+
+  @override
+  Future<void> save(McpServerConfig server) async {
+    savedId = server.id;
+    saved = server;
+  }
+
+  @override
+  Future<void> delete(McpServerConfig server) async {
+    deleted = server.id;
+  }
+
+  @override
+  Future<void> restart(McpServerConfig server) async {
+    restarted = server.id;
+  }
+
+  @override
+  Future<void> refreshTools(McpServerConfig server) async {
+    refreshed = server.id;
+  }
+
+  @override
+  Future<McpImportResult> importConfig() async =>
+      const McpImportResult.imported('/default/mcp.json');
+
+  @override
+  Future<McpImportResult> importConfigText(
+    String raw, {
+    String? sourcePath,
+  }) async {
+    importedText = raw;
+    importedFrom = sourcePath;
+    return McpImportResult.imported(sourcePath);
+  }
+
+  @override
+  Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
 final class _FakeSettings implements AgentSettingsApi {

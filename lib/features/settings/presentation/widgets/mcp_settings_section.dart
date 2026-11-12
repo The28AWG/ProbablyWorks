@@ -1,19 +1,23 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/bloc/mcp_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
-import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:uuid/uuid.dart';
 
 /// Вкладка MCP в настройках: список серверов, их состояние и действия.
 class McpSettingsSection extends StatefulWidget {
-  const McpSettingsSection({super.key});
+  const McpSettingsSection({required this.api, super.key});
+
+  /// API профиля: локальный сервис или удалённый агент.
+  final McpApi api;
 
   @override
   State<McpSettingsSection> createState() => _McpSettingsSectionState();
@@ -31,8 +35,7 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
   @override
   void initState() {
     super.initState();
-    _cubit = McpCubit(getIt<McpServerRepository>(), getIt<McpService>())
-      ..load();
+    _cubit = McpCubit(widget.api)..load();
   }
 
   @override
@@ -176,9 +179,10 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
     );
     if (location == null || !context.mounted) return;
     try {
-      final path = await _cubit.exportConfigTo(location.path);
+      final raw = await _cubit.exportConfig();
+      await File(location.path).writeAsString(raw);
       if (!context.mounted) return;
-      AppSnackBar.show(context, l10n.mcpExportDone(path));
+      AppSnackBar.show(context, l10n.mcpExportDone(location.path));
     } on Object catch (error) {
       if (!context.mounted) return;
       AppSnackBar.show(context, l10n.commonError('$error'));

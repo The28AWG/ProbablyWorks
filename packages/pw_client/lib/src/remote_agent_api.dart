@@ -7,6 +7,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
+import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -16,6 +17,8 @@ import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
+import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
@@ -23,6 +26,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -33,7 +37,13 @@ import 'package:uuid/uuid.dart';
 /// Используется для удалённых профилей. Локальный профиль работает через
 /// `LocalAgentApi` без транспорта.
 class RemoteAgentApi
-    implements AgentApi, ChatApi, HostsApi, ProjectsApi, AgentSettingsApi {
+    implements
+        AgentApi,
+        ChatApi,
+        HostsApi,
+        ProjectsApi,
+        AgentSettingsApi,
+        McpApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -74,6 +84,8 @@ class RemoteAgentApi
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _pinnedChanges = StreamController<List<String>>.broadcast();
   final _settingsChanges = StreamController<void>.broadcast();
+  final _mcpStateChanges = StreamController<McpServerState>.broadcast();
+  McpSnapshot? _mcpSnapshot;
 
   static const _uuid = Uuid();
 
@@ -185,6 +197,7 @@ class RemoteAgentApi
     await _catalogChanges.close();
     await _pinnedChanges.close();
     await _settingsChanges.close();
+    await _mcpStateChanges.close();
     _client.close();
     _eventsClient.close(force: true);
   }
@@ -761,6 +774,77 @@ class RemoteAgentApi
   @override
   Future<void> rememberModels(List<String> ids) async {
     await _send('POST', '/models/remember', body: {'ids': ids});
+  }
+
+  @override
+  Future<McpSnapshot> snapshot() async {
+    final snapshot = mcpSnapshotFromJson(await _get('/mcp'));
+    _mcpSnapshot = snapshot;
+    for (final state in snapshot.states.values) {
+      if (!_mcpStateChanges.isClosed) _mcpStateChanges.add(state);
+    }
+    return snapshot;
+  }
+
+  @override
+  Stream<McpServerState> watchStates() async* {
+    final snapshot = _mcpSnapshot;
+    if (snapshot != null) yield* Stream.fromIterable(snapshot.states.values);
+    yield* _mcpStateChanges.stream;
+  }
+
+  @override
+  Future<void> ensureReady() async {
+    await _send('POST', '/mcp/ready');
+  }
+
+  @override
+  Future<void> save(McpServerConfig server) async {
+    await _send(
+      'PUT',
+      '/mcp/servers/${server.id}',
+      body: mcpServerToJson(server),
+    );
+  }
+
+  @override
+  Future<void> delete(McpServerConfig server) async {
+    await _send('DELETE', '/mcp/servers/${server.id}');
+  }
+
+  @override
+  Future<void> restart(McpServerConfig server) async {
+    await _send('POST', '/mcp/servers/${server.id}/restart');
+  }
+
+  @override
+  Future<void> refreshTools(McpServerConfig server) async {
+    await _send('POST', '/mcp/servers/${server.id}/tools/refresh');
+  }
+
+  @override
+  Future<McpImportResult> importConfig() async {
+    final json = await _send('POST', '/mcp/import', body: const {});
+    return mcpImportFromJson(Map<String, dynamic>.from(json as Map));
+  }
+
+  @override
+  Future<McpImportResult> importConfigText(
+    String raw, {
+    String? sourcePath,
+  }) async {
+    final json = await _send(
+      'POST',
+      '/mcp/import',
+      body: {'text': raw, 'sourcePath': ?sourcePath},
+    );
+    return mcpImportFromJson(Map<String, dynamic>.from(json as Map));
+  }
+
+  @override
+  Future<String> exportConfig() async {
+    final json = await _get('/mcp/export');
+    return '${json['text'] ?? ''}';
   }
 
   @override
