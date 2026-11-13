@@ -182,6 +182,7 @@ class RemoteAgentApi
   @override
   Chat draftChat({required String hostId, Host? host}) {
     final now = DateTime.now();
+    final policyName = settings.cached(SettingsRepository.keyDefaultPolicy);
     return Chat(
       id: _uuid.v4(),
       hostId: hostId,
@@ -189,6 +190,8 @@ class RemoteAgentApi
       title: '',
       createdAt: now,
       updatedAt: now,
+      policyMode:
+          PolicyMode.values.asNameMap()[policyName ?? ''] ?? PolicyMode.ask,
     );
   }
 
@@ -1854,6 +1857,8 @@ final class _RemoteSettings implements SettingsStore {
     if (settings == null) return null;
     return switch (key) {
       SettingsRepository.keyDefaultModel => settings['defaultModel'] as String?,
+      SettingsRepository.keyDefaultPolicy =>
+        settings['defaultPolicy'] as String?,
       SettingsRepository.keyPinnedModels =>
         settings['pinnedModels'] == null
             ? null
@@ -1977,9 +1982,13 @@ final class _RemoteSettings implements SettingsStore {
   }
 
   @override
-  String? cached(String key) => key == 'defaultModel'
-      ? (_api._globalSettings?['defaultModel'] as String?)
-      : null;
+  String? cached(String key) => switch (key) {
+    SettingsRepository.keyDefaultModel =>
+      _api._globalSettings?['defaultModel'] as String?,
+    SettingsRepository.keyDefaultPolicy =>
+      _api._globalSettings?['defaultPolicy'] as String?,
+    _ => null,
+  };
 }
 
 final class _RemoteProjectStore implements ProjectStore {

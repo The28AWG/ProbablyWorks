@@ -99,6 +99,13 @@ void main() {
     );
   });
 
+  test('draft chat uses the profile default policy', () async {
+    settings.defaultPolicy = 'yolo';
+    await remote.load();
+
+    expect(remote.draftChat(hostId: 'local').policyMode, PolicyMode.yolo);
+  });
+
   test('reads and revises project memory', () async {
     expect(await remote.watchMemory('p1').first, isNull);
 
@@ -947,6 +954,7 @@ final class _FakeSettings implements AgentSettingsApi {
   var securityProfile = const SecurityProfile();
   var steps = const StepsDisplay();
   var limits = const AppLimits();
+  var defaultPolicy = 'ask';
   var refreshed = 0;
   var remembered = <String>[];
 
@@ -956,7 +964,7 @@ final class _FakeSettings implements AgentSettingsApi {
     memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
-    defaultPolicy: 'ask',
+    defaultPolicy: defaultPolicy,
     denylist: denylist,
     securityProfile: const SecurityProfile(),
     limits: limits,
