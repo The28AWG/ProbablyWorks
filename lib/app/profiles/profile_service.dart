@@ -295,7 +295,7 @@ class ProfileService {
   void attachLocalNotices() {
     if (_local.modeOrNull != LocalRuntimeMode.localDaemon) return;
     final id = localProfile.id;
-    _listeners.putIfAbsent(id, () => _listenNotices(_local.value.agent));
+    _listeners.putIfAbsent(id, () => _listenNotices(_local.value.agent, id));
   }
 
   Future<void> dispose() async {
@@ -326,14 +326,17 @@ class ProfileService {
       clientHeaders: _clientInfo.headers,
     )..startEvents();
     _remote[profile.id] = api;
-    _listeners[profile.id] = _listenNotices(api);
+    _listeners[profile.id] = _listenNotices(api, profile.id);
     return api;
   }
 
   /// Сервер не умеет показывать системные уведомления GUI, поэтому клиент
   /// повторяет их по SSE и потокам карточек удалённого профиля. Локальный
   /// агент уведомляет сам через `ChatSession`, здесь его нет.
-  List<StreamSubscription<Object?>> _listenNotices(AgentApi api) => [
+  List<StreamSubscription<Object?>> _listenNotices(
+    AgentApi api,
+    String profileId,
+  ) => [
     api.events.listen((event) {
       final kind = switch (event) {
         AgentTurnFinished(end: TurnEnd.completed) =>
@@ -343,32 +346,48 @@ class ProfileService {
         AgentTurnFinished(end: TurnEnd.failed) => AgentNoticeKind.turnFailed,
         _ => null,
       };
-      if (kind != null) unawaited(_notify(api, event.chatId, kind));
+      if (kind != null) {
+        unawaited(_notify(api, profileId, event.chatId, kind));
+      }
     }),
     api.approvals.listen(
       (request) => unawaited(
-        _notify(api, request.chatId, AgentNoticeKind.approvalNeeded),
+        _notify(
+          api,
+          profileId,
+          request.chatId,
+          AgentNoticeKind.approvalNeeded,
+          approvalId: request.id,
+        ),
       ),
     ),
     api.questions.listen(
       (question) => unawaited(
-        _notify(api, question.chatId, AgentNoticeKind.questionAsked),
+        _notify(api, profileId, question.chatId, AgentNoticeKind.questionAsked),
       ),
     ),
   ];
 
   Future<void> _notify(
     AgentApi api,
+    String profileId,
     String chatId,
-    AgentNoticeKind kind,
-  ) async {
+    AgentNoticeKind kind, {
+    String? approvalId,
+  }) async {
     var title = '';
     try {
       title = (await api.chat(chatId))?.title ?? '';
     } on Object {
       // Название не критично: уведомление покажет только действие.
     }
-    await _notifier.notify(kind: kind, chatTitle: title);
+    await _notifier.notify(
+      kind: kind,
+      chatTitle: title,
+      profileId: profileId,
+      chatId: chatId,
+      approvalId: approvalId,
+    );
   }
 
   Future<void> _persist() => _settings.write(

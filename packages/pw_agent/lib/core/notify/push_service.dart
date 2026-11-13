@@ -106,11 +106,22 @@ final class PushService {
     required AgentNoticeKind kind,
     required String chatTitle,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   }) async {
     final settings = await load();
     if (!settings.configured) return;
     try {
-      await _send(settings, kind: kind, title: chatTitle, detail: detail);
+      await _send(
+        settings,
+        kind: kind,
+        title: chatTitle,
+        detail: detail,
+        profileId: profileId,
+        chatId: chatId,
+        approvalId: approvalId,
+      );
     } on Object catch (error) {
       AppLog.root.warning('push delivery failed', error);
     }
@@ -126,6 +137,9 @@ final class PushService {
     required AgentNoticeKind kind,
     required String title,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   }) async {
     final token = await _secrets.read(_tokenKey);
     if (token == null || token.isEmpty) {
@@ -142,6 +156,9 @@ final class PushService {
         'event': kind.name,
         'title': title,
         'detail': detail,
+        'profileId': profileId,
+        'chatId': chatId,
+        'approvalId': approvalId,
         'sentAt': DateTime.now().toUtc().toIso8601String(),
       });
     final response = await _client.send(request).timeout(_timeout);

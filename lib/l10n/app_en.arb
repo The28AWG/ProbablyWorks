@@ -2474,6 +2474,12 @@
   "@notifyApprovalBody": {
     "description": "System notification body when the agent waits for an approval. Says what the user must do."
   },
+  "notifyActionApprove": "Allow",
+  "@notifyActionApprove": {"description": "Notification action: approve the agent action once."},
+  "notifyActionDeny": "Deny",
+  "@notifyActionDeny": {"description": "Notification action: deny the agent action."},
+  "notifyActionOpen": "Open",
+  "@notifyActionOpen": {"description": "Notification action: open the chat."},
   "notifyQuestionBody": "Answer the agent's question so it can continue.",
   "@notifyQuestionBody": {
     "description": "System notification body when the agent waits for an answer to its question."
@@ -2941,6 +2947,20 @@
   "@keybindingReset": {"description": "Tooltip of the shortcut reset button."},
   "keybindingOverridden": "Custom shortcut",
   "@keybindingOverridden": {"description": "Shortcut row description when the user changed the default."},
+  "paletteSuggestionProject": "Project filter",
+  "@paletteSuggestionProject": {"description": "Filter suggestion: restrict search to a project."},
+  "paletteSuggestionChat": "Chat filter",
+  "@paletteSuggestionChat": {"description": "Filter suggestion: restrict search to a chat."},
+  "paletteSuggestionScope": "Search scope",
+  "@paletteSuggestionScope": {"description": "Filter suggestion: choose search scope."},
+  "paletteScopeAll": "All chats",
+  "@paletteScopeAll": {"description": "Search scope: all chats."},
+  "paletteScopeProject": "Current project",
+  "@paletteScopeProject": {"description": "Search scope: current project."},
+  "paletteScopeChat": "Current chat",
+  "@paletteScopeChat": {"description": "Search scope: current chat."},
+  "paletteTypeFilter": "Filter",
+  "@paletteTypeFilter": {"description": "Result type label for a filter suggestion."},
   "paletteKeyboardHint": "↑↓ select · Enter open · Esc close",
   "@paletteKeyboardHint": {"description": "Keyboard hints under the palette."}
 }

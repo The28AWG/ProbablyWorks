@@ -15,5 +15,8 @@ final class PushAppNotifier implements AppNotifier {
     required AgentNoticeKind kind,
     required String chatTitle,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   }) => _service().notify(kind: kind, chatTitle: chatTitle, detail: detail);
 }

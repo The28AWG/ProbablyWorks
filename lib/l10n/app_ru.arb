@@ -2474,6 +2474,12 @@
   "@notifyApprovalBody": {
     "description": "Текст системного уведомления, когда агент ждёт подтверждения. Говорит, что нужно сделать пользователю."
   },
+  "notifyActionApprove": "Разрешить",
+  "@notifyActionApprove": {"description": "Действие уведомления: разрешить действие агента один раз."},
+  "notifyActionDeny": "Отклонить",
+  "@notifyActionDeny": {"description": "Действие уведомления: отклонить действие агента."},
+  "notifyActionOpen": "Открыть",
+  "@notifyActionOpen": {"description": "Действие уведомления: открыть чат."},
   "notifyQuestionBody": "Ответьте на вопрос агента, чтобы он продолжил работу.",
   "@notifyQuestionBody": {
     "description": "Текст системного уведомления, когда агент ждёт ответа на свой вопрос."
@@ -2941,6 +2947,20 @@
   "@keybindingReset": {"description": "Подсказка кнопки сброса сочетания."},
   "keybindingOverridden": "Пользовательское сочетание",
   "@keybindingOverridden": {"description": "Пояснение строки, если сочетание изменено."},
+  "paletteSuggestionProject": "Фильтр по проекту",
+  "@paletteSuggestionProject": {"description": "Подсказка фильтра: искать в проекте."},
+  "paletteSuggestionChat": "Фильтр по чату",
+  "@paletteSuggestionChat": {"description": "Подсказка фильтра: искать в чате."},
+  "paletteSuggestionScope": "Область поиска",
+  "@paletteSuggestionScope": {"description": "Подсказка фильтра: выбрать область поиска."},
+  "paletteScopeAll": "Все чаты",
+  "@paletteScopeAll": {"description": "Область поиска: все чаты."},
+  "paletteScopeProject": "Текущий проект",
+  "@paletteScopeProject": {"description": "Область поиска: текущий проект."},
+  "paletteScopeChat": "Текущий чат",
+  "@paletteScopeChat": {"description": "Область поиска: текущий чат."},
+  "paletteTypeFilter": "Фильтр",
+  "@paletteTypeFilter": {"description": "Тип результата: подсказка фильтра."},
   "paletteKeyboardHint": "↑↓ выбор · Enter открыть · Esc закрыть",
   "@paletteKeyboardHint": {"description": "Подсказка клавиш под палитрой."}
 }

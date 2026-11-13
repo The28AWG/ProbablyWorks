@@ -88,6 +88,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
     final currentChatId = selectedChatIdOf(tabs);
     final currentProjectId = _currentProjectId();
     final languageCode = Localizations.localeOf(context).languageCode;
+    final l10n = AppLocalizations.of(context);
     final en = lookupAppLocalizations(const Locale('en'));
     final ru = lookupAppLocalizations(const Locale('ru'));
     final plugin = await _loadPluginCommands();
@@ -107,6 +108,17 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       searchApi: ProfileScope.of(context).agentApi,
       projects: context.read<ProjectsCubit>().state.projects,
       chats: context.read<ChatListCubit>().state.chats,
+      labels: PaletteLabels(
+        command: l10n.paletteFilterCommand,
+        project: l10n.paletteSuggestionProject,
+        current: l10n.paletteFilterCurrentChat,
+        currentProject: l10n.paletteFilterCurrentProject,
+        chat: l10n.paletteSuggestionChat,
+        scope: l10n.paletteSuggestionScope,
+        allChats: l10n.paletteScopeAll,
+        projectScope: l10n.paletteScopeProject,
+        chatScope: l10n.paletteScopeChat,
+      ),
       languageCode: languageCode,
       currentChatId: currentChatId,
       currentProjectId: currentProjectId,

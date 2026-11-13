@@ -7,6 +7,18 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 
+const _labels = PaletteLabels(
+  command: 'Commands',
+  project: 'Project filter',
+  current: 'Current chat',
+  currentProject: 'Current project',
+  chat: 'Chat filter',
+  scope: 'Search scope',
+  allChats: 'All chats',
+  projectScope: 'Current project',
+  chatScope: 'Current chat',
+);
+
 final class _FakeSearchApi implements AgentApi {
   final queries = <SearchQuery>[];
   var hits = <SearchHit>[];
@@ -56,6 +68,7 @@ void main() {
     searchApi: api,
     projects: [project],
     chats: [chat],
+    labels: _labels,
     languageCode: 'ru',
     currentChatId: 'c1',
     currentProjectId: 'p1',
@@ -153,6 +166,7 @@ void main() {
       searchApi: _FakeSearchApi(),
       projects: const [],
       chats: const [],
+      labels: _labels,
       languageCode: 'en',
     );
     addTearDown(palette.dispose);
@@ -165,5 +179,113 @@ void main() {
 
     palette.moveSelection(1);
     expect(palette.selected, 1);
+  });
+
+  test('typing @ suggests filter types before values', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@');
+
+    expect(palette.autocompleteActive, isTrue);
+    expect(
+      palette.suggestions.map((item) => item.title),
+      containsAll(<String>[
+        'Commands',
+        'Project filter',
+        'Current chat',
+        'Current project',
+        'Chat filter',
+        'Search scope',
+      ]),
+    );
+    expect(palette.suggestions.first.replacement, '@command');
+  });
+
+  test('partial filter name filters the suggestion list', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@pro');
+
+    expect(palette.autocompleteActive, isTrue);
+    expect(palette.suggestions.map((item) => item.replacement), ['@project:']);
+  });
+
+  test('@project: suggests projects and inserts a quoted name', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@project:');
+
+    expect(palette.suggestions, hasLength(1));
+    expect(palette.suggestions.single.title, 'Work');
+    palette.applySuggestion(palette.suggestions.single);
+
+    expect(palette.raw, '@project:"Work" ');
+    expect(palette.autocompleteActive, isFalse);
+  });
+
+  test('applied project suggestion scopes the server search', () async {
+    final api = _FakeSearchApi();
+    final palette = controller(api);
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@project:');
+    palette.applySuggestion(palette.suggestions.single);
+    palette.setRaw('${palette.raw}альфа');
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+
+    expect(api.queries.single.projectId, 'p1');
+    expect(api.queries.single.scope, SearchScope.project);
+  });
+
+  test('@scope: suggests all three scopes', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@scope:');
+
+    expect(palette.suggestions.map((item) => item.replacement), [
+      '@scope:all',
+      '@scope:project',
+      '@scope:chat',
+    ]);
+    palette.applySuggestion(palette.suggestions.last);
+    expect(palette.raw, '@scope:chat ');
+  });
+
+  test('@chat: suggests chats by title', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@chat:rev');
+
+    expect(palette.suggestions.single.title, 'Review');
+    palette.applySuggestion(palette.suggestions.single);
+    expect(palette.raw, '@chat:"Review" ');
+  });
+
+  test('dismiss keeps the typed text and closes suggestions', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette
+      ..setRaw('@pro')
+      ..dismissAutocomplete();
+
+    expect(palette.raw, '@pro');
+    expect(palette.autocompleteActive, isFalse);
+    expect(palette.suggestions, isEmpty);
+  });
+
+  test('unknown @token stays plain text without suggestions', () {
+    final palette = controller(_FakeSearchApi());
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@foo');
+
+    expect(palette.autocompleteActive, isFalse);
+    expect(palette.suggestions, isEmpty);
   });
 }

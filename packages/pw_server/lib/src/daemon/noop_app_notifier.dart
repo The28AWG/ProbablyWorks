@@ -9,5 +9,8 @@ final class NoopAppNotifier implements AppNotifier {
     required AgentNoticeKind kind,
     required String chatTitle,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   }) => Future<void>.value();
 }

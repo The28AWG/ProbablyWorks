@@ -46,7 +46,11 @@ class ChatSession {
     // Ожидание пользователя должно быть заметно, даже если окно приложения не в фокусе.
     _waitSub = _hub.broker.approvalRequests
         .where((r) => r.chatId == chatId)
-        .listen((_) => unawaited(_notify(AgentNoticeKind.approvalNeeded)));
+        .listen(
+          (request) => unawaited(
+            _notify(AgentNoticeKind.approvalNeeded, approvalId: request.id),
+          ),
+        );
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
         .listen((_) => unawaited(_notify(AgentNoticeKind.questionAsked)));
@@ -790,13 +794,19 @@ class ChatSession {
 
   /// Системное уведомление о событии этого чата. Название чата читается здесь, потому что
   /// оно принадлежит данным сессии. Сбой чтения или показа уведомление не ломает ход агента.
-  Future<void> _notify(AgentNoticeKind kind, {String? detail}) async {
+  Future<void> _notify(
+    AgentNoticeKind kind, {
+    String? detail,
+    String? approvalId,
+  }) async {
     try {
       final chat = await _hub.chats.chat(chatId);
       await _hub.notifier.notify(
         kind: kind,
         chatTitle: chat?.title ?? '',
         detail: detail,
+        chatId: chatId,
+        approvalId: approvalId,
       );
     } on Object catch (error) {
       _log.warning('notification skipped: $error');

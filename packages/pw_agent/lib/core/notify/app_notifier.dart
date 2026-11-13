@@ -29,9 +29,16 @@ abstract interface class AppNotifier {
   /// [chatTitle] попадает в заголовок, чтобы по уведомлению было видно, какой чат ждёт.
   /// Пустое название допустимо: тогда в заголовке только действие.
   /// [detail] — дополнительные данные события (сейчас только статус фоновой команды).
+  ///
+  /// [profileId], [chatId] и [approvalId] нужны кнопкам действия: открыть чат
+  /// или ответить на карточку подтверждения. Локальный агент профиль не знает
+  /// и передаёт null; клиент подставляет локальный профиль.
   Future<void> notify({
     required AgentNoticeKind kind,
     required String chatTitle,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   });
 }

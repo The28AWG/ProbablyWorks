@@ -6,11 +6,15 @@ import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
 import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
+import 'package:probably_works/app/notifications/notification_action_service.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/local_daemon_discovery.dart';
 import 'package:probably_works/app/profiles/local_daemon_launcher.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
+import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
+import 'package:probably_works/core/notify/app_notifier_plugin.dart';
+import 'package:probably_works/core/notify/notification_action.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
@@ -29,6 +33,7 @@ import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/security/system_secret_store.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
@@ -150,6 +155,7 @@ Future<bool> _bootstrapEmbedded(
     SidebarStartupWidth(await SidebarCubit.loadWidth(clientSettings)),
   );
   getIt<LocaleController>().apply(language);
+  await _wireNotificationActions();
   // Тема применяется до первого кадра, иначе приложение сначала мелькает в системной теме.
   final themeMode = await clientSettings.read(ClientSettingsKeys.themeMode);
   getIt<ThemeController>().apply(ThemeController.modeFrom(themeMode));
@@ -206,9 +212,26 @@ Future<bool> _bootstrapDaemon(
     );
   final language = await clientSettings.read(ClientSettingsKeys.language);
   getIt<LocaleController>().apply(language);
+  await _wireNotificationActions();
   final themeMode = await clientSettings.read(ClientSettingsKeys.themeMode);
   getIt<ThemeController>().apply(ThemeController.modeFrom(themeMode));
   return true;
+}
+
+/// Подключает действия уведомлений к профилям и маршрутизатору.
+///
+/// Обработчик ставится до инициализации плагина: если приложение запустили
+/// нажатием на кнопку уведомления, ответ придёт сразу после инициализации.
+Future<void> _wireNotificationActions() async {
+  final Object notifier = getIt<AppNotifier>();
+  if (notifier is! NotificationActionSink) return;
+  notifier.actionHandler = NotificationActionService(
+    profiles: getIt<ProfileService>(),
+    openChat: (profileId, chatId) => getIt<AppRouter>().pushPath(
+      '/a/${Uri.encodeComponent(profileId)}/chats/${Uri.encodeComponent(chatId)}',
+    ),
+  ).handle;
+  if (notifier is PluginAppNotifier) await notifier.initialize();
 }
 
 Future<ClientInfo> _loadClientInfo() async {

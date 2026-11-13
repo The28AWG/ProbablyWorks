@@ -9,9 +9,10 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
 
 /// Тип строки результата палитры.
-enum PaletteResultKind { command, chat, message, back }
+enum PaletteResultKind { command, chat, message, suggestion, back }
 
 /// Одна строка результата: команда, чат или сообщение.
 class PaletteResult {
@@ -25,6 +26,7 @@ class PaletteResult {
     this.icon,
     this.command,
     this.hit,
+    this.suggestion,
     this.isGroup = false,
   });
 
@@ -37,9 +39,50 @@ class PaletteResult {
   final IconData? icon;
   final PaletteCommand? command;
   final SearchHit? hit;
+  final PaletteSuggestion? suggestion;
 
   /// Группа команд: Enter входит внутрь, а не выполняет действие.
   final bool isGroup;
+}
+
+/// Локализованные подписи подсказок. Передаются из UI, чтобы контроллер не
+/// зависел от `BuildContext`.
+class PaletteLabels {
+  const PaletteLabels({
+    required this.command,
+    required this.project,
+    required this.current,
+    required this.currentProject,
+    required this.chat,
+    required this.scope,
+    required this.allChats,
+    required this.projectScope,
+    required this.chatScope,
+  });
+
+  final String command;
+  final String project;
+  final String current;
+  final String currentProject;
+  final String chat;
+  final String scope;
+  final String allChats;
+  final String projectScope;
+  final String chatScope;
+}
+
+final class _AutocompleteToken {
+  const _AutocompleteToken({
+    required this.start,
+    required this.end,
+    required this.name,
+    required this.value,
+  });
+
+  final int start;
+  final int end;
+  final String name;
+  final String value;
 }
 
 /// Состояние и поиск палитры. UI только рисует и передаёт ввод.
@@ -49,6 +92,7 @@ class PaletteController extends ChangeNotifier {
     required this.searchApi,
     required this.projects,
     required this.chats,
+    required this.labels,
     required this.languageCode,
     this.currentChatId,
     this.currentProjectId,
@@ -61,11 +105,30 @@ class PaletteController extends ChangeNotifier {
   final AgentApi searchApi;
   final List<Project> projects;
   final List<Chat> chats;
+  final PaletteLabels labels;
   final String languageCode;
   final String? currentChatId;
   final String? currentProjectId;
 
   static const _debounce = Duration(milliseconds: 180);
+
+  static const _filterNames = [
+    'command',
+    'project',
+    'current',
+    'current-project',
+    'chat',
+    'scope',
+  ];
+
+  static const _filterAliases = <String, List<String>>{
+    'command': ['command', 'команда'],
+    'project': ['project', 'проект'],
+    'current': ['current', 'текущий'],
+    'current-project': ['current-project', 'текущий-проект'],
+    'chat': ['chat', 'чат'],
+    'scope': ['scope', 'область'],
+  };
 
   var _raw = '';
   var _query = const PaletteQuery(text: '');
@@ -75,6 +138,8 @@ class PaletteController extends ChangeNotifier {
   final _groupStack = <String>[];
   var _selected = 0;
   var _selectionVisible = false;
+  _AutocompleteToken? _autocomplete;
+  var _suggestions = <PaletteSuggestion>[];
   var _loading = false;
   var _searchFailed = false;
   var _generation = 0;
@@ -88,7 +153,11 @@ class PaletteController extends ChangeNotifier {
   bool get loading => _loading;
   bool get searchFailed => _searchFailed;
   bool get isSearching => _query.text.isNotEmpty;
-  bool get canGoBack => _query.text.isEmpty && _groupStack.isNotEmpty;
+  bool get autocompleteActive => _autocomplete != null;
+  List<PaletteSuggestion> get suggestions => _suggestions;
+
+  bool get canGoBack =>
+      _autocomplete == null && _query.text.isEmpty && _groupStack.isNotEmpty;
   String? get groupPath {
     if (_groupId.isEmpty) return null;
     final group = registry.byId(_groupId);
@@ -106,34 +175,274 @@ class PaletteController extends ChangeNotifier {
       ? null
       : _results[_selected];
 
-  void setRaw(String value) {
+  void setRaw(String value, {int? caretOffset}) {
     if (_raw == value) return;
     _raw = value;
+    _updateInput(caretOffset ?? value.length, allowAutocomplete: true);
+  }
+
+  /// Скрывает подсказки, не трогая введённый текст. Следующий символ снова может
+  /// открыть их: `Esc` закрывает только текущий список.
+  void dismissAutocomplete() {
+    if (_autocomplete == null) return;
+    _autocomplete = null;
+    _suggestions = const [];
+    _updateInput(_raw.length, allowAutocomplete: false);
+  }
+
+  /// Общий разбор ввода: подсветки, фильтры, результаты и подсказки.
+  /// [allowAutocomplete] выключается при `Esc`, чтобы список не открылся заново
+  /// на том же тексте.
+  void _updateInput(int caret, {required bool allowAutocomplete}) {
+    _autocomplete = allowAutocomplete ? _detectAutocomplete(_raw, caret) : null;
+    _suggestions = _autocomplete == null
+        ? const []
+        : _suggestionsFor(_autocomplete!);
     _query = PaletteQueryParser.parse(
-      value,
+      _raw,
       context: PaletteParseContext(
         currentChatId: currentChatId,
         currentProjectId: currentProjectId,
       ),
     );
     _resolveNames();
+    _selected = 0;
+    _selectionVisible = false;
+    if (_autocomplete != null) {
+      _searchFailed = false;
+      _loading = false;
+      _generation++;
+      _timer?.cancel();
+      notifyListeners();
+      return;
+    }
     if (_query.text.isEmpty) {
       _searchFailed = false;
       _loading = false;
       _generation++;
       _timer?.cancel();
       _rebuildTree();
-      _selected = 0;
-      _selectionVisible = false;
       notifyListeners();
       return;
     }
     _rebuildResults();
-    _selected = 0;
-    _selectionVisible = false;
     _loadSearch();
     notifyListeners();
   }
+
+  /// Вставляет выбранную подсказку вместо активного @-токена.
+  void applySuggestion(PaletteSuggestion suggestion) {
+    final token = _autocomplete;
+    if (token == null) return;
+    var replacement = suggestion.replacement;
+    if (!replacement.endsWith(':')) {
+      replacement = '$replacement ';
+    }
+    final next = _raw.replaceRange(token.start, token.end, replacement);
+    _autocomplete = null;
+    _suggestions = const [];
+    setRaw(next);
+  }
+
+  _AutocompleteToken? _detectAutocomplete(String raw, int caret) {
+    if (caret < 0 || caret > raw.length) return null;
+    var start = -1;
+    for (var i = caret - 1; i >= 0; i--) {
+      final char = raw[i];
+      if (char == '@' && (i == 0 || _isSpace(raw[i - 1]))) {
+        start = i;
+        break;
+      }
+      if (_isSpace(char)) break;
+    }
+    if (start < 0) return null;
+    final end = _tokenEnd(raw, start);
+    if (caret != end) return null;
+    final token = charRange(raw, start, end);
+    final body = charFrom(token, 1);
+    final split = body.indexOf(':');
+    final rawName = (split < 0 ? body : charPrefix(body, split)).toLowerCase();
+    final name = _canonicalFilter(rawName);
+    final value = split < 0 ? '' : charFrom(body, split + 1);
+    if (split < 0) {
+      if (body.isEmpty) {
+        return _AutocompleteToken(start: start, end: end, name: '', value: '');
+      }
+      if (name != null || !_isFilterPrefix(rawName)) return null;
+      return _AutocompleteToken(
+        start: start,
+        end: end,
+        name: rawName,
+        value: '',
+      );
+    }
+    if (name == null ||
+        (name != 'project' && name != 'chat' && name != 'scope')) {
+      return null;
+    }
+    var prefix = value;
+    if (prefix.startsWith('"')) {
+      if (prefix.length >= 2 && prefix.endsWith('"')) return null;
+      prefix = charFrom(prefix, 1);
+    }
+    if (end < raw.length && _isSpace(raw[end])) return null;
+    return _AutocompleteToken(
+      start: start,
+      end: end,
+      name: name,
+      value: prefix,
+    );
+  }
+
+  List<PaletteSuggestion> _suggestionsFor(_AutocompleteToken token) {
+    if (token.name.isEmpty) {
+      return [for (final name in _filterNames) _filterSuggestion(name)];
+    }
+    if (token.name == 'project') {
+      final needle = _normalize(token.value);
+      final matches =
+          projects
+              .where(
+                (project) =>
+                    needle.isEmpty ||
+                    _normalize(project.name).contains(needle) ||
+                    project.id.toLowerCase().startsWith(needle),
+              )
+              .take(12)
+              .toList()
+            ..sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+      return [
+        for (final project in matches)
+          PaletteSuggestion(
+            kind: PaletteSuggestionKind.project,
+            replacement: '@project:"${project.name}"',
+            title: project.name,
+            subtitle: '@project:"${project.name}"',
+            icon: Icons.workspaces_outline,
+          ),
+      ];
+    }
+    if (token.name == 'chat') {
+      final needle = _normalize(token.value);
+      final matches =
+          chats
+              .where(
+                (chat) =>
+                    needle.isEmpty ||
+                    _normalize(chat.title).contains(needle) ||
+                    chat.id.toLowerCase().startsWith(needle),
+              )
+              .take(12)
+              .toList()
+            ..sort(
+              (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+            );
+      return [
+        for (final chat in matches)
+          PaletteSuggestion(
+            kind: PaletteSuggestionKind.chat,
+            replacement: '@chat:"${chat.title}"',
+            title: chat.title,
+            subtitle: '@chat:"${chat.title}"',
+            icon: Icons.chat_bubble_outline,
+          ),
+      ];
+    }
+    if (token.name == 'scope') {
+      final needle = token.value.toLowerCase();
+      final values = <(String, String)>[
+        ('all', labels.allChats),
+        ('project', labels.projectScope),
+        ('chat', labels.chatScope),
+      ];
+      return [
+        for (final (value, label) in values)
+          if (needle.isEmpty || value.startsWith(needle))
+            PaletteSuggestion(
+              kind: PaletteSuggestionKind.scope,
+              replacement: '@scope:$value',
+              title: label,
+              subtitle: '@scope:$value',
+              icon: Icons.tune,
+            ),
+      ];
+    }
+    return [
+      for (final name in _filterNames)
+        if (_filterAliases[name]!.any((alias) => alias.startsWith(token.name)))
+          _filterSuggestion(name),
+    ];
+  }
+
+  PaletteSuggestion _filterSuggestion(String name) {
+    final replacement = _filterReplacement(name);
+    return PaletteSuggestion(
+      kind: PaletteSuggestionKind.filter,
+      replacement: replacement,
+      title: switch (name) {
+        'command' => labels.command,
+        'project' => labels.project,
+        'current' => labels.current,
+        'current-project' => labels.currentProject,
+        'chat' => labels.chat,
+        _ => labels.scope,
+      },
+      subtitle: replacement,
+      icon: Icons.filter_alt_outlined,
+    );
+  }
+
+  static String _filterReplacement(String name) => switch (name) {
+    'command' => '@command',
+    'project' => '@project:',
+    'current' => '@current',
+    'current-project' => '@current-project',
+    'chat' => '@chat:',
+    _ => '@scope:',
+  };
+
+  static String? _canonicalFilter(String name) {
+    for (final entry in _filterAliases.entries) {
+      if (entry.value.contains(name)) return entry.key;
+    }
+    return null;
+  }
+
+  static bool _isFilterPrefix(String value) {
+    if (value.isEmpty) return true;
+    for (final aliases in _filterAliases.values) {
+      if (aliases.any((alias) => alias.startsWith(value))) return true;
+    }
+    return false;
+  }
+
+  static bool _isSpace(String char) => char.trim().isEmpty;
+
+  static int _tokenEnd(String raw, int start) {
+    var quoted = false;
+    var escaped = false;
+    for (var i = start + 1; i < raw.length; i++) {
+      final char = raw[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char == r'\') {
+        escaped = true;
+        continue;
+      }
+      if (char == '"') {
+        quoted = !quoted;
+        continue;
+      }
+      if (!quoted && _isSpace(char)) return i;
+    }
+    return raw.length;
+  }
+
+  static String _normalize(String value) => normalizeSearchText(value);
 
   void enterGroup(PaletteCommand group) {
     if (!group.isGroup) return;

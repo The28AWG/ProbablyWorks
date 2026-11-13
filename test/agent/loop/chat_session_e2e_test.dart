@@ -123,6 +123,9 @@ class _SilentNotifier implements AppNotifier {
     required AgentNoticeKind kind,
     required String chatTitle,
     String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
   }) async {
     return;
   }

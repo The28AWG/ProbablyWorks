@@ -100,6 +100,29 @@ class PaletteCommand extends Equatable {
   ];
 }
 
+/// Вид подсказки фильтра.
+enum PaletteSuggestionKind { filter, project, chat, scope }
+
+/// Строка-подсказка в общем списке палитры. Не popup: подсказки живут в том же
+/// списке результатов и выбираются теми же стрелками.
+class PaletteSuggestion {
+  const PaletteSuggestion({
+    required this.kind,
+    required this.replacement,
+    required this.title,
+    this.subtitle,
+    this.icon,
+  });
+
+  final PaletteSuggestionKind kind;
+
+  /// Что вставить в строку поиска вместо активного @-токена.
+  final String replacement;
+  final String title;
+  final String? subtitle;
+  final IconData? icon;
+}
+
 /// Ошибка разбора строки поиска. UI переводит код в текст через ARB.
 enum PaletteQueryError {
   missingValue,
