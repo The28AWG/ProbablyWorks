@@ -12,8 +12,9 @@ class PaletteParseContext {
 
 /// Разбор строки палитры: свободный текст + фильтры `@...`.
 ///
-/// Фильтры не попадают в текстовый запрос. Неизвестные и неполные фильтры
-/// возвращаются как ошибки: вызывающий не отправляет такой запрос на сервер.
+/// Фильтры не попадают в текстовый запрос. Фильтр, который нельзя применить
+/// (неизвестное имя, нет открытого чата, неверный scope), остаётся обычным
+/// текстом: палитра не показывает ошибок, просто ищет как есть.
 abstract final class PaletteQueryParser {
   const PaletteQueryParser._();
 
@@ -38,7 +39,6 @@ abstract final class PaletteQueryParser {
   }) {
     final text = StringBuffer();
     final filters = <PaletteFilter>[];
-    final errors = <PaletteQueryError>[];
     var commandsOnly = false;
     var scope = SearchScope.all;
     String? projectId;
@@ -67,11 +67,7 @@ abstract final class PaletteQueryParser {
           .toLowerCase();
       final canonical = _aliases[name];
       if (canonical == null) {
-        // Неизвестный @-токен — обычный текст запроса. Пользователь может
-        // искать буквально `@foo`, а не получать ошибку фильтра.
-        text
-          ..write(token)
-          ..write(' ');
+        _appendText(text, token);
         continue;
       }
       final value = split < 0
@@ -81,7 +77,7 @@ abstract final class PaletteQueryParser {
       switch (canonical) {
         case 'command':
           if (value.isNotEmpty) {
-            errors.add(PaletteQueryError.missingValue);
+            _appendText(text, token);
             break;
           }
           commandsOnly = true;
@@ -91,7 +87,7 @@ abstract final class PaletteQueryParser {
         case 'project':
           if (value.isEmpty) {
             if (context.currentProjectId == null) {
-              errors.add(PaletteQueryError.noCurrentProject);
+              _appendText(text, token);
               break;
             }
             projectId = context.currentProjectId;
@@ -111,11 +107,7 @@ abstract final class PaletteQueryParser {
           );
         case 'current':
           if (value.isNotEmpty || context.currentChatId == null) {
-            errors.add(
-              value.isNotEmpty
-                  ? PaletteQueryError.missingValue
-                  : PaletteQueryError.noCurrentChat,
-            );
+            _appendText(text, token);
             break;
           }
           if (explicitChat) break;
@@ -126,11 +118,7 @@ abstract final class PaletteQueryParser {
           );
         case 'current-project':
           if (value.isNotEmpty || context.currentProjectId == null) {
-            errors.add(
-              value.isNotEmpty
-                  ? PaletteQueryError.missingValue
-                  : PaletteQueryError.noCurrentProject,
-            );
+            _appendText(text, token);
             break;
           }
           projectId = context.currentProjectId;
@@ -140,7 +128,7 @@ abstract final class PaletteQueryParser {
         case 'chat':
           if (value.isEmpty) {
             if (context.currentChatId == null) {
-              errors.add(PaletteQueryError.noCurrentChat);
+              _appendText(text, token);
               break;
             }
             if (explicitChat) break;
@@ -165,13 +153,13 @@ abstract final class PaletteQueryParser {
         case 'scope':
           final parsed = SearchScope.values.asNameMap()[value];
           if (parsed == null) {
-            errors.add(PaletteQueryError.invalidScope);
+            _appendText(text, token);
             break;
           }
           if (parsed == SearchScope.chat) {
             if (!explicitChat) {
               if (context.currentChatId == null) {
-                errors.add(PaletteQueryError.scopeWithoutChat);
+                _appendText(text, token);
                 break;
               }
               currentChat = true;
@@ -179,7 +167,7 @@ abstract final class PaletteQueryParser {
             }
           } else if (parsed == SearchScope.project) {
             if (context.currentProjectId == null) {
-              errors.add(PaletteQueryError.scopeWithoutProject);
+              _appendText(text, token);
               break;
             }
             projectId = context.currentProjectId;
@@ -213,8 +201,15 @@ abstract final class PaletteQueryParser {
       chatName: chatName,
       currentChat: currentChat,
       filters: filters,
-      errors: errors,
     );
+  }
+
+  /// Возвращает неподходящий фильтр в текст запроса: так он ничем не
+  /// отличается от любого другого слова.
+  static void _appendText(StringBuffer text, String token) {
+    text
+      ..write(token)
+      ..write(' ');
   }
 
   static SearchScope _scopeFor(

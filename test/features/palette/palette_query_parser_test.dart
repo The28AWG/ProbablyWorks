@@ -18,7 +18,6 @@ void main() {
     expect(query.text, 'настройки');
     expect(query.commandsOnly, isTrue);
     expect(query.filters.single.kind, PaletteFilterKind.command);
-    expect(query.errors, isEmpty);
   });
 
   test('parses a quoted project name and scopes the search', () {
@@ -52,16 +51,27 @@ void main() {
     expect(named.chatId, isNull);
   });
 
-  test('reports missing current chat and unknown filters', () {
+  test('turns unusable filters into plain text', () {
     final noChat = PaletteQueryParser.parse('@current память');
-    expect(noChat.errors, contains(PaletteQueryError.noCurrentChat));
+    expect(noChat.text, '@current память');
+    expect(noChat.currentChat, isFalse);
 
     final unknown = PaletteQueryParser.parse(
       '@unknown текст',
       context: context,
     );
     expect(unknown.text, '@unknown текст');
-    expect(unknown.errors, isEmpty);
+
+    final badScope = PaletteQueryParser.parse(
+      '@scope:everything текст',
+      context: context,
+    );
+    expect(badScope.text, '@scope:everything текст');
+    expect(badScope.scope, SearchScope.all);
+
+    final noProject = PaletteQueryParser.parse('@project: текст');
+    expect(noProject.text, '@project: текст');
+    expect(noProject.projectId, isNull);
   });
 
   test('supports localized aliases and explicit scope', () {

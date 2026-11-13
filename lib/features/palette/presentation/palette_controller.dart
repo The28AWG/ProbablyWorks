@@ -503,12 +503,6 @@ class PaletteController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Убирает фильтр из строки, сохраняя остальной текст.
-  void removeFilter(PaletteFilter filter) {
-    final value = _raw.replaceFirst(filter.raw, '');
-    setRaw(value.replaceAll(RegExp(r'\s+'), ' ').trim());
-  }
-
   void _rebuildTree() {
     _tree = registry.childrenOf(
       _groupId.isEmpty ? null : _groupId,
@@ -558,31 +552,46 @@ class PaletteController extends ChangeNotifier {
     ];
   }
 
+  /// Разрешает имена проекта и чата в id. Если имя не найдено или подходит
+  /// нескольким объектам, фильтр не применяется: его токен возвращается в
+  /// текст запроса и ищется как обычное слово.
   void _resolveNames() {
     var projectId = _query.projectId;
     var projectName = _query.projectName;
-    var errors = [..._query.errors];
+    var chatId = _query.chatId;
+    var chatName = _query.chatName;
+    final filters = [..._query.filters];
+    final text = StringBuffer(_query.text);
+
+    void appendToken(String raw) {
+      if (text.length > 0) text.write(' ');
+      text.write(raw);
+    }
+
     if (projectName != null) {
-      final matching = projects.where((project) {
-        final needle = normalizeSearchText(projectName!);
-        return project.id == projectName ||
-            normalizeSearchText(project.name) == needle;
-      }).toList();
+      final needle = normalizeSearchText(projectName);
+      final matching = projects
+          .where(
+            (project) =>
+                project.id == projectName ||
+                normalizeSearchText(project.name) == needle,
+          )
+          .toList();
       if (matching.length == 1) {
         projectId = matching.single.id;
         projectName = matching.single.name;
       } else {
-        errors = [
-          ...errors,
-          matching.isEmpty
-              ? PaletteQueryError.projectNotFound
-              : PaletteQueryError.projectAmbiguous,
-        ];
+        _dropFilters(
+          filters,
+          PaletteFilterKind.project,
+          projectName,
+          appendToken,
+        );
+        projectId = null;
+        projectName = null;
       }
     }
 
-    var chatId = _query.chatId;
-    var chatName = _query.chatName;
     if (chatName != null) {
       final needle = normalizeSearchText(chatName);
       final matching = chats
@@ -596,41 +605,76 @@ class PaletteController extends ChangeNotifier {
         chatId = matching.single.id;
         chatName = matching.single.title;
       } else {
-        errors = [
-          ...errors,
-          matching.isEmpty
-              ? PaletteQueryError.chatNotFound
-              : PaletteQueryError.chatAmbiguous,
-        ];
-      }
-    }
-
-    if (chatId != null && projectId != null) {
-      final chat = chats.where((chat) => chat.id == chatId).firstOrNull;
-      if (chat != null &&
-          chat.projectId != null &&
-          chat.projectId != projectId) {
-        errors = [...errors, PaletteQueryError.conflictingScope];
+        _dropFilters(filters, PaletteFilterKind.chat, chatName, appendToken);
+        chatId = null;
+        chatName = null;
       }
     }
 
     _query = PaletteQuery(
-      text: _query.text,
+      text: text.toString().replaceAll(RegExp(r'\s+'), ' ').trim(),
       commandsOnly: _query.commandsOnly,
-      scope: _query.scope,
+      scope: _query.commandsOnly
+          ? _query.scope
+          : _scopeAfterResolution(
+              currentChat: _query.currentChat,
+              chatId: chatId,
+              projectId: projectId,
+              explicitScope: _explicitScope(filters),
+            ),
       projectId: projectId,
       projectName: projectName,
       chatId: chatId,
       chatName: chatName,
       currentChat: _query.currentChat,
-      filters: _query.filters,
-      errors: errors.toSet().toList(),
+      filters: filters,
     );
+  }
+
+  /// Убирает фильтры указанного вида с тем же значением и отдаёт их токены
+  /// в текст запроса через [appendToken].
+  static void _dropFilters(
+    List<PaletteFilter> filters,
+    PaletteFilterKind kind,
+    String value,
+    void Function(String raw) appendToken,
+  ) {
+    final dropped = filters
+        .where((filter) => filter.kind == kind && filter.value == value)
+        .toList();
+    for (final filter in dropped) {
+      appendToken(filter.raw);
+    }
+    filters.removeWhere(dropped.contains);
+  }
+
+  /// Последний явный `@scope` после отбрасывания неприменимых фильтров.
+  static SearchScope? _explicitScope(List<PaletteFilter> filters) {
+    SearchScope? scope;
+    for (final filter in filters) {
+      if (filter.kind != PaletteFilterKind.scope) continue;
+      final parsed = SearchScope.values.asNameMap()[filter.value];
+      if (parsed != null) scope = parsed;
+    }
+    return scope;
+  }
+
+  /// Область поиска после разрешения фильтров: чат важнее проекта, проект
+  /// важнее явного scope, иначе остаётся `all`.
+  static SearchScope _scopeAfterResolution({
+    required bool currentChat,
+    required String? chatId,
+    required String? projectId,
+    required SearchScope? explicitScope,
+  }) {
+    if (currentChat || chatId != null) return SearchScope.chat;
+    if (projectId != null) return SearchScope.project;
+    return explicitScope ?? SearchScope.all;
   }
 
   void _loadSearch() {
     _timer?.cancel();
-    if (_query.text.isEmpty || _query.commandsOnly || _query.hasErrors) {
+    if (_query.text.isEmpty || _query.commandsOnly) {
       _loading = false;
       _searchFailed = false;
       notifyListeners();

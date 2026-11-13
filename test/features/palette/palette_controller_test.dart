@@ -114,7 +114,7 @@ void main() {
     expect(api.queries.single.scope, SearchScope.chat);
   });
 
-  test('unknown project is an error and does not hit the server', () async {
+  test('unknown project is searched as plain text', () async {
     final api = _FakeSearchApi();
     final palette = controller(api);
     addTearDown(palette.dispose);
@@ -122,9 +122,24 @@ void main() {
     palette.setRaw('@project:"Missing" альфа');
     await Future<void>.delayed(const Duration(milliseconds: 250));
 
-    expect(palette.query.errors, contains(PaletteQueryError.projectNotFound));
-    expect(api.queries, isEmpty);
-    expect(palette.results, isNotEmpty);
+    expect(api.queries.single.text, contains('@project:"Missing"'));
+    expect(api.queries.single.text, contains('альфа'));
+    expect(api.queries.single.projectId, isNull);
+    expect(api.queries.single.scope, SearchScope.all);
+  });
+
+  test('unknown chat is searched as plain text', () async {
+    final api = _FakeSearchApi();
+    final palette = controller(api);
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@chat:"Missing" альфа');
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+
+    expect(api.queries.single.text, contains('@chat:"Missing"'));
+    expect(api.queries.single.text, contains('альфа'));
+    expect(api.queries.single.chatId, isNull);
+    expect(api.queries.single.scope, SearchScope.all);
   });
 
   test('merges command and chat results by score', () async {

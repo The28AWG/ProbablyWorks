@@ -9,6 +9,7 @@ import 'package:probably_works/features/palette/presentation/command_palette.dar
 import 'package:probably_works/features/palette/presentation/palette_controller.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 
@@ -303,5 +304,71 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller?.text,
       '@scope:project ',
     );
+    await tester.pump(const Duration(milliseconds: 200));
+  });
+
+  testWidgets('arrow keys keep the last chat suggestion visible', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 11, 13);
+    final chats = [
+      for (var i = 0; i < 20; i++)
+        Chat(
+          id: 'c$i',
+          hostId: 'local',
+          title: 'Chat $i',
+          createdAt: now,
+          updatedAt: now,
+        ),
+    ];
+    final controller = PaletteController(
+      registry: CommandRegistry([
+        PaletteCommand(
+          id: 'alpha',
+          titles: const LocalizedText(ru: 'Альфа', en: 'Alpha'),
+          action: const BuiltinPaletteAction('alpha'),
+        ),
+      ]),
+      searchApi: _NoSearchApi(),
+      projects: const [],
+      chats: chats,
+      labels: _labels,
+      languageCode: 'en',
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: CommandPaletteDialog(
+            controller: controller,
+            onCommand: (_) => throw StateError('unexpected command'),
+            onHit: (_) => throw StateError('unexpected hit'),
+            onClose: () => throw StateError('unexpected close'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '@chat:');
+    await tester.pump();
+    expect(controller.suggestions, hasLength(12));
+    for (var i = 0; i < 11; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    }
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final item = find.text('Chat 11');
+    expect(item, findsOneWidget);
+    final list = find.ancestor(of: item, matching: find.byType(ListView)).first;
+    final itemRect = tester.getRect(item);
+    final listRect = tester.getRect(list);
+    expect(itemRect.top, greaterThanOrEqualTo(listRect.top - 0.5));
+    expect(itemRect.bottom, lessThanOrEqualTo(listRect.bottom + 0.5));
   });
 }

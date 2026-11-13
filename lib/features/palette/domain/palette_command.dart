@@ -123,22 +123,7 @@ class PaletteSuggestion {
   final IconData? icon;
 }
 
-/// Ошибка разбора строки поиска. UI переводит код в текст через ARB.
-enum PaletteQueryError {
-  missingValue,
-  noCurrentChat,
-  noCurrentProject,
-  invalidScope,
-  scopeWithoutChat,
-  scopeWithoutProject,
-  projectNotFound,
-  projectAmbiguous,
-  chatNotFound,
-  chatAmbiguous,
-  conflictingScope,
-}
-
-/// Разобранный фильтр для чипа под полем.
+/// Разобранный фильтр. Хранится для вычисления области поиска.
 enum PaletteFilterKind {
   command,
   project,
@@ -171,7 +156,6 @@ class PaletteQuery extends Equatable {
     this.chatName,
     this.currentChat = false,
     this.filters = const [],
-    this.errors = const [],
   });
 
   final String text;
@@ -191,9 +175,6 @@ class PaletteQuery extends Equatable {
   final String? chatName;
   final bool currentChat;
   final List<PaletteFilter> filters;
-  final List<PaletteQueryError> errors;
-
-  bool get hasErrors => errors.isNotEmpty;
 
   @override
   List<Object?> get props => [
@@ -206,6 +187,5 @@ class PaletteQuery extends Equatable {
     chatName,
     currentChat,
     filters,
-    errors,
   ];
 }

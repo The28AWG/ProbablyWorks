@@ -99,30 +99,41 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   }
 
   void _scrollToSelected() {
-    if (!_scroll.hasClients) return;
-    final target = (_controller.selected * _rowExtent).clamp(
-      0.0,
-      _scroll.position.maxScrollExtent,
-    );
-    final current = _scroll.offset;
-    final viewport = _scroll.position.viewportDimension;
-    if (target < current) {
-      unawaited(
-        _scroll.animateTo(
-          target,
-          duration: AppDurations.fast,
-          curve: Curves.easeOut,
-        ),
-      );
-    } else if (target + _rowExtent > current + viewport) {
-      unawaited(
-        _scroll.animateTo(
-          target + _rowExtent - viewport,
-          duration: AppDurations.fast,
-          curve: Curves.easeOut,
-        ),
-      );
+    _keepRowVisible(_scroll, _controller.selected, _rowExtent);
+  }
+
+  /// Держит выбранную строку в видимой части списка. Верхняя граница
+  /// учитывает padding списка: иначе последняя строка обрезается на его
+  /// высоту, а clamp по maxScrollExtent не должен попадать в расчёт нижней
+  /// границы — из-за этого конец списка раньше не показывался.
+  static void _keepRowVisible(
+    ScrollController controller,
+    int index,
+    double extent, {
+    double leading = 0,
+  }) {
+    if (!controller.hasClients) return;
+    final position = controller.position;
+    final current = controller.offset;
+    final viewport = position.viewportDimension;
+    final top = leading + index * extent;
+    final bottom = top + extent;
+    double? target;
+    if (top < current) {
+      target = top;
+    } else if (bottom > current + viewport) {
+      target = bottom - viewport;
     }
+    if (target == null) return;
+    final clamped = target.clamp(0.0, position.maxScrollExtent);
+    if ((clamped - current).abs() < 0.5) return;
+    unawaited(
+      controller.animateTo(
+        clamped,
+        duration: AppDurations.fast,
+        curve: Curves.easeOut,
+      ),
+    );
   }
 
   void _moveSuggestion(int delta) {
@@ -135,30 +146,12 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   }
 
   void _scrollToSuggestion() {
-    if (!_suggestionScroll.hasClients) return;
-    final target = (_suggestionIndex * _suggestionRowExtent).clamp(
-      0.0,
-      _suggestionScroll.position.maxScrollExtent,
+    _keepRowVisible(
+      _suggestionScroll,
+      _suggestionIndex,
+      _suggestionRowExtent,
+      leading: AppSpacing.xs,
     );
-    final current = _suggestionScroll.offset;
-    final viewport = _suggestionScroll.position.viewportDimension;
-    if (target < current) {
-      unawaited(
-        _suggestionScroll.animateTo(
-          target,
-          duration: AppDurations.fast,
-          curve: Curves.easeOut,
-        ),
-      );
-    } else if (target + _suggestionRowExtent > current + viewport) {
-      unawaited(
-        _suggestionScroll.animateTo(
-          target + _suggestionRowExtent - viewport,
-          duration: AppDurations.fast,
-          curve: Curves.easeOut,
-        ),
-      );
-    }
   }
 
   void _applySuggestion(PaletteSuggestion suggestion) {
@@ -287,43 +280,6 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
                     ),
                   ),
                 ),
-                if (_controller.query.filters.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.lg,
-                    ),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: AppSpacing.sm,
-                        runSpacing: AppSpacing.xs,
-                        children: [
-                          for (final filter in _controller.query.filters)
-                            InputChip(
-                              label: Text(_filterLabel(l10n, filter)),
-                              onDeleted: () => _controller.removeFilter(filter),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (_controller.query.errors.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      left: AppSpacing.lg,
-                      top: AppSpacing.sm,
-                      right: AppSpacing.lg,
-                    ),
-                    child: AppBanner(
-                      message: _errorLabel(
-                        l10n,
-                        _controller.query.errors.first,
-                      ),
-                      icon: Icons.error_outline,
-                      tone: AppTone.danger,
-                      margin: EdgeInsets.zero,
-                    ),
-                  ),
                 if (_controller.loading)
                   const Padding(
                     padding: EdgeInsets.only(top: AppSpacing.sm),
@@ -482,35 +438,6 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
       ),
     );
   }
-
-  String _filterLabel(AppLocalizations l10n, PaletteFilter filter) =>
-      switch (filter.kind) {
-        PaletteFilterKind.command => l10n.paletteFilterCommand,
-        PaletteFilterKind.project => l10n.paletteFilterProject(
-          filter.value ?? '',
-        ),
-        PaletteFilterKind.currentProject => l10n.paletteFilterCurrentProject,
-        PaletteFilterKind.current => l10n.paletteFilterCurrentChat,
-        PaletteFilterKind.chat => l10n.paletteFilterChat(filter.value ?? ''),
-        PaletteFilterKind.scope => l10n.paletteFilterScope(filter.value ?? ''),
-      };
-
-  String _errorLabel(
-    AppLocalizations l10n,
-    PaletteQueryError error,
-  ) => switch (error) {
-    PaletteQueryError.missingValue => l10n.paletteFilterMissingValue,
-    PaletteQueryError.noCurrentChat ||
-    PaletteQueryError.scopeWithoutChat => l10n.paletteFilterNoCurrentChat,
-    PaletteQueryError.noCurrentProject ||
-    PaletteQueryError.scopeWithoutProject => l10n.paletteFilterNoCurrentProject,
-    PaletteQueryError.invalidScope => l10n.paletteFilterInvalidScope,
-    PaletteQueryError.projectNotFound => l10n.paletteFilterProjectNotFound,
-    PaletteQueryError.projectAmbiguous => l10n.paletteFilterProjectAmbiguous,
-    PaletteQueryError.chatNotFound => l10n.paletteFilterChatNotFound,
-    PaletteQueryError.chatAmbiguous => l10n.paletteFilterChatAmbiguous,
-    PaletteQueryError.conflictingScope => l10n.paletteFilterConflictingScope,
-  };
 
   String _typeLabel(AppLocalizations l10n, PaletteResult result) =>
       switch (result.kind) {
