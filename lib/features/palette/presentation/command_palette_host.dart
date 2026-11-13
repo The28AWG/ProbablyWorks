@@ -103,10 +103,11 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       ...builtinPaletteCommands(en, ru, hasProject: currentProjectId != null),
       ...plugin.commands,
     ]);
+    final projectsCubit = context.read<ProjectsCubit>();
     final controller = PaletteController(
       registry: registry,
       searchApi: ProfileScope.of(context).agentApi,
-      projects: context.read<ProjectsCubit>().state.projects,
+      projects: projectsCubit.state.projects,
       chats: context.read<ChatListCubit>().state.chats,
       labels: PaletteLabels(
         command: l10n.paletteFilterCommand,
@@ -123,6 +124,12 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       currentChatId: currentChatId,
       currentProjectId: currentProjectId,
     );
+    // Проекты приходят потоком и могли не успеть к первому кадру палитры.
+    // Подписка обновляет подсказки `@project:` без переоткрытия окна.
+    final projectsSub = projectsCubit.stream.listen(
+      (state) => controller.updateProjects(state.projects),
+    );
+    controller.updateProjects(projectsCubit.state.projects);
     unawaited(
       showDialog<void>(
         context: context,
@@ -134,7 +141,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
           onClose: () => Navigator.of(dialogContext).pop(),
           onCommand: (command) {
             Navigator.of(dialogContext).pop();
-            _run(command);
+            _run(command, projectId: currentProjectId);
           },
           onHit: (hit) {
             Navigator.of(dialogContext).pop();
@@ -143,12 +150,13 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
         ),
       ).whenComplete(() {
         _open = false;
+        unawaited(projectsSub.cancel());
         controller.dispose();
       }),
     );
   }
 
-  void _run(PaletteCommand command) {
+  void _run(PaletteCommand command, {String? projectId}) {
     final action = command.action;
     if (action is PluginPaletteAction) {
       final pluginCommand =
@@ -171,8 +179,10 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       case BuiltinPaletteActions.settings:
         showWorkspaceTab(context, WorkspaceTab.settings);
       case BuiltinPaletteActions.projectMemory:
-        final projectId = _currentProjectId();
-        if (projectId != null) openProject(context, projectId);
+        // Берём проект, с которым палитра открывалась: за время показа
+        // диалога выбранный чат мог пропасть из ещё не загруженного списка.
+        final target = projectId ?? _currentProjectId();
+        if (target != null) openProject(context, target);
       case BuiltinPaletteActions.refreshModels:
         unawaited(_refreshModels());
     }
@@ -249,10 +259,15 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
   }
 
   Future<void> _refreshModels() async {
+    final l10n = AppLocalizations.of(context);
+    AppSnackBar.show(context, l10n.paletteModelsRefreshing);
     try {
       await ProfileScope.of(context).chatApi.models.refresh();
-    } on Object {
-      // Ошибка уже попадает в состояние каталога; палитра закрыта.
+      if (!mounted) return;
+      AppSnackBar.show(context, l10n.paletteModelsRefreshed);
+    } on Object catch (error) {
+      if (!mounted) return;
+      AppSnackBar.show(context, l10n.commonError('$error'));
     }
   }
 

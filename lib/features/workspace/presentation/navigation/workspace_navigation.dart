@@ -61,15 +61,29 @@ void openNewChat(BuildContext context) {
 
 /// Открывает карточку проекта из чата или списка. Стек вкладки проектов пересобирается:
 /// список остаётся под карточкой, поэтому «назад» возвращает к проектам.
+///
+/// Вкладка проектов создаётся лениво: при первом переходе её стек появляется
+/// только после кадра. Раньше в этом случае функция молча выходила, и команда
+/// «Память проекта» ничего не делала.
 void openProject(BuildContext context, String projectId) {
-  final tabs = AutoTabsRouter.of(context);
+  final tabs = AutoTabsRouter.of(context)
+    ..setActiveIndex(WorkspaceTab.projects.index);
+  if (_replaceProject(tabs, projectId)) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    _replaceProject(tabs, projectId);
+  });
+}
+
+/// Пересобирает стек вкладки проектов. Возвращает false, если вкладка ещё не
+/// построена и стек появится позже.
+bool _replaceProject(TabsRouter tabs, String projectId) {
   final stack = _projectsStack(tabs);
-  if (stack == null) return;
-  tabs.setActiveIndex(WorkspaceTab.projects.index);
+  if (stack == null) return false;
   final top = stack.topRoute;
   if (top.name == ProjectRoute.name &&
       top.params.getString('projectId') == projectId) {
-    return;
+    return true;
   }
   unawaited(
     stack.replaceAll([
@@ -77,4 +91,5 @@ void openProject(BuildContext context, String projectId) {
       ProjectRoute(projectId: projectId),
     ]),
   );
+  return true;
 }

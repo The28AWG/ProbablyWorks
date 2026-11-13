@@ -1,4 +1,5 @@
 import 'package:app_ui/app_ui.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -370,5 +371,64 @@ void main() {
     final listRect = tester.getRect(list);
     expect(itemRect.top, greaterThanOrEqualTo(listRect.top - 0.5));
     expect(itemRect.bottom, lessThanOrEqualTo(listRect.bottom + 0.5));
+  });
+
+  testWidgets('suggestion tooltip does not break the overlay layout', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 11, 13);
+    final project = Project(
+      id: 'p1',
+      hostId: 'local',
+      name: 'Work',
+      workspace: '/work',
+      workspaceKey: '/work',
+      createdAt: now,
+      updatedAt: now,
+    );
+    final controller = PaletteController(
+      registry: CommandRegistry([
+        PaletteCommand(
+          id: 'alpha',
+          titles: const LocalizedText(ru: 'Альфа', en: 'Alpha'),
+          action: const BuiltinPaletteAction('alpha'),
+        ),
+      ]),
+      searchApi: _NoSearchApi(),
+      projects: [project],
+      chats: const [],
+      labels: _labels,
+      languageCode: 'en',
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: CommandPaletteDialog(
+            controller: controller,
+            onCommand: (_) => throw StateError('unexpected command'),
+            onHit: (_) => throw StateError('unexpected hit'),
+            onClose: () => throw StateError('unexpected close'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), '@project:');
+    await tester.pump();
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text(project.name)));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(tester.takeException(), isNull);
   });
 }

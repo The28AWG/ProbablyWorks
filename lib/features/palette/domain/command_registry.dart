@@ -53,10 +53,17 @@ class CommandRegistry {
   Iterable<PaletteCommand> get all => _commands.values;
 
   /// Команды верхнего уровня или дети группы.
+  ///
+  /// Пустые группы не показываются: например, «Проект» содержит только
+  /// действия, которым нужен открытый проект. Без проекта группа ничего не
+  /// даёт и не должна выглядеть как пустое меню.
   List<PaletteCommand> childrenOf(String? parentId, String language) {
     final result = [
       for (final command in _commands.values)
-        if (command.parentId == parentId && command.enabled) command,
+        if (command.parentId == parentId &&
+            command.enabled &&
+            (!command.isGroup || _hasEnabledLeaf(command.id)))
+          command,
     ];
     return result..sort((a, b) {
       final byOrder = a.order.compareTo(b.order);
@@ -66,6 +73,19 @@ class CommandRegistry {
           .toLowerCase()
           .compareTo(b.titles.forLanguage(language).toLowerCase());
     });
+  }
+
+  /// Есть ли в группе хотя бы одна доступная команда на любом уровне.
+  bool _hasEnabledLeaf(String groupId) {
+    for (final command in _commands.values) {
+      if (command.parentId != groupId) continue;
+      if (command.isGroup) {
+        if (_hasEnabledLeaf(command.id)) return true;
+      } else if (command.enabled) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Путь до команды, включая её саму: «Навигация → Чаты».

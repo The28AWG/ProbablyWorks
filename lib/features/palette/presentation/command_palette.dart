@@ -37,9 +37,6 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   final _scroll = ScrollController();
   final _suggestionScroll = ScrollController();
 
-  /// Привязка выпадающего списка к полю поиска: ширина и позиция берутся у поля,
-  /// а не у окна, поэтому подсказки не выходят за его границы.
-  final _fieldLink = LayerLink();
   final _suggestionsPortal = OverlayPortalController();
 
   /// Общая группа для поля и подсказок: тап по полю не считается «вне списка».
@@ -232,130 +229,116 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final size = MediaQuery.sizeOf(context);
-    // Ширина списка подсказок равна ширине поля: карточка не шире formMaxWidth,
-    // а поле уже неё на отступы AppSpacing.lg с каждой стороны.
-    final cardWidth = math.min(
-      AppLayout.formMaxWidth,
-      size.width - AppSpacing.lg * 2,
-    );
-    final fieldWidth = math.max(0.0, cardWidth - AppSpacing.lg * 2);
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.xxl,
       ),
-      child: OverlayPortal(
-        controller: _suggestionsPortal,
-        overlayChildBuilder: (overlayContext) =>
-            _buildSuggestions(overlayContext, fieldWidth),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: AppLayout.formMaxWidth,
-            maxHeight: size.height * 0.72,
-          ),
-          child: AppCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.lg,
-                    AppSpacing.sm,
-                  ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: AppLayout.formMaxWidth,
+          maxHeight: size.height * 0.72,
+        ),
+        child: AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                ),
+                child: OverlayPortal.overlayChildLayoutBuilder(
+                  controller: _suggestionsPortal,
+                  overlayChildBuilder: _buildSuggestions,
                   child: TapRegion(
                     groupId: _suggestionTapGroup,
-                    child: CompositedTransformTarget(
-                      link: _fieldLink,
-                      child: AppTextField(
-                        controller: _input,
-                        focusNode: _focus,
-                        autofocus: true,
-                        hint: l10n.paletteSearchHint,
-                        prefixIcon: Icons.search,
-                        onChanged: _onSearchChanged,
-                      ),
+                    child: AppTextField(
+                      controller: _input,
+                      focusNode: _focus,
+                      autofocus: true,
+                      hint: l10n.paletteSearchHint,
+                      prefixIcon: Icons.search,
+                      onChanged: _onSearchChanged,
                     ),
                   ),
                 ),
-                if (_controller.loading)
-                  const Padding(
-                    padding: EdgeInsets.only(top: AppSpacing.sm),
-                    child: LinearProgressIndicator(minHeight: 2),
-                  ),
-                const SizedBox(height: AppSpacing.sm),
-                Expanded(
-                  child: _controller.results.isEmpty
-                      ? Center(
-                          child: Text(
-                            _controller.loading
-                                ? l10n.paletteLoading
-                                : l10n.paletteNoResults,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scroll,
-                          itemExtent: _rowExtent,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
-                          ),
-                          itemCount: _controller.results.length,
-                          itemBuilder: (context, index) => _ResultTile(
-                            result: _controller.results[index],
-                            selected:
-                                index == _controller.selected &&
-                                _controller.selectionVisible,
-                            onTap: () => _onTapResult(index),
-                            onHover: (_) => _controller.selectIndex(index),
-                            typeLabel: _typeLabel(
-                              l10n,
-                              _controller.results[index],
-                            ),
-                          ),
-                        ),
+              ),
+              if (_controller.loading)
+                const Padding(
+                  padding: EdgeInsets.only(top: AppSpacing.sm),
+                  child: LinearProgressIndicator(minHeight: 2),
                 ),
-                const Divider(height: 1),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: AppSpacing.sm,
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
+              const SizedBox(height: AppSpacing.sm),
+              Expanded(
+                child: _controller.results.isEmpty
+                    ? Center(
                         child: Text(
-                          l10n.paletteKeyboardHint,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall
+                          _controller.loading
+                              ? l10n.paletteLoading
+                              : l10n.paletteNoResults,
+                          style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant,
                               ),
                         ),
+                      )
+                    : ListView.builder(
+                        controller: _scroll,
+                        itemExtent: _rowExtent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                        ),
+                        itemCount: _controller.results.length,
+                        itemBuilder: (context, index) => _ResultTile(
+                          result: _controller.results[index],
+                          selected:
+                              index == _controller.selected &&
+                              _controller.selectionVisible,
+                          onTap: () => _onTapResult(index),
+                          onHover: (_) => _controller.selectIndex(index),
+                          typeLabel: _typeLabel(
+                            l10n,
+                            _controller.results[index],
+                          ),
+                        ),
                       ),
-                      Text(
-                        '@command · @project · @current',
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.sm,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.paletteKeyboardHint,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Text(
+                      '@command · @project · @current',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -384,54 +367,52 @@ class _CommandPaletteDialogState extends State<CommandPaletteDialog> {
   /// Выпадающий список подсказок. Это не `PopupMenu` и не `DropdownButton`:
   /// обычный `OverlayPortal` с `CompositedTransformFollower`, поэтому ширина
   /// ровно как у поля, длинный текст обрезается, а список скроллится.
-  Widget _buildSuggestions(BuildContext context, double width) {
+  Widget _buildSuggestions(BuildContext context, OverlayChildLayoutInfo info) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final suggestions = _controller.suggestions;
-    final maxHeight = math.min(300.0, MediaQuery.sizeOf(context).height * 0.45);
-    return CompositedTransformFollower(
-      link: _fieldLink,
-      showWhenUnlinked: false,
-      targetAnchor: Alignment.bottomLeft,
-      followerAnchor: Alignment.topLeft,
-      offset: const Offset(0, AppSpacing.xs),
-      // Overlay выдаёт записи с жёсткими ограничениями на весь экран.
-      // Align ослабляет их, иначе SizedBox не может сузить список до поля.
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: TapRegion(
-          groupId: _suggestionTapGroup,
-          onTapOutside: _onSuggestionTapOutside,
-          child: Material(
-            color: scheme.surfaceContainerHigh,
-            elevation: 8,
-            shadowColor: scheme.shadow.withValues(alpha: 0.3),
-            shape: RoundedRectangleBorder(
-              borderRadius: AppRadius.mdAll,
-              side: BorderSide(color: scheme.outlineVariant),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              width: width,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: maxHeight),
-                child: ListView.builder(
-                  controller: _suggestionScroll,
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                  itemExtent: _suggestionRowExtent,
-                  itemCount: suggestions.length,
-                  itemBuilder: (context, index) {
-                    final suggestion = suggestions[index];
-                    return _SuggestionTile(
-                      suggestion: suggestion,
-                      selected: index == _suggestionIndex,
-                      onTap: () => _applySuggestion(suggestion),
-                      onHover: (hovered) => _onSuggestionHover(index, hovered),
-                    );
-                  },
-                ),
-              ),
+    final origin = MatrixUtils.transformPoint(
+      info.childPaintTransform,
+      Offset.zero,
+    );
+    final top = origin.dy + info.childSize.height + AppSpacing.xs;
+    final available = math.max(
+      0.0,
+      info.overlaySize.height - top - AppSpacing.md,
+    );
+    return Positioned(
+      left: origin.dx,
+      top: top,
+      width: info.childSize.width,
+      child: TapRegion(
+        groupId: _suggestionTapGroup,
+        onTapOutside: _onSuggestionTapOutside,
+        child: Material(
+          color: scheme.surfaceContainerHigh,
+          elevation: 8,
+          shadowColor: scheme.shadow.withValues(alpha: 0.3),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.mdAll,
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: math.min(300.0, available)),
+            child: ListView.builder(
+              controller: _suggestionScroll,
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              itemExtent: _suggestionRowExtent,
+              itemCount: suggestions.length,
+              itemBuilder: (context, index) {
+                final suggestion = suggestions[index];
+                return _SuggestionTile(
+                  suggestion: suggestion,
+                  selected: index == _suggestionIndex,
+                  onTap: () => _applySuggestion(suggestion),
+                  onHover: (hovered) => _onSuggestionHover(index, hovered),
+                );
+              },
             ),
           ),
         ),

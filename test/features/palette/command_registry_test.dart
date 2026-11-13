@@ -8,12 +8,14 @@ PaletteCommand _command(
   String? en,
   String? parentId,
   PaletteAction? action = const BuiltinPaletteAction('run'),
+  bool enabled = true,
 }) => PaletteCommand(
   id: id,
   parentId: parentId,
   titles: LocalizedText(ru: ru, en: en ?? ru),
   keywords: LocalizedText(ru: ru, en: en ?? ru),
   action: action,
+  enabled: enabled,
 );
 
 void main() {
@@ -76,5 +78,24 @@ void main() {
 
     final ids = registry.search('навигация', 'ru').map((m) => m.command.id);
     expect(ids, containsAll(['nav.chats', 'nav.hosts']));
+  });
+
+  test('hides a group without enabled commands', () {
+    final registry = CommandRegistry([
+      PaletteCommand(
+        id: 'project',
+        titles: const LocalizedText(ru: 'Проект', en: 'Project'),
+        order: 20,
+      ),
+      _command(
+        'project.memory',
+        'Память проекта',
+        en: 'Project memory',
+        parentId: 'project',
+        enabled: false,
+      ),
+    ]);
+
+    expect(registry.childrenOf(null, 'ru'), isEmpty);
   });
 }

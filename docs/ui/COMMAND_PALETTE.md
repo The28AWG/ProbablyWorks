@@ -332,7 +332,8 @@ final class PaletteQuery {
 
 - ввод `@` показывает типы фильтров;
 - продолжение имени (`@pro`) сужает список типов;
-- `@project:` показывает проекты с fuzzy-подбором по имени;
+- `@project:` показывает проекты с fuzzy-подбором по имени; если список
+  проектов пришёл позже, подсказки обновляются без переоткрытия палитры;
 - `@chat:` показывает чаты;
 - `@scope:` показывает `all`, `project`, `chat`;
 - `@command`, `@current`, `@current-project` вставляются без значения;
@@ -342,8 +343,9 @@ final class PaletteQuery {
 
 - ширина оверлея равна ширине поля:
   `min(AppLayout.formMaxWidth, screenWidth - 2*AppSpacing.lg) - 2*AppSpacing.lg`;
-- позиция — от левого нижнего угла поля, через `CompositedTransformTarget` и
-  `CompositedTransformFollower`;
+- позиция — от левого нижнего угла поля через
+  `OverlayPortal.overlayChildLayoutBuilder`: он даёт надёжную paint-матрицу
+  поля и не ломает вложенные `Tooltip`;
 - высота ограничена и список прокручивается;
 - каждая строка — одна строка текста с `TextOverflow.ellipsis`; полный текст
   виден в `Tooltip`;

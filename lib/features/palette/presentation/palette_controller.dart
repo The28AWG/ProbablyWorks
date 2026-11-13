@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/features/palette/domain/command_registry.dart';
 import 'package:probably_works/features/palette/domain/command_search.dart';
@@ -103,8 +104,8 @@ class PaletteController extends ChangeNotifier {
 
   final CommandRegistry registry;
   final AgentApi searchApi;
-  final List<Project> projects;
   final List<Chat> chats;
+  List<Project> projects;
   final PaletteLabels labels;
   final String languageCode;
   final String? currentChatId;
@@ -155,6 +156,17 @@ class PaletteController extends ChangeNotifier {
   bool get isSearching => _query.text.isNotEmpty;
   bool get autocompleteActive => _autocomplete != null;
   List<PaletteSuggestion> get suggestions => _suggestions;
+
+  /// Проекты могли ещё не прийти, когда палитра открылась. Обновление
+  /// пересобирает подсказки, если открыт `@project:`.
+  void updateProjects(List<Project> value) {
+    if (listEquals(projects, value)) return;
+    projects = value;
+    final token = _autocomplete;
+    if (token == null) return;
+    _suggestions = _suggestionsFor(token);
+    _notify();
+  }
 
   bool get canGoBack =>
       _autocomplete == null && _query.text.isEmpty && _groupStack.isNotEmpty;
@@ -213,7 +225,7 @@ class PaletteController extends ChangeNotifier {
       _loading = false;
       _generation++;
       _timer?.cancel();
-      notifyListeners();
+      _notify();
       return;
     }
     if (_query.text.isEmpty) {
@@ -222,12 +234,12 @@ class PaletteController extends ChangeNotifier {
       _generation++;
       _timer?.cancel();
       _rebuildTree();
-      notifyListeners();
+      _notify();
       return;
     }
     _rebuildResults();
     _loadSearch();
-    notifyListeners();
+    _notify();
   }
 
   /// Вставляет выбранную подсказку вместо активного @-токена.
@@ -451,7 +463,7 @@ class PaletteController extends ChangeNotifier {
     _rebuildTree();
     _selected = 0;
     _selectionVisible = false;
-    notifyListeners();
+    _notify();
   }
 
   void goBack() {
@@ -460,7 +472,7 @@ class PaletteController extends ChangeNotifier {
     _rebuildTree();
     _selected = 0;
     _selectionVisible = false;
-    notifyListeners();
+    _notify();
   }
 
   void resetGroup() {
@@ -470,7 +482,7 @@ class PaletteController extends ChangeNotifier {
     _rebuildTree();
     _selected = 0;
     _selectionVisible = false;
-    notifyListeners();
+    _notify();
   }
 
   void moveSelection(int delta) {
@@ -480,27 +492,27 @@ class PaletteController extends ChangeNotifier {
     if (!_selectionVisible) {
       _selectionVisible = true;
       if (delta < 0) _selected = _results.length - 1;
-      notifyListeners();
+      _notify();
       return;
     }
     final next = (_selected + delta).clamp(0, _results.length - 1);
     if (next == _selected) {
-      notifyListeners();
+      _notify();
       return;
     }
     _selected = next;
-    notifyListeners();
+    _notify();
   }
 
   void selectIndex(int index) {
     if (index < 0 || index >= _results.length) return;
     _selectionVisible = true;
     if (index == _selected) {
-      notifyListeners();
+      _notify();
       return;
     }
     _selected = index;
-    notifyListeners();
+    _notify();
   }
 
   void _rebuildTree() {
@@ -677,14 +689,14 @@ class PaletteController extends ChangeNotifier {
     if (_query.text.isEmpty || _query.commandsOnly) {
       _loading = false;
       _searchFailed = false;
-      notifyListeners();
+      _notify();
       return;
     }
     final generation = ++_generation;
     _timer = Timer(_debounce, () async {
       _loading = true;
       _searchFailed = false;
-      notifyListeners();
+      _notify();
       try {
         final hits = await searchApi.search(
           SearchQuery(
@@ -703,7 +715,7 @@ class PaletteController extends ChangeNotifier {
         _searchFailed = true;
         _loading = false;
       }
-      notifyListeners();
+      _notify();
     });
   }
 
@@ -733,6 +745,14 @@ class PaletteController extends ChangeNotifier {
         return a.title.toLowerCase().compareTo(b.title.toLowerCase());
       });
     if (_selected >= _results.length) _selected = _results.length - 1;
+  }
+
+  /// Уведомляет UI, только пока контроллер жив. Диалог закрывается с
+  /// анимацией, и hover/tap по последней строке может прийти уже после
+  /// `dispose` — это не должно падать.
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
   }
 
   @override

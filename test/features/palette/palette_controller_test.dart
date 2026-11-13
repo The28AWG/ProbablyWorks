@@ -63,16 +63,17 @@ void main() {
     updatedAt: now,
   );
 
-  PaletteController controller(_FakeSearchApi api) => PaletteController(
-    registry: _registry(),
-    searchApi: api,
-    projects: [project],
-    chats: [chat],
-    labels: _labels,
-    languageCode: 'ru',
-    currentChatId: 'c1',
-    currentProjectId: 'p1',
-  );
+  PaletteController controller(_FakeSearchApi api, {List<Project>? projects}) =>
+      PaletteController(
+        registry: _registry(),
+        searchApi: api,
+        projects: projects ?? [project],
+        chats: [chat],
+        labels: _labels,
+        languageCode: 'ru',
+        currentChatId: 'c1',
+        currentProjectId: 'p1',
+      );
 
   test('@command does not call the chat search', () async {
     final api = _FakeSearchApi();
@@ -302,5 +303,25 @@ void main() {
 
     expect(palette.autocompleteActive, isFalse);
     expect(palette.suggestions, isEmpty);
+  });
+
+  test('project suggestions appear when projects arrive later', () {
+    final palette = controller(_FakeSearchApi(), projects: const []);
+    addTearDown(palette.dispose);
+
+    palette.setRaw('@project:');
+    expect(palette.suggestions, isEmpty);
+
+    palette.updateProjects([project]);
+
+    expect(palette.suggestions, hasLength(1));
+    expect(palette.suggestions.single.title, 'Work');
+  });
+
+  test('ignores selection changes after dispose', () {
+    final palette = controller(_FakeSearchApi())..dispose();
+
+    expect(() => palette.selectIndex(0), returnsNormally);
+    expect(() => palette.moveSelection(1), returnsNormally);
   });
 }
