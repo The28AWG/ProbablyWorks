@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/policy/sensitive_paths.dart';
 import 'package:pw_agent/agent/skills/builtin_skills.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
 import 'package:pw_agent/agent/tools/self_tool_handler.dart';
@@ -145,19 +146,11 @@ class ToolExecutor {
     try {
       return await switch (call.name) {
         ToolNames.hostInfo => _hostOp(ctx, call, args, const HostInfoOp()),
-        ToolNames.listDir => _hostOp(
-          ctx,
-          call,
-          args,
-          ListDirOp(_resolve(ctx, _str(args, 'path'))),
-        ),
-        ToolNames.readFile => _readFile(ctx, call, args),
-        ToolNames.grep => _hostOp(
-          ctx,
-          call,
-          args,
-          GrepOp(_str(args, 'pattern'), _resolve(ctx, _str(args, 'path'))),
-        ),
+        ToolNames.listDir ||
+        ToolNames.readFile ||
+        ToolNames.grep ||
+        ToolNames.glob ||
+        ToolNames.statPath => _hostRead(ctx, call, args),
         ToolNames.which => _hostOp(
           ctx,
           call,
@@ -172,18 +165,6 @@ class ToolExecutor {
         ToolNames.movePath => _movePath(ctx, call, args),
         ToolNames.copyPath => _copyPath(ctx, call, args),
         ToolNames.makeDir => _makeDir(ctx, call, args),
-        ToolNames.statPath => _hostOp(
-          ctx,
-          call,
-          args,
-          StatOp(_resolve(ctx, _str(args, 'path'))),
-        ),
-        ToolNames.glob => _hostOp(
-          ctx,
-          call,
-          args,
-          GlobOp(_str(args, 'pattern'), _resolve(ctx, _str(args, 'path'))),
-        ),
         ToolNames.askUser => _askUser(ctx, call, args),
         ToolNames.finish => Future.value(
           ToolResult(_str(args, 'summary'), finish: true),
@@ -302,38 +283,54 @@ class ToolExecutor {
 
   // ---- read_file -----------------------------------------------------------
 
-  /// Чтение по строкам: курсор offset/byte_offset, лимиты строк и байтов из [AppLimits].
-  /// Размер чанка не превышает половины лимита вывода для модели, иначе [TextClip] вырежет середину.
-  Future<ToolResult> _readFile(
+  /// Чтение с Host: путь проверяется до запуска. Чувствительные пути и чтение
+  /// вне workspace требуют подтверждения, даже если политика разрешила инструмент.
+  Future<ToolResult> _hostRead(
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args,
   ) {
-    final chunk = math.min(
-      math.max(ctx.limits.readFileChunkBytes, _minReadChunkBytes),
-      ctx.limits.toolOutputForModelChars ~/ 2,
-    );
     final path = _resolve(ctx, _str(args, 'path'));
     return _hostOp(
       ctx,
       call,
       args,
-      ReadFileOp(
-        path,
-        offset: _intArg(args, 'offset', min: 1, fallback: 1),
-        byteOffset: _intArg(args, 'byte_offset', min: 0, fallback: 0),
-        limit: _intArg(
-          args,
-          'limit',
-          min: 1,
-          max: _maxReadLines,
-          fallback: _defaultReadLines,
-        ),
-        chunkBytes: chunk,
-        lineBytes: ctx.limits.readFileLineBytes,
-      ),
+      _hostOpForRead(ctx, call, args, path),
+      guardedPath: path,
+      recursive: call.name == ToolNames.grep,
     );
   }
+
+  /// Служебная read-операция для вызова. Путь уже разрешён относительно workspace.
+  HostOp _hostOpForRead(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    String path,
+  ) => switch (call.name) {
+    ToolNames.readFile => ReadFileOp(
+      path,
+      offset: _intArg(args, 'offset', min: 1, fallback: 1),
+      byteOffset: _intArg(args, 'byte_offset', min: 0, fallback: 0),
+      limit: _intArg(
+        args,
+        'limit',
+        min: 1,
+        max: _maxReadLines,
+        fallback: _defaultReadLines,
+      ),
+      chunkBytes: math.min(
+        math.max(ctx.limits.readFileChunkBytes, _minReadChunkBytes),
+        ctx.limits.toolOutputForModelChars ~/ 2,
+      ),
+      lineBytes: ctx.limits.readFileLineBytes,
+    ),
+    ToolNames.listDir => ListDirOp(path),
+    ToolNames.grep => GrepOp(_str(args, 'pattern'), path),
+    ToolNames.glob => GlobOp(_str(args, 'pattern'), path),
+    ToolNames.statPath => StatOp(path),
+    _ => throw ArgumentError.value(call.name, 'call.name', 'not a read tool'),
+  };
 
   // ---- host commands -----------------------------------------------------
 
@@ -343,11 +340,58 @@ class ToolExecutor {
     ToolContext ctx,
     LlmToolCall call,
     Map<String, dynamic> args,
-    HostOp op,
-  ) {
-    final decision = ctx.policy.decide(call.name, args);
+    HostOp op, {
+    String? guardedPath,
+    bool recursive = false,
+  }) async {
+    var decision = ctx.policy.decide(call.name, args);
+    var reason = ctx.policy.reasonFor(call.name, args);
+    var grantable = true;
     if (decision == PolicyDecision.deny) {
-      return _denied(ctx, call, args, ctx.policy.reasonFor(call.name, args));
+      return _denied(ctx, call, args, reason);
+    }
+    if (guardedPath != null) {
+      final paths = SensitivePaths.current(
+        remote: ctx.host.kind != HostKind.local,
+      );
+      final sensitive = paths.sensitiveReason(
+        guardedPath,
+        recursive: recursive,
+      );
+      if (sensitive != null) {
+        decision = PolicyDecision.ask;
+        reason = sensitive;
+        grantable = false;
+      } else if (decision == PolicyDecision.allow &&
+          ctx.policy.mode == PolicyMode.ask &&
+          !paths.isInsideWorkspace(guardedPath, _commandCwd(ctx))) {
+        decision = PolicyDecision.ask;
+        reason = 'path is outside the project workspace';
+      }
+    }
+    if (decision == PolicyDecision.ask) {
+      final runId = _uuid.v4();
+      final approved = await _approve(
+        ctx,
+        call,
+        args,
+        runId: runId,
+        summary: op.label,
+        reason: reason,
+        allowStoredGrant: grantable,
+      );
+      if (!approved.allowed) {
+        return _rejected(op.label, reason: approved.reason);
+      }
+      return _exec(
+        ctx,
+        call,
+        args,
+        command: op.label,
+        op: op,
+        background: false,
+        presetRunId: runId,
+      );
     }
     return _exec(ctx, call, args, command: op.label, op: op, background: false);
   }
@@ -1654,11 +1698,37 @@ class ToolExecutor {
     ToolNames.runCommand => _resumeCommand(ctx, call, args, run),
     ToolNames.writeFile => _resumeWrite(ctx, call, args, run),
     ToolNames.editFile => _resumeEdit(ctx, call, args, run),
+    ToolNames.readFile ||
+    ToolNames.listDir ||
+    ToolNames.grep ||
+    ToolNames.glob ||
+    ToolNames.statPath => _resumeHostRead(ctx, call, args, run),
     ToolNames.hostAdd ||
     ToolNames.hostUpdate ||
     ToolNames.settingsUpdate => _resumeSelf(ctx, call, args, run),
     _ => _failRun(run, 'cannot resume ${call.name}'),
   };
+
+  /// Продолжение подтверждённого чтения. Проверки пути уже пройдены.
+  Future<ToolResult> _resumeHostRead(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolRun run,
+  ) {
+    final path = _resolve(ctx, _str(args, 'path'));
+    final op = _hostOpForRead(ctx, call, args, path);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: op.label,
+      op: op,
+      background: false,
+      presetRunId: run.id,
+      startedAt: run.startedAt,
+    );
+  }
 
   Future<ToolResult> _resumeCommand(
     ToolContext ctx,

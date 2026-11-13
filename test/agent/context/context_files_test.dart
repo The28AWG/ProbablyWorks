@@ -6,6 +6,7 @@ import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
 import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
@@ -191,5 +192,29 @@ void main() {
     expect(system, contains('## Project memory'));
     expect(system, contains('<untrusted source="project_memory">'));
     expect(system, contains('- pnpm install'));
+  });
+
+  test('host and file tools are always untrusted', () {
+    expect(
+      ContextBuilder.untrustedTools,
+      containsAll([
+        ToolNames.hostInfo,
+        ToolNames.listDir,
+        ToolNames.readFile,
+        ToolNames.grep,
+        ToolNames.glob,
+        ToolNames.statPath,
+        ToolNames.which,
+        ToolNames.runCommand,
+        ToolNames.listRuns,
+        ToolNames.readRunOutput,
+        ToolNames.listSkills,
+        ToolNames.loadSkill,
+        ToolNames.hostList,
+        ToolNames.settingsRead,
+        ToolNames.hostTest,
+        ToolNames.hostDiagnose,
+      ]),
+    );
   });
 }

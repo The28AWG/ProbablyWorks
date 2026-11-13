@@ -2211,7 +2211,14 @@ void main() {
   test('after restart independent work continues and the card appears only when the chat opens', () async {
     final chatId = await createVirtualChat();
     final chat = (await hub.chats.chat(chatId))!;
-    await hub.chats.saveChat(chat.copyWith(policyMode: PolicyMode.ask));
+    await hub.chats.saveChat(
+      chat.copyWith(
+        policyMode: PolicyMode.ask,
+        // Файлы теста лежат в домашней папке виртуального Host: без явного
+        // workspace чтение вне проекта теперь спрашивает подтверждение.
+        workspace: '/home/agent',
+      ),
+    );
     final now = DateTime.now();
     await hub.chats.saveChat(
       Chat(

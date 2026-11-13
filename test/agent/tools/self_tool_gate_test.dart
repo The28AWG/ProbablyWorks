@@ -226,4 +226,52 @@ void main() {
     expect(result.isError, isFalse);
     expect(await hosts.all(), hasLength(2));
   });
+
+  ToolContext contextWithMode(PolicyMode mode) => ToolContext(
+    chat: ctx.chat,
+    messageId: ctx.messageId,
+    host: ctx.host,
+    runtime: ctx.runtime,
+    limits: ctx.limits,
+    policy: PolicyEngine(
+      classifier: CommandClassifier(
+        denylist: SettingsRepository.defaultDenylist,
+      ),
+      mode: mode,
+    ),
+    onBackgroundDone: ctx.onBackgroundDone,
+    project: ctx.project,
+    turnUserMessageId: ctx.turnUserMessageId,
+  );
+
+  test('reading outside the workspace asks for approval', () async {
+    final request = broker.approvalRequests.first;
+    final pending = tools.execute(
+      call('r', ToolNames.readFile, {'path': '/etc/os-release'}),
+      ctx,
+    );
+
+    final approval = await request;
+    expect(approval.reason, contains('outside the project workspace'));
+    broker.resolveApproval(approval.id, const ApprovalDecision.deny());
+
+    final result = await pending;
+    expect(result.isError, isTrue);
+  });
+
+  test('sensitive path asks even in YOLO and has no stored grant', () async {
+    final request = broker.approvalRequests.first;
+    final pending = tools.execute(
+      call('s', ToolNames.readFile, {'path': '~/.ssh/id_rsa'}),
+      contextWithMode(PolicyMode.yolo),
+    );
+
+    final approval = await request;
+    expect(approval.reason, contains('sensitive path'));
+    expect(approval.grantable, isFalse);
+    broker.resolveApproval(approval.id, const ApprovalDecision.deny());
+
+    final result = await pending;
+    expect(result.isError, isTrue);
+  });
 }
