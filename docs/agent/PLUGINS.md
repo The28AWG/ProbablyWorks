@@ -209,3 +209,9 @@ PluginApi pluginApiFor(AgentProfile profile) =>
 6. Добавить ядро в `PluginRegistry` клиента и демона.
 7. Добавить `PluginUi` в `PluginUiRegistry` клиента, если нужен экран настроек.
 8. Покрыть ядро тестами создания инструментов и графа зависимостей.
+
+### Команды палитры и offline
+
+`PluginCommand` по умолчанию считается серверным и скрывается при offline.
+Если команда умеет работать без агента, плагин явно ставит
+`requiresBackend: false`.

@@ -8,6 +8,7 @@ final class DaemonOptions {
     this.bind,
     this.printToken = false,
     this.rotateToken = false,
+    this.allowedOrigins = const [],
     this.help = false,
   });
 
@@ -17,6 +18,7 @@ final class DaemonOptions {
     InternetAddress? bind;
     var printToken = false;
     var rotateToken = false;
+    final allowedOrigins = <String>[];
     var help = false;
     for (var i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -37,6 +39,16 @@ final class DaemonOptions {
           printToken = true;
         case '--rotate-token':
           rotateToken = true;
+        case '--allow-origin':
+          final raw = _value(args, ++i, '--allow-origin');
+          final uri = Uri.tryParse(raw);
+          if (uri == null ||
+              (uri.scheme != 'http' && uri.scheme != 'https') ||
+              uri.host.isEmpty ||
+              (uri.path.isNotEmpty && uri.path != '/')) {
+            throw FormatException('invalid --allow-origin: $raw');
+          }
+          allowedOrigins.add(uri.origin);
         case '--help':
         case '-h':
           help = true;
@@ -50,6 +62,7 @@ final class DaemonOptions {
       bind: bind,
       printToken: printToken || rotateToken,
       rotateToken: rotateToken,
+      allowedOrigins: allowedOrigins,
       help: help,
     );
   }
@@ -59,6 +72,9 @@ final class DaemonOptions {
   final InternetAddress? bind;
   final bool printToken;
   final bool rotateToken;
+
+  /// Origin'ы браузера, которым разрешены CORS-запросы к API.
+  final List<String> allowedOrigins;
   final bool help;
 
   static String _value(List<String> args, int index, String name) {
@@ -78,6 +94,8 @@ Usage: pw_server [options]
   --bind <address>   bind address (default: 127.0.0.1)
   --print-token      print the API token on stdout
   --rotate-token     issue a new API token and print it
+  --allow-origin <origin>
+                     allow browser CORS from this origin (repeatable)
   -h, --help         show this help
 
 The API is loopback-only by default. Expose it remotely only through

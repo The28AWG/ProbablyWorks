@@ -65,7 +65,7 @@ Future<int> runDaemon(List<String> args) async {
     );
     return 1;
   }
-  await AppLog.init(paths.logs);
+  await AppLog.init(paths.logs.path);
   final secrets = createSystemSecretStore(
     support: paths.support,
     environment: Platform.environment,
@@ -127,6 +127,7 @@ Future<int> runDaemon(List<String> args) async {
     securityAuditApi: getIt<SecurityAuditApi>(),
     pushApi: getIt<PushApi>(),
     accessLog: accessLog,
+    allowedOrigins: options.allowedOrigins.toSet(),
   );
   final port = await server.start();
   // Токен в файле нужен только как fallback: если keyring сработал, GUI

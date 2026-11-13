@@ -9,6 +9,7 @@ PaletteCommand _command(
   String? parentId,
   PaletteAction? action = const BuiltinPaletteAction('run'),
   bool enabled = true,
+  bool requiresBackend = true,
 }) => PaletteCommand(
   id: id,
   parentId: parentId,
@@ -16,6 +17,7 @@ PaletteCommand _command(
   keywords: LocalizedText(ru: ru, en: en ?? ru),
   action: action,
   enabled: enabled,
+  requiresBackend: requiresBackend,
 );
 
 void main() {
@@ -97,5 +99,32 @@ void main() {
     ]);
 
     expect(registry.childrenOf(null, 'ru'), isEmpty);
+  });
+
+  test('hides backend commands when offline', () {
+    final registry = CommandRegistry([
+      _command('new_chat', 'Новый чат', en: 'New chat'),
+      _command('settings', 'Настройки', en: 'Settings', requiresBackend: false),
+      PaletteCommand(
+        id: 'project',
+        titles: const LocalizedText(ru: 'Проект', en: 'Project'),
+      ),
+      _command(
+        'project.memory',
+        'Память проекта',
+        en: 'Project memory',
+        parentId: 'project',
+      ),
+    ]);
+
+    expect(
+      registry.childrenOf(null, 'ru').map((command) => command.id),
+      containsAll(['new_chat', 'settings', 'project']),
+    );
+    expect(registry.childrenOf(null, 'ru', online: false).map((c) => c.id), [
+      'settings',
+    ]);
+    expect(registry.search('новый', 'ru', online: false), isEmpty);
+    expect(registry.search('настройки', 'ru', online: false), isNotEmpty);
   });
 }

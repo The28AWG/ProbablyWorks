@@ -324,4 +324,44 @@ void main() {
     expect(() => palette.selectIndex(0), returnsNormally);
     expect(() => palette.moveSelection(1), returnsNormally);
   });
+
+  test('hides backend commands offline and restores them online', () {
+    final registry = CommandRegistry([
+      PaletteCommand(
+        id: 'local',
+        titles: const LocalizedText(ru: 'Локально', en: 'Local'),
+        action: const BuiltinPaletteAction('local'),
+        requiresBackend: false,
+      ),
+      PaletteCommand(
+        id: 'remote',
+        titles: const LocalizedText(ru: 'Сервер', en: 'Remote'),
+        action: const BuiltinPaletteAction('remote'),
+      ),
+    ]);
+    final palette = PaletteController(
+      registry: registry,
+      searchApi: _FakeSearchApi(),
+      projects: [project],
+      chats: [chat],
+      labels: _labels,
+      languageCode: 'ru',
+      backendOnline: false,
+    );
+    addTearDown(palette.dispose);
+
+    expect(palette.tree.map((command) => command.id), ['local']);
+
+    palette.updateBackendStatus(true);
+    expect(
+      palette.tree.map((command) => command.id),
+      containsAll(['local', 'remote']),
+    );
+
+    palette.updateBackendStatus(false);
+    expect(
+      palette.tree.map((command) => command.id),
+      isNot(contains('remote')),
+    );
+  });
 }

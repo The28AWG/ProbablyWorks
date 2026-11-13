@@ -11,26 +11,7 @@ import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 
-/// Итог ручного импорта `mcp.json`.
-enum McpImportStatus { imported, missing, error }
-
-/// Результат импорта: что произошло и с каким файлом.
-final class McpImportResult {
-  const McpImportResult.imported(this.path)
-    : status = McpImportStatus.imported,
-      error = null;
-
-  const McpImportResult.missing(this.path)
-    : status = McpImportStatus.missing,
-      error = null;
-
-  const McpImportResult.error(this.error, this.path)
-    : status = McpImportStatus.error;
-
-  final McpImportStatus status;
-  final String? path;
-  final String? error;
-}
+export 'package:pw_agent/agent/mcp/mcp_types.dart';
 
 /// Связывает настройки MCP, подключения и общий реестр инструментов.
 ///

@@ -97,7 +97,8 @@ class PaletteController extends ChangeNotifier {
     required this.languageCode,
     this.currentChatId,
     this.currentProjectId,
-  }) {
+    bool backendOnline = true,
+  }) : _online = backendOnline {
     _rebuildTree();
     _loadSearch();
   }
@@ -141,6 +142,7 @@ class PaletteController extends ChangeNotifier {
   var _selectionVisible = false;
   _AutocompleteToken? _autocomplete;
   var _suggestions = <PaletteSuggestion>[];
+  var _online = true;
   var _loading = false;
   var _searchFailed = false;
   var _generation = 0;
@@ -156,6 +158,28 @@ class PaletteController extends ChangeNotifier {
   bool get isSearching => _query.text.isNotEmpty;
   bool get autocompleteActive => _autocomplete != null;
   List<PaletteSuggestion> get suggestions => _suggestions;
+
+  /// Обновляет доступность команд, которым нужен живой сервер.
+  void updateBackendStatus(bool online) {
+    if (_online == online) return;
+    _online = online;
+    _generation++;
+    _timer?.cancel();
+    if (_query.text.isEmpty) {
+      _rebuildTree();
+    } else {
+      _rebuildResults();
+      if (_online) {
+        _loadSearch();
+      } else {
+        _loading = false;
+        _searchFailed = false;
+      }
+    }
+    _selected = _results.isEmpty ? 0 : _selected.clamp(0, _results.length - 1);
+    _selectionVisible = false;
+    _notify();
+  }
 
   /// Проекты могли ещё не прийти, когда палитра открылась. Обновление
   /// пересобирает подсказки, если открыт `@project:`.
@@ -519,7 +543,13 @@ class PaletteController extends ChangeNotifier {
     _tree = registry.childrenOf(
       _groupId.isEmpty ? null : _groupId,
       languageCode,
+      online: _online,
     );
+    if (_tree.isEmpty && _groupId.isNotEmpty) {
+      _groupId = '';
+      _groupStack.clear();
+      _tree = registry.childrenOf(null, languageCode, online: _online);
+    }
     _results = [
       if (_groupStack.isNotEmpty)
         PaletteResult(
@@ -548,7 +578,7 @@ class PaletteController extends ChangeNotifier {
   }
 
   void _rebuildResults() {
-    final matches = registry.search(_query.text, languageCode);
+    final matches = registry.search(_query.text, languageCode, online: _online);
     _results = [
       for (final match in matches)
         PaletteResult(
@@ -686,7 +716,7 @@ class PaletteController extends ChangeNotifier {
 
   void _loadSearch() {
     _timer?.cancel();
-    if (_query.text.isEmpty || _query.commandsOnly) {
+    if (!_online || _query.text.isEmpty || _query.commandsOnly) {
       _loading = false;
       _searchFailed = false;
       _notify();

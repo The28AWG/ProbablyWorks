@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
 import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
-import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/di/injection_native.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/notifications/notification_action_service.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
@@ -49,7 +49,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await resolveAppPaths();
-  await AppLog.init(paths.logs);
+  await AppLog.init(paths.logs.path);
   final clientInfo = await _loadClientInfo();
   final clientSettings = SharedPreferencesClientSettings(
     SharedPreferencesAsync(),

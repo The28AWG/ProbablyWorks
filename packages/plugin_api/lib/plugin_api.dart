@@ -120,6 +120,7 @@ final class PluginCommand {
     required this.titles,
     this.parentId,
     this.keywords = const {},
+    this.requiresBackend = true,
     required this.run,
   });
 
@@ -130,6 +131,10 @@ final class PluginCommand {
   final String? parentId;
   final Map<String, String> titles;
   final Map<String, String> keywords;
+
+  /// Команда работает без живого сервера агента. По умолчанию false:
+  /// плагин должен явно разрешить offline-выполнение.
+  final bool requiresBackend;
   final Future<void> Function(PluginCommandHost host) run;
 }
 

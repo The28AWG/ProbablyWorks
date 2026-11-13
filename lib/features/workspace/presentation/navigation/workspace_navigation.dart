@@ -36,27 +36,50 @@ void showWorkspaceTab(BuildContext context, WorkspaceTab tab) =>
 /// Открывает чат из списка или боковой панели. Стек вкладки чатов всегда содержит один экран: стартовый
 /// экран или чат, поэтому новый выбор заменяет текущий, а не копится в истории.
 void openChat(BuildContext context, String chatId, {String? messageId}) {
-  final tabs = AutoTabsRouter.of(context);
+  final tabs = AutoTabsRouter.of(context)
+    ..setActiveIndex(WorkspaceTab.chats.index);
+  if (_replaceChat(tabs, chatId, messageId)) return;
+  // Вкладка чатов могла ещё не построить стек. После кадра он появится.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    _replaceChat(tabs, chatId, messageId);
+  });
+}
+
+bool _replaceChat(TabsRouter tabs, String chatId, String? messageId) {
   final stack = _chatsStack(tabs);
-  if (stack == null) return;
-  tabs.setActiveIndex(WorkspaceTab.chats.index);
+  if (stack == null) return false;
   final top = stack.topRoute;
   if (messageId == null &&
       top.name == ChatRoute.name &&
       top.params.getString('chatId') == chatId) {
-    return;
+    return true;
   }
   unawaited(stack.replace(ChatRoute(chatId: chatId, messageId: messageId)));
+  return true;
 }
 
 /// Стартовый экран нового чата. Чат появится в списке после первой отправки и откроется на этом же месте.
+///
+/// Вкладку активируем до проверки стека: при первом переходе с другой вкладки
+/// стек чатов может появиться только после кадра, и раньше кнопка «Новый чат»
+/// молча ничего не делала.
 void openNewChat(BuildContext context) {
-  final tabs = AutoTabsRouter.of(context);
+  final tabs = AutoTabsRouter.of(context)
+    ..setActiveIndex(WorkspaceTab.chats.index);
+  if (_replaceNewChat(tabs)) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    _replaceNewChat(tabs);
+  });
+}
+
+bool _replaceNewChat(TabsRouter tabs) {
   final stack = _chatsStack(tabs);
-  if (stack == null) return;
-  tabs.setActiveIndex(WorkspaceTab.chats.index);
-  if (stack.topRoute.name == NewChatRoute.name) return;
+  if (stack == null) return false;
+  if (stack.topRoute.name == NewChatRoute.name) return true;
   unawaited(stack.replace(const NewChatRoute()));
+  return true;
 }
 
 /// Открывает карточку проекта из чата или списка. Стек вкладки проектов пересобирается:

@@ -17,11 +17,11 @@ import 'package:probably_works/features/palette/domain/palette_command.dart';
 import 'package:probably_works/features/palette/presentation/command_palette.dart';
 import 'package:probably_works/features/palette/presentation/palette_controller.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
-import 'package:probably_works/features/settings/presentation/pages/settings_page.dart';
+import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/search.dart';
-import 'package:pw_agent/agent/plugins/plugin_service.dart';
 
 /// Перехватывает глобальную горячую клавишу и показывает единую палитру.
 ///
@@ -104,9 +104,10 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       ...plugin.commands,
     ]);
     final projectsCubit = context.read<ProjectsCubit>();
+    final agentApi = ProfileScope.of(context).agentApi;
     final controller = PaletteController(
       registry: registry,
-      searchApi: ProfileScope.of(context).agentApi,
+      searchApi: agentApi,
       projects: projectsCubit.state.projects,
       chats: context.read<ChatListCubit>().state.chats,
       labels: PaletteLabels(
@@ -123,6 +124,12 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       languageCode: languageCode,
       currentChatId: currentChatId,
       currentProjectId: currentProjectId,
+      backendOnline: agentApi.status != AgentStatus.offline,
+    );
+    // Статус может измениться, пока диалог открыт: команды с серверной
+    // зависимостью должны исчезнуть/появиться сразу.
+    final backendSub = agentApi.statusChanges.listen(
+      (status) => controller.updateBackendStatus(status != AgentStatus.offline),
     );
     // Проекты приходят потоком и могли не успеть к первому кадру палитры.
     // Подписка обновляет подсказки `@project:` без переоткрытия окна.
@@ -151,6 +158,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       ).whenComplete(() {
         _open = false;
         unawaited(projectsSub.cancel());
+        unawaited(backendSub.cancel());
         controller.dispose();
       }),
     );
@@ -194,9 +202,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
     final commands = <PaletteCommand>[];
     final byId = <String, PluginCommand>{};
     if (plugins.isEmpty) return (commands: commands, byId: byId);
-    final settings = getIt.isRegistered<PluginService>()
-        ? getIt<PluginService>()
-        : null;
+    final pluginApi = ProfileScope.maybeOf(context)?.pluginApi;
     for (final plugin in plugins) {
       final groupId = 'plugin:${plugin.id}';
       final groupTitles = _localizedFrom(plugin.titles, plugin.id);
@@ -210,7 +216,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       );
       try {
         final list = await plugin.createCommands(
-          settings?.settingsFor(plugin.id) ?? const _EmptyPluginSettings(),
+          pluginApi?.settingsFor(plugin.id) ?? const _EmptyPluginSettings(),
         );
         for (final command in list) {
           final id = '$groupId:${command.id}';
@@ -225,6 +231,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
               keywords: _localizedFrom(command.keywords, ''),
               action: PluginPaletteAction(plugin.id, command.id),
               order: commands.length,
+              requiresBackend: command.requiresBackend,
             ),
           );
         }
@@ -285,7 +292,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
   void openSettingsTab([String? category]) {
     showWorkspaceTab(context, WorkspaceTab.settings);
     if (category != null && category.isNotEmpty) {
-      SettingsPage.requestedGroup.value = category;
+      settingsRequestedGroup.value = category;
     }
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
@@ -632,9 +633,7 @@ class _ChatBodyState extends State<ChatBody> {
   void _onDragDone(DropDoneDetails details) {
     final intoEdit = _editingId != null;
     setState(() => _dragging = false);
-    unawaited(
-      _addFiles([for (final f in details.files) f.path], intoEdit: intoEdit),
-    );
+    unawaited(_addFiles(details.files, intoEdit: intoEdit));
   }
 
   Future<void> _pickFiles() => _pickInto(intoEdit: false);
@@ -643,13 +642,13 @@ class _ChatBodyState extends State<ChatBody> {
 
   Future<void> _pickInto({required bool intoEdit}) async {
     final files = await openFiles();
-    await _addFiles([for (final f in files) f.path], intoEdit: intoEdit);
+    await _addFiles(files, intoEdit: intoEdit);
   }
 
   /// Читает файлы и добавляет их в черновик или в открытую правку. Текст уходит в сообщение,
   /// бинарные файлы — модели отдельной частью. Путь на диске в вложение не попадает.
   /// Отказы показываются сообщением.
-  Future<void> _addFiles(List<String> paths, {required bool intoEdit}) async {
+  Future<void> _addFiles(List<XFile> files, {required bool intoEdit}) async {
     final bloc = context.read<ChatBloc>();
     final l10n = AppLocalizations.of(context);
     final limits = bloc.state.limits;
@@ -662,17 +661,25 @@ class _ChatBodyState extends State<ChatBody> {
     var room = limits.attachmentsPerMessage - existing;
     final items = <AttachmentRef>[];
     final refused = <String>[];
-    for (final path in paths) {
+    for (final file in files) {
       if (room <= 0) {
         refused.add(l10n.attachLimitReached(limits.attachmentsPerMessage));
         break;
       }
-      final name = path.split(RegExp(r'[\\/]')).last;
-      final result = await loadAttachment(
-        path,
-        maxBytes: limits.attachmentMaxBytes,
-        removeAfterReadUnder: cacheDir,
-      );
+      final name = file.name;
+      final AttachmentLoadResult result;
+      if (kIsWeb) {
+        final bytes = await file.readAsBytes();
+        result = bytes.length > limits.attachmentMaxBytes
+            ? const AttachmentLoadResult.failed(AttachmentProblem.tooLarge)
+            : classifyAttachmentBytes(name, bytes);
+      } else {
+        result = await loadAttachment(
+          file.path,
+          maxBytes: limits.attachmentMaxBytes,
+          removeAfterReadUnder: cacheDir,
+        );
+      }
       final ref = result.ref;
       if (ref == null) {
         refused.add(_problemText(l10n, name, result.problem!, limits));

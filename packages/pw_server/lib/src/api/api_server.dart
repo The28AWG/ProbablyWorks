@@ -50,6 +50,7 @@ final class ApiServer {
     this.securityAuditApi,
     this.pushApi,
     this.accessLog,
+    this.allowedOrigins = const {},
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
@@ -71,6 +72,7 @@ final class ApiServer {
   final String _token;
   final InternetAddress _address;
   final int _port;
+  final Set<String> allowedOrigins;
 
   HttpServer? _server;
   final _clients = <HttpResponse>{};
@@ -109,6 +111,10 @@ final class ApiServer {
     String? errorCode;
     var sse = false;
     try {
+      if (_applyCors(request, response)) {
+        audit = false;
+        return;
+      }
       if (request.method == 'GET' && request.uri.path == '/api/v1/health') {
         audit = false;
         _json(response, HttpStatus.ok, {'ok': true, 'version': '1'});
@@ -194,6 +200,30 @@ final class ApiServer {
         );
       }
     }
+  }
+
+  /// Ставит CORS-заголовки только для разрешённых origin. Preflight
+  /// завершается здесь и не требует токена: браузер ещё не отправил его.
+  bool _applyCors(HttpRequest request, HttpResponse response) {
+    final origin = request.headers.value('origin');
+    if (origin == null || !allowedOrigins.contains(origin)) return false;
+    response.headers
+      ..set('Access-Control-Allow-Origin', origin)
+      ..set('Vary', 'Origin')
+      ..set(
+        'Access-Control-Allow-Methods',
+        'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+      )
+      ..set(
+        'Access-Control-Allow-Headers',
+        'Authorization, Content-Type, x-request-id, '
+            'x-client-app, x-client-package, x-client-version, x-client-build, '
+            'x-client-platform',
+      )
+      ..set('Access-Control-Max-Age', '600');
+    if (request.method != 'OPTIONS') return false;
+    response.statusCode = HttpStatus.noContent;
+    return true;
   }
 
   static String _requestId(HttpRequest request) {

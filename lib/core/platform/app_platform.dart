@@ -15,8 +15,13 @@ class AppPlatform {
   bool get isIOS => target == TargetPlatform.iOS;
   bool get isMobile => isAndroid || isIOS;
 
-  /// Локальный Host: процессы на этом устройстве. На iOS песочница не порождает shell, поэтому Host не создаётся.
-  bool get hasLocalHost => !isIOS;
+  /// Браузер. Web-сборка пока не входит в поставку, но платформенные
+  /// решения не должны принимать браузер за desktop и создавать локальный Host.
+  bool get isWeb => kIsWeb;
+
+  /// Локальный Host: процессы на этом устройстве. На iOS песочница не порождает shell,
+  /// а в браузере нет ни процессов, ни PTY, поэтому Host не создаётся.
+  bool get hasLocalHost => !isWeb && !isIOS;
 
   /// Локальный PTY (portable_pty). Совпадает с [hasLocalHost]: без локального Host PTY не нужен.
   bool get hasPty => hasLocalHost;
@@ -32,5 +37,5 @@ class AppPlatform {
   bool get focusesInputOnOpen => !isMobile;
 
   /// Перетаскивание файлов в окно (desktop_drop). На мобильных плагина нет, там есть кнопка прикрепления.
-  bool get supportsFileDrop => !isMobile;
+  bool get supportsFileDrop => !isMobile && !isWeb;
 }

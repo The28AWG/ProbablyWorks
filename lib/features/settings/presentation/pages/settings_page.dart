@@ -3,15 +3,18 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
+import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
@@ -39,15 +42,16 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 @RoutePage()
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({@PathParam('group') this.initialGroup, super.key});
+  const SettingsPage({
+    @PathParam('group') required this.initialGroup,
+    super.key,
+  });
 
   /// Начальная группа настроек (например, `safety` при переходе из проекта).
-  final String? initialGroup;
+  final String initialGroup;
 
   /// Уведомление о запросе переключения группы (для уже открытой страницы настроек).
-  static final ValueNotifier<String?> requestedGroup = ValueNotifier<String?>(
-    null,
-  );
+  static final ValueNotifier<String?> requestedGroup = settingsRequestedGroup;
 
   @override
   Widget build(BuildContext context) => BlocProvider(
@@ -65,9 +69,9 @@ class SettingsPage extends StatelessWidget {
 enum _Group { account, agents, interface, safety, plugins, mcp, advanced }
 
 class _SettingsView extends StatefulWidget {
-  const _SettingsView({this.initialGroup});
+  const _SettingsView({required this.initialGroup});
 
-  final String? initialGroup;
+  final String initialGroup;
 
   @override
   State<_SettingsView> createState() => _SettingsViewState();
@@ -85,7 +89,7 @@ class _SettingsViewState extends State<_SettingsView> {
   @override
   void initState() {
     super.initState();
-    final initial = widget.initialGroup ?? SettingsPage.requestedGroup.value;
+    final initial = widget.initialGroup;
     SettingsPage.requestedGroup.value = null;
     _group = _groupFromName(initial) ?? _Group.account;
     SettingsPage.requestedGroup.addListener(_onRequestedGroup);
@@ -101,21 +105,16 @@ class _SettingsViewState extends State<_SettingsView> {
     final requested = SettingsPage.requestedGroup.value;
     if (requested == null) return;
     final next = _groupFromName(requested);
-    if (next != null && next != _group) {
-      setState(() => _group = next);
-    }
     SettingsPage.requestedGroup.value = null;
+    if (next != null) _selectGroup(context, next);
   }
 
   @override
   void didUpdateWidget(covariant _SettingsView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final initial = widget.initialGroup;
-    if (initial != null) {
-      final next = _groupFromName(initial);
-      if (next != null && next != _group) {
-        _group = next;
-      }
+    final next = _groupFromName(widget.initialGroup);
+    if (next != null && next != _group) {
+      _group = next;
     }
   }
 
@@ -139,6 +138,22 @@ class _SettingsViewState extends State<_SettingsView> {
     'advanced' => _Group.advanced,
     _ => null,
   };
+
+  /// Переключает группу и обновляет query-параметр маршрута, чтобы
+  /// выбранный раздел сохранялся при перезагрузке страницы.
+  void _selectGroup(BuildContext _, _Group group) {
+    if (group != _group) setState(() => _group = group);
+    _syncGroupRoute(group);
+  }
+
+  /// Обновляет путь настроек. Не трогает маршрут, если там уже эта группа.
+  void _syncGroupRoute(_Group group) {
+    if (widget.initialGroup == group.name) return;
+    unawaited(
+      AutoTabsRouter.of(context)
+          .navigate(SettingsRoute(initialGroup: group.name)),
+    );
+  }
 
   void _saveAttachLimits(SettingsCubit cubit, AppLocalizations l10n) {
     final perMessage = int.tryParse(_attachPerMessage.text.trim());
@@ -199,15 +214,6 @@ class _SettingsViewState extends State<_SettingsView> {
           _initialized = true;
         }
         final cubit = context.read<SettingsCubit>();
-        final groups = <_Group, List<Widget>>{
-          _Group.account: _accountSections(state, cubit, l10n, source),
-          _Group.agents: const [AgentProfilesSection()],
-          _Group.interface: _interfaceSections(state, cubit, l10n, pushApi),
-          _Group.safety: _safetySections(state, cubit, l10n, securityAuditApi),
-          _Group.plugins: _pluginSections(pluginApi, agentApi),
-          _Group.mcp: _mcpSections(mcpApi),
-          _Group.advanced: _advancedSections(state, cubit, l10n),
-        };
         final titles = <_Group, (String, String)>{
           _Group.account: (
             l10n.settingsGroupAccount,
@@ -235,102 +241,147 @@ class _SettingsViewState extends State<_SettingsView> {
             l10n.settingsGroupAdvancedHint,
           ),
         };
-        return AppScaffold(
-          appBar: AppBar(
-            leading: context.workspaceLayout == .compact
-                ? const WorkspaceLeadingButton()
-                : null,
-            title: Text(
-              l10n.settingsTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= AppBreakpoints.medium;
-              if (wide) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 240,
-                      child: ListView(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        children: [
-                          for (final group in _Group.values)
-                            _GroupTile(
-                              icon: _groupIcon(group),
-                              title: titles[group]!.$1,
-                              selected: group == _group,
-                              onTap: () => setState(() => _group = group),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.all(AppSpacing.xl),
-                        children: [
-                          Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: AppLayout.pageMaxWidth,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _GroupHeader(
-                                    title: titles[_group]!.$1,
-                                    hint: titles[_group]!.$2,
-                                  ),
-                                  const SizedBox(height: AppSpacing.xl),
-                                  for (final section in groups[_group]!) ...[
-                                    section,
-                                    const SizedBox(height: AppSpacing.xl),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              }
-              return ListView(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                children: [
-                  Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: AppLayout.pageMaxWidth,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final group in _Group.values) ...[
-                            _GroupHeader(
-                              title: titles[group]!.$1,
-                              hint: titles[group]!.$2,
-                            ),
-                            const SizedBox(height: AppSpacing.lg),
-                            for (final section in groups[group]!) ...[
-                              section,
-                              const SizedBox(height: AppSpacing.xl),
+        return BackendStatusBuilder(
+          builder: (context, status) {
+            final offline = status == AgentStatus.offline;
+            final available = offline
+                ? const [_Group.agents, _Group.interface, _Group.advanced]
+                : _Group.values;
+            final selectedGroup = available.contains(_group)
+                ? _group
+                : _Group.agents;
+            if (offline && widget.initialGroup != selectedGroup.name) {
+              // Например, открыли settings/account, а сервер уже offline:
+              // переключаем маршрут на доступную секцию.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _syncGroupRoute(selectedGroup);
+              });
+            }
+            final groups = <_Group, List<Widget>>{
+              _Group.account: _accountSections(state, cubit, l10n, source),
+              _Group.agents: const [AgentProfilesSection()],
+              _Group.interface: _interfaceSections(
+                state,
+                cubit,
+                l10n,
+                pushApi,
+                offline: offline,
+              ),
+              _Group.safety: _safetySections(
+                state,
+                cubit,
+                l10n,
+                securityAuditApi,
+              ),
+              _Group.plugins: _pluginSections(pluginApi, agentApi),
+              _Group.mcp: _mcpSections(mcpApi),
+              _Group.advanced: _advancedSections(
+                state,
+                cubit,
+                l10n,
+                offline: offline,
+              ),
+            };
+            return AppScaffold(
+              appBar: AppBar(
+                leading: context.workspaceLayout == .compact
+                    ? const WorkspaceLeadingButton()
+                    : null,
+                title: Text(
+                  l10n.settingsTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              body: LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide = constraints.maxWidth >= AppBreakpoints.medium;
+                  if (wide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 240,
+                          child: ListView(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            children: [
+                              for (final group in available)
+                                _GroupTile(
+                                  icon: _groupIcon(group),
+                                  title: titles[group]!.$1,
+                                  selected: group == selectedGroup,
+                                  onTap: () => _selectGroup(context, group),
+                                ),
                             ],
-                            const SizedBox(height: AppSpacing.lg),
-                          ],
-                        ],
+                          ),
+                        ),
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.all(AppSpacing.xl),
+                            children: [
+                              Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: AppLayout.pageMaxWidth,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _GroupHeader(
+                                        title: titles[selectedGroup]!.$1,
+                                        hint: titles[selectedGroup]!.$2,
+                                      ),
+                                      const SizedBox(height: AppSpacing.xl),
+                                      for (final section
+                                          in groups[selectedGroup]!) ...[
+                                        section,
+                                        const SizedBox(height: AppSpacing.xl),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+                  return ListView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    children: [
+                      Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: AppLayout.pageMaxWidth,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final group in available) ...[
+                                _GroupHeader(
+                                  title: titles[group]!.$1,
+                                  hint: titles[group]!.$2,
+                                ),
+                                const SizedBox(height: AppSpacing.lg),
+                                for (final section in groups[group]!) ...[
+                                  section,
+                                  const SizedBox(height: AppSpacing.xl),
+                                ],
+                                const SizedBox(height: AppSpacing.lg),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -493,8 +544,9 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n,
-    PushApi pushApi,
-  ) => [
+    PushApi pushApi, {
+    required bool offline,
+  }) => [
     AppSection(
       title: l10n.settingsLanguage,
       children: [
@@ -658,7 +710,7 @@ class _SettingsViewState extends State<_SettingsView> {
         ),
       ],
     ),
-    PushNotificationsSection(api: pushApi),
+    if (!offline) PushNotificationsSection(api: pushApi),
   ];
 
   Future<void> _resetSecurityProfile(
@@ -757,69 +809,71 @@ class _SettingsViewState extends State<_SettingsView> {
   List<Widget> _advancedSections(
     SettingsState state,
     SettingsCubit cubit,
-    AppLocalizations l10n,
-  ) => [
+    AppLocalizations l10n, {
+    required bool offline,
+  }) => [
     const KeybindingsSection(),
-    AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SettingsFormRow(
-            title: l10n.settingsAttachLimits,
-            description: l10n.settingsAttachLimitsHint,
-            action: FilledButton(
-              onPressed: () => _saveAttachLimits(cubit, l10n),
-              child: Text(
-                l10n.commonSave,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    if (!offline)
+      AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SettingsFormRow(
+              title: l10n.settingsAttachLimits,
+              description: l10n.settingsAttachLimitsHint,
+              action: FilledButton(
+                onPressed: () => _saveAttachLimits(cubit, l10n),
+                child: Text(
+                  l10n.commonSave,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      controller: _attachPerMessage,
+                      suffixText: l10n.settingsAttachUnitFiles,
+                      error: _attachError,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: AppTextField(
+                      controller: _attachMaxBytes,
+                      suffixText: l10n.settingsAttachUnitBytes,
+                      error: _attachError,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppTextField(
-                    controller: _attachPerMessage,
-                    suffixText: l10n.settingsAttachUnitFiles,
-                    error: _attachError,
-                    keyboardType: TextInputType.number,
-                  ),
+            const Divider(height: AppSpacing.xl),
+            SettingsFormRow(
+              title: l10n.settingsLimits,
+              description: l10n.settingsLimitsHelper,
+              action: FilledButton(
+                onPressed: () => cubit.saveLimits(_limits.text),
+                child: Text(
+                  l10n.commonSave,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: AppTextField(
-                    controller: _attachMaxBytes,
-                    suffixText: l10n.settingsAttachUnitBytes,
-                    error: _attachError,
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: AppSpacing.xl),
-          SettingsFormRow(
-            title: l10n.settingsLimits,
-            description: l10n.settingsLimitsHelper,
-            action: FilledButton(
-              onPressed: () => cubit.saveLimits(_limits.text),
-              child: Text(
-                l10n.commonSave,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              ),
+              child: AppTextField(
+                controller: _limits,
+                minLines: 6,
+                maxLines: 16,
+                mono: true,
+                error: state.limitsError ? l10n.settingsLimitsInvalid : null,
               ),
             ),
-            child: AppTextField(
-              controller: _limits,
-              minLines: 6,
-              maxLines: 16,
-              mono: true,
-              error: state.limitsError ? l10n.settingsLimitsInvalid : null,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
   ];
 
   static IconData _groupIcon(_Group group) => switch (group) {

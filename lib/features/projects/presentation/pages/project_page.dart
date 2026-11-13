@@ -405,11 +405,8 @@ class _PolicySection extends StatelessWidget {
 Future<void> _openPolicySecuritySettings(BuildContext context) async {
   SettingsPage.requestedGroup.value = 'safety';
   showWorkspaceTab(context, WorkspaceTab.settings);
-  final tabs = AutoTabsRouter.of(context);
-  final stack = tabs.stackRouterOfIndex(WorkspaceTab.settings.index);
-  if (stack != null) {
-    await stack.replace(SettingsRoute(initialGroup: 'safety'));
-  }
+  await AutoTabsRouter.of(context)
+      .navigate(SettingsRoute(initialGroup: 'safety'));
 }
 
 /// Строка доверия: подпись, пояснение и переключатель.

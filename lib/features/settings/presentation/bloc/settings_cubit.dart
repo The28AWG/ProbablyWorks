@@ -184,7 +184,22 @@ class SettingsCubit extends Cubit<SettingsState> {
   }
 
   Future<void> load() async {
-    final snapshot = await _agentSettings.load();
+    // Локальные настройки доступны и без сервера: язык и тема не зависят от API.
+    final language =
+        await _settings.read(ClientSettingsKeys.language) ?? 'system';
+    final themeMode = ThemeController.modeFrom(
+      await _settings.read(ClientSettingsKeys.themeMode),
+    );
+    emit(state.copyWith(language: language, themeMode: themeMode));
+
+    final AgentSettingsSnapshot snapshot;
+    try {
+      snapshot = await _agentSettings.load();
+    } on Object {
+      // Сервер offline: страница настроек остаётся доступной для профилей
+      // и локальных настроек. Удалённые разделы не загружаем.
+      return;
+    }
     emit(
       state.copyWith(
         apiKeyTail: snapshot.apiKeyTail,
@@ -201,20 +216,22 @@ class SettingsCubit extends Cubit<SettingsState> {
         pinnedModels: snapshot.pinnedModels,
         stepsDisplay: snapshot.stepsDisplay,
         catalog: snapshot.catalog,
-        language: await _settings.read(ClientSettingsKeys.language) ?? 'system',
-        themeMode: ThemeController.modeFrom(
-          await _settings.read(ClientSettingsKeys.themeMode),
-        ),
+        language: language,
+        themeMode: themeMode,
       ),
     );
-    await _agentSettings.rememberModels([
-      snapshot.defaultModel,
-      snapshot.titleModel,
-      snapshot.memoryModel,
-      snapshot.subagentModel,
-      snapshot.fallbackModel,
-      ...snapshot.pinnedModels,
-    ]);
+    try {
+      await _agentSettings.rememberModels([
+        snapshot.defaultModel,
+        snapshot.titleModel,
+        snapshot.memoryModel,
+        snapshot.subagentModel,
+        snapshot.fallbackModel,
+        ...snapshot.pinnedModels,
+      ]);
+    } on Object {
+      // Кэш моделей — не критичная часть страницы.
+    }
     await _catalogSub?.cancel();
     _catalogSub = _agentSettings.watchCatalog().listen(
       (catalog) => emit(state.copyWith(catalog: catalog)),

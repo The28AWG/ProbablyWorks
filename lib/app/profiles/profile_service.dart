@@ -35,8 +35,9 @@ class ProfileService {
     this._secrets,
     this._local,
     this._clientInfo,
-    this._notifier,
-  );
+    this._notifier, {
+    @ignoreParam this.includeLocal = true,
+  });
 
   static const _uuid = Uuid();
 
@@ -45,13 +46,14 @@ class ProfileService {
   final LocalAgentApisProvider _local;
   final ClientInfo _clientInfo;
   final AppNotifier _notifier;
+  final bool includeLocal;
 
   final _changes = StreamController<void>.broadcast();
   final _remote = <String, RemoteAgentApi>{};
   final _listeners = <String, List<StreamSubscription<Object?>>>{};
   final _tokens = <String, String>{};
 
-  var _profiles = <AgentProfile>[AgentProfile.local()];
+  var _profiles = <AgentProfile>[];
   var _loaded = false;
 
   List<AgentProfile> get profiles => List.unmodifiable(_profiles);
@@ -68,7 +70,7 @@ class ProfileService {
     final localId = storedLocal == null || storedLocal.isEmpty
         ? 'p-${_uuid.v4()}'
         : storedLocal;
-    if (storedLocal == null || storedLocal.isEmpty) {
+    if (includeLocal && (storedLocal == null || storedLocal.isEmpty)) {
       await _settings.write(ClientSettingsKeys.localAgentProfileId, localId);
     }
     final locals = <AgentProfile>[];
@@ -89,7 +91,7 @@ class ProfileService {
       }
     }
     _profiles = [
-      AgentProfile.local(localId),
+      if (includeLocal) AgentProfile.local(localId),
       for (final profile in locals)
         if (!profile.isLocal) profile,
     ];

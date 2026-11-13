@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -58,16 +59,29 @@ class ProjectsState extends Equatable {
 /// Раздел проектов. Проекты не создаются здесь: они появляются из чатов, а этот блок
 /// показывает их список, переименовывает, меняет доверие и общую память.
 class ProjectsCubit extends Cubit<ProjectsState> {
-  ProjectsCubit(this._api) : super(const ProjectsState()) {
+  ProjectsCubit(
+    this._api, {
+    AgentStatus initialStatus = AgentStatus.connecting,
+    Stream<AgentStatus>? statusChanges,
+  }) : super(ProjectsState(loading: initialStatus != AgentStatus.offline)) {
     _projectsSub = _api.watchProjects().listen(
       (projects) => emit(state.copyWith(projects: projects, loading: false)),
+      onError: (Object _) => _offline(),
     );
     _hostsSub = _api.watchHosts().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
+      onError: (Object _) => _offline(),
     );
     _countsSub = _api.watchChatCounts().listen(
       (counts) => emit(state.copyWith(chatCounts: counts)),
+      onError: (Object _) => _offline(),
     );
+    _statusSub = statusChanges?.listen((status) {
+      // Без сервера первый список не придёт: не держим вечный спиннер.
+      if (status == AgentStatus.offline && !isClosed) {
+        emit(const ProjectsState(loading: false));
+      }
+    });
   }
 
   final ProjectsApi _api;
@@ -75,6 +89,11 @@ class ProjectsCubit extends Cubit<ProjectsState> {
   late final StreamSubscription<List<Project>> _projectsSub;
   late final StreamSubscription<List<Host>> _hostsSub;
   late final StreamSubscription<Map<String, int>> _countsSub;
+  StreamSubscription<AgentStatus>? _statusSub;
+
+  void _offline() {
+    if (!isClosed) emit(const ProjectsState(loading: false));
+  }
 
   /// Имя проекта видно в списке и в чипе чата. Хост и папка — идентичность, их не меняем.
   Future<void> rename(Project project, String name) async {
@@ -122,6 +141,7 @@ class ProjectsCubit extends Cubit<ProjectsState> {
     await _projectsSub.cancel();
     await _hostsSub.cancel();
     await _countsSub.cancel();
+    await _statusSub?.cancel();
     return super.close();
   }
 }

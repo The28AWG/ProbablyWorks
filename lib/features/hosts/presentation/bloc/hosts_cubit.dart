@@ -24,6 +24,9 @@ class HostsCubit extends Cubit<HostsState> {
   HostsCubit(this._api) : super(const HostsState()) {
     _sub = _api.watchHosts().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
+      onError: (Object _) {
+        if (!isClosed) emit(const HostsState());
+      },
     );
   }
 

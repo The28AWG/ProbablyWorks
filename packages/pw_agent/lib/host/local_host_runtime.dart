@@ -24,6 +24,41 @@ final class LocalHostRuntime extends WrappedExecRuntime {
   /// Карта хоста. Накладывается на окружение машины и в обычном процессе, и в PTY.
   final Map<String, String> environment;
 
+  /// На Windows локальный PTY не поддерживается: `portable_pty` использует
+  /// ConPTY, но не отдаёт master fd, а блокирующее чтение нельзя опрашивать
+  /// таймером. Команды идут обычным `Process` без TTY — это ограничение
+  /// лучше, чем зависший или упавший терминал.
+  @override
+  bool get hasTerminal => os != HostOs.windows;
+
+  @override
+  Future<PtyChannel> spawnPty(
+    String wrappedScript, {
+    required int columns,
+    required int rows,
+  }) {
+    if (os == HostOs.windows) {
+      return Future<PtyChannel>.error(
+        const HostFailure(
+          'Local terminal is not available on Windows: '
+          'commands run without a TTY',
+          kind: HostFailureKind.spawnFailed,
+        ),
+      );
+    }
+    return pty.start(
+      control.shellExecutable,
+      control.shellArgs(wrappedScript),
+      environment: localSessionEnvironment(
+        machine: Platform.environment,
+        host: environment,
+        terminal: true,
+      ),
+      columns: columns,
+      rows: rows,
+    );
+  }
+
   @override
   Future<ExecChannel> spawn(String wrappedScript) async {
     try {
@@ -44,23 +79,6 @@ final class LocalHostRuntime extends WrappedExecRuntime {
       );
     }
   }
-
-  @override
-  Future<PtyChannel> spawnPty(
-    String wrappedScript, {
-    required int columns,
-    required int rows,
-  }) => pty.start(
-    control.shellExecutable,
-    control.shellArgs(wrappedScript),
-    environment: localSessionEnvironment(
-      machine: Platform.environment,
-      host: environment,
-      terminal: true,
-    ),
-    columns: columns,
-    rows: rows,
-  );
 }
 
 class _ProcessChannel implements ExecChannel {

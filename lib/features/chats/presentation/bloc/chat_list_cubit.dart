@@ -56,9 +56,10 @@ class ChatListCubit extends Cubit<ChatListState> {
     _chatsSub = _api.watchChats().listen((chats) {
       emit(state.copyWith(chats: chats));
       _refreshActivity();
-    });
+    }, onError: (Object _) => _clear());
     _hostsSub = _api.watchHosts().listen(
       (hosts) => emit(state.copyWith(hosts: hosts)),
+      onError: (Object _) => _clear(),
     );
     // Текстовые дельты приходят на каждый токен: на них активность не меняется, пересчёт не нужен.
     _activitySub = _api.events
@@ -71,6 +72,12 @@ class ChatListCubit extends Cubit<ChatListState> {
         .listen((_) => _refreshActivity());
     _approvalSub = _api.approvals.listen((_) => _refreshActivity());
     _questionSub = _api.questions.listen((_) => _refreshActivity());
+    _statusSub = _api.statusChanges.listen((status) {
+      // При потере сервера не показываем устаревший список как живой.
+      if (status == AgentStatus.offline && !isClosed) {
+        emit(const ChatListState());
+      }
+    });
     _refreshActivity();
   }
 
@@ -81,6 +88,11 @@ class ChatListCubit extends Cubit<ChatListState> {
   late final StreamSubscription<AgentEvent> _activitySub;
   late final StreamSubscription<ApprovalRequest> _approvalSub;
   late final StreamSubscription<UserQuestion> _questionSub;
+  late final StreamSubscription<AgentStatus> _statusSub;
+
+  void _clear() {
+    if (!isClosed) emit(const ChatListState());
+  }
 
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
   void _refreshActivity() {
@@ -124,6 +136,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _activitySub.cancel();
     await _approvalSub.cancel();
     await _questionSub.cancel();
+    await _statusSub.cancel();
     return super.close();
   }
 }

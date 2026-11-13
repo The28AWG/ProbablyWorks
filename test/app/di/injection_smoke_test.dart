@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/di/injection_native.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';

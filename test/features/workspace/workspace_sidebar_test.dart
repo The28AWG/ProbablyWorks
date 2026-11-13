@@ -62,6 +62,12 @@ class _FakeApi implements AgentApi {
   final List<Host> _hosts;
 
   @override
+  AgentStatus get status => AgentStatus.online;
+
+  @override
+  Stream<AgentStatus> get statusChanges => const Stream.empty();
+
+  @override
   Stream<List<Chat>> watchChats() => Stream.value(_chats);
 
   @override

@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Сведения о клиенте, которые уходят в HTTP-заголовках удалённого API.
@@ -38,7 +37,9 @@ final class ClientInfo {
     'x-client-package': packageName,
     'x-client-version': version,
     'x-client-build': buildNumber,
-    'x-client-platform': Platform.operatingSystem,
+    'x-client-platform': kIsWeb
+        ? 'web'
+        : defaultTargetPlatform.name.toLowerCase(),
   };
 
   static String _safe(String value) {

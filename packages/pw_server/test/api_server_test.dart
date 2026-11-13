@@ -61,6 +61,7 @@ void main() {
       pluginApi: pluginApi,
       securityAuditApi: securityAudit,
       pushApi: push,
+      allowedOrigins: const {'http://localhost:8080'},
     );
     final port = await server.start();
     base = 'http://127.0.0.1:$port';
@@ -71,6 +72,25 @@ void main() {
     client.close(force: true);
     await server.stop();
     await backend.dispose();
+  });
+
+  test('allows CORS preflight only for configured origins', () async {
+    Future<String?> originHeader(HttpClient client, String origin) async {
+      final request = await client.openUrl(
+        'OPTIONS',
+        Uri.parse('$base/api/v1/settings'),
+      );
+      request.headers
+        ..set('Origin', origin)
+        ..set('Access-Control-Request-Method', 'GET')
+        ..set('Access-Control-Request-Headers', 'authorization');
+      final response = await request.close();
+      await response.drain<void>();
+      return response.headers.value('access-control-allow-origin');
+    }
+
+    expect(await originHeader(client, 'http://localhost:8080'), isNotNull);
+    expect(await originHeader(client, 'http://evil.test'), isNull);
   });
 
   test('health is open and reports ok', () async {

@@ -74,6 +74,7 @@ class PaletteCommand extends Equatable {
     this.action,
     this.order = 0,
     this.enabled = true,
+    this.requiresBackend = true,
   });
 
   final String id;
@@ -84,6 +85,9 @@ class PaletteCommand extends Equatable {
   final PaletteAction? action;
   final int order;
   final bool enabled;
+
+  /// Команде нужен живой сервер агента. При offline такие команды скрываются.
+  final bool requiresBackend;
 
   bool get isGroup => action == null;
 
@@ -97,6 +101,7 @@ class PaletteCommand extends Equatable {
     action,
     order,
     enabled,
+    requiresBackend,
   ];
 }
 

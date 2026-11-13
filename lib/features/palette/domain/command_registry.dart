@@ -57,12 +57,17 @@ class CommandRegistry {
   /// Пустые группы не показываются: например, «Проект» содержит только
   /// действия, которым нужен открытый проект. Без проекта группа ничего не
   /// даёт и не должна выглядеть как пустое меню.
-  List<PaletteCommand> childrenOf(String? parentId, String language) {
+  List<PaletteCommand> childrenOf(
+    String? parentId,
+    String language, {
+    bool online = true,
+  }) {
     final result = [
       for (final command in _commands.values)
         if (command.parentId == parentId &&
             command.enabled &&
-            (!command.isGroup || _hasEnabledLeaf(command.id)))
+            (command.isGroup || online || !command.requiresBackend) &&
+            (!command.isGroup || _hasEnabledLeaf(command.id, online: online)))
           command,
     ];
     return result..sort((a, b) {
@@ -76,12 +81,12 @@ class CommandRegistry {
   }
 
   /// Есть ли в группе хотя бы одна доступная команда на любом уровне.
-  bool _hasEnabledLeaf(String groupId) {
+  bool _hasEnabledLeaf(String groupId, {required bool online}) {
     for (final command in _commands.values) {
       if (command.parentId != groupId) continue;
       if (command.isGroup) {
-        if (_hasEnabledLeaf(command.id)) return true;
-      } else if (command.enabled) {
+        if (_hasEnabledLeaf(command.id, online: online)) return true;
+      } else if (command.enabled && (online || !command.requiresBackend)) {
         return true;
       }
     }
@@ -102,14 +107,22 @@ class CommandRegistry {
   }
 
   /// Поиск по листьям. Все термы должны найтись хотя бы в одном поле.
-  List<CommandMatch> search(String query, String language) {
+  List<CommandMatch> search(
+    String query,
+    String language, {
+    bool online = true,
+  }) {
     final terms = normalizeSearchText(query)
         .split(' ')
         .where((t) => t.isNotEmpty);
     if (terms.isEmpty) return const [];
     final matches = <CommandMatch>[];
     for (final command in _commands.values) {
-      if (command.isGroup || !command.enabled) continue;
+      if (command.isGroup ||
+          !command.enabled ||
+          (!online && command.requiresBackend)) {
+        continue;
+      }
       final score = _score(command, terms.toList(), language);
       if (score <= 0) continue;
       matches.add(

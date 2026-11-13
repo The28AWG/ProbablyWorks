@@ -5,52 +5,13 @@ import 'dart:io';
 import 'package:injectable/injectable.dart';
 import 'package:mcp_dart/mcp_dart.dart';
 import 'package:pw_agent/agent/mcp/mcp_oauth_provider.dart';
+import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 
-/// Состояние подключения MCP-сервера.
-enum McpConnectionStatus { disconnected, connecting, connected, error }
-
-/// Инструмент, который объявил MCP-сервер.
-final class McpToolInfo {
-  const McpToolInfo({
-    required this.name,
-    required this.inputSchema,
-    this.title,
-    this.description,
-  });
-
-  final String name;
-  final String? title;
-  final String? description;
-  final Map<String, dynamic> inputSchema;
-
-  String get displayName => title ?? name;
-}
-
-/// Снимок состояния одного сервера для настроек и источника инструментов.
-final class McpServerState {
-  const McpServerState({
-    required this.serverId,
-    required this.status,
-    this.tools = const [],
-    this.error,
-  });
-
-  const McpServerState.disconnected(this.serverId)
-    : status = McpConnectionStatus.disconnected,
-      tools = const [],
-      error = null;
-
-  final String serverId;
-  final McpConnectionStatus status;
-  final List<McpToolInfo> tools;
-  final String? error;
-
-  bool get isConnected => status == McpConnectionStatus.connected;
-}
+export 'package:pw_agent/agent/mcp/mcp_types.dart';
 
 /// Итог вызова MCP-инструмента. Текст уже собран из content-блоков.
 final class McpToolCallOutput {

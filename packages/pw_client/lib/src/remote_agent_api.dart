@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' as io;
 
 import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart' as plugins;
@@ -22,8 +21,7 @@ import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
-import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
-import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
@@ -57,11 +55,9 @@ class RemoteAgentApi
     required this.baseUri,
     required this.token,
     http.Client? client,
-    io.HttpClient? eventsClient,
     this.clientHeaders = const {},
     this.timeout = const Duration(seconds: 30),
-  }) : _client = client ?? http.Client(),
-       _eventsClient = eventsClient ?? io.HttpClient();
+  }) : _client = client ?? http.Client();
 
   /// Корень сервера, например `http://127.0.0.1:7787`.
   final Uri baseUri;
@@ -72,7 +68,6 @@ class RemoteAgentApi
   final Duration timeout;
 
   final http.Client _client;
-  final io.HttpClient _eventsClient;
 
   final _statusChanges = StreamController<AgentStatus>.broadcast();
   var _status = AgentStatus.connecting;
@@ -222,7 +217,6 @@ class RemoteAgentApi
     await _stateChanges.close();
     await _draftChanges.close();
     _client.close();
-    _eventsClient.close(force: true);
   }
 
   @override
@@ -1080,14 +1074,21 @@ class RemoteAgentApi
     required Future<T> Function() load,
     required bool Function(String area) relevant,
   }) async* {
-    yield await load();
-    yield* _stateChanges.stream.where(relevant).asyncExpand((_) async* {
-      try {
-        yield await load();
-      } on AgentApiException {
-        // Следующее событие попробует снова.
-      }
-    });
+    try {
+      yield await load();
+    } on Object {
+      // Сервер недоступен: оставляем список пустым, статус уйдёт в offline.
+      // SSE-переподключение или следующее state-событие попробует снова.
+    }
+    yield* _stateChanges.stream
+        .where((area) => area == 'reconnect' || relevant(area))
+        .asyncExpand((_) async* {
+          try {
+            yield await load();
+          } on Object {
+            // Следующее событие попробует снова.
+          }
+        });
   }
 
   void _publishState(String area) {
@@ -1114,9 +1115,6 @@ class RemoteAgentApi
       final streamed = await _client.send(request).timeout(timeout);
       response = await http.Response.fromStream(streamed);
     } on http.ClientException {
-      _setStatus(AgentStatus.offline);
-      rethrow;
-    } on io.SocketException {
       _setStatus(AgentStatus.offline);
       rethrow;
     } on TimeoutException {
@@ -1182,20 +1180,27 @@ class RemoteAgentApi
 
   void _setStatus(AgentStatus status) {
     if (_status == status) return;
+    final wasOffline = _status == AgentStatus.offline;
     _status = status;
     if (!_statusChanges.isClosed) _statusChanges.add(status);
+    // После offline списки могли быть очищены. Просим подписчиков
+    // перечитать их, когда связь вернулась.
+    if (status == AgentStatus.online && wasOffline && !_stateChanges.isClosed) {
+      _stateChanges.add('reconnect');
+    }
   }
 
   Future<void> _listen() async {
     while (!_disposed) {
       try {
-        final request = await _eventsClient.getUrl(_url('/events'));
-        request.headers.set('Authorization', 'Bearer $token');
+        final request = http.Request('GET', _url('/events'));
+        request.headers['Authorization'] = 'Bearer $token';
+        request.headers['Accept'] = 'text/event-stream';
         for (final entry in clientHeaders.entries) {
-          request.headers.set(entry.key, entry.value);
+          request.headers[entry.key] = entry.value;
         }
-        request.headers.set('x-request-id', _uuid.v4());
-        final response = await request.close();
+        request.headers['x-request-id'] = _uuid.v4();
+        final response = await _client.send(request);
         if (response.statusCode != 200) {
           throw AgentApiException(
             response.statusCode,
@@ -1205,7 +1210,7 @@ class RemoteAgentApi
         }
         _setStatus(AgentStatus.online);
         if (!_eventsReady.isCompleted) _eventsReady.complete();
-        await _consume(response);
+        await _consume(response.stream);
       } on Object {
         _setStatus(AgentStatus.offline);
         // Ниже пауза и повторное подключение.
@@ -1870,7 +1875,12 @@ final class _RemoteSettings implements SettingsStore {
 
   @override
   Stream<String?> watch(String key) async* {
-    yield await read(key);
+    try {
+      yield await read(key);
+    } on Object {
+      // Сервер offline: отдаём null; следующее изменение настроек попробует снова.
+      yield null;
+    }
     yield* _api._settingsChanges.stream.map((_) => _value(key));
   }
 
@@ -2067,7 +2077,11 @@ final class _RemoteModels implements ModelStore {
 
   @override
   Stream<ModelCatalogState> watch() async* {
-    if (_api._catalog == null) await _api._loadModels();
+    try {
+      if (_api._catalog == null) await _api._loadModels();
+    } on Object {
+      // Сервер offline: отдаём пустой каталог, обновление придёт после reconnect.
+    }
     yield state;
     yield* _api._catalogChanges.stream;
   }
@@ -2087,7 +2101,13 @@ final class _RemoteHosts implements HostStore {
   final RemoteAgentApi _api;
 
   @override
-  Future<List<Host>> all() => _api.hosts();
+  Future<List<Host>> all() async {
+    try {
+      return await _api.hosts();
+    } on Object {
+      return const [];
+    }
+  }
 
   @override
   Stream<List<Host>> watchAll() => _api.watchHosts();

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -7,8 +7,7 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/bloc/mcp_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
-import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
-import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:uuid/uuid.dart';
 
@@ -180,7 +179,11 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
     if (location == null || !context.mounted) return;
     try {
       final raw = await _cubit.exportConfig();
-      await File(location.path).writeAsString(raw);
+      await XFile.fromData(
+        utf8.encode(raw),
+        name: 'mcp.json',
+        mimeType: 'application/json',
+      ).saveTo(location.path);
       if (!context.mounted) return;
       AppSnackBar.show(context, l10n.mcpExportDone(location.path));
     } on Object catch (error) {

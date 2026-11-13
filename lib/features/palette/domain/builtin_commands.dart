@@ -56,6 +56,7 @@ List<PaletteCommand> builtinPaletteCommands(
     keywords: const LocalizedText(ru: 'чаты диалоги', en: 'chats dialogs'),
     icon: Icons.chat_bubble_outline,
     action: const BuiltinPaletteAction(BuiltinPaletteActions.chatsTab),
+    requiresBackend: false,
     order: 0,
   ),
   PaletteCommand(
@@ -68,6 +69,7 @@ List<PaletteCommand> builtinPaletteCommands(
     keywords: const LocalizedText(ru: 'проекты папки', en: 'projects folders'),
     icon: Icons.workspaces_outline,
     action: const BuiltinPaletteAction(BuiltinPaletteActions.projectsTab),
+    requiresBackend: false,
     order: 1,
   ),
   PaletteCommand(
@@ -83,6 +85,7 @@ List<PaletteCommand> builtinPaletteCommands(
     ),
     icon: Icons.dns_outlined,
     action: const BuiltinPaletteAction(BuiltinPaletteActions.hostsTab),
+    requiresBackend: false,
     order: 2,
   ),
   PaletteCommand(
@@ -98,6 +101,7 @@ List<PaletteCommand> builtinPaletteCommands(
     ),
     icon: Icons.settings_outlined,
     action: const BuiltinPaletteAction(BuiltinPaletteActions.settings),
+    requiresBackend: false,
     order: 3,
   ),
   PaletteCommand(

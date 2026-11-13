@@ -25,16 +25,25 @@ class OnboardingPage extends StatelessWidget {
   const OnboardingPage({super.key});
 
   @override
-  Widget build(BuildContext context) => BlocProvider(
-    create: (_) => OnboardingCubit(
-      getIt<SecretStore>(),
-      getIt<ModelCatalogService>(),
-      getIt<SettingsRepository>(),
-      getIt<HostRepository>(),
-      getIt<AgentApi>(),
-    ),
-    child: const _OnboardingView(),
-  );
+  Widget build(BuildContext context) {
+    if (AppPlatform.current.isWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        context.router.replace(const WebConnectRoute());
+      });
+      return const SizedBox.shrink();
+    }
+    return BlocProvider(
+      create: (_) => OnboardingCubit(
+        getIt<SecretStore>(),
+        getIt<ModelCatalogService>(),
+        getIt<SettingsRepository>(),
+        getIt<HostRepository>(),
+        getIt<AgentApi>(),
+      ),
+      child: const _OnboardingView(),
+    );
+  }
 }
 
 class _OnboardingView extends StatefulWidget {

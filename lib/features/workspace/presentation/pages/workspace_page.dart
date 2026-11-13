@@ -12,6 +12,7 @@ import 'package:probably_works/features/palette/presentation/command_palette_hos
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 
 /// Рабочая область: оболочка с вкладками «Чаты», «Хосты», «Настройки». Вкладки — вложенные маршруты,
@@ -19,7 +20,10 @@ import 'package:pw_agent/core/data/chat_draft_store.dart';
 /// Раскладка (боковая панель, полоса иконок, drawer или нижняя навигация) выбирается по ширине окна в [WorkspaceShell].
 @RoutePage()
 class WorkspacePage extends StatelessWidget {
-  const WorkspacePage({required this.profileId, super.key});
+  const WorkspacePage({
+    @PathParam('profileId') required this.profileId,
+    super.key,
+  });
 
   final String profileId;
 
@@ -53,7 +57,11 @@ class WorkspacePage extends StatelessWidget {
             ),
           ),
           BlocProvider(
-            create: (_) => ProjectsCubit(service.projectsApiFor(profile)),
+            create: (_) => ProjectsCubit(
+              service.projectsApiFor(profile),
+              initialStatus: agentApi.status,
+              statusChanges: agentApi.statusChanges,
+            ),
           ),
           BlocProvider(
             create: (_) => SidebarCubit(
@@ -67,7 +75,11 @@ class WorkspacePage extends StatelessWidget {
             ChatsTabRoute(),
             ProjectsTabRoute(),
             HostsRoute(),
-            SettingsRoute(),
+            SettingsRoute(
+              initialGroup: agentApi.status == AgentStatus.offline
+                  ? 'agents'
+                  : 'account',
+            ),
           ],
           builder: (context, child) =>
               CommandPaletteHost(child: WorkspaceShell(child: child)),

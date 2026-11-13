@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 
@@ -16,6 +15,9 @@ void main() {
     expect(info.headers, containsPair('x-client-package', 'probably_works'));
     expect(info.headers, containsPair('x-client-version', '1.2.3'));
     expect(info.headers, containsPair('x-client-build', '42'));
-    expect(info.headers['x-client-platform'], Platform.operatingSystem);
+    expect(
+      info.headers['x-client-platform'],
+      defaultTargetPlatform.name.toLowerCase(),
+    );
   });
 }

@@ -16,6 +16,7 @@ class AppRouter extends RootStackRouter {
   List<AutoRoute> get routes => [
     AutoRoute(page: StartRoute.page, path: '/', initial: true),
     AutoRoute(page: OnboardingRoute.page, path: '/onboarding'),
+    AutoRoute(page: WebConnectRoute.page, path: '/connect'),
     AutoRoute(
       page: WorkspaceRoute.page,
       path: '/a/:profileId',
@@ -39,8 +40,24 @@ class AppRouter extends RootStackRouter {
           ],
         ),
         AutoRoute(page: HostsRoute.page, path: 'hosts'),
-        AutoRoute(page: SettingsRoute.page, path: 'settings/:group?'),
+        AutoRoute(page: SettingsRoute.page, path: 'settings/:group'),
       ],
     ),
+    // Неизвестный или неразобранный URL (например, хвостовой `/` после
+    // браузерного обновления) не должен ронять приложение. StartPage
+    // восстановит профиль или покажет подключение.
+    RedirectRoute(path: '*', redirectTo: '/'),
   ];
+}
+
+/// Убирает хвостовой `/` и пустой `?` из deep link.
+///
+/// Браузер после перехода на `/settings/` может отдать `/settings/?`;
+/// auto_route не матчит такой путь и падает с «Can not resolve initial route».
+Future<Uri> normalizeAppDeepLink(Uri uri) async {
+  var text = uri.toString();
+  text = text.replaceFirst(RegExp(r'/\?'), '?');
+  text = text.replaceFirst(RegExp(r'\?$'), '');
+  if (text != '/') text = text.replaceFirst(RegExp(r'/+$'), '');
+  return Uri.parse(text);
 }

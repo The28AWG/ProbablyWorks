@@ -12,7 +12,9 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/profiles/profiles_cubit.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
-import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter_stub.dart'
+    if (dart.library.io) 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 
@@ -29,19 +31,22 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
   final _theme = getIt<ThemeController>();
   final _drafts = getIt<ChatDraftStore>();
   late final AppLifecycleListener _lifecycle;
-  late final BackgroundRunGuard _runGuard;
+  BackgroundRunGuard? _runGuard;
 
   @override
   void initState() {
     super.initState();
-    // Android: сервис на время ходов. iOS: ходы останавливаются при сворачивании (см. BackgroundRunGuard).
-    _runGuard = BackgroundRunGuard(getIt<AgentApi>(), _locale)..start();
+    // Android: сервис на время ходов. iOS: ходы останавливаются при сворачивании.
+    // В web локального агента нет: сервис и остановка ходов не нужны.
+    if (!AppPlatform.current.isWeb) {
+      _runGuard = BackgroundRunGuard(getIt<AgentApi>(), _locale)..start();
+    }
     // Черновики пишутся в БД с задержкой: при сворачивании и выходе из приложения сохраняем их сразу.
     _lifecycle = AppLifecycleListener(
       onInactive: _saveDrafts,
       onHide: () {
         _saveDrafts();
-        unawaited(_runGuard.onHidden());
+        if (_runGuard case final guard?) unawaited(guard.onHidden());
       },
       onDetach: _saveDrafts,
       onExitRequested: () async {
@@ -53,7 +58,7 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
 
   @override
   void dispose() {
-    _runGuard.dispose();
+    _runGuard?.dispose();
     _lifecycle.dispose();
     super.dispose();
   }
@@ -76,7 +81,9 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
           locale: locale,
           supportedLocales: LocaleController.supported,
           localizationsDelegates: appLocalizationsDelegates,
-          routerConfig: _router.config(),
+          routerConfig: _router.config(
+            deepLinkTransformer: normalizeAppDeepLink,
+          ),
           builder: (context, child) => HostKeyPrompter(
             navigatorKey: _router.navigatorKey,
             child: child ?? const SizedBox.shrink(),

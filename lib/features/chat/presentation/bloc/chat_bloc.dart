@@ -951,6 +951,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   /// Общие для всех чатов настройки из БД: хосты, лимиты, закреплённые модели, журнал шагов и модель
   /// по умолчанию. Только локальные чтения: каталог уже в памяти, сеть здесь не ждём.
+  Future<List<Host>> _hostsOrEmpty() async {
+    try {
+      return await _hub.hostStore.all();
+    } on Object {
+      return const [];
+    }
+  }
+
   Future<
     ({
       List<Host> hosts,
@@ -961,7 +969,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     })
   >
   _readShared() async => (
-    hosts: await _hub.hostStore.all(),
+    hosts: await _hostsOrEmpty(),
     limits: await _hub.limits(),
     pinned: await _hub.settings.readPinnedModels(),
     stepsDisplay: await _hub.settings.readStepsDisplay(),
@@ -1009,7 +1017,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (state.unsaved && from != null) {
       // Сначала хосты, потом подписки: их первые эмиты не должны опережать загрузку списка.
       if (state.hosts.isEmpty) {
-        emit(state.copyWith(hosts: await _hub.hostStore.all()));
+        emit(state.copyWith(hosts: await _hostsOrEmpty()));
       }
       _watchShared();
       return;
@@ -1017,9 +1025,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final carried = from != null && !state.unsaved && !_drafts.of(from).isEmpty;
     await _detach();
     // Хосты из списка уже в памяти; блок, созданный без списка, читает их из БД.
-    final hosts = state.hosts.isEmpty
-        ? await _hub.hostStore.all()
-        : state.hosts;
+    final hosts = state.hosts.isEmpty ? await _hostsOrEmpty() : state.hosts;
     final next = _newChatState(_hub, hosts, draftId: state.draftId);
     final chatId = next.chatId!;
     // Перенос меняет память синхронно; запись в БД уходит в фон, чтобы не задерживать первый кадр.

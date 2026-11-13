@@ -19,6 +19,8 @@
   показывает его на текущей строке.
 - «Назад» — полноценная строка дерева: её можно выбрать стрелками и Enter.
 - Плагинный `openSettings({category})` открывает нужную группу настроек.
+- При offline команды с `requiresBackend: true` скрываются; навигационные
+  команды и настройки остаются доступны.
 - Автоподсказки фильтров: оверлей у поля, список типов фильтров, проектов,
   чатов и областей поиска.
 - Действия в системных уведомлениях: разрешить, отклонить, открыть чат.
@@ -78,6 +80,7 @@ final class PaletteCommand {
     this.action,
     this.order = 0,
     this.enabled = true,
+    this.requiresBackend = true,
   });
 
   final String id;
@@ -88,6 +91,9 @@ final class PaletteCommand {
   final PaletteAction? action;
   final int order;
   final bool enabled;
+
+  /// Команде нужен живой сервер агента. При offline такие команды скрываются.
+  final bool requiresBackend;
 }
 ```
 

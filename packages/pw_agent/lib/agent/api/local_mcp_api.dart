@@ -1,6 +1,5 @@
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
-import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';

@@ -4,11 +4,14 @@ import 'package:app_ui/app_ui.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/backend/backend_status.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 
 /// Раскладка оболочки по ширине окна. Пороги из [AppBreakpoints].
 enum WorkspaceLayout {
@@ -123,10 +126,43 @@ class WorkspaceShell extends StatefulWidget {
 
 class _WorkspaceShellState extends State<WorkspaceShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  StreamSubscription<AgentStatus>? _statusSub;
+  AgentApi? _statusApi;
   var _collapsed = false;
   var _resizing = false;
   ThemeData? _baseTheme;
   ThemeData? _instantTheme;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final api = ProfileScope.maybeOf(context)?.agentApi;
+    if (identical(api, _statusApi)) return;
+    unawaited(_statusSub?.cancel());
+    _statusApi = api;
+    _statusSub = api?.statusChanges.listen(_onBackendStatus);
+    if (api != null) _onBackendStatus(api.status);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_statusSub?.cancel());
+    super.dispose();
+  }
+
+  void _onBackendStatus(AgentStatus status) {
+    if (!mounted || status != AgentStatus.offline) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tabs = AutoTabsRouter.of(context);
+      // Не выдёргиваем пользователя из настроек или проектов: чат закроется,
+      // когда он сам вернётся на вкладку чатов, а содержимое уже offline.
+      if (tabs.activeIndex == WorkspaceTab.chats.index &&
+          selectedChatIdOf(tabs) != null) {
+        openNewChat(context);
+      }
+    });
+  }
 
   void _toggle() => setState(() => _collapsed = !_collapsed);
 
@@ -231,9 +267,25 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
             .compact => const SizedBox.shrink(),
           },
           Expanded(
-            child: Theme(
-              data: layout == .wide ? _instant(theme) : theme,
-              child: widget.child,
+            child: BackendStatusBuilder(
+              builder: (context, status) {
+                final offline = status == AgentStatus.offline;
+                final chatsOffline = offline && activeTab == WorkspaceTab.chats;
+                return Theme(
+                  data: layout == .wide ? _instant(theme) : theme,
+                  child: Column(
+                    children: [
+                      if (offline && !chatsOffline)
+                        const BackendOfflineBanner(),
+                      Expanded(
+                        child: chatsOffline
+                            ? const BackendOfflineView()
+                            : widget.child,
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ],

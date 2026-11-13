@@ -1,5 +1,4 @@
-import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
-import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 
 /// Снимок настроек и состояний MCP-серверов профиля.

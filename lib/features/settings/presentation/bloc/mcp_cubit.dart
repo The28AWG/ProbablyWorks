@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
-import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
-import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 
 /// Какая операция с `mcp.json` сейчас выполняется.

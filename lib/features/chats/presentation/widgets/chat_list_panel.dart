@@ -1,8 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/short_time.dart';
@@ -40,70 +42,77 @@ class ChatListPanel extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final headerBackground = background ?? scheme.surface;
-    return BlocBuilder<ChatListCubit, ChatListState>(
-      buildWhen: (previous, current) =>
-          previous.chats != current.chats ||
-          previous.hosts != current.hosts ||
-          previous.runningIds != current.runningIds ||
-          previous.waitingIds != current.waitingIds,
-      builder: (context, state) {
-        if (state.chats.isEmpty) {
-          return AppEmptyState(
-            icon: Icons.forum_outlined,
-            title: l10n.chatsEmpty,
-          );
+    return BackendStatusBuilder(
+      builder: (context, status) {
+        if (status == AgentStatus.offline) {
+          return const BackendOfflineView(compact: true);
         }
-        final now = DateTime.now();
-        final hosts = {for (final host in state.hosts) host.id: host};
-        final groups = {
-          for (final bucket in DayBucket.values) bucket: <Chat>[],
-        };
-        for (final chat in state.chats) {
-          groups[dayBucket(chat.updatedAt, now: now)]!.add(chat);
-        }
-        return CustomScrollView(
-          slivers: [
-            for (final bucket in DayBucket.values)
-              if (groups[bucket]!.isNotEmpty)
-                SliverMainAxisGroup(
-                  slivers: [
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _GroupHeaderDelegate(
-                        title: switch (bucket) {
-                          DayBucket.today => l10n.chatsGroupToday,
-                          DayBucket.yesterday => l10n.chatsGroupYesterday,
-                          DayBucket.earlier => l10n.chatsGroupEarlier,
-                        },
-                        background: headerBackground,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                    SliverList.builder(
-                      itemCount: groups[bucket]!.length,
-                      itemBuilder: (context, index) {
-                        final chat = groups[bucket]![index];
-                        return _ChatTile(
-                          chat: chat,
-                          host: hosts[chat.hostId],
-                          selected: chat.id == selectedId,
-                          running: state.runningIds.contains(chat.id),
-                          waiting: state.waitingIds.contains(chat.id),
-                          onTap: () => onOpen(chat.id),
-                          onMenu: (position) => _showChatMenu(
-                            context,
-                            chat,
-                            position,
-                            onOpen: onOpen,
-                            onDeleted: onDeleted,
+        return BlocBuilder<ChatListCubit, ChatListState>(
+          buildWhen: (previous, current) =>
+              previous.chats != current.chats ||
+              previous.hosts != current.hosts ||
+              previous.runningIds != current.runningIds ||
+              previous.waitingIds != current.waitingIds,
+          builder: (context, state) {
+            if (state.chats.isEmpty) {
+              return AppEmptyState(
+                icon: Icons.forum_outlined,
+                title: l10n.chatsEmpty,
+              );
+            }
+            final now = DateTime.now();
+            final hosts = {for (final host in state.hosts) host.id: host};
+            final groups = {
+              for (final bucket in DayBucket.values) bucket: <Chat>[],
+            };
+            for (final chat in state.chats) {
+              groups[dayBucket(chat.updatedAt, now: now)]!.add(chat);
+            }
+            return CustomScrollView(
+              slivers: [
+                for (final bucket in DayBucket.values)
+                  if (groups[bucket]!.isNotEmpty)
+                    SliverMainAxisGroup(
+                      slivers: [
+                        SliverPersistentHeader(
+                          pinned: true,
+                          delegate: _GroupHeaderDelegate(
+                            title: switch (bucket) {
+                              DayBucket.today => l10n.chatsGroupToday,
+                              DayBucket.yesterday => l10n.chatsGroupYesterday,
+                              DayBucket.earlier => l10n.chatsGroupEarlier,
+                            },
+                            background: headerBackground,
+                            color: scheme.onSurfaceVariant,
                           ),
-                        );
-                      },
+                        ),
+                        SliverList.builder(
+                          itemCount: groups[bucket]!.length,
+                          itemBuilder: (context, index) {
+                            final chat = groups[bucket]![index];
+                            return _ChatTile(
+                              chat: chat,
+                              host: hosts[chat.hostId],
+                              selected: chat.id == selectedId,
+                              running: state.runningIds.contains(chat.id),
+                              waiting: state.waitingIds.contains(chat.id),
+                              onTap: () => onOpen(chat.id),
+                              onMenu: (position) => _showChatMenu(
+                                context,
+                                chat,
+                                position,
+                                onOpen: onOpen,
+                                onDeleted: onDeleted,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-            SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
-          ],
+                SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+              ],
+            );
+          },
         );
       },
     );
