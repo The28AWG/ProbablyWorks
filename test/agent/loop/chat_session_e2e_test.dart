@@ -3071,4 +3071,27 @@ void main() {
     expect(scoped, isNotEmpty);
     expect(scoped.every((hit) => hit.chatId == first), isTrue);
   });
+
+  test('idle sessions are evicted but an observed session is kept', () async {
+    await createChatWithId('session-a');
+    await createChatWithId('session-b');
+    await createChatWithId('session-c');
+
+    final observed = hub.session('session-a');
+    final events = <AgentEvent>[];
+    final sub = observed.events.listen(events.add);
+    hub
+      ..session('session-b')
+      ..session('session-c');
+    expect(hub.cachedSessionCount, 3);
+
+    final removed = await hub.pruneSessions(idleAfter: Duration.zero, keep: 1);
+    expect(removed, 2);
+    expect(hub.cachedSessionCount, 1);
+    expect(identical(hub.session('session-a'), observed), isTrue);
+
+    await sub.cancel();
+    await hub.pruneSessions(idleAfter: Duration.zero, keep: 0);
+    expect(hub.cachedSessionCount, 0);
+  });
 }

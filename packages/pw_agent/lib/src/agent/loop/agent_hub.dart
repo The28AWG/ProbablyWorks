@@ -102,6 +102,14 @@ class AgentHub {
 
   final Map<String, ChatSession> _sessions = {};
 
+  /// Время последнего обращения к сессии. Нужен для LRU-вытеснения.
+  final Map<String, DateTime> _sessionTouched = {};
+
+  /// Сессии без наблюдателей вытесняются после простоя; лимит ограничивает
+  /// память, даже если чатов открывали много и подряд.
+  static const maxCachedSessions = 32;
+  static const sessionIdleAfter = Duration(minutes: 30);
+
   final _allEvents = StreamController<AgentEvent>.broadcast();
 
   /// События всех сессий в одном потоке (для списка чатов: активность, бейджи).
@@ -129,11 +137,75 @@ class AgentHub {
       if (session.isRunning) session.chatId,
   };
 
-  ChatSession session(String chatId) => _sessions.putIfAbsent(chatId, () {
-    final created = ChatSession(chatId, this);
-    created.events.listen(_allEvents.add);
+  /// Возвращает сессию чата, создавая её при необходимости. Повторное открытие
+  /// того же чата получает прежний экземпляр, пока его не вытеснили.
+  ChatSession session(String chatId) {
+    final existing = _sessions[chatId];
+    if (existing != null) {
+      _touch(chatId);
+      return existing;
+    }
+    final created = ChatSession(chatId, this, _onSessionEvent);
+    _sessions[chatId] = created;
+    _touch(chatId);
+    unawaited(pruneSessions(protectChatId: chatId));
     return created;
-  });
+  }
+
+  /// Число живых сессий. Нужен для диагностики и проверки вытеснения.
+  int get cachedSessionCount => _sessions.length;
+
+  /// Вытесняет простаивающие сессии.
+  ///
+  /// [idleAfter] — возраст простоя, после которого сессию можно закрыть;
+  /// [keep] — сколько последних сессий оставить, даже если они старше.
+  /// Сессия с ходом, очередью, карточками, фоновым процессом, субагентом или
+  /// подписчиком не вытесняется: новый экземпляр потерял бы её состояние.
+  Future<int> pruneSessions({
+    Duration idleAfter = sessionIdleAfter,
+    int keep = maxCachedSessions,
+    String? protectChatId,
+  }) async {
+    final now = DateTime.now();
+    final candidates =
+        [
+          for (final entry in _sessions.entries)
+            if (entry.value.canEvict) entry,
+        ]..sort(
+          (a, b) =>
+              (_sessionTouched[a.key] ?? DateTime.fromMillisecondsSinceEpoch(0))
+                  .compareTo(
+                    _sessionTouched[b.key] ??
+                        DateTime.fromMillisecondsSinceEpoch(0),
+                  ),
+        );
+    var removed = 0;
+    for (final entry in candidates) {
+      if (entry.key == protectChatId) continue;
+      final overLimit = _sessions.length > keep;
+      final idle =
+          now.difference(
+            _sessionTouched[entry.key] ??
+                DateTime.fromMillisecondsSinceEpoch(0),
+          ) >=
+          idleAfter;
+      if (!overLimit && !idle) continue;
+      if (_sessions.remove(entry.key) == null) continue;
+      _sessionTouched.remove(entry.key);
+      removed++;
+      await entry.value.dispose();
+    }
+    return removed;
+  }
+
+  void _touch(String chatId) => _sessionTouched[chatId] = DateTime.now();
+
+  /// Единый поток событий и обновление LRU. Подписка на [ChatSession.events]
+  /// здесь не создаётся: она мешала бы отличать открытый чат от забытого.
+  void _onSessionEvent(AgentEvent event) {
+    _touch(event.chatId);
+    _allEvents.add(event);
+  }
 
   Future<AppLimits> limits() => settings.limits();
 

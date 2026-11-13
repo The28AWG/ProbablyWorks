@@ -98,12 +98,13 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 
 ## CI/CD
 
-В репозитории два workflow:
+В репозитории три workflow:
 
 - `.github/workflows/ci.yml` — форматирование, `flutter analyze`, `flutter test`
   и тесты пакетов на каждый push в `main` и pull request. DCM в CI не
-  запускается: бесплатная лицензия не подходит для CI, проверка остаётся
-  локальной;
+  запускается из-за лицензии; проверка `dcm analyze` остаётся локальной;
+- `.github/workflows/parity.yml` — проверка git/bash на закреплённых и
+  системных версиях;
 - `.github/workflows/release.yml` — сборка релиза по тегу `v<version>`.
 
 Релиз собирается на четырёх runner'ах:
