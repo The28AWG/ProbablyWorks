@@ -12,9 +12,16 @@ import 'package:probably_works/features/workspace/presentation/widgets/workspace
 /// на узком экране в шапке кнопка меню, на широком чат показывается справа от панели.
 @RoutePage()
 class ChatPage extends StatelessWidget {
-  const ChatPage({@PathParam('chatId') required this.chatId, super.key});
+  const ChatPage({
+    @PathParam('chatId') required this.chatId,
+    @QueryParam('message') this.messageId,
+    super.key,
+  });
 
   final String chatId;
+
+  /// Сообщение, к которому нужно прокрутить ленту. Null — открыть чат как обычно.
+  final String? messageId;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +31,7 @@ class ChatPage extends StatelessWidget {
       body: SafeArea(
         child: ChatView(
           chatId: chatId,
+          jumpToMessageId: messageId,
           seedChat: list.chats.where((chat) => chat.id == chatId).firstOrNull,
           seedHosts: list.hosts,
           onCreated: (id) =>

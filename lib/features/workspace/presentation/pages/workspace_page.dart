@@ -8,6 +8,7 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/palette/presentation/command_palette_host.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
@@ -68,7 +69,8 @@ class WorkspacePage extends StatelessWidget {
             HostsRoute(),
             SettingsRoute(),
           ],
-          builder: (context, child) => WorkspaceShell(child: child),
+          builder: (context, child) =>
+              CommandPaletteHost(child: WorkspaceShell(child: child)),
         ),
       ),
     );

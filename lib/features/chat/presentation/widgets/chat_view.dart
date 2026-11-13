@@ -43,6 +43,7 @@ const _defaultContextLimit = 128000;
 class ChatView extends StatefulWidget {
   const ChatView({
     this.chatId,
+    this.jumpToMessageId,
     this.seedChat,
     this.seedHosts = const [],
     this.onCreated,
@@ -52,6 +53,9 @@ class ChatView extends StatefulWidget {
 
   /// Открытый чат. Null — новый чат: стартовый экран, чат создастся при первой отправке.
   final String? chatId;
+
+  /// Сообщение, к которому нужно прокрутить ленту после загрузки.
+  final String? jumpToMessageId;
 
   /// Слева в шапке, в той же строке, что и название (кнопка «назад» на узком экране).
   final Widget? leading;
@@ -122,16 +126,23 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) => BlocProvider.value(
     value: _chat,
-    child: ChatBody(leading: widget.leading, drafts: _drafts),
+    child: ChatBody(
+      leading: widget.leading,
+      drafts: _drafts,
+      jumpToMessageId: widget.jumpToMessageId,
+    ),
   );
 }
 
 /// Тело чата без создания блока: блок должен быть выше по дереву (см. [ChatView]).
 class ChatBody extends StatefulWidget {
-  const ChatBody({this.leading, this.drafts, super.key});
+  const ChatBody({this.leading, this.drafts, this.jumpToMessageId, super.key});
 
   /// См. [ChatView.leading].
   final Widget? leading;
+
+  /// См. [ChatView.jumpToMessageId].
+  final String? jumpToMessageId;
 
   /// Куда писать неотправленную правку. Null в виджет-тестах: правка живёт только в этом виджете.
   final ChatDraftStore? drafts;
@@ -283,6 +294,7 @@ class _ChatBodyState extends State<ChatBody> {
                             ? const Center(child: CircularProgressIndicator())
                             : ChatTimeline(
                                 state: state,
+                                jumpToMessageId: widget.jumpToMessageId,
                                 terminalFor: bloc.terminalFor,
                                 editingMessageId: _editingId,
                                 editDraftTexts: _editDraftTexts(state.chatId),

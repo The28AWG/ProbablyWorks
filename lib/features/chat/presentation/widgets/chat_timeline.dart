@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
@@ -26,6 +27,7 @@ import 'package:pw_agent/host/host_terminal.dart';
 class ChatTimeline extends StatefulWidget {
   const ChatTimeline({
     required this.state,
+    this.jumpToMessageId,
     this.terminalFor,
     this.editingMessageId,
     this.messageEditor,
@@ -37,6 +39,9 @@ class ChatTimeline extends StatefulWidget {
   });
 
   final ChatState state;
+
+  /// Сообщение, к которому нужно прокрутить ленту после открытия.
+  final String? jumpToMessageId;
 
   /// Терминал активного запуска по его id; `null`, если запуск не выполняется в PTY.
   final HostTerminal? Function(String runId)? terminalFor;
@@ -73,6 +78,12 @@ class _ChatTimelineState extends State<ChatTimeline> {
   late final ScrollController _scroll;
   var _follow = true;
 
+  /// Ключи сообщений для точной прокрутки. Создаются только для видимых строк.
+  final _messageKeys = <String, GlobalKey>{};
+  String? _pendingJumpId;
+  String? _highlightId;
+  Timer? _highlightTimer;
+
   /// Сообщение пользователя, после которого ход только что начался: его ход выезжает снизу к верху окна.
   String? _sentId;
 
@@ -87,11 +98,20 @@ class _ChatTimelineState extends State<ChatTimeline> {
   void initState() {
     super.initState();
     _scroll = ScrollController()..addListener(_onScroll);
+    _pendingJumpId = widget.jumpToMessageId;
+    if (_pendingJumpId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
+    }
   }
 
   @override
   void didUpdateWidget(covariant ChatTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final target = widget.jumpToMessageId;
+    if (target != null && target != oldWidget.jumpToMessageId) {
+      _pendingJumpId = target;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
+    }
     final messages = widget.state.messages;
     final sentNow =
         messages.length > oldWidget.state.messages.length &&
@@ -104,10 +124,64 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
   @override
   void dispose() {
+    _highlightTimer?.cancel();
     _scroll
       ..removeListener(_onScroll)
       ..dispose();
     super.dispose();
+  }
+
+  void _jumpToPending() {
+    final id = _pendingJumpId;
+    if (id == null || !mounted) return;
+    if (_follow) setState(() => _follow = false);
+    _attemptJump(id, 0);
+  }
+
+  /// Точная прокрутка работает, только когда строка построена. Для далёкого
+  /// сообщения сначала прыгаем на примерную долю ленты, затем уточняем.
+  void _attemptJump(String id, int attempt) {
+    if (!mounted || _pendingJumpId != id) return;
+    final context = _messageKeys[id]?.currentContext;
+    if (context != null) {
+      _pendingJumpId = null;
+      setState(() => _highlightId = id);
+      _highlightTimer?.cancel();
+      _highlightTimer = Timer(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _highlightId = null);
+      });
+      unawaited(
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.12,
+          duration: AppDurations.normal,
+          curve: Curves.easeOutCubic,
+        ),
+      );
+      return;
+    }
+    if (attempt >= 5 || !_scroll.hasClients) {
+      if (attempt >= 5) _pendingJumpId = null;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _attemptJump(id, attempt + 1),
+      );
+      return;
+    }
+    final visible = [
+      for (final message in widget.state.messages)
+        if (message.role != MessageRole.tool) message,
+    ];
+    final index = visible.indexWhere((message) => message.id == id);
+    if (index < 0) {
+      _pendingJumpId = null;
+      return;
+    }
+    final max = _scroll.position.maxScrollExtent;
+    final ratio = visible.length <= 1 ? 0.0 : index / (visible.length - 1);
+    _scroll.jumpTo((max * ratio).clamp(0.0, max));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _attemptJump(id, attempt + 1),
+    );
   }
 
   void _onScroll() {
@@ -218,13 +292,17 @@ class _ChatTimelineState extends State<ChatTimeline> {
       slots.add(slot);
     }
 
-    void item(String id, Widget child) {
+    void item(String id, Widget child, {String? messageId}) {
       flush();
       _liveIds.add(id);
       rows.add(
         _KeyedTimelineItem(
           id: id,
           fresh: _isFresh(id),
+          anchorKey: messageId == null
+              ? null
+              : _messageKeys.putIfAbsent(messageId, GlobalKey.new),
+          highlighted: messageId != null && messageId == _highlightId,
           child: ChatColumn.item(context, child),
         ),
       );
@@ -288,6 +366,7 @@ class _ChatTimelineState extends State<ChatTimeline> {
             editor != null;
         item(
           message.id,
+          messageId: message.id,
           message.role == MessageRole.user
               ? _UserBubbleSlot(
                   editing: editing,
@@ -725,6 +804,8 @@ class _KeyedTimelineItem extends StatelessWidget {
     required this.id,
     required this.fresh,
     required this.child,
+    this.anchorKey,
+    this.highlighted = false,
   });
 
   final String id;
@@ -733,11 +814,28 @@ class _KeyedTimelineItem extends StatelessWidget {
   final bool fresh;
   final Widget child;
 
+  /// Ключ для перехода к сообщению из поиска.
+  final GlobalKey? anchorKey;
+  final bool highlighted;
+
   @override
-  Widget build(BuildContext context) => KeyedSubtree(
-    key: ValueKey(id),
-    child: _Appear(animate: fresh, child: child),
-  );
+  Widget build(BuildContext context) {
+    Widget content = _Appear(animate: fresh, child: child);
+    if (highlighted) {
+      content = DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer
+              .withValues(alpha: 0.28),
+          borderRadius: AppRadius.mdAll,
+        ),
+        child: content,
+      );
+    }
+    final keyed = KeyedSubtree(key: ValueKey(id), child: content);
+    return anchorKey == null
+        ? keyed
+        : KeyedSubtree(key: anchorKey, child: keyed);
+  }
 }
 
 /// Плавное появление элемента ленты: прозрачность и сдвиг на один отступ снизу вверх.

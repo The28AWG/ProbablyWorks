@@ -14,6 +14,7 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -117,6 +118,26 @@ void main() {
       body: {'instruction': '   '},
     );
     expect(badStatus, HttpStatus.badRequest);
+  });
+
+  test('searches chats and messages through the API', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/search?q=alpha&scope=project&projectId=p1&limit=5',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final hits = (jsonDecode(body) as Map)['hits'] as List;
+    expect(hits, hasLength(1));
+    expect(hits.single['kind'], 'message');
+    expect(hits.single['chatId'], 'c1');
+    expect(backend.searchQueries.single.text, 'alpha');
+    expect(backend.searchQueries.single.scope, SearchScope.project);
+    expect(backend.searchQueries.single.projectId, 'p1');
+    expect(backend.searchQueries.single.limit, 5);
   });
 
   test('protected endpoints require a bearer token', () async {
@@ -1253,6 +1274,7 @@ final class _FakeBackend implements AgentApi {
   final choices = <EditFileChangesChoice>[];
   var opened = 0;
   var stopped = 0;
+  final searchQueries = <SearchQuery>[];
 
   final _chat = Chat(
     id: 'c1',
@@ -1318,6 +1340,24 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Future<List<Chat>> chats() async => [_chat];
+
+  @override
+  Future<List<SearchHit>> search(SearchQuery query) async {
+    searchQueries.add(query);
+    return const [
+      SearchHit(
+        kind: SearchHitKind.message,
+        title: 'alpha result',
+        chatId: 'c1',
+        chatTitle: 'Test chat',
+        projectId: 'p1',
+        messageId: 'm1',
+        seq: 3,
+        snippet: 'alpha result',
+        score: 0.9,
+      ),
+    ];
+  }
 
   @override
   Future<void> saveChat(Chat chat) async {

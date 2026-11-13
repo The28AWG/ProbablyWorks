@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -14,6 +15,7 @@ import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
@@ -167,6 +169,105 @@ class LocalChatApi implements ChatApi {
   Future<List<ToolRun>> runs(String chatId) async {
     await requireChat(chatId);
     return _hub.chats.toolRunsForChat(chatId);
+  }
+
+  /// Поиск по чатам и сообщениям для палитры. Заголовки ищутся в памяти
+  /// сервера, сообщения — через FTS.
+  Future<List<SearchHit>> search(SearchQuery query) async {
+    final text = query.text.trim();
+    if (text.isEmpty) return const [];
+    final limit = query.limit.clamp(1, 50);
+    final scope = query.scope;
+    final projectId = scope == SearchScope.project ? query.projectId : null;
+    final chatId = query.chatId;
+    if ((scope == SearchScope.chat && chatId == null) ||
+        (scope == SearchScope.project && projectId == null)) {
+      return const [];
+    }
+    final allChats = await _hub.chats.allChats();
+    final mainChats = [
+      for (final chat in allChats)
+        if (!chat.isSubagent) chat,
+    ];
+    final byId = {for (final chat in mainChats) chat.id: chat};
+    final normalized = text.toLowerCase();
+    final hits = <SearchHit>[];
+
+    if (scope != SearchScope.chat) {
+      for (final chat in mainChats) {
+        if (projectId != null && chat.projectId != projectId) continue;
+        final score = _titleScore(chat.title, normalized);
+        if (score > 0) hits.add(_chatHit(chat, score));
+      }
+    } else if (chatId != null && byId[chatId] != null) {
+      final chat = byId[chatId]!;
+      final score = _titleScore(chat.title, normalized);
+      if (score > 0) hits.add(_chatHit(chat, score));
+    }
+
+    if (scope == SearchScope.chat && chatId != null) {
+      final found = await _hub.chats.searchMessages(chatId, text, limit: limit);
+      for (var i = 0; i < found.length; i++) {
+        if (!_visibleSearchMessage(found[i])) continue;
+        hits.add(_messageHit(found[i], byId[chatId], 0.75 - i * 0.01));
+      }
+    } else {
+      final found = await _hub.chats.searchMessagesAll(
+        text,
+        projectId: projectId,
+        limit: limit,
+      );
+      for (var i = 0; i < found.length; i++) {
+        if (!_visibleSearchMessage(found[i].message)) continue;
+        hits.add(
+          _messageHit(found[i].message, byId[found[i].chatId], 0.75 - i * 0.01),
+        );
+      }
+    }
+
+    hits.sort((a, b) => b.score.compareTo(a.score));
+    return hits.take(limit).toList();
+  }
+
+  /// В ленте есть строки только у сообщений пользователя и ассистента.
+  /// Служебные tool/event-сообщения не могут быть целью перехода.
+  static bool _visibleSearchMessage(ChatMessage message) =>
+      (message.role == MessageRole.user ||
+          message.role == MessageRole.assistant) &&
+      message.text.trim().isNotEmpty;
+
+  static double _titleScore(String title, String needle) {
+    final value = title.toLowerCase();
+    if (value == needle) return 1;
+    if (value.startsWith(needle)) return 0.95;
+    if (value.split(RegExp(r'\s+')).any((part) => part.startsWith(needle))) {
+      return 0.9;
+    }
+    return value.contains(needle) ? 0.8 : 0;
+  }
+
+  static SearchHit _chatHit(Chat chat, double score) => SearchHit(
+    kind: SearchHitKind.chat,
+    title: chat.title,
+    chatId: chat.id,
+    chatTitle: chat.title,
+    projectId: chat.projectId,
+    score: score,
+  );
+
+  static SearchHit _messageHit(ChatMessage message, Chat? chat, double score) {
+    final text = TextClip.headTail(message.text, maxChars: 180);
+    return SearchHit(
+      kind: SearchHitKind.message,
+      title: text,
+      chatId: message.chatId,
+      chatTitle: chat?.title,
+      projectId: chat?.projectId,
+      messageId: message.id,
+      seq: message.seq,
+      snippet: text,
+      score: score,
+    );
   }
 
   Future<void> openChat(String chatId) async {

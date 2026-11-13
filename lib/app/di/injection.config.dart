@@ -27,12 +27,14 @@ import '../../core/platform/client_info.dart' as _i733;
 import '../../core/platform/url_launcher_opener.dart' as _i224;
 import '../../core/security/secret_store_plugin.dart' as _i1071;
 import '../../core/settings/client_settings.dart' as _i47;
+import '../../features/palette/domain/command_plugin_registry.dart' as _i274;
 import '../guards/api_key_guard.dart' as _i519;
 import '../locale/appearance_port_adapter.dart' as _i395;
 import '../locale/locale_controller.dart' as _i675;
 import '../profiles/local_agent_apis.dart' as _i412;
 import '../profiles/profile_service.dart' as _i740;
 import '../router/app_router.dart' as _i81;
+import '../shortcuts/keybinding_service.dart' as _i997;
 import '../theme/theme_controller.dart' as _i699;
 import 'core_module.dart' as _i154;
 
@@ -46,11 +48,17 @@ extension GetItInjectableX on _i174.GetIt {
     final coreModule = _$CoreModule();
     gh.singleton<_i558.FlutterSecureStorage>(() => coreModule.secureStorage);
     gh.singleton<_i1065.PluginRegistry>(() => coreModule.pluginRegistry());
+    gh.singleton<_i274.CommandPluginRegistry>(
+      () => coreModule.commandPluginRegistry(),
+    );
     gh.singleton<_i810.PluginUiRegistry>(() => coreModule.pluginUiRegistry());
     gh.singleton<_i675.LocaleController>(() => _i675.LocaleController());
     gh.singleton<_i699.ThemeController>(() => _i699.ThemeController());
     gh.lazySingleton<_i412.LocalAgentApisProvider>(
       () => coreModule.localAgentApisProvider(),
+    );
+    gh.singleton<_i997.KeybindingService>(
+      () => coreModule.keybindingService(gh<_i47.ClientSettings>()),
     );
     gh.lazySingleton<_i564.SecretStore>(
       () => _i1071.FlutterSecretStore(gh<_i558.FlutterSecureStorage>()),

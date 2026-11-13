@@ -22,22 +22,31 @@ String? selectedChatIdOf(TabsRouter tabs) {
   return top.params.getString('chatId');
 }
 
+/// Id проекта, открытого в стеке вкладки проектов. `null`, если открыт список или другой раздел.
+String? selectedProjectIdOf(TabsRouter tabs) {
+  final top = _projectsStack(tabs)?.topRoute;
+  if (top == null || top.name != ProjectRoute.name) return null;
+  return top.params.getString('projectId');
+}
+
 /// Переключает раздел. Вкладка чатов сохраняет открытый чат, как и остальные вкладки.
 void showWorkspaceTab(BuildContext context, WorkspaceTab tab) =>
     AutoTabsRouter.of(context).setActiveIndex(tab.index);
 
 /// Открывает чат из списка или боковой панели. Стек вкладки чатов всегда содержит один экран: стартовый
 /// экран или чат, поэтому новый выбор заменяет текущий, а не копится в истории.
-void openChat(BuildContext context, String chatId) {
+void openChat(BuildContext context, String chatId, {String? messageId}) {
   final tabs = AutoTabsRouter.of(context);
   final stack = _chatsStack(tabs);
   if (stack == null) return;
   tabs.setActiveIndex(WorkspaceTab.chats.index);
   final top = stack.topRoute;
-  if (top.name == ChatRoute.name && top.params.getString('chatId') == chatId) {
+  if (messageId == null &&
+      top.name == ChatRoute.name &&
+      top.params.getString('chatId') == chatId) {
     return;
   }
-  unawaited(stack.replace(ChatRoute(chatId: chatId)));
+  unawaited(stack.replace(ChatRoute(chatId: chatId, messageId: messageId)));
 }
 
 /// Стартовый экран нового чата. Чат появится в списке после первой отправки и откроется на этом же месте.

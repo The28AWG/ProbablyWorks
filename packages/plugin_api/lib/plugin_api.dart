@@ -109,3 +109,50 @@ abstract interface class PluginSettings {
   Future<Map<String, Object?>> read();
   Future<void> save(Map<String, Object?> value);
 }
+
+/// Команда, которую плагин добавляет в общую палитру приложения.
+///
+/// [titles] и [keywords] — карты «код языка → текст». Плагин не зависит от
+/// Flutter: выполнение получает только [PluginCommandHost].
+final class PluginCommand {
+  const PluginCommand({
+    required this.id,
+    required this.titles,
+    this.parentId,
+    this.keywords = const {},
+    required this.run,
+  });
+
+  /// Идентификатор внутри плагина. Приложение добавит namespace плагина.
+  final String id;
+
+  /// Родительская команда внутри того же плагина. Null — верхний уровень.
+  final String? parentId;
+  final Map<String, String> titles;
+  final Map<String, String> keywords;
+  final Future<void> Function(PluginCommandHost host) run;
+}
+
+/// Ограниченный доступ команды плагина к приложению.
+abstract interface class PluginCommandHost {
+  Future<void> openChat(String chatId);
+  Future<void> newChat();
+
+  /// Открывает настройки. [category] — необязательная группа, например
+  /// `safety`, `plugins`, `mcp` или `advanced`.
+  Future<void> openSettings({String? category});
+  void notify(String message);
+}
+
+/// Дополнительный интерфейс плагина: команды палитры.
+///
+/// Отдельный интерфейс, чтобы существующие [Plugin] с инструментами не
+/// ломались при добавлении палитры.
+abstract interface class CommandPlugin {
+  String get id;
+
+  /// Название группы плагина в дереве команд.
+  Map<String, String> get titles;
+
+  Future<List<PluginCommand>> createCommands(PluginSettings settings);
+}

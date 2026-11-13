@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -152,6 +153,23 @@ void main() {
     );
 
     expect(backend.savedChatId, 'new-chat');
+  });
+
+  test('searches chats and messages through the remote API', () async {
+    final hits = await remote.search(
+      const SearchQuery(
+        text: 'alpha',
+        scope: SearchScope.project,
+        projectId: 'p1',
+        limit: 5,
+      ),
+    );
+
+    expect(hits.single.kind, SearchHitKind.chat);
+    expect(hits.single.chatId, 'c1');
+    expect(backend.searchQueries.single.text, 'alpha');
+    expect(backend.searchQueries.single.scope, SearchScope.project);
+    expect(backend.searchQueries.single.projectId, 'p1');
   });
 
   test('creates a new chat with the client-generated id', () async {
@@ -472,6 +490,7 @@ final class _FakeAgent implements AgentApi {
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
   final scheduled = <ScheduledTask>[];
+  final searchQueries = <SearchQuery>[];
   String? updatedModel;
   String? savedChatId;
 
@@ -551,6 +570,21 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Future<List<Chat>> chats() async => [_chat];
+
+  @override
+  Future<List<SearchHit>> search(SearchQuery query) async {
+    searchQueries.add(query);
+    return const [
+      SearchHit(
+        kind: SearchHitKind.chat,
+        title: 'Test chat',
+        chatId: 'c1',
+        chatTitle: 'Test chat',
+        projectId: 'p1',
+        score: 1,
+      ),
+    ];
+  }
 
   @override
   Future<Chat?> chat(String id) async => id == 'c1' ? _chat : null;

@@ -1,4 +1,5 @@
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -91,6 +92,10 @@ abstract interface class AgentApi {
 
   Future<List<ChatMessage>> messages(String chatId);
   Future<List<ToolRun>> runs(String chatId);
+
+  /// Поиск по названиям чатов и сообщениям. Выполняется на стороне агента,
+  /// поэтому клиент не читает всю историю ради палитры.
+  Future<List<SearchHit>> search(SearchQuery query);
 
   /// Регистрирует карточки чата и продолжает ход, если нужно.
   Future<void> openChat(String chatId);

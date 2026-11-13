@@ -15,6 +15,7 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -455,6 +456,8 @@ final class ApiServer {
             request.method == 'POST') {
           return _refreshModels(request);
         }
+      case 'search':
+        if (rest.isEmpty && request.method == 'GET') return _search(request);
       case 'chats':
         return _routeChats(request, rest);
       case 'approvals':
@@ -613,6 +616,32 @@ final class ApiServer {
       );
     }
     return projects;
+  }
+
+  Future<void> _search(HttpRequest request) async {
+    final text = request.uri.queryParameters['q']?.trim() ?? '';
+    if (text.isEmpty) {
+      return _json(request.response, HttpStatus.ok, {'hits': []});
+    }
+    final scopeName = request.uri.queryParameters['scope'] ?? 'all';
+    final scope = SearchScope.values.asNameMap()[scopeName] ?? SearchScope.all;
+    final limit =
+        (int.tryParse(request.uri.queryParameters['limit'] ?? '') ?? 20).clamp(
+          1,
+          50,
+        );
+    final hits = await _backend.search(
+      SearchQuery(
+        text: text,
+        scope: scope,
+        projectId: request.uri.queryParameters['projectId'],
+        chatId: request.uri.queryParameters['chatId'],
+        limit: limit,
+      ),
+    );
+    return _json(request.response, HttpStatus.ok, {
+      'hits': [for (final hit in hits) _searchHitJson(hit)],
+    });
   }
 
   Future<void> _routeProjects(HttpRequest request, List<String> rest) async {
@@ -1904,6 +1933,18 @@ Chat _chatFromJson(String id, Map<String, dynamic> json) {
 DateTime? _date(Object? value) => value is String && value.isNotEmpty
     ? DateTime.tryParse(value)?.toUtc()
     : null;
+
+Map<String, Object?> _searchHitJson(SearchHit hit) => {
+  'kind': hit.kind.name,
+  'title': hit.title,
+  'score': hit.score,
+  'chatId': hit.chatId,
+  'chatTitle': hit.chatTitle,
+  'projectId': hit.projectId,
+  'messageId': hit.messageId,
+  'seq': hit.seq,
+  'snippet': hit.snippet,
+};
 
 Map<String, Object?> _chatJson(
   Chat chat, {

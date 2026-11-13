@@ -12,6 +12,7 @@ import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/exec/exec_log_store.dart';
@@ -3016,5 +3017,55 @@ void main() {
           : <File>[];
       expect(leftovers, isEmpty);
     });
+  });
+
+  test('local search finds chat titles and messages by scope', () async {
+    final first = await createChatWithId('search-first');
+    final second = await createChatWithId('search-second');
+    await hub.chats.saveChat(
+      (await hub.chats.chat(first))!.copyWith(title: 'Alpha chat'),
+    );
+    await hub.chats.saveChat(
+      (await hub.chats.chat(second))!.copyWith(title: 'Beta chat'),
+    );
+    final now = DateTime.now();
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'search-message-1',
+        chatId: first,
+        seq: 1,
+        role: MessageRole.user,
+        text: 'alpha first',
+        createdAt: now,
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'search-message-2',
+        chatId: second,
+        seq: 1,
+        role: MessageRole.user,
+        text: 'alpha second',
+        createdAt: now,
+      ),
+    );
+
+    final api = LocalChatApi(hub);
+    final all = await api.search(
+      const SearchQuery(text: 'alpha', scope: SearchScope.all),
+    );
+    expect(
+      all
+          .where((hit) => hit.kind == SearchHitKind.chat)
+          .map((hit) => hit.title),
+      contains('Alpha chat'),
+    );
+    expect(all.where((hit) => hit.kind == SearchHitKind.message), hasLength(2));
+
+    final scoped = await api.search(
+      SearchQuery(text: 'alpha', scope: SearchScope.chat, chatId: first),
+    );
+    expect(scoped, isNotEmpty);
+    expect(scoped.every((hit) => hit.chatId == first), isTrue);
   });
 }

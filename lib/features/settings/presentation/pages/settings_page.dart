@@ -14,6 +14,7 @@ import 'package:probably_works/features/models/presentation/widgets/model_picker
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
@@ -758,6 +759,7 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsCubit cubit,
     AppLocalizations l10n,
   ) => [
+    const KeybindingsSection(),
     AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

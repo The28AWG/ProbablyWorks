@@ -15,6 +15,7 @@ import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -386,6 +387,23 @@ class RemoteAgentApi
     return [
       for (final item in (json['runs'] as List? ?? const []))
         _run(Map<String, dynamic>.from(item as Map)),
+    ];
+  }
+
+  @override
+  Future<List<SearchHit>> search(SearchQuery query) async {
+    final params = {
+      'q': query.text,
+      'scope': query.scope.name,
+      'limit': '${query.limit}',
+      if (query.projectId != null) 'projectId': query.projectId!,
+      if (query.chatId != null) 'chatId': query.chatId!,
+    };
+    final suffix = Uri(queryParameters: params).query;
+    final json = await _get('/search?$suffix');
+    return [
+      for (final item in (json['hits'] as List? ?? const []))
+        if (item is Map) _searchHit(Map<String, dynamic>.from(item)),
     ];
   }
 
@@ -1543,6 +1561,18 @@ ChatDraft _draft(Map<String, dynamic> json) => ChatDraft(
     for (final item in (json['attachments'] as List? ?? const []))
       if (item is Map) AttachmentRef.fromJson(Map<String, dynamic>.from(item)),
   ],
+);
+
+SearchHit _searchHit(Map<String, dynamic> json) => SearchHit(
+  kind: SearchHitKind.values.byName('${json['kind'] ?? 'message'}'),
+  title: _string(json, 'title'),
+  score: (json['score'] as num?)?.toDouble() ?? 0,
+  chatId: json['chatId'] as String?,
+  chatTitle: json['chatTitle'] as String?,
+  projectId: json['projectId'] as String?,
+  messageId: json['messageId'] as String?,
+  seq: json['seq'] is num ? (json['seq'] as num).toInt() : null,
+  snippet: json['snippet'] as String?,
 );
 
 ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
