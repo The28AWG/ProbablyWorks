@@ -609,6 +609,14 @@
   "@settingsTitleModel": {
     "description": "Setting: cheap model used to generate chat titles and summaries."
   },
+  "settingsMemoryModel": "Memory model",
+  "@settingsMemoryModel": {
+    "description": "Setting: model that maintains the project memory summary."
+  },
+  "settingsMemoryModelHint": "Empty means the chat model, then the default model.",
+  "@settingsMemoryModelHint": {
+    "description": "Hint under the memory model setting."
+  },
   "settingsSubagentModel": "Subagent model",
   "@settingsSubagentModel": {
     "description": "Setting: default model for subagents. Empty means the parent chat model."
@@ -2759,32 +2767,32 @@
   "@projectsSkillTrusted": {"description": "Skill state: the project trusts it."},
   "projectsSkillUntrusted": "Not trusted",
   "@projectsSkillUntrusted": {"description": "Skill state: the project does not trust it yet."},
-  "projectsFactsTitle": "Project facts",
-  "@projectsFactsTitle": {"description": "Heading of the shared project memory."},
-  "projectsFactsHint": "Every new chat in the project reads these facts. The agent can add one only with your confirmation.",
-  "@projectsFactsHint": {"description": "Explains the scope and confirmation rule of project facts."},
-  "projectsFactsEmpty": "No facts yet.",
-  "@projectsFactsEmpty": {"description": "Shown when a project has no facts."},
-  "projectsAddFact": "Add fact",
-  "@projectsAddFact": {"description": "Button that opens the new project fact dialog."},
-  "projectsFactHint": "What should every chat in this project know?",
-  "@projectsFactHint": {"description": "Hint of the new project fact field."},
-  "projectsFactsLimit": "Fact limit reached: {max}.",
-  "@projectsFactsLimit": {
-    "description": "Shown when the project has the maximum number of facts.",
-    "placeholders": {
-      "max": {"type": "int"}
-    }
+  "projectsMemoryTitle": "Project memory",
+  "@projectsMemoryTitle": {"description": "Heading of the shared project memory."},
+  "projectsMemoryHint": "Every chat in the project reads this summary. The agent updates it after useful turns; you can ask it to revise the memory below.",
+  "@projectsMemoryHint": {"description": "Explains what project memory is and how it is maintained."},
+  "projectsMemoryEmpty": "No memory yet. It will appear after a useful turn, or you can ask the agent to create it.",
+  "@projectsMemoryEmpty": {"description": "Shown when a project has no memory summary."},
+  "projectsMemoryUpdated": "Updated {date}",
+  "@projectsMemoryUpdated": {
+    "description": "When the project memory summary was last updated.",
+    "placeholders": {"date": {"type": "String"}}
   },
-  "projectsFactDeleteConfirm": "Remove this fact from the project?",
-  "@projectsFactDeleteConfirm": {"description": "Confirmation before deleting a project fact."},
+  "projectsMemoryComposerLabel": "Ask the AI to revise the memory",
+  "@projectsMemoryComposerLabel": {"description": "Label of the project memory composer."},
+  "projectsMemoryComposerHint": "For example: add that the project builds with pnpm",
+  "@projectsMemoryComposerHint": {"description": "Hint of the project memory composer."},
+  "projectsMemoryRevise": "Revise memory",
+  "@projectsMemoryRevise": {"description": "Button that asks the AI to revise project memory."},
+  "projectsMemoryRevising": "Revising…",
+  "@projectsMemoryRevising": {"description": "Button label while the memory revision is running."},
   "projectsRename": "Rename",
   "@projectsRename": {"description": "Tooltip of the project rename button."},
   "projectsRenameTitle": "Project name",
   "@projectsRenameTitle": {"description": "Title of the project rename dialog."},
   "projectsDeleteNow": "Delete permanently",
   "@projectsDeleteNow": {"description": "Button that deletes an archived project immediately."},
-  "projectsDeleteConfirm": "{name}: delete the project and all its facts and skill trust? This cannot be undone.",
+  "projectsDeleteConfirm": "{name}: delete the project, its memory and skill trust? This cannot be undone.",
   "@projectsDeleteConfirm": {
     "description": "Confirmation before permanent deletion of a project.",
     "placeholders": {"name": {"type": "String"}}

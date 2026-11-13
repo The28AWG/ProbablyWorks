@@ -3,7 +3,7 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 
-/// Проекты, их факты и доверие к skills. Чаты ссылаются на проект по `project_id`.
+/// Проекты, их память и доверие к skills. Чаты ссылаются на проект по `project_id`.
 ///
 /// Репозиторий не решает жизненный цикл: создание, перенос чата и архив — задача
 /// [ProjectLifecycleService]. Здесь только чтение и запись строк.
@@ -14,7 +14,7 @@ class ProjectRepository {
   final AppDatabase _db;
 
   $ProjectsTable get _projects => _db.projects;
-  $ProjectFactsTable get _facts => _db.projectFacts;
+  $ProjectMemoriesTable get _memories => _db.projectMemories;
   $ProjectSkillsTable get _skills => _db.projectSkills;
   $ChatsTable get _chats => _db.chats;
 
@@ -108,64 +108,54 @@ class ProjectRepository {
     return row.read(count) ?? 0;
   }
 
-  // ---- facts -------------------------------------------------------------
+  // ---- memory ------------------------------------------------------------
 
-  Future<List<ProjectFact>> facts(String projectId) async =>
-      (await (_db.select(_facts)
-                ..where((t) => t.projectId.equals(projectId))
-                ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
-              .get())
-          .map(_fact)
-          .toList();
-
-  Stream<List<ProjectFact>> watchFacts(String projectId) =>
-      (_db.select(_facts)
-            ..where((t) => t.projectId.equals(projectId))
-            ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]))
-          .watch()
-          .map((rows) => rows.map(_fact).toList());
-
-  Future<void> addFact(ProjectFact fact) async {
-    final text = fact.text.trim();
-    if (text.isEmpty) {
-      throw ArgumentError('project fact is empty');
-    }
-    if (text.length > ProjectFact.maxTextChars) {
-      throw ArgumentError(
-        'project fact is too long: ${text.length} > ${ProjectFact.maxTextChars} chars',
-      );
-    }
-    final count = _facts.id.count();
-    final row =
-        await (_db.selectOnly(_facts)
-              ..addColumns([count])
-              ..where(_facts.projectId.equals(fact.projectId)))
-            .getSingle();
-    if ((row.read(count) ?? 0) >= ProjectFact.maxPerProject) {
-      throw StateError(
-        'project fact limit reached: ${ProjectFact.maxPerProject} facts',
-      );
-    }
-    await _db
-        .into(_facts)
-        .insert(
-          ProjectFactsCompanion.insert(
-            id: fact.id,
-            projectId: fact.projectId,
-            content: text,
-            createdAt: fact.createdAt,
-          ),
-        );
+  /// Текущая память проекта. Null — саммари ещё не создавалось.
+  Future<ProjectMemory?> memory(String projectId) async {
+    final row = await (_db.select(
+      _memories,
+    )..where((t) => t.projectId.equals(projectId))).getSingleOrNull();
+    return row == null ? null : _memory(row);
   }
 
-  Future<void> deleteFact(String id) =>
-      (_db.delete(_facts)..where((t) => t.id.equals(id))).go();
+  Stream<ProjectMemory?> watchMemory(String projectId) =>
+      (_db.select(_memories)..where((t) => t.projectId.equals(projectId)))
+          .watchSingleOrNull()
+          .map((row) => row == null ? null : _memory(row));
 
-  Future<ProjectFact?> fact(String id) async {
-    final row = await (_db.select(
-      _facts,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    return row == null ? null : _fact(row);
+  /// Сохраняет саммари. Если задан [expectedUpdatedAt], запись проходит только
+  /// при совпадении версии: два чата проекта не затирают правки друг друга.
+  ///
+  /// Возвращает false при конфликте версии; вызывающий оставляет более свежее значение.
+  Future<bool> saveMemory(
+    ProjectMemory memory, {
+    DateTime? expectedUpdatedAt,
+  }) async {
+    if (expectedUpdatedAt == null) {
+      await _db
+          .into(_memories)
+          .insertOnConflictUpdate(
+            ProjectMemoriesCompanion.insert(
+              projectId: memory.projectId,
+              summary: memory.summary,
+              updatedAt: memory.updatedAt,
+            ),
+          );
+      return true;
+    }
+    final updated =
+        await (_db.update(_memories)..where(
+              (t) =>
+                  t.projectId.equals(memory.projectId) &
+                  t.updatedAt.equals(expectedUpdatedAt),
+            ))
+            .write(
+              ProjectMemoriesCompanion(
+                summary: Value(memory.summary),
+                updatedAt: Value(memory.updatedAt),
+              ),
+            );
+    return updated > 0;
   }
 
   // ---- skills ------------------------------------------------------------
@@ -280,10 +270,9 @@ class ProjectRepository {
     updatedAt: row.updatedAt,
   );
 
-  ProjectFact _fact(ProjectFactRow row) => ProjectFact(
-    id: row.id,
+  ProjectMemory _memory(ProjectMemoryRow row) => ProjectMemory(
     projectId: row.projectId,
-    text: row.content,
-    createdAt: row.createdAt,
+    summary: row.summary,
+    updatedAt: row.updatedAt,
   );
 }

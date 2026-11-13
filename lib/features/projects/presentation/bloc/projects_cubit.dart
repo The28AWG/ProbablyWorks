@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:uuid/uuid.dart';
 
 /// Состояние раздела проектов: активные и архивные проекты, хосты и число чатов.
 class ProjectsState extends Equatable {
@@ -73,8 +72,6 @@ class ProjectsCubit extends Cubit<ProjectsState> {
 
   final ProjectsApi _api;
 
-  static const _uuid = Uuid();
-
   late final StreamSubscription<List<Project>> _projectsSub;
   late final StreamSubscription<List<Host>> _hostsSub;
   late final StreamSubscription<Map<String, int>> _countsSub;
@@ -105,21 +102,13 @@ class ProjectsCubit extends Cubit<ProjectsState> {
     required bool trusted,
   }) => _api.setSkillTrusted(projectId, name, trusted: trusted);
 
-  Future<void> addFact(Project project, String text) async {
-    final trimmed = text.trim();
+  /// Просит ИИ поправить саммари проекта. Правка идёт тем же memory-циклом,
+  /// что и автоматическое обновление, и сохраняется только через `apply_patch`.
+  Future<void> reviseMemory(Project project, String instruction) async {
+    final trimmed = instruction.trim();
     if (trimmed.isEmpty) return;
-    await _api.addFact(
-      ProjectFact(
-        id: _uuid.v4(),
-        projectId: project.id,
-        text: trimmed,
-        createdAt: DateTime.now(),
-      ),
-    );
+    await _api.reviseMemory(project.id, trimmed);
   }
-
-  Future<void> deleteFact(String projectId, String factId) =>
-      _api.deleteFact(projectId, factId);
 
   /// Окончательное удаление архивного проекта. Активный проект удалять нельзя:
   /// сначала должны исчезнуть его чаты, иначе чаты остались бы без проекта.

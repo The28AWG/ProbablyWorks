@@ -333,6 +333,11 @@ final class _PinnedChanged extends ChatEvent {
   const _PinnedChanged();
 }
 
+/// Модель по умолчанию изменилась: новый чат без своей модели сразу показывает её.
+final class _DefaultModelChanged extends ChatEvent {
+  const _DefaultModelChanged();
+}
+
 /// Список хостов изменился (добавлен, отредактирован, удалён): меню хостов в композере обновляется сразу.
 final class _HostsChanged extends ChatEvent {
   const _HostsChanged(this.hosts);
@@ -658,6 +663,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_Refresh>(_onRefresh);
     on<_StepsChanged>(_onStepsChanged);
     on<_PinnedChanged>(_onPinnedChanged);
+    on<_DefaultModelChanged>(_onDefaultModelChanged);
     on<_CatalogChanged>(
       (event, emit) => emit(state.copyWith(catalog: event.catalog)),
     );
@@ -690,6 +696,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
   StreamSubscription<String?>? _pinsSub;
+  StreamSubscription<String?>? _defaultModelSub;
   StreamSubscription<String>? _draftSub;
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
@@ -788,6 +795,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       await sub.cancel();
     }
     await _pinsSub?.cancel();
+    await _defaultModelSub?.cancel();
     await _draftSub?.cancel();
     await _sessionSub?.cancel();
     await _liveSub?.cancel();
@@ -832,6 +840,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _pinsSub = _hub.settings
         .watch(SettingsRepository.keyPinnedModels)
         .listen((_) => add(const _PinnedChanged()));
+    // В daemon-режиме настройки приходят асинхронно: кэш может быть пуст на
+    // первом кадре, поэтому новый чат догоняет модель по умолчанию подпиской.
+    _defaultModelSub = _hub.settings
+        .watch(SettingsRepository.keyDefaultModel)
+        .listen((_) => add(const _DefaultModelChanged()));
     // Каталог может обновиться в фоне (старт, таймер, Settings): чат перерисует подпись модели и маркер.
     _catalogSub = _hub.models.watch().listen(
       (catalog) => add(_CatalogChanged(catalog)),
@@ -1042,7 +1055,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final now = DateTime.now();
     var chat = state.chat!.copyWith(createdAt: now, updatedAt: now);
     chat = await _hub.projects.attach(chat);
-    await _hub.chatStore.saveChat(chat);
+    await _hub.chatStore.createChat(chat);
     await _attach(chat.id);
     final project = await _hub.projectStore.forChat(chat.id);
     emit(state.copyWith(chat: chat, project: project, unsaved: false));
@@ -1432,6 +1445,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final pinned = await _hub.settings.readPinnedModels();
     emit(state.copyWith(pinnedModels: pinned));
+  }
+
+  Future<void> _onDefaultModelChanged(
+    _DefaultModelChanged event,
+    Emitter<ChatState> emit,
+  ) async {
+    final model = await _hub.settings.read(SettingsRepository.keyDefaultModel);
+    emit(state.copyWith(defaultModelId: model));
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {

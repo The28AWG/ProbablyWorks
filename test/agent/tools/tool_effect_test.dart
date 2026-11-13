@@ -109,16 +109,6 @@ void main() {
     expect(info.conflictsWith(read), isFalse);
   });
 
-  test('project fact writes share one resource and ignore host files', () {
-    final pin = effect(ToolNames.pinProjectFact, {'text': 'keep'});
-    final unpin = effect(ToolNames.unpinProjectFact, {'id': '1'});
-    expect(pin.conflictsWith(unpin), isTrue);
-    expect(
-      pin.conflictsWith(effect(ToolNames.readFile, {'path': 'a'})),
-      isFalse,
-    );
-  });
-
   test('bindPaths treats a tilde and its absolute path as one file', () async {
     Future<String?> home(String path) async =>
         path == '~/a' || path == '/home/agent/a' ? '/home/agent/a' : path;

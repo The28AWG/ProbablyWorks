@@ -4,7 +4,7 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 /// Проект: пара «хост + рабочая папка», к которой привязаны чаты.
 ///
 /// Хост и папка — идентичность проекта, поэтому у них нет изменения: смена любого из них
-/// переводит чат в другой проект. Имя, факты, доверие к skills и профиль политики — свойства проекта.
+/// переводит чат в другой проект. Имя, память, доверие к skills и профиль политики — свойства проекта.
 class Project extends Equatable {
   const Project({
     required this.id,
@@ -84,28 +84,29 @@ class Project extends Equatable {
   ];
 }
 
-/// Факт проекта. Читается каждым новым чатом и меняется только через подтверждение.
-class ProjectFact extends Equatable {
-  const ProjectFact({
-    required this.id,
+/// Долговременная память проекта: одно саммари, которое читает каждый чат.
+///
+/// Ревизий нет: значение одно, а обновляется оно только memory-циклом через
+/// инструмент `apply_patch`. Пустое саммари означает, что память ещё не накоплена.
+class ProjectMemory extends Equatable {
+  const ProjectMemory({
     required this.projectId,
-    required this.text,
-    required this.createdAt,
+    required this.summary,
+    required this.updatedAt,
   });
 
-  /// Сколько фактов можно хранить в одном проекте.
-  static const maxPerProject = 50;
+  /// Предел длины саммари. Больше в system prompt не попадает и не сохраняется:
+  /// memory-цикл обязан сначала сжать текст через `apply_patch`.
+  static const maxSummaryChars = 6000;
 
-  /// Максимальная длина одного факта в символах.
-  static const maxTextChars = 2000;
-
-  final String id;
   final String projectId;
-  final String text;
-  final DateTime createdAt;
+  final String summary;
+  final DateTime updatedAt;
+
+  bool get isEmpty => summary.trim().isEmpty;
 
   @override
-  List<Object?> get props => [id, projectId, text, createdAt];
+  List<Object?> get props => [projectId, summary, updatedAt];
 }
 
 /// Доверие к отдельному skill проекта.

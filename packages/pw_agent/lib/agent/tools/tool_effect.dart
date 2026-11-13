@@ -26,7 +26,6 @@ class ToolEffect {
     this.hostWrite = false,
     this.sessionRead = false,
     this.sessionWrite = false,
-    this.projectWrite = false,
     this.hostsRead = false,
     this.hostsWrite = false,
     this.settingsRead = false,
@@ -64,10 +63,6 @@ class ToolEffect {
 
   /// Запись текущей ревизии. `mutate` читает и сохраняет её без своего замка.
   final bool sessionWrite;
-
-  /// Общие факты проекта. Две записи упорядочиваются между собой и не
-  /// занимают файлы хоста.
-  final bool projectWrite;
 
   /// Реестр хостов приложения.
   final bool hostsRead;
@@ -107,7 +102,6 @@ class ToolEffect {
       hostWrite: hostWrite || writes.ambiguous,
       sessionRead: sessionRead,
       sessionWrite: sessionWrite,
-      projectWrite: projectWrite,
       hostsRead: hostsRead,
       hostsWrite: hostsWrite,
       settingsRead: settingsRead,
@@ -169,8 +163,6 @@ ToolEffect toolEffectFor(
     ToolNames.updatePlan ||
     ToolNames.pinFact ||
     ToolNames.unpinFact => const ToolEffect(sessionWrite: true),
-    ToolNames.pinProjectFact ||
-    ToolNames.unpinProjectFact => const ToolEffect(projectWrite: true),
     ToolNames.listStateRevisions ||
     ToolNames.getStateRevision => const ToolEffect(sessionRead: true),
     ToolNames.chatHistorySearch => const ToolEffect(transcriptRead: true),
@@ -285,7 +277,6 @@ bool _hits(ToolEffect writer, ToolEffect other) {
   if (writer.sessionWrite && (other.sessionRead || other.sessionWrite)) {
     return true;
   }
-  if (writer.projectWrite && other.projectWrite) return true;
   if (writer.hostsWrite && (other.hostsRead || other.hostsWrite)) return true;
   if (writer.settingsWrite && (other.settingsRead || other.settingsWrite)) {
     return true;

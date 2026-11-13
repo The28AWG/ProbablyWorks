@@ -23,6 +23,9 @@ class SettingsRepository {
   static const keyDefaultModel = 'defaultModel';
   static const keyTitleModel = 'titleModel';
 
+  /// Модель memory-цикла проекта. Пусто — модель текущего чата, затем модель по умолчанию.
+  static const keyMemoryModel = 'memoryModel';
+
   /// Модель субагентов. Пусто — использовать модель родительского чата.
   static const keySubagentModel = 'subagentModel';
 

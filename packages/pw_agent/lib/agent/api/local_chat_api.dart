@@ -254,6 +254,9 @@ final class _LocalChatStore implements ChatStore {
       _chats.toolRunsForChat(id);
 
   @override
+  Future<void> createChat(Chat chat) => _chats.saveChat(chat);
+
+  @override
   Future<void> saveChat(Chat chat) => _chats.saveChat(chat);
 
   @override

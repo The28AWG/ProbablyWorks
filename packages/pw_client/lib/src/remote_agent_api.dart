@@ -638,6 +638,9 @@ class RemoteAgentApi
   @override
   Future<AgentSettingsSnapshot> load() async {
     final json = await _get('/settings');
+    // Тот же ответ питает синхронный кэш `settings.cached`: новый чат строит
+    // первый кадр до любых await и должен видеть модель по умолчанию.
+    _globalSettings = json;
     _snapshot = _snapshotFrom(json);
     _publishCatalog(_snapshot!.catalog);
     return _snapshot!;
@@ -931,13 +934,11 @@ class RemoteAgentApi
   );
 
   @override
-  Stream<List<ProjectFact>> watchFacts(String projectId) => _watchStateList(
+  Stream<ProjectMemory?> watchMemory(String projectId) => _watchStateList(
     load: () async {
-      final json = await _get('/projects/$projectId/facts');
-      return [
-        for (final item in (json['facts'] as List? ?? const []))
-          if (item is Map) _fact(Map<String, dynamic>.from(item)),
-      ];
+      final json = await _get('/projects/$projectId/memory');
+      final item = json['memory'];
+      return item is Map ? _memory(Map<String, dynamic>.from(item)) : null;
     },
     relevant: _projectListChanged,
   );
@@ -1001,17 +1002,12 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> addFact(ProjectFact fact) async {
+  Future<void> reviseMemory(String projectId, String instruction) async {
     await _send(
       'POST',
-      '/projects/${fact.projectId}/facts',
-      body: _factBody(fact),
+      '/projects/$projectId/memory',
+      body: {'instruction': instruction},
     );
-  }
-
-  @override
-  Future<void> deleteFact(String projectId, String factId) async {
-    await _send('DELETE', '/projects/$projectId/facts/$factId');
   }
 
   @override
@@ -1376,18 +1372,11 @@ Map<String, Object?> _projectBody(Project project) => {
   'updatedAt': project.updatedAt.toUtc().toIso8601String(),
 };
 
-ProjectFact _fact(Map<String, dynamic> json) => ProjectFact(
-  id: _string(json, 'id'),
+ProjectMemory _memory(Map<String, dynamic> json) => ProjectMemory(
   projectId: _string(json, 'projectId'),
-  text: _string(json, 'text'),
-  createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+  summary: _string(json, 'summary'),
+  updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
 );
-
-Map<String, Object?> _factBody(ProjectFact fact) => {
-  'id': fact.id,
-  'text': fact.text,
-  'createdAt': fact.createdAt.toUtc().toIso8601String(),
-};
 
 ProjectSkill _skill(Map<String, dynamic> json) =>
     ProjectSkill(name: _string(json, 'name'), trusted: json['trusted'] == true);
@@ -1415,6 +1404,7 @@ AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
   return AgentSettingsSnapshot(
     defaultModel: '${json['defaultModel'] ?? ''}',
     titleModel: '${json['titleModel'] ?? ''}',
+    memoryModel: '${json['memoryModel'] ?? ''}',
     subagentModel: '${json['subagentModel'] ?? ''}',
     fallbackModel: '${json['fallbackModel'] ?? ''}',
     defaultPolicy: '${json['defaultPolicy'] ?? 'ask'}',
@@ -1785,6 +1775,9 @@ final class _RemoteChatStore implements ChatStore {
 
   @override
   Future<List<ToolRun>> toolRunsForChat(String id) => _api.runs(id);
+
+  @override
+  Future<void> createChat(Chat chat) => _api.saveChat(chat);
 
   @override
   Future<void> saveChat(Chat chat) async {

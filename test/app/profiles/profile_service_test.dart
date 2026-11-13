@@ -231,6 +231,7 @@ final class _MigrationSettingsApi implements AgentSettingsApi {
   Future<AgentSettingsSnapshot> load() async => AgentSettingsSnapshot(
     defaultModel: 'm',
     titleModel: '',
+    memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
     defaultPolicy: 'ask',

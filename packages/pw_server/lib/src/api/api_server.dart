@@ -654,10 +654,10 @@ final class ApiServer {
           ],
         });
       }
-      if (rest[1] == 'facts' && request.method == 'GET') {
-        final facts = await api.watchFacts(id).first;
+      if (rest[1] == 'memory' && request.method == 'GET') {
+        final memory = await api.watchMemory(id).first;
         return _json(request.response, HttpStatus.ok, {
-          'facts': [for (final fact in facts) _factJson(fact)],
+          'memory': memory == null ? null : _memoryJson(memory),
         });
       }
       if (rest[1] == 'skills' && request.method == 'GET') {
@@ -666,21 +666,21 @@ final class ApiServer {
           'skills': [for (final skill in skills) _skillJson(skill)],
         });
       }
-      if (rest[1] == 'facts' && request.method == 'POST') {
+      if (rest[1] == 'memory' && request.method == 'POST') {
         final body = await _body(request);
-        try {
-          await api.addFact(_factFromJson(id, body));
-        } on Object catch (error, stackTrace) {
-          Error.throwWithStackTrace(
-            AgentApiException(
-              HttpStatus.badRequest,
-              'invalid_project_fact',
-              '$error',
-            ),
-            stackTrace,
+        final instruction = '${body['instruction'] ?? ''}'.trim();
+        if (instruction.isEmpty) {
+          throw const AgentApiException(
+            HttpStatus.badRequest,
+            'invalid_memory_instruction',
+            'memory instruction is empty',
           );
         }
-        return _json(request.response, HttpStatus.created, {});
+        await api.reviseMemory(id, instruction);
+        final memory = await api.watchMemory(id).first;
+        return _json(request.response, HttpStatus.ok, {
+          'memory': memory == null ? null : _memoryJson(memory),
+        });
       }
       if (rest[1] == 'trust' && request.method == 'POST') {
         await api.trustWorkspace(id);
@@ -694,10 +694,6 @@ final class ApiServer {
         rest[2],
         trusted: body['trusted'] != false,
       );
-      return _json(request.response, HttpStatus.noContent, {});
-    }
-    if (rest.length == 3 && rest[1] == 'facts' && request.method == 'DELETE') {
-      await api.deleteFact(rest.first, rest[2]);
       return _json(request.response, HttpStatus.noContent, {});
     }
     throw const AgentApiException(
@@ -1118,6 +1114,7 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, {
       'defaultModel': snapshot.defaultModel,
       'titleModel': snapshot.titleModel,
+      'memoryModel': snapshot.memoryModel,
       'subagentModel': snapshot.subagentModel,
       'fallbackModel': snapshot.fallbackModel,
       'defaultPolicy': snapshot.defaultPolicy,
@@ -1711,19 +1708,10 @@ Project _projectFromJson(String id, Map<String, dynamic> json) {
   );
 }
 
-ProjectFact _factFromJson(String projectId, Map<String, dynamic> json) =>
-    ProjectFact(
-      id: '${json['id'] ?? ''}',
-      projectId: projectId,
-      text: '${json['text'] ?? ''}',
-      createdAt: _date(json['createdAt']) ?? DateTime.now(),
-    );
-
-Map<String, Object?> _factJson(ProjectFact fact) => {
-  'id': fact.id,
-  'projectId': fact.projectId,
-  'text': fact.text,
-  'createdAt': fact.createdAt.toUtc().toIso8601String(),
+Map<String, Object?> _memoryJson(ProjectMemory memory) => {
+  'projectId': memory.projectId,
+  'summary': memory.summary,
+  'updatedAt': memory.updatedAt.toUtc().toIso8601String(),
 };
 
 Map<String, Object?> _skillJson(ProjectSkill skill) => {

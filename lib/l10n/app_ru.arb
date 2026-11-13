@@ -609,6 +609,14 @@
   "@settingsTitleModel": {
     "description": "Настройка: дешёвая модель для заголовков чатов и сводок."
   },
+  "settingsMemoryModel": "Модель памяти",
+  "@settingsMemoryModel": {
+    "description": "Настройка: модель, которая поддерживает саммари проекта."
+  },
+  "settingsMemoryModelHint": "Пусто — модель чата, затем модель по умолчанию.",
+  "@settingsMemoryModelHint": {
+    "description": "Подсказка под настройкой модели памяти."
+  },
   "settingsSubagentModel": "Модель субагентов",
   "@settingsSubagentModel": {
     "description": "Настройка: модель по умолчанию для субагентов. Пусто — модель родительского чата."
@@ -2759,32 +2767,32 @@
   "@projectsSkillTrusted": {"description": "Состояние skill: проект ему доверяет."},
   "projectsSkillUntrusted": "Не доверен",
   "@projectsSkillUntrusted": {"description": "Состояние skill: проект ещё не доверяет."},
-  "projectsFactsTitle": "Факты проекта",
-  "@projectsFactsTitle": {"description": "Заголовок общей памяти проекта."},
-  "projectsFactsHint": "Каждый новый чат проекта читает эти факты. Агент добавляет факт только с подтверждением.",
-  "@projectsFactsHint": {"description": "Поясняет область действия и правило подтверждения фактов."},
-  "projectsFactsEmpty": "Фактов пока нет.",
-  "@projectsFactsEmpty": {"description": "Показывается, когда у проекта нет фактов."},
-  "projectsAddFact": "Добавить факт",
-  "@projectsAddFact": {"description": "Кнопка, открывающая диалог нового факта проекта."},
-  "projectsFactHint": "Что должен знать каждый чат этого проекта?",
-  "@projectsFactHint": {"description": "Подсказка поля нового факта проекта."},
-  "projectsFactsLimit": "Достигнут лимит фактов: {max}.",
-  "@projectsFactsLimit": {
-    "description": "Показывается, когда в проекте максимальное число фактов.",
-    "placeholders": {
-      "max": {"type": "int"}
-    }
+  "projectsMemoryTitle": "Память проекта",
+  "@projectsMemoryTitle": {"description": "Заголовок общей памяти проекта."},
+  "projectsMemoryHint": "Каждый чат проекта читает это саммари. Агент обновляет его после полезных ходов; ниже можно попросить ИИ поправить память.",
+  "@projectsMemoryHint": {"description": "Поясняет, что такое память проекта и как она поддерживается."},
+  "projectsMemoryEmpty": "Памяти пока нет. Она появится после полезного хода, или попросите агента создать её.",
+  "@projectsMemoryEmpty": {"description": "Показывается, когда у проекта нет саммари."},
+  "projectsMemoryUpdated": "Обновлено {date}",
+  "@projectsMemoryUpdated": {
+    "description": "Когда саммари проекта обновлялось последний раз.",
+    "placeholders": {"date": {"type": "String"}}
   },
-  "projectsFactDeleteConfirm": "Удалить этот факт из проекта?",
-  "@projectsFactDeleteConfirm": {"description": "Подтверждение удаления факта проекта."},
+  "projectsMemoryComposerLabel": "Попросить ИИ поправить память",
+  "@projectsMemoryComposerLabel": {"description": "Подпись композера памяти проекта."},
+  "projectsMemoryComposerHint": "Например: добавь, что проект собирается через pnpm",
+  "@projectsMemoryComposerHint": {"description": "Подсказка композера памяти проекта."},
+  "projectsMemoryRevise": "Поправить память",
+  "@projectsMemoryRevise": {"description": "Кнопка, которая просит ИИ поправить память проекта."},
+  "projectsMemoryRevising": "Правлю…",
+  "@projectsMemoryRevising": {"description": "Подпись кнопки, пока правка памяти выполняется."},
   "projectsRename": "Переименовать",
   "@projectsRename": {"description": "Подсказка кнопки переименования проекта."},
   "projectsRenameTitle": "Имя проекта",
   "@projectsRenameTitle": {"description": "Заголовок диалога переименования проекта."},
   "projectsDeleteNow": "Удалить окончательно",
   "@projectsDeleteNow": {"description": "Кнопка немедленного удаления архивного проекта."},
-  "projectsDeleteConfirm": "{name}: удалить проект, все его факты и доверие к skills? Это нельзя отменить.",
+  "projectsDeleteConfirm": "{name}: удалить проект, его память и доверие к skills? Это нельзя отменить.",
   "@projectsDeleteConfirm": {
     "description": "Подтверждение окончательного удаления проекта.",
     "placeholders": {"name": {"type": "String"}}

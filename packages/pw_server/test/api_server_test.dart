@@ -9,9 +9,11 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -37,6 +39,7 @@ void main() {
   late _FakePlugins pluginApi;
   late _FakeSecurityAudit securityAudit;
   late _FakePush push;
+  late _FakeProjects projectsApi;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -47,10 +50,12 @@ void main() {
     pluginApi = _FakePlugins();
     securityAudit = _FakeSecurityAudit();
     push = _FakePush();
+    projectsApi = _FakeProjects();
     server = ApiServer(
       backend,
       _token,
       port: 0,
+      projects: projectsApi,
       mcpApi: mcp,
       pluginApi: pluginApi,
       securityAuditApi: securityAudit,
@@ -77,6 +82,41 @@ void main() {
 
     expect(status, HttpStatus.ok);
     expect(jsonDecode(body), containsPair('ok', true));
+  });
+
+  test('reads and revises project memory through the API', () async {
+    final (emptyStatus, emptyBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/projects/p1/memory',
+      token: _token,
+    );
+    expect(emptyStatus, HttpStatus.ok);
+    expect(jsonDecode(emptyBody), containsPair('memory', null));
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/projects/p1/memory',
+      token: _token,
+      body: {'instruction': 'add the build command'},
+    );
+    expect(status, HttpStatus.ok);
+    final memory = (jsonDecode(body) as Map)['memory'] as Map;
+    expect(memory['summary'], contains('pnpm'));
+    expect(projectsApi.instruction, 'add the build command');
+
+    final (badStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/projects/p1/memory',
+      token: _token,
+      body: {'instruction': '   '},
+    );
+    expect(badStatus, HttpStatus.badRequest);
   });
 
   test('protected endpoints require a bearer token', () async {
@@ -1616,6 +1656,9 @@ final class _FakeDraftStore implements ChatStore {
   Future<List<ToolRun>> toolRunsForChat(String id) async => const [];
 
   @override
+  Future<void> createChat(Chat chat) => Future<void>.value();
+
+  @override
   Future<void> saveChat(Chat chat) => Future<void>.value();
 
   @override
@@ -1740,6 +1783,7 @@ final class _FakeSettings implements AgentSettingsApi {
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
     titleModel: '',
+    memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
     defaultPolicy: 'ask',
@@ -1825,4 +1869,26 @@ final class _FakeSettings implements AgentSettingsApi {
   Future<void> rememberModels(List<String> ids) async {
     remembered = ids;
   }
+}
+
+final class _FakeProjects implements ProjectsApi {
+  ProjectMemory? memory;
+  String? instruction;
+
+  @override
+  Stream<ProjectMemory?> watchMemory(String projectId) => Stream.value(memory);
+
+  @override
+  Future<void> reviseMemory(String projectId, String instruction) async {
+    this.instruction = instruction;
+    memory = ProjectMemory(
+      projectId: projectId,
+      summary: '## Build\n- pnpm',
+      updatedAt: DateTime.utc(2026, 11, 13),
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ProjectsApi is not used in this test');
 }

@@ -565,6 +565,8 @@ class ChatSession {
     switch (end) {
       case TurnEnd.completed:
         unawaited(_notify(AgentNoticeKind.turnFinished));
+        // Память обновляется в фоне: ход уже завершён и ответ пользователю отдан.
+        unawaited(_updateProjectMemory());
       case TurnEnd.failed:
         unawaited(_notify(AgentNoticeKind.turnFailed));
       case TurnEnd.stepLimit:
@@ -1014,9 +1016,9 @@ class ChatSession {
 
     final state = await _hub.state.current(chat);
     final messages = await _hub.chats.messages(chatId);
-    final projectFacts = project == null
-        ? const <ProjectFact>[]
-        : await _hub.projectStore.facts(project.id);
+    final projectMemory = project == null
+        ? null
+        : await _hub.projectStore.memory(project.id);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
     ContextInput inputFor(
@@ -1032,7 +1034,7 @@ class ChatSession {
       hostStub: hostStub,
       backgroundNotes: notes,
       inlineFiles: files,
-      projectFacts: projectFacts,
+      projectMemory: projectMemory,
     );
     // Лимит проверяем до сжатия: оно тоже тратит токены, а превышение должно
     // остановить ход, а не оплатить ещё одну сводку.
@@ -1527,6 +1529,15 @@ class ChatSession {
   }
 
   // ---- title -------------------------------------------------------------
+
+  /// Запускает memory-цикл проекта. Ошибки не должны влиять на завершённый ход.
+  Future<void> _updateProjectMemory() async {
+    try {
+      await _hub.memory.updateAfterTurn(chatId);
+    } on Object catch (error, stack) {
+      _log.warning('project memory update failed', error, stack);
+    }
+  }
 
   /// Модель для заголовка: отдельная из настроек, иначе модель по умолчанию.
   /// Пустая строка в настройках означает «не задана» (очистка поля пишет именно её).

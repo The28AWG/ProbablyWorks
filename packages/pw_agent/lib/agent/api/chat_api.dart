@@ -42,6 +42,13 @@ abstract interface class ChatStore implements DraftPersistence {
   Future<Chat?> chat(String id);
   Future<List<ChatMessage>> messages(String id);
   Future<List<ToolRun>> toolRunsForChat(String id);
+
+  /// Сохраняет новый чат с id, который уже сгенерировал клиент.
+  ///
+  /// Локальный backend делает upsert, удалённый — создаёт запись. Обычный
+  /// [saveChat] меняет существующий чат и не должен создавать новый.
+  Future<void> createChat(Chat chat);
+
   Future<void> saveChat(Chat chat);
 
   /// Изменения черновиков, сделанные другим клиентом.

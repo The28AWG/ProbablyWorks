@@ -26,6 +26,7 @@ class SettingsState extends Equatable {
     this.catalog = const ModelCatalogState(),
     this.defaultModel = '',
     this.titleModel = '',
+    this.memoryModel = '',
     this.subagentModel = '',
     this.fallbackModel = '',
     this.language = 'system',
@@ -63,6 +64,7 @@ class SettingsState extends Equatable {
   final ModelCatalogState catalog;
   final String defaultModel;
   final String titleModel;
+  final String memoryModel;
   final String subagentModel;
   final String fallbackModel;
   final String language;
@@ -96,6 +98,7 @@ class SettingsState extends Equatable {
     ModelCatalogState? catalog,
     String? defaultModel,
     String? titleModel,
+    String? memoryModel,
     String? subagentModel,
     String? fallbackModel,
     String? language,
@@ -121,6 +124,7 @@ class SettingsState extends Equatable {
     catalog: catalog ?? this.catalog,
     defaultModel: defaultModel ?? this.defaultModel,
     titleModel: titleModel ?? this.titleModel,
+    memoryModel: memoryModel ?? this.memoryModel,
     subagentModel: subagentModel ?? this.subagentModel,
     fallbackModel: fallbackModel ?? this.fallbackModel,
     language: language ?? this.language,
@@ -145,6 +149,7 @@ class SettingsState extends Equatable {
     catalog,
     defaultModel,
     titleModel,
+    memoryModel,
     subagentModel,
     fallbackModel,
     language,
@@ -185,6 +190,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         apiKeyTail: snapshot.apiKeyTail,
         defaultModel: snapshot.defaultModel,
         titleModel: snapshot.titleModel,
+        memoryModel: snapshot.memoryModel,
         subagentModel: snapshot.subagentModel,
         fallbackModel: snapshot.fallbackModel,
         defaultPolicy: PolicyMode.values.byName(snapshot.defaultPolicy),
@@ -204,6 +210,7 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _agentSettings.rememberModels([
       snapshot.defaultModel,
       snapshot.titleModel,
+      snapshot.memoryModel,
       snapshot.subagentModel,
       snapshot.fallbackModel,
       ...snapshot.pinnedModels,
@@ -303,6 +310,12 @@ class SettingsCubit extends Cubit<SettingsState> {
         saved: state.saved + 1,
       ),
     );
+  }
+
+  Future<void> saveMemoryModel(String id) async {
+    await _agentSettings.writeSetting(SettingsRepository.keyMemoryModel, id);
+    await _agentSettings.rememberModels([id]);
+    emit(state.copyWith(memoryModel: id, saved: state.saved + 1));
   }
 
   Future<void> saveSubagentModel(String id) async {

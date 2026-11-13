@@ -9,6 +9,7 @@ final class AgentSettingsSnapshot {
   const AgentSettingsSnapshot({
     required this.defaultModel,
     required this.titleModel,
+    required this.memoryModel,
     required this.subagentModel,
     required this.fallbackModel,
     required this.defaultPolicy,
@@ -23,6 +24,7 @@ final class AgentSettingsSnapshot {
 
   final String defaultModel;
   final String titleModel;
+  final String memoryModel;
   final String subagentModel;
   final String fallbackModel;
   final String defaultPolicy;

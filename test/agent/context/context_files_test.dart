@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -43,6 +44,7 @@ void main() {
   ContextInput input(
     List<ChatMessage> messages, {
     Map<String, List<LlmFilePart>> files = const {},
+    ProjectMemory? memory,
   }) => ContextInput(
     chat: chat,
     host: host,
@@ -51,6 +53,7 @@ void main() {
     workspace: WorkspaceSnapshot.empty,
     recentWindow: 40,
     inlineFiles: files,
+    projectMemory: memory,
   );
 
   final attached = [
@@ -170,5 +173,23 @@ void main() {
         openRouterMessageOf(const LlmMessage.user('привет')).toJson()!
             as Map<String, dynamic>;
     expect(json['content'], 'привет');
+  });
+
+  test('project memory is an untrusted block in the system prompt', () {
+    final messages = ContextBuilder().build(
+      input(
+        [userMessage(const [])],
+        memory: ProjectMemory(
+          projectId: 'p1',
+          summary: '## Build\n- pnpm install',
+          updatedAt: now,
+        ),
+      ),
+    );
+
+    final system = messages.first.content;
+    expect(system, contains('## Project memory'));
+    expect(system, contains('<untrusted source="project_memory">'));
+    expect(system, contains('- pnpm install'));
   });
 }

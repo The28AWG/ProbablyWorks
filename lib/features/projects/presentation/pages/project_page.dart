@@ -192,7 +192,7 @@ class _ProjectBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.xl),
         _TrustSection(project: project),
         const SizedBox(height: AppSpacing.xl),
-        _FactsSection(project: project),
+        _MemorySection(project: project),
       ],
     );
   }
@@ -562,118 +562,129 @@ class _TrustSection extends StatelessWidget {
   }
 }
 
-class _FactsSection extends StatelessWidget {
-  const _FactsSection({required this.project});
+/// Память проекта: просмотр саммари и композер, который просит ИИ поправить его.
+class _MemorySection extends StatefulWidget {
+  const _MemorySection({required this.project});
 
   final Project project;
+
+  @override
+  State<_MemorySection> createState() => _MemorySectionState();
+}
+
+class _MemorySectionState extends State<_MemorySection> {
+  final _instruction = TextEditingController();
+  bool _revising = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _instruction.dispose();
+    super.dispose();
+  }
+
+  Future<void> _revise() async {
+    final text = _instruction.text.trim();
+    if (text.isEmpty || _revising) return;
+    setState(() {
+      _revising = true;
+      _error = null;
+    });
+    try {
+      await context.read<ProjectsCubit>().reviseMemory(widget.project, text);
+      if (mounted) _instruction.clear();
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = AppLocalizations.of(context).commonError('$error');
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _revising = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    return StreamBuilder<List<ProjectFact>>(
-      stream: ProfileScope.of(context).projectsApi.watchFacts(project.id),
+    return StreamBuilder<ProjectMemory?>(
+      stream: ProfileScope.of(context).projectsApi
+          .watchMemory(widget.project.id),
       builder: (context, snapshot) {
-        final facts = snapshot.data ?? const <ProjectFact>[];
-        final atLimit = facts.length >= ProjectFact.maxPerProject;
+        final memory = snapshot.data;
         return AppSection(
-          title: l10n.projectsFactsTitle,
-          description: atLimit
-              ? l10n.projectsFactsLimit(ProjectFact.maxPerProject)
-              : l10n.projectsFactsHint,
-          trailing: TextButton.icon(
-            onPressed: atLimit ? null : () => _addFact(context),
-            icon: const Icon(Icons.add),
-            label: Text(l10n.projectsAddFact),
-          ),
+          title: l10n.projectsMemoryTitle,
+          description: l10n.projectsMemoryHint,
           children: [
-            if (facts.isEmpty)
-              Text(
-                l10n.projectsFactsEmpty,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData)
+              const LinearProgressIndicator()
+            else if (snapshot.hasError)
+              AppBanner(
+                title: l10n.projectsMemoryTitle,
+                message: l10n.commonError('${snapshot.error}'),
+                icon: Icons.error_outline,
+                tone: AppTone.danger,
+                margin: EdgeInsets.zero,
+              )
+            else if (memory != null && !memory.isEmpty)
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppMarkdown(data: memory.summary),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      l10n.projectsMemoryUpdated(
+                        formatIsoDate(memory.updatedAt),
+                      ),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               )
             else
-              // Тот же зазор, что между детьми секции: карточки не слипаются рамками.
-              Column(
-                spacing: AppSpacing.md,
-                children: [
-                  for (final fact in facts)
-                    AppCard(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  fact.text,
-                                  style: theme.textTheme.bodyMedium,
-                                ),
-                                const SizedBox(height: AppSpacing.xs),
-                                Text(
-                                  formatIsoDate(fact.createdAt),
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: l10n.commonDelete,
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _deleteFact(context, fact),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
+              Text(
+                l10n.projectsMemoryEmpty,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
+            AppTextField(
+              controller: _instruction,
+              label: l10n.projectsMemoryComposerLabel,
+              hint: l10n.projectsMemoryComposerHint,
+              error: _error,
+              errorMaxLines: 3,
+              minLines: 2,
+              maxLines: 4,
+              enabled: !_revising,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _revising ? null : _revise,
+                icon: _revising
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome_outlined),
+                label: Text(
+                  _revising
+                      ? l10n.projectsMemoryRevising
+                      : l10n.projectsMemoryRevise,
+                ),
+              ),
+            ),
           ],
         );
       },
     );
-  }
-
-  Future<void> _addFact(BuildContext context) async {
-    final l10n = AppLocalizations.of(context);
-    final text = await ConfirmDialog.prompt(
-      context,
-      title: l10n.projectsAddFact,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.commonSave,
-      hint: l10n.projectsFactHint,
-      minLines: 2,
-      maxLines: 4,
-      maxLength: ProjectFact.maxTextChars,
-    );
-    if (text == null || !context.mounted) return;
-    try {
-      await context.read<ProjectsCubit>().addFact(project, text);
-    } on Object catch (error) {
-      if (context.mounted) {
-        AppSnackBar.show(context, l10n.commonError('$error'));
-      }
-    }
-  }
-
-  Future<void> _deleteFact(BuildContext context, ProjectFact fact) async {
-    final l10n = AppLocalizations.of(context);
-    final ok = await ConfirmDialog.confirm(
-      context,
-      title: l10n.commonDelete,
-      message: l10n.projectsFactDeleteConfirm,
-      cancelLabel: l10n.commonCancel,
-      confirmLabel: l10n.commonDelete,
-      destructive: true,
-    );
-    if (ok && context.mounted) {
-      await context.read<ProjectsCubit>().deleteFact(project.id, fact.id);
-    }
   }
 }
 

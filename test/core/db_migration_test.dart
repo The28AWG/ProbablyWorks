@@ -41,6 +41,78 @@ const _savedModelsV4 =
     'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, '
     'context_length INTEGER, supports_tools INTEGER NOT NULL DEFAULT 0)';
 
+/// База v16 с проектом и старыми фактами: проверяет сворачивание в саммари.
+AppDatabase _openFactsV16() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(_toolRunsBeforeV9)
+        ..execute(_savedModelsV4)
+        ..execute(
+          'CREATE TABLE projects ('
+          'id TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, '
+          'name TEXT NOT NULL, workspace TEXT NOT NULL, '
+          'workspace_key TEXT NOT NULL, policy_profile_id TEXT, '
+          'trust_agents_md INTEGER NOT NULL DEFAULT 0, '
+          'skills_initialized INTEGER NOT NULL DEFAULT 0, archived_at INTEGER, '
+          'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        )
+        ..execute(
+          'CREATE TABLE project_facts ('
+          'id TEXT NOT NULL PRIMARY KEY, project_id TEXT NOT NULL '
+          'REFERENCES projects(id) ON DELETE CASCADE, '
+          'content TEXT NOT NULL, created_at INTEGER NOT NULL)',
+        )
+        ..execute(
+          'INSERT INTO projects (id, host_id, name, workspace, workspace_key, '
+          "created_at, updated_at) VALUES ('p1', 'local', 'app', '/srv/app', "
+          "'/srv/app', 0, 0)",
+        )
+        ..execute(
+          'INSERT INTO project_facts (id, project_id, content, created_at) VALUES '
+          "('f1', 'p1', 'собирается через pnpm', 0), "
+          "('f2', 'p1', 'CI использует bash', 1)",
+        )
+        ..execute('PRAGMA user_version = 16');
+    },
+  ),
+);
+
+/// База v17 с сообщениями и (опционально) старым FTS-индексом.
+AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(
+          'CREATE TABLE messages ('
+          'id TEXT NOT NULL PRIMARY KEY, chat_id TEXT NOT NULL, '
+          'seq INTEGER NOT NULL, role TEXT NOT NULL, payload TEXT NOT NULL, '
+          'opened_revision_id TEXT, sealed_before_revision_id TEXT, '
+          'created_at INTEGER NOT NULL)',
+        )
+        ..execute(
+          'INSERT INTO messages '
+          '(id, chat_id, seq, role, payload, created_at) VALUES '
+          "('m1', 'c1', 1, 'user', '{\"text\":\"alpha solution\"}', 0), "
+          "('m2', 'c1', 2, 'assistant', '{\"text\":\"\"}', 0)",
+        )
+        ..execute('PRAGMA user_version = 17');
+      if (withIndex) {
+        raw
+          ..execute(
+            'CREATE VIRTUAL TABLE message_search USING fts5('
+            'message_id UNINDEXED, chat_id UNINDEXED, body)',
+          )
+          ..execute(
+            'INSERT INTO message_search(message_id, chat_id, body) VALUES '
+            "('gone', 'c-old', 'orphan')",
+          );
+      }
+    },
+  ),
+);
+
 /// Открывает базу, созданную предыдущей версией схемы, и даёт миграции поработать.
 AppDatabase _openAtVersion(
   int version, {
@@ -339,6 +411,55 @@ void main() {
       columns.map((row) => row.read<String>('name')),
       containsAll(['kind', 'parent_chat_id', 'root_chat_id', 'depth']),
     );
+  });
+
+  test('v16 → v17 folds facts into one project memory summary', () async {
+    final db = _openFactsV16();
+    addTearDown(db.close);
+
+    final memory = await db
+        .customSelect('SELECT project_id, summary FROM project_memories')
+        .getSingle();
+    expect(memory.read<String>('project_id'), 'p1');
+    expect(memory.read<String>('summary'), contains('pnpm'));
+    expect(memory.read<String>('summary'), contains('bash'));
+
+    final tables = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name IN ('project_facts', 'project_memories')",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(tables, ['project_memories']);
+  });
+
+  test('v17 → v18 rebuilds FTS and removes orphan rows', () async {
+    final db = _openSearchV17();
+    addTearDown(db.close);
+
+    final rows = await db
+        .customSelect(
+          'SELECT message_id, chat_id, body FROM message_search '
+          'ORDER BY message_id',
+        )
+        .get();
+
+    expect(rows, hasLength(1));
+    expect(rows.single.read<String>('message_id'), 'm1');
+    expect(rows.single.read<String>('chat_id'), 'c1');
+    expect(rows.single.read<String>('body'), 'alpha solution');
+  });
+
+  test('v17 → v18 creates FTS when the old database had no index', () async {
+    final db = _openSearchV17(withIndex: false);
+    addTearDown(db.close);
+
+    final rows = await db
+        .customSelect('SELECT message_id FROM message_search')
+        .get();
+
+    expect(rows.map((row) => row.read<String>('message_id')), ['m1']);
   });
 
   test('v15 → v16 adds the draft revision column', () async {

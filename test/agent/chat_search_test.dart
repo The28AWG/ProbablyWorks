@@ -63,6 +63,10 @@ void main() {
         ),
       );
 
+  Future<int> indexedRows() async =>
+      (await db.customSelect('SELECT message_id FROM message_search').get())
+          .length;
+
   test('searches messages across projects and within one project', () async {
     final first = await project('p1', '/one');
     final second = await project('p2', '/two');
@@ -88,6 +92,30 @@ void main() {
     expect(withinFirst, hasLength(1));
     expect(withinFirst.single.chatId, 'c1');
     expect(withinFirst.single.message.text, contains('first project'));
+  });
+
+  test('deleting a chat removes its index rows', () async {
+    await project('p1', '/one');
+    await chat('c1', 'First chat', 'p1');
+    await message('m1', 'c1', 'alpha');
+
+    await chats.deleteChat('c1');
+
+    expect(await indexedRows(), 0);
+    expect(await chats.searchMessagesAll('alpha'), isEmpty);
+  });
+
+  test('truncating messages removes their index rows', () async {
+    await project('p1', '/one');
+    await chat('c1', 'First chat', 'p1');
+    await message('m1', 'c1', 'alpha', seq: 1);
+    await message('m2', 'c1', 'beta', seq: 2);
+
+    await chats.deleteMessagesFrom('c1', 2);
+
+    expect(await indexedRows(), 1);
+    expect(await chats.searchMessagesAll('alpha'), hasLength(1));
+    expect(await chats.searchMessagesAll('beta'), isEmpty);
   });
 
   test('returns no matches for an empty query', () async {

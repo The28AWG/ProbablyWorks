@@ -6,9 +6,11 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -37,6 +39,7 @@ void main() {
   late _FakePlugins pluginsApi;
   late _FakeSecurityAudit securityAudit;
   late _FakePush push;
+  late _FakeProjects projectsApi;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -47,10 +50,12 @@ void main() {
     pluginsApi = _FakePlugins();
     securityAudit = _FakeSecurityAudit();
     push = _FakePush();
+    projectsApi = _FakeProjects();
     server = ApiServer(
       backend,
       _token,
       port: 0,
+      projects: projectsApi,
       settingsApi: settings,
       mcpApi: mcp,
       pluginApi: pluginsApi,
@@ -81,6 +86,27 @@ void main() {
     expect(hosts.single.id, 'local');
     expect(messages.single.text, 'hello');
     expect(runs, isEmpty);
+  });
+
+  test('load() warms the synchronous settings cache', () async {
+    expect(remote.settings.cached(SettingsRepository.keyDefaultModel), isNull);
+
+    await remote.load();
+
+    expect(
+      remote.settings.cached(SettingsRepository.keyDefaultModel),
+      'openai/gpt-4o',
+    );
+  });
+
+  test('reads and revises project memory', () async {
+    expect(await remote.watchMemory('p1').first, isNull);
+
+    await remote.reviseMemory('p1', 'add the build command');
+
+    final memory = await remote.watchMemory('p1').first;
+    expect(memory?.summary, contains('pnpm'));
+    expect(projectsApi.instruction, 'add the build command');
   });
 
   test('parses server timestamps as UTC', () async {
@@ -119,6 +145,20 @@ void main() {
     );
 
     expect(backend.savedChatId, 'new-chat');
+  });
+
+  test('creates a new chat with the client-generated id', () async {
+    await remote.chatStore.createChat(
+      Chat(
+        id: 'draft-chat',
+        hostId: 'local',
+        title: 'New',
+        createdAt: DateTime.utc(2026, 11, 11),
+        updatedAt: DateTime.utc(2026, 11, 11),
+      ),
+    );
+
+    expect(backend.savedChatId, 'draft-chat');
   });
 
   test('updates chat fields through the remote API', () async {
@@ -788,6 +828,9 @@ final class _FakeDraftStore implements ChatStore {
   Future<List<ToolRun>> toolRunsForChat(String id) async => const [];
 
   @override
+  Future<void> createChat(Chat chat) => Future<void>.value();
+
+  @override
   Future<void> saveChat(Chat chat) => Future<void>.value();
 
   @override
@@ -910,6 +953,7 @@ final class _FakeSettings implements AgentSettingsApi {
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
     titleModel: '',
+    memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
     defaultPolicy: 'ask',
@@ -1001,4 +1045,26 @@ final class _FakeSettings implements AgentSettingsApi {
   Future<void> rememberModels(List<String> ids) async {
     remembered = ids;
   }
+}
+
+final class _FakeProjects implements ProjectsApi {
+  ProjectMemory? memory;
+  String? instruction;
+
+  @override
+  Stream<ProjectMemory?> watchMemory(String projectId) => Stream.value(memory);
+
+  @override
+  Future<void> reviseMemory(String projectId, String instruction) async {
+    this.instruction = instruction;
+    memory = ProjectMemory(
+      projectId: projectId,
+      summary: '## Build\n- pnpm',
+      updatedAt: DateTime.utc(2026, 11, 13),
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ProjectsApi is not used in this test');
 }

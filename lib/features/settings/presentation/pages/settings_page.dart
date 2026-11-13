@@ -378,6 +378,19 @@ class _SettingsViewState extends State<_SettingsView> {
         ],
       ),
       AppSection(
+        title: l10n.settingsMemoryModel,
+        description: l10n.settingsMemoryModelHint,
+        children: [
+          ModelSettingField(
+            modelId: state.memoryModel,
+            catalog: catalog,
+            source: source,
+            pinned: state.pinnedModels,
+            onSelected: cubit.saveMemoryModel,
+          ),
+        ],
+      ),
+      AppSection(
         title: l10n.settingsSubagentModel,
         description: l10n.settingsSubagentModelHint,
         children: [

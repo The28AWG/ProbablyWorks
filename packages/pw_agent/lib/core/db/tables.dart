@@ -84,19 +84,19 @@ class ProjectSkills extends Table {
   Set<Column<Object>> get primaryKey => {projectId, name};
 }
 
-/// Факт проекта: долгоживущая память, которую читает каждый новый чат проекта.
-/// Меняется только через подтверждение пользователя (инструмент или карточка проекта).
-@DataClassName('ProjectFactRow')
-@TableIndex(name: 'project_facts_project', columns: {#projectId})
-class ProjectFacts extends Table {
-  TextColumn get id => text()();
+/// Долговременная память проекта: одно саммари на проект.
+///
+/// Строка одна, без ревизий. Обновляется memory-циклом агента, а не пользователем
+/// напрямую; старые факты сворачиваются в неё одноразовой миграцией.
+@DataClassName('ProjectMemoryRow')
+class ProjectMemories extends Table {
   TextColumn get projectId =>
       text().references(Projects, #id, onDelete: KeyAction.cascade)();
-  TextColumn get content => text()();
-  DateTimeColumn get createdAt => dateTime()();
+  TextColumn get summary => text()();
+  DateTimeColumn get updatedAt => dateTime()();
 
   @override
-  Set<Column<Object>> get primaryKey => {id};
+  Set<Column<Object>> get primaryKey => {projectId};
 }
 
 /// Именованный профиль политики. Проект может ссылаться на него вместо глобального профиля.

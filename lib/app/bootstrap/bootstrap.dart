@@ -190,6 +190,13 @@ Future<bool> _bootstrapDaemon(
   await profileService.load();
   await profileService.migrateSecretsToLocalDaemon();
   profileService.attachLocalNotices();
+  // Новый чат строит первый кадр из синхронного кэша настроек. Без прогрева
+  // модель по умолчанию появлялась только после открытия чата или настроек.
+  try {
+    await remote.load();
+  } on Object catch (error) {
+    AppLog.root.warning('cannot preload daemon settings', error);
+  }
   // Локальный профиль — remote API демона. Начальные хосты придут по SSE,
   // но ChatListCubit должен получить пустой список, а не обращаться к БД.
   getIt

@@ -11,6 +11,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
@@ -58,6 +59,7 @@ class AgentHub {
     this.projects,
     this.projectStore,
     this.policyProfiles,
+    this.memory,
   ) {
     final manager = SubagentManager(this);
     subagents = manager;
@@ -91,9 +93,12 @@ class AgentHub {
   /// Жизненный цикл проекта: создание, перенос чата, архив и окончательное удаление.
   final ProjectLifecycleService projects;
 
-  /// Строки проектов, факты и доверие skills.
+  /// Строки проектов, память и доверие skills.
   final ProjectRepository projectStore;
   final PolicyProfileRepository policyProfiles;
+
+  /// Автоматическое обновление саммари проекта после хода.
+  final ProjectMemoryService memory;
 
   final Map<String, ChatSession> _sessions = {};
 

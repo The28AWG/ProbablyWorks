@@ -23,6 +23,7 @@ import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/agent/loop/chat_title.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
+import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 import 'package:pw_agent/agent/policy/command_risk.dart';
@@ -86,6 +87,12 @@ class _FakeLlm implements LlmProvider {
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
+    if (request.messages.first.content.startsWith(
+      'You maintain the long-lived memory',
+    )) {
+      // Фоновый memory-цикл не должен забирать сценарии обычных ходов.
+      return Stream.value(const LlmCompleted());
+    }
     if (request.messages.first.content == ChatTitle.systemPrompt) {
       titleRequests.add(request);
       return Stream.fromIterable([
@@ -216,6 +223,7 @@ void main() {
       ProjectLifecycleService(db, projectStore, hosts, runtimes),
       projectStore,
       PolicyProfileRepository(db),
+      ProjectMemoryService(projectStore, chats, settings, llm),
     );
     await hosts.ensureLocalHost(DateTime.now());
     await settings.write(SettingsRepository.keyDefaultModel, 'fake/model');
@@ -2481,7 +2489,7 @@ void main() {
   );
 
   test(
-    'resumed turn uses the project profile and saves a confirmed fact',
+    'resumed turn uses the project profile and runs a confirmed action',
     () async {
       final now = DateTime.now();
       const profileId = 'strict';
@@ -2518,7 +2526,7 @@ void main() {
         ),
       );
       const echoArgs = '{"command":"echo hi"}';
-      const pinArgs = '{"text":"staging host only"}';
+      const settingsArgs = '{"key":"titleModel","value":"from-resume"}';
       await hub.chats.insertMessage(
         ChatMessage(
           id: 'm',
@@ -2529,27 +2537,27 @@ void main() {
           toolCalls: const [
             ToolCallRef(id: 'echo', name: 'run_command', arguments: echoArgs),
             ToolCallRef(
-              id: 'pin',
-              name: 'pin_project_fact',
-              arguments: pinArgs,
+              id: 'settings',
+              name: 'settings_update',
+              arguments: settingsArgs,
             ),
           ],
         ),
       );
       await hub.chats.saveToolRun(
         ToolRun(
-          id: 'run-pin',
+          id: 'run-settings',
           chatId: chatId,
           messageId: 'm',
-          toolName: 'pin_project_fact',
-          argsJson: pinArgs,
-          command: 'Save project fact: staging host only',
+          toolName: 'settings_update',
+          argsJson: settingsArgs,
+          command: 'app settings change',
           status: ToolRunStatus.waitingApproval,
           startedAt: now,
-          toolCallId: 'pin',
+          toolCallId: 'settings',
           pendingCard: const PendingCard(
-            summary: 'Save project fact: staging host only',
-            reason: 'project facts are shared with every chat in this project',
+            summary: 'app settings change',
+            reason: 'app settings change',
           ).encode(),
         ),
       );
@@ -2566,9 +2574,12 @@ void main() {
 
       await session.restoreUnanswered();
       expect(broker.pendingApprovals(chatId).map((card) => card.id), [
-        'run-pin',
+        'run-settings',
       ]);
-      broker.resolveApproval('run-pin', const ApprovalDecision.allowOnce());
+      broker.resolveApproval(
+        'run-settings',
+        const ApprovalDecision.allowOnce(),
+      );
       await finished;
 
       final tools = [
@@ -2577,12 +2588,12 @@ void main() {
       ];
       expect(
         [for (final message in tools) message.toolCallId],
-        ['echo', 'pin'],
+        ['echo', 'settings'],
       );
-      expect(tools.last.text, contains('saved'));
-      expect(tools.last.text, isNot(contains('no project')));
-      final facts = await hub.projectStore.facts(project.id);
-      expect(facts.single.text, 'staging host only');
+      expect(
+        await hub.settings.read(SettingsRepository.keyTitleModel),
+        'from-resume',
+      );
     },
   );
 

@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
+import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/db/tables.dart';
 import 'package:pw_agent/core/util/home_path.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/core/util/workspace_path.dart';
 import 'package:uuid/uuid.dart';
 
@@ -19,7 +23,7 @@ part 'app_database.g.dart';
     VirtualFsNodes,
     Projects,
     ProjectSkills,
-    ProjectFacts,
+    ProjectMemories,
     PolicyProfiles,
     McpServers,
     ScheduledTasks,
@@ -28,7 +32,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 16;
+  static const currentSchemaVersion = 18;
 
   static const _uuid = Uuid();
 
@@ -85,15 +89,13 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(toolRuns, toolRuns.toolCallId);
         await m.addColumn(toolRuns, toolRuns.pendingCard);
       }
-      // Версия 10: проекты. Чат всегда принадлежит проекту; у проекта свои факты, skills и профиль политики.
+      // Версия 10: проекты. Чат всегда принадлежит проекту; у проекта свои skills и профиль политики.
       if (from < 10) {
         await m.createTable(policyProfiles);
         await m.createTable(projects);
         await m.createTable(projectSkills);
-        await m.createTable(projectFacts);
         await m.addColumn(chats, chats.projectId);
         await m.createIndex(projectsHostKey);
-        await m.createIndex(projectFactsProject);
         await m.createIndex(chatsProject);
         await _backfillProjects();
       }
@@ -118,8 +120,98 @@ class AppDatabase extends _$AppDatabase {
       }
       // Версия 16: версия черновика для синхронизации между клиентами.
       if (from < 16) await m.addColumn(chats, chats.draftRevision);
+      // Версия 17: вместо списка фактов — одно саммари проекта. Старые факты
+      // сворачиваются в него один раз, после чего таблица фактов удаляется.
+      if (from < 17) {
+        await m.createTable(projectMemories);
+        await _migrateFactsToMemory();
+      }
+      // Версия 18: FTS-индекс создавался только для новых баз. На апгрейде
+      // пересобираем его целиком, чтобы старые сообщения тоже находились.
+      if (from < 18) await _rebuildSearchIndex();
     },
   );
+
+  /// Пересоздаёт FTS-индекс из сохранённых сообщений.
+  ///
+  /// Индекс не участвует во внешних ключах и раньше не создавался в onUpgrade,
+  /// поэтому в старых базах он мог отсутствовать или быть неполным. Полная
+  /// пересборка убирает и осиротевшие строки удалённых чатов.
+  Future<void> _rebuildSearchIndex() async {
+    await _createSearchIndex();
+    // В очень старых тестовых базах таблицы сообщений может не быть:
+    // пустой индекс всё равно создаётся, пересобирать нечего.
+    final hasMessages = (await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'",
+    ).get()).isNotEmpty;
+    if (!hasMessages) return;
+    await customStatement('DELETE FROM message_search');
+    final rows = await customSelect('SELECT id, chat_id, payload FROM messages')
+        .get();
+    for (final row in rows) {
+      final text = _messageText(row.read<String>('payload'));
+      if (text == null || text.trim().isEmpty) continue;
+      await customStatement(
+        'INSERT INTO message_search(message_id, chat_id, body) VALUES (?, ?, ?)',
+        [row.read<String>('id'), row.read<String>('chat_id'), text],
+      );
+    }
+  }
+
+  /// Текст сообщения из JSON payload. Битый payload индексом не считается.
+  String? _messageText(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map && decoded['text'] is String) {
+        return decoded['text'] as String;
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
+  }
+
+  /// Сворачивает факты из схем v10–v16 в начальное саммари проекта.
+  ///
+  /// Таблица могла не появиться (обновление с v9 сразу на v17): тогда делать нечего.
+  /// Слишком длинный текст обрезается по пределу саммари, чтобы миграция не создала
+  /// память, которую не примет memory-цикл.
+  Future<void> _migrateFactsToMemory() async {
+    final hasFacts = (await customSelect(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_facts'",
+    ).get()).isNotEmpty;
+    if (!hasFacts) return;
+    final rows = await customSelect(
+      'SELECT project_id, content FROM project_facts ORDER BY project_id, created_at',
+    ).get();
+    final byProject = <String, List<String>>{};
+    for (final row in rows) {
+      final content = Redactor.redact(row.read<String>('content').trim());
+      if (content.isEmpty) continue;
+      byProject
+          .putIfAbsent(row.read<String>('project_id'), () => [])
+          .add(content);
+    }
+    final now = DateTime.now();
+    for (final entry in byProject.entries) {
+      final buffer = StringBuffer();
+      for (final content in entry.value) {
+        final line = '- $content';
+        if (buffer.length + line.length + 1 > ProjectMemory.maxSummaryChars) {
+          buffer.write('\n- …[further legacy facts omitted]');
+          break;
+        }
+        if (buffer.isNotEmpty) buffer.write('\n');
+        buffer.write(line);
+      }
+      await customStatement(
+        'INSERT OR REPLACE INTO project_memories '
+        '(project_id, summary, updated_at) VALUES (?, ?, ?)',
+        [entry.key, buffer.toString(), now.millisecondsSinceEpoch ~/ 1000],
+      );
+    }
+    await customStatement('DROP TABLE IF EXISTS project_facts');
+  }
 
   /// Создаёт проекты для чатов, которые появились до v10, и проставляет им `project_id`.
   ///
@@ -205,7 +297,7 @@ class AppDatabase extends _$AppDatabase {
   /// Папка хоста по умолчанию остаётся проектом: её задал пользователь. `~` и
   /// домашний каталог этой машины — нет, если хост свою папку не задаёт. Чат,
   /// который сознательно работает в доме, выбирает эту папку снова или ставит
-  /// её папкой хоста: архивный проект с фактами ещё неделю можно открыть.
+  /// её папкой хоста: архивный проект с памятью ещё неделю можно открыть.
   Future<void> _detachImplicitHomeProjects() async {
     final hasHosts = (await customSelect(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'hosts'",

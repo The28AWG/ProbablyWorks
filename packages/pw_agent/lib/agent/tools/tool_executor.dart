@@ -7,7 +7,6 @@ import 'dart:typed_data';
 import 'package:characters/characters.dart';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
-import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -201,8 +200,6 @@ class ToolExecutor {
         ToolNames.chatHistorySearch ||
         ToolNames.listSkills ||
         ToolNames.loadSkill => _stateTool(ctx, call, args),
-        ToolNames.pinProjectFact ||
-        ToolNames.unpinProjectFact => _projectFact(ctx, call, args),
         ToolNames.hostList ||
         ToolNames.hostAdd ||
         ToolNames.hostUpdate ||
@@ -928,120 +925,6 @@ class ToolExecutor {
     await _saveRun(run);
     final answer = await _broker.askUser(ctx.chat.id, run.id, question);
     return _finishQuestion(run, answer);
-  }
-
-  // ---- project facts -----------------------------------------------------
-
-  /// Общая память проекта. Карточка подтверждения обязательна даже в YOLO:
-  /// факт увидят все чаты проекта, поэтому решение не должно быть побочным эффектом.
-  Future<ToolResult> _projectFact(
-    ToolContext ctx,
-    LlmToolCall call,
-    Map<String, dynamic> args,
-  ) async {
-    final project = ctx.project;
-    if (project == null) {
-      return const ToolResult(
-        'this chat has no project yet; project facts are unavailable',
-        isError: true,
-      );
-    }
-    final pin = call.name == ToolNames.pinProjectFact;
-    final text = pin ? _str(args, 'text').trim() : '';
-    final factId = pin ? '' : _str(args, 'id');
-    if (pin && text.isEmpty) {
-      return const ToolResult('fact text is empty', isError: true);
-    }
-    if (!pin) {
-      final fact = await _projects.fact(factId);
-      if (fact == null || fact.projectId != project.id) {
-        return ToolResult('project fact not found: $factId', isError: true);
-      }
-    }
-    final summary = pin
-        ? 'Save project fact: $text'
-        : 'Remove project fact $factId';
-    final runId = _uuid.v4();
-    final approved = await _approve(
-      ctx,
-      call,
-      args,
-      runId: runId,
-      summary: summary,
-      command: summary,
-      reason: ctx.policy.reasonFor(call.name, args),
-      allowStoredGrant: false,
-    );
-    if (!approved.allowed) {
-      return _rejected(summary, reason: approved.reason);
-    }
-    return _applyProjectFact(
-      ctx,
-      call,
-      args,
-      runId: runId,
-      pin: pin,
-      startedAt: DateTime.now(),
-    );
-  }
-
-  Future<ToolResult> _resumeProjectFact(
-    ToolContext ctx,
-    LlmToolCall call,
-    Map<String, dynamic> args,
-    ToolRun run,
-  ) => _applyProjectFact(
-    ctx,
-    call,
-    args,
-    runId: run.id,
-    pin: call.name == ToolNames.pinProjectFact,
-    startedAt: run.startedAt,
-  );
-
-  Future<ToolResult> _applyProjectFact(
-    ToolContext ctx,
-    LlmToolCall call,
-    Map<String, dynamic> args, {
-    required String runId,
-    required bool pin,
-    required DateTime startedAt,
-  }) async {
-    final project = ctx.project;
-    if (project == null) {
-      return const ToolResult('this chat has no project', isError: true);
-    }
-    final String summary;
-    if (pin) {
-      final fact = ProjectFact(
-        id: _uuid.v4(),
-        projectId: project.id,
-        text: _str(args, 'text').trim(),
-        createdAt: DateTime.now(),
-      );
-      try {
-        await _projects.addFact(fact);
-      } on Object catch (error) {
-        return ToolResult('cannot save project fact: $error', isError: true);
-      }
-      summary = 'project fact ${fact.id} saved';
-    } else {
-      final id = _str(args, 'id');
-      await _projects.deleteFact(id);
-      summary = 'project fact $id removed';
-    }
-    final run = _newRun(
-      ctx,
-      runId,
-      call,
-      args,
-      ToolRunStatus.done,
-      command: summary,
-      startedAt: startedAt,
-      finishedAt: DateTime.now(),
-    ).copyWith(resultPreview: summary, clearPendingCard: true);
-    await _saveRun(run);
-    return ToolResult(summary);
   }
 
   // ---- run output --------------------------------------------------------
@@ -1774,8 +1657,6 @@ class ToolExecutor {
     ToolNames.hostAdd ||
     ToolNames.hostUpdate ||
     ToolNames.settingsUpdate => _resumeSelf(ctx, call, args, run),
-    ToolNames.pinProjectFact ||
-    ToolNames.unpinProjectFact => _resumeProjectFact(ctx, call, args, run),
     _ => _failRun(run, 'cannot resume ${call.name}'),
   };
 

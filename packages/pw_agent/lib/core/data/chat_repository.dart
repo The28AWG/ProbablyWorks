@@ -171,6 +171,10 @@ class ChatRepository implements DraftPersistence {
     for (final child in children) {
       await deleteChat(child.id);
     }
+    // FTS-таблица не участвует в каскаде внешних ключей.
+    await _db.customStatement('DELETE FROM message_search WHERE chat_id = ?', [
+      id,
+    ]);
     await (_db.delete(_chatsTable)..where((t) => t.id.equals(id))).go();
   }
 
@@ -219,6 +223,12 @@ class ChatRepository implements DraftPersistence {
   });
 
   Future<void> _indexMessage(ChatMessage message) async {
+    // Индекс без уникального ключа: перед вставкой убираем прежнюю строку,
+    // чтобы повторная запись сообщения не создала дубль.
+    await _db.customStatement(
+      'DELETE FROM message_search WHERE message_id = ?',
+      [message.id],
+    );
     if (message.text.trim().isEmpty) return;
     await _db.customStatement(
       'INSERT INTO message_search(message_id, chat_id, body) VALUES (?, ?, ?)',

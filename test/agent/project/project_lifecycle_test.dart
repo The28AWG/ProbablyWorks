@@ -151,7 +151,7 @@ void main() {
     expect(await life.findForChat(first), isNull);
   });
 
-  test('явная папка и папка хоста — один проект с общими фактами', () async {
+  test('явная папка и папка хоста — один проект с общей памятью', () async {
     final host = await virtual('box', workspace: '/opt/app');
     final plain = await virtual('plain');
 
@@ -160,15 +160,14 @@ void main() {
     expect(configured.projectId, sameDefault.projectId);
     expect(configured.workspace, '/opt/app');
 
-    await projects.addFact(
-      ProjectFact(
-        id: 'fact-1',
+    await projects.saveMemory(
+      ProjectMemory(
         projectId: configured.projectId!,
-        text: 'общий',
-        createdAt: _at,
+        summary: 'общий',
+        updatedAt: _at,
       ),
     );
-    expect((await projects.facts(sameDefault.projectId!)).single.text, 'общий');
+    expect((await projects.memory(sameDefault.projectId!))?.summary, 'общий');
 
     final left = await life.attach(
       _chat('left', plain.id, workspace: '/srv/a'),

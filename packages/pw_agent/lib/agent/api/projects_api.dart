@@ -11,7 +11,9 @@ abstract interface class ProjectsApi {
   Stream<Map<String, int>> watchChatCounts();
   Stream<List<Host>> watchHosts();
   Stream<List<PolicyProfile>> watchPolicyProfiles();
-  Stream<List<ProjectFact>> watchFacts(String projectId);
+
+  /// Саммари проекта. Null — память ещё не накоплена.
+  Stream<ProjectMemory?> watchMemory(String projectId);
   Stream<List<ProjectSkill>> watchSkills(String projectId);
   Stream<List<Chat>> watchProjectChats(String projectId);
 
@@ -25,8 +27,9 @@ abstract interface class ProjectsApi {
   });
   Future<void> trustWorkspace(String projectId);
 
-  Future<void> addFact(ProjectFact fact);
-  Future<void> deleteFact(String projectId, String factId);
+  /// Просит memory-цикл поправить саммари по инструкции пользователя.
+  /// Изменения применяются только через `apply_patch` и проверяются на лимит.
+  Future<void> reviseMemory(String projectId, String instruction);
 
   Future<void> savePolicyProfile(PolicyProfile profile);
   Future<void> deletePolicyProfile(String id);

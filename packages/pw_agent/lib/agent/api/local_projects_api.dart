@@ -2,6 +2,7 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
@@ -19,6 +20,7 @@ final class LocalProjectsApi implements ProjectsApi {
     this._hosts,
     this._policies,
     this._settings,
+    this._memory,
   );
 
   final ProjectRepository _projects;
@@ -26,6 +28,7 @@ final class LocalProjectsApi implements ProjectsApi {
   final HostRepository _hosts;
   final PolicyProfileRepository _policies;
   final SettingsRepository _settings;
+  final ProjectMemoryService _memory;
 
   @override
   Stream<List<Project>> watchProjects() => _projects.watchAll();
@@ -40,8 +43,8 @@ final class LocalProjectsApi implements ProjectsApi {
   Stream<List<PolicyProfile>> watchPolicyProfiles() => _policies.watchAll();
 
   @override
-  Stream<List<ProjectFact>> watchFacts(String projectId) =>
-      _projects.watchFacts(projectId);
+  Stream<ProjectMemory?> watchMemory(String projectId) =>
+      _projects.watchMemory(projectId);
 
   @override
   Stream<List<ProjectSkill>> watchSkills(String projectId) =>
@@ -73,11 +76,13 @@ final class LocalProjectsApi implements ProjectsApi {
       _projects.trustWorkspace(projectId);
 
   @override
-  Future<void> addFact(ProjectFact fact) => _projects.addFact(fact);
-
-  @override
-  Future<void> deleteFact(String projectId, String factId) =>
-      _projects.deleteFact(factId);
+  Future<void> reviseMemory(String projectId, String instruction) async {
+    final project = await _projects.byId(projectId);
+    if (project == null) {
+      throw StateError('project not found: $projectId');
+    }
+    await _memory.revise(project: project, instruction: instruction);
+  }
 
   @override
   Future<void> savePolicyProfile(PolicyProfile profile) =>
