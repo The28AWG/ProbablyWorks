@@ -94,9 +94,12 @@ PUT    /api/v1/settings/steps                 {"group": true, "expandWhileActive
 PUT    /api/v1/settings/limits                {"limits": {...}}
 PUT    /api/v1/settings/denylist              {"denylist": ["..."]}
 PUT    /api/v1/settings/security-profile      {"profile": "{...}"}
-POST   /api/v1/settings/api-key               {"key": "..."}
-DELETE /api/v1/settings/api-key
-POST   /api/v1/settings/api-key/check
+POST   /api/v1/providers/{id}/key            {"key": "..."}
+DELETE /api/v1/providers/{id}/key
+GET    /api/v1/providers
+GET    /api/v1/providers/{id}
+PUT    /api/v1/providers/{id}                {"enabled": true, "baseUrl": "..."}
+POST   /api/v1/providers/{id}/check
 GET    /api/v1/models
 POST   /api/v1/models/refresh
 POST   /api/v1/models/remember                {"ids": ["..."]}

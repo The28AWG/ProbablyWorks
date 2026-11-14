@@ -1,7 +1,6 @@
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
@@ -19,9 +18,7 @@ final class AgentSettingsSnapshot {
     required this.limits,
     required this.pinnedModels,
     required this.stepsDisplay,
-    required this.apiKeyTail,
     required this.catalog,
-    this.llamaCpp = const LlamaCppStatus(),
   });
 
   final String defaultModel;
@@ -35,16 +32,43 @@ final class AgentSettingsSnapshot {
   final AppLimits limits;
   final List<String> pinnedModels;
   final StepsDisplay stepsDisplay;
-  final String apiKeyTail;
-  final ModelCatalogState catalog;
 
-  /// Статус подключения llama.cpp. Не содержит ключа, только маску.
-  final LlamaCppStatus llamaCpp;
+  /// Каталог содержит дескрипторы провайдеров и их статусы. Отдельных
+  /// полей под конкретного провайдера в снимке нет.
+  final ModelCatalogState catalog;
+}
+
+/// Настройки провайдеров, общие для локального и удалённого агента.
+///
+/// Один интерфейс на всех провайдеров: новый провайдер не добавляет
+/// методов в API, сервер и клиент. id приходит из
+/// [LlmProviderDescriptor.id].
+abstract interface class LlmProviderSettingsApi {
+  /// Статусы без обращения к сети: включённость, адрес, наличие ключа.
+  Future<List<LlmProviderStatus>> providerStatuses();
+
+  /// Проверка одного провайдера с обращением к сервису.
+  Future<LlmProviderStatus> checkProvider(String providerId);
+
+  /// Сохраняет адрес сервера. Null или пустая строка — значение по умолчанию.
+  Future<void> saveProviderBaseUrl(String providerId, String? baseUrl);
+
+  /// Сохраняет ключ и возвращает статус после проверки.
+  ///
+  /// Провайдер с обязательным ключом не принимает нерабочий ключ: прежнее
+  /// значение восстанавливается, наружу уходит [AppFailure].
+  Future<LlmProviderStatus> saveProviderApiKey(String providerId, String key);
+
+  /// Удаляет ключ. Адрес и остальные настройки сохраняются.
+  Future<void> deleteProviderApiKey(String providerId);
+
+  /// Включает или выключает провайдера.
+  Future<void> setProviderEnabled(String providerId, bool enabled);
 }
 
 /// Настройки конкретного агента. Локальный адаптер пишет в БД и SecretStore,
 /// удалённый — в API профиля.
-abstract interface class AgentSettingsApi {
+abstract interface class AgentSettingsApi implements LlmProviderSettingsApi {
   Future<AgentSettingsSnapshot> load();
   Stream<ModelCatalogState> watchCatalog();
   Stream<List<String>> watchPinnedModels();
@@ -56,22 +80,6 @@ abstract interface class AgentSettingsApi {
   Future<void> saveSecurityProfile(SecurityProfile profile);
   Future<void> saveLimits(AppLimits limits);
 
-  Future<void> saveApiKey(String key);
-  Future<void> deleteApiKey();
-  Future<LlmKeyInfo?> checkKey();
   Future<void> refreshModels();
   Future<void> rememberModels(List<String> ids);
-}
-
-/// Дополнительные настройки llama.cpp.
-///
-/// Отдельный интерфейс, чтобы не расширять [AgentSettingsApi] и не ломать
-/// реализации, которым llama.cpp не нужен. Адаптеры, поддерживающие
-/// настройки, реализуют оба интерфейса.
-abstract interface class LlamaCppSettingsApi {
-  Future<void> saveLlamaCppBaseUrl(String baseUrl);
-  Future<void> saveLlamaCppApiKey(String key);
-  Future<void> deleteLlamaCppApiKey();
-  Future<void> setLlamaCppEnabled(bool enabled);
-  Future<LlamaCppStatus?> checkLlamaCpp();
 }

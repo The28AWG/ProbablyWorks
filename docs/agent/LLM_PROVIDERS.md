@@ -1,186 +1,235 @@
-# Провайдеры LLM: состояние и план универсализации
+# Провайдеры LLM: архитектура и добавление нового
 
 ## Статус
 
-Коммит `bab3172` — `feat(agent): добавить провайдер llama.cpp`.
+Провайдеры OpenRouter и llama.cpp переведены на общую схему. Новый
+провайдер добавляется адаптером, дескриптором и одной регистрацией;
+каталог, API настроек, сервер, клиент и UI править не нужно.
 
-Сейчас в агенте два провайдера:
+Ключевые файлы:
 
-- OpenRouter — `packages/pw_agent/lib/providers/ai/openrouter/`;
-- llama.cpp — `packages/pw_agent/lib/providers/ai/llama_cpp/`.
+- `packages/pw_agent/lib/providers/ai/llm_port.dart` — порт `LlmProvider`,
+  `LlmModelInfo`, события и базовая реализация `LlmProviderBase`;
+- `packages/pw_agent/lib/providers/ai/llm_provider_meta.dart` —
+  `LlmProviderDescriptor`, `LlmProviderConfig`, `LlmProviderStatus`,
+  `LlmKeyInfo`;
+- `packages/pw_agent/lib/providers/ai/llm_provider_registry.dart` —
+  `LlmProviderRegistry`: маршрутизация, префиксы моделей, статусы;
+- `packages/pw_agent/lib/providers/ai/provider_settings_store.dart` —
+  общие ключи настроек и секретов;
+- `packages/pw_agent/lib/providers/ai/model_catalog.dart` —
+  `ModelCatalogState.providers` и `providerStatuses`;
+- `packages/pw_agent/lib/agent/api/agent_settings_api.dart` —
+  `LlmProviderSettingsApi` и снимок настроек;
+- `packages/pw_client/lib/src/remote_agent_api.dart` — HTTP-клиент
+  `/providers/*`;
+- `packages/pw_server/lib/src/api/api_server.dart` — маршруты
+  `/providers/*`;
+- `lib/features/settings/presentation/widgets/provider_section.dart` —
+  общая карточка провайдера;
+- `lib/app/guards/api_key_guard.dart` — «настроен хотя бы один провайдер».
 
-Общий порт — `LlmProvider` в `packages/pw_agent/lib/providers/ai/llm_port.dart`.
-Агрегатор — `MultiLlmProvider` в `packages/pw_agent/lib/providers/ai/multi_llm_provider.dart`.
+## Как добавить провайдера
 
-## Что уже работает
+### 1. Адаптер
 
-- Каталог объединяет модели двух провайдеров, ошибка одного не скрывает модели другого.
-- Модели llama.cpp получают префикс `llamacpp:`; id OpenRouter не меняются.
-- Настройки llama.cpp: адрес, необязательный ключ, включение, проверка сервера.
-- Локальный и удалённый агент умеют читать и сохранять эти настройки.
-- Вложения: изображение → `image_url`, аудио → `input_audio`, видео → `input_video`,
-  читаемый текст → `text`; неизвестный бинарный формат уходит как `file`,
-  ошибку формата возвращает сервер.
-- Модели llama.cpp группируются под провайдером `llama.cpp`, название очищается
-  от суффикса квантизации, полный id остаётся в бейдже.
-- Есть тесты на адаптер llama.cpp, на провайдерную группировку и фильтр.
-
-## Почему текущее добавление не универсально
-
-Критерий универсальности: новый провайдер = 1 адаптер + 1 дескриптор + 1 регистрация,
-без правок каталога, DTO настроек, HTTP-маршрутов, UI, l10n и фейков.
-
-| Слой | Сейчас жёстко привязано | Что будет при третьем провайдере |
-|---|---|---|
-| DI | `AgentCoreModule` создаёт OpenRouter, llama.cpp и `MultiLlmProvider` | править модуль и агрегатор |
-| Агрегатор | `MultiLlmProvider` знает два поля и префикс `llamacpp:` | новая ветка или новый класс |
-| Каталог | `ModelCatalogState.llamaCpp` | новое поле в generic-состоянии |
-| Снимок настроек | `AgentSettingsSnapshot.llamaCpp` | новое поле в DTO |
-| API настроек | `LlamaCppSettingsApi`, `/settings/llama-cpp/*`, `_requireLlamaCppSettingsApi` | новый интерфейс, маршруты и метод |
-| UI | `LlamaCppSection`, ключи `settingsLlamaCpp*` | новая секция и l10n |
-| ID модели | `providerOf` и `modelIdForDisplay` знают `llamacpp:` | новое знание в UI |
-| Секреты | `openRouterKeyName`, `llamaCppKeyName`, env только для OpenRouter | новое имя секрета и env |
-| Guard/онбординг | проверяется только ключ OpenRouter | локальный провайдер не пройдёт |
-| `LlmProvider` | `checkKey()` — OpenRouter-специфичный | llama.cpp возвращает фиктивный `LlmKeyInfo` |
-| Тесты/фейки | каждый фейк реализует `LlamaCppSettingsApi` | фейки растут с каждым провайдером |
-
-Баг `aliases.first` на пустом списке, пустые `tags` и группировка каждого
-`llamacpp:`-id в отдельного «провайдера» — симптомы того, что знание о
-провайдере размазано по слоям.
-
-## Целевая архитектура
-
-### 1. Дескриптор и реестр
+Реализуйте `LlmProvider` (или наследуйте `LlmProviderBase`, если у
+провайдера нет собственных настроек и проверки) и задайте дескриптор:
 
 ```dart
-class LlmProviderDescriptor {
-  final String id;          // 'openrouter', 'llama.cpp', 'ollama'
-  final String label;       // для UI
-  final String modelPrefix; // 'llamacpp:', 'ollama:'
-  final bool requiresApiKey;
-}
+const ollamaDescriptor = LlmProviderDescriptor(
+  id: 'ollama',
+  label: 'Ollama',
+  modelPrefix: 'ollama:',
+  defaultBaseUrl: 'http://localhost:11434',
+  supportsBaseUrl: true,
+);
 
-abstract interface class LlmProvider {
-  LlmProviderDescriptor get descriptor;
-  Stream<LlmEvent> stream(LlmRequest request);
-  Future<List<LlmModelInfo>> listModels();
-  Future<LlmProviderStatus> status();
+class OllamaLlmProvider implements LlmProvider {
+  OllamaLlmProvider({required this.readConfig});
+
+  final Future<LlmProviderConfig> Function() readConfig;
+
+  @override
+  List<LlmProviderDescriptor> get providers => const [ollamaDescriptor];
+
+  @override
+  Future<List<LlmProviderStatus>> configStatuses() async {
+    final config = await readConfig();
+    return [
+      LlmProviderStatus(
+        id: ollamaDescriptor.id,
+        enabled: config.enabled,
+        baseUrl: config.baseUrl,
+        apiKeySet: config.hasApiKey,
+        apiKeyTail: config.apiKeyTail,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<LlmProviderStatus>> statuses() async {
+    // Проверка с сетью. Ошибку вернуть в status.error, не бросать.
+  }
+
+  @override
+  Future<List<LlmModelInfo>> listModels() async {
+    // Локальные id без префикса: реестр добавит его сам.
+  }
+
+  @override
+  Stream<LlmEvent> stream(LlmRequest request) async* {
+    // request.model приходит с префиксом: снимите его через
+    // ollamaDescriptor.localModelId(request.model).
+  }
 }
 ```
 
-`LlmProviderRegistry` регистрирует провайдеров, агрегирует модели,
-маршрутизирует запросы и отдаёт статусы. `MultiLlmProvider` становится
-тонкой обёрткой над реестром или исчезает.
+Требования к адаптеру:
 
-### 2. Общий статус вместо `llamaCpp`
+- `listModels` возвращает локальные id и человекочитаемые названия;
+- `statuses` не бросает: причина в `LlmProviderStatus.error`;
+- `stream` бросает `LlmFailure` с причиной;
+- секреты не попадают в статус и логи;
+- вложения отправляются теми частями, которые реально понимает сервер.
+
+### 2. Регистрация
+
+В `AgentCoreModule`:
 
 ```dart
-final Map<String, LlmProviderStatus> providerStatuses;
+@singleton
+OllamaLlmProvider ollamaLlmProvider(LlmProviderSettingsStore settings) =>
+    OllamaLlmProvider(readConfig: () => settings.read(ollamaDescriptor));
+
+@singleton
+LlmProviderRegistry llmProviderRegistry(
+  OpenRouterLlmProvider openRouter,
+  LlamaCppLlmProvider llamaCpp,
+  OllamaLlmProvider ollama,
+) => LlmProviderRegistry([openRouter, llamaCpp, ollama]);
 ```
 
-`ModelCatalogState` и `AgentSettingsSnapshot` больше не знают про
-конкретного провайдера. `LlmProviderStatus` содержит `enabled`, `available`,
-`modelCount`, `error`, `checkedAt` и, при необходимости, `label`/`keyTail`.
+После этого выполните `dart run build_runner build
+--delete-conflicting-outputs` (в корне и в `packages/pw_agent`).
 
-### 3. Общий API настроек
+### 3. Проверки
+
+Адаптер покрывается тестами:
+
+- список моделей и названия;
+- проверка статуса (успех и недоступный сервер);
+- стрим текста и tool calls;
+- вложения;
+- ошибка сервера → `LlmFailure`.
+
+Общие тесты реестра (`llm_provider_registry_test.dart`) проверяют
+маршрутизацию, префиксы и изоляцию ошибок. Новый провайдер не требует
+правок этих тестов.
+
+## Настройки и секреты
+
+Общая схема:
+
+- `provider.<id>.enabled` — `'true'`/`'false'` в `SettingsRepository`;
+- `provider.<id>.baseUrl` — адрес сервера;
+- `provider.<id>.apiKey` — ключ в `SecretStore`.
+
+Старые ключи читаются для существующих профилей:
+
+- `llamaCpp.enabled`, `llamaCpp.baseUrl`, `llamacpp.apiKey`;
+- `openrouter.apiKey`.
+
+При сохранении пишется новый ключ, старый удаляется: иначе чтение
+вернулось бы к прежнему значению.
+
+Переменные окружения:
+
+```text
+PROBABLY_WORKS_<ID>_KEY       # id в верхнем регистре, не-буквы → _
+PROBABLY_WORKS_OPENROUTER_KEY # OpenRouter
+OPENROUTER_API_KEY            # старый fallback OpenRouter
+```
+
+## API
+
+Все провайдеры используют один интерфейс:
 
 ```text
 GET    /providers
 GET    /providers/{id}
-PUT    /providers/{id}
+PUT    /providers/{id}        {"enabled": true, "baseUrl": "..."}
 POST   /providers/{id}/check
-POST   /providers/{id}/key
+POST   /providers/{id}/key    {"key": "..."}
 DELETE /providers/{id}/key
 ```
 
-Один интерфейс `LlmProviderSettingsApi`; `RemoteAgentApi` и
-`LocalAgentSettingsApi` реализуют его один раз. Для провайдера без ключа
-`/key` возвращает `not_supported` или просто не вызывается.
+`POST /providers/{id}/key` возвращает статус после проверки. Провайдер
+с `requiresApiKey: true` сам откатывает нерабочий ключ.
 
-### 4. Общий UI
+## UI
 
-`ProviderSection` рисует карточку по дескриптору: включение, base URL,
-API key, статус, кнопка проверки. Провайдер-специфичные поля —
-необязательный builder. Названия провайдеров — данные, не l10n.
-Общие ключи: `providerEnabled`, `providerBaseUrl`, `providerApiKey`,
-`providerAvailable`, `providerUnavailable`, `providerError`,
+`ProviderSection` рисуется по дескриптору и статусу: включение, адрес,
+ключ, проверка, баннер состояния и маска. Названия провайдеров — данные
+из дескриптора, а не ключи локализации. Общие строки:
+`providerEnabled*`, `providerBaseUrl*`, `providerApiKey*`, `providerCheck`,
+`providerAvailable`, `providerError`, `providerUnavailable`,
 `providerCheckedAt`.
 
-### 5. Секреты и конфиг
+Если у провайдера есть метаданные ключа (лимит, расход, срок), задайте
+`supportsKeyInfo: true`: карточка покажет `ApiKeyInfoCard`.
 
-- `provider.<id>.apiKey` в `SecretStore`;
-- `provider.<id>.enabled`, `provider.<id>.baseUrl` в `SettingsRepository`;
-- env-override `PROBABLY_WORKS_<ID>_KEY`;
-- при чтении поддержать старые `openrouter.apiKey` и `llamacpp.apiKey`,
-  чтобы не ломать существующие профили.
+## Статусы
 
-### 6. Guard и онбординг
+`LlmProviderStatus` различает состояния явно:
 
-Проверять «есть хотя бы один включённый и доступный провайдер», а не
-`openRouterKeyName`. Онбординг должен позволять выбрать OpenRouter **или**
-локальный llama.cpp. Сейчас llama.cpp-only пользователь не пройдёт
-`ApiKeyGuard`, а секция провайдера в настройках недоступна без ключа
-OpenRouter.
+- `checkedAt == null` — провайдера ещё не проверяли;
+- `error != null` — причина последней неудачной проверки;
+- `available == true` — проверка прошла;
+- `checkedAt != null`, `error == null`, `available == false` — проверка
+  прошла, но провайдер не ответил.
 
-### 7. Контрактные тесты
+Чтение конфигурации без сети не сбрасывает результат проверки:
+`mergeProviderStatus` сохраняет `available`, `error`, `modelCount` и
+`checkedAt`, если включённость, адрес и ключ не менялись. Иначе UI
+показывал бы «не отвечает» вместо реальной причины.
 
-Один набор тестов для любого `LlmProvider`: `listModels`, `stream`,
-`status`, пустой список, ошибка сети. Плюс специфичные тесты адаптера.
-Новый провайдер не должен требовать правок в тестах каталога и фейках
-настроек.
+## Guard и онбординг
 
-## Этапы рефакторинга
+`ApiKeyGuard` проверяет наличие хотя бы одного провайдера, готового
+отдавать модели:
 
-1. **Низкий риск**
-   - `checkKey()` → `status()`/`checkHealth()`; `LlmKeyInfo` оставить
-     только для провайдеров с метаданными ключа.
-   - `ApiKeyGuard` и онбординг: «есть рабочий провайдер», а не ключ OpenRouter.
-   - Общие имена секретов и env с обратной совместимостью.
+- `enabled == true`;
+- при `requiresApiKey == true` задан ключ;
+- локальный провайдер без обязательного ключа уже ответил на проверку
+  (`available == true`).
 
-2. **Средний риск**
-   - `LlmProviderDescriptor` + `LlmProviderRegistry`.
-   - `MultiLlmProvider` → реестр.
-   - `ModelCatalogState.providerStatuses` вместо `llamaCpp`;
-     `AgentSettingsSnapshot` тоже.
-   - `providerOf`/`modelIdForDisplay` берут данные из реестра, а не
-     проверяют `llamacpp:` в UI.
+Сеть в guard не трогается: используется последний известный статус.
+Поэтому выключенный локальный сервер не блокирует интерфейс, а свежая
+установка без ключа и без доступного сервера попадает в онбординг.
+Онбординг разрешает пропустить шаг ключа OpenRouter, если локальный
+провайдер уже настроен и доступен.
 
-3. **Средний риск**
-   - Общий `LlmProviderSettingsApi` и маршруты `/providers/*`.
-   - Миграция JSON снимка настроек и ключей.
-   - `RemoteAgentApi`/`LocalAgentSettingsApi` реализуют один интерфейс.
+## Модели и отображение
 
-4. **Низкий/средний риск**
-   - `ProviderSection` вместо `LlamaCppSection`, общие l10n-ключи.
-   - Контрактные тесты провайдеров.
-   - Документация: как добавить провайдера.
+- `LlmProviderDescriptor.globalModelId` добавляет префикс при сборке
+  каталога;
+- `ModelCatalogState.providerOf` и `modelIdForDisplay` используют
+  дескрипторы, а не проверки вида `id.startsWith('llamacpp:')`;
+- у провайдера без префикса (OpenRouter) id остаются прежними.
 
-## Чек-лист нового провайдера после рефакторинга
+## Грабли
 
-- [ ] адаптер реализует `LlmProvider` и отдаёт `descriptor`;
-- [ ] провайдер зарегистрирован в `LlmProviderRegistry` (одна строка);
-- [ ] дескриптор описывает id, label, префикс модели, нужен ли ключ;
-- [ ] настройки читаются через общий `provider.<id>.*`;
-- [ ] `status()` возвращает `LlmProviderStatus`, ошибки маппятся в `LlmFailure`;
-- [ ] модели имеют стабильный id с префиксом провайдера и человекочитаемое имя;
-- [ ] вложения поддерживают те модальности, которые реально умеет сервер;
-- [ ] пройдены контрактные тесты;
-- [ ] не изменены `ModelCatalogState`, `AgentSettingsSnapshot`, серверные
-      маршруты, `SettingsCubit`, `SettingsPage`, l10n и фейки.
-
-## Грабли этого сеанса
-
-- `aliases.first` на пустом списке → `Bad state: No element`; проверять
-  `aliases != null && aliases.isNotEmpty`.
-- `tags: []` не должно означать «нет tool calling»; пустой список — это
-  «неизвестно», модель не нужно скрывать фильтром.
-- `providerOf` не должен возвращать весь id, если в нём нет `/`; для
-  провайдерных префиксов нужен реестр.
-- Нельзя класть текст ошибки в промпт вместо вложения: ошибку должен
-  возвращать сервер, а пользователь видеть `LlmFailure`.
-- `checkKey()` на провайдере без ключа — фиктивный `LlmKeyInfo`; это
-  признак неверной абстракции.
-- Guard/онбординг и env-миграция всё ещё OpenRouter-only.
+- `aliases.first` на пустом списке → `Bad state: No element`; проверяйте
+  `isNotEmpty`.
+- `tags: []` не означает «нет tool calling»: пустой список — «неизвестно».
+- Нельзя класть текст ошибки вложения в промпт: ошибку возвращает сервер,
+  пользователь видит `LlmFailure`.
+- `statuses()` не должен бросать: иначе один недоступный провайдер
+  скроет статусы остальных.
+- Не добавляйте поля конкретного провайдера в `ModelCatalogState`,
+  `AgentSettingsSnapshot`, маршруты и `SettingsCubit`: это снова размажет
+  знание по слоям.
 
 ## Проверки
 
@@ -190,7 +239,7 @@ flutter analyze
 dcm analyze lib test
 flutter test
 
-cd packages/pw_agent && dart test
-cd packages/pw_client && dart test
-cd packages/pw_server && dart test
+cd packages/pw_agent && dart test && dart analyze && dcm analyze lib test
+cd packages/pw_client && dart test && dart analyze && dcm analyze lib test
+cd packages/pw_server && dart test && dart analyze && dcm analyze lib test
 ```

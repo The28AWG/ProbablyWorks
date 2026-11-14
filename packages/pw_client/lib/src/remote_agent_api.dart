@@ -32,7 +32,6 @@ import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:uuid/uuid.dart';
@@ -48,7 +47,6 @@ class RemoteAgentApi
         HostsApi,
         ProjectsApi,
         AgentSettingsApi,
-        LlamaCppSettingsApi,
         McpApi,
         PluginApi,
         SecurityAuditApi,
@@ -744,23 +742,6 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> saveApiKey(String key) async {
-    await _send('POST', '/settings/api-key', body: {'key': key});
-  }
-
-  @override
-  Future<void> deleteApiKey() async {
-    await _send('DELETE', '/settings/api-key');
-  }
-
-  @override
-  Future<LlmKeyInfo?> checkKey() async {
-    final json = await _send('POST', '/settings/api-key/check');
-    if (json is! Map) return null;
-    return _keyInfo(Map<String, dynamic>.from(json));
-  }
-
-  @override
   Future<void> refreshModels() async {
     await _send('POST', '/models/refresh');
     await _loadModels();
@@ -772,38 +753,43 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
-    await _send(
-      'PUT',
-      '/settings/llama-cpp/base-url',
-      body: {'baseUrl': baseUrl},
+  Future<List<LlmProviderStatus>> providerStatuses() async {
+    final json = await _get('/providers');
+    return _providerStatusesFrom(json);
+  }
+
+  @override
+  Future<LlmProviderStatus> checkProvider(String providerId) async {
+    final json = await _send('POST', '/providers/$providerId/check');
+    return _providerStatusFrom(Map<String, dynamic>.from(json as Map));
+  }
+
+  @override
+  Future<void> saveProviderBaseUrl(String providerId, String? baseUrl) async {
+    await _send('PUT', '/providers/$providerId', body: {'baseUrl': baseUrl});
+  }
+
+  @override
+  Future<LlmProviderStatus> saveProviderApiKey(
+    String providerId,
+    String key,
+  ) async {
+    final json = await _send(
+      'POST',
+      '/providers/$providerId/key',
+      body: {'key': key},
     );
+    return _providerStatusFrom(Map<String, dynamic>.from(json as Map));
   }
 
   @override
-  Future<void> saveLlamaCppApiKey(String key) async {
-    await _send('POST', '/settings/llama-cpp/api-key', body: {'key': key});
+  Future<void> deleteProviderApiKey(String providerId) async {
+    await _send('DELETE', '/providers/$providerId/key');
   }
 
   @override
-  Future<void> deleteLlamaCppApiKey() async {
-    await _send('DELETE', '/settings/llama-cpp/api-key');
-  }
-
-  @override
-  Future<void> setLlamaCppEnabled(bool enabled) async {
-    await _send(
-      'PUT',
-      '/settings/llama-cpp/enabled',
-      body: {'enabled': enabled},
-    );
-  }
-
-  @override
-  Future<LlamaCppStatus?> checkLlamaCpp() async {
-    final json = await _send('POST', '/settings/llama-cpp/check');
-    if (json is! Map) return null;
-    return _llamaCppFrom(Map<String, dynamic>.from(json));
+  Future<void> setProviderEnabled(String providerId, bool enabled) async {
+    await _send('PUT', '/providers/$providerId', body: {'enabled': enabled});
   }
 
   @override
@@ -1491,9 +1477,7 @@ AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
     stepsDisplay: json['steps'] is Map
         ? _steps(Map<String, dynamic>.from(json['steps'] as Map))
         : StepsDisplay.defaults,
-    apiKeyTail: '${json['apiKeyTail'] ?? ''}',
     catalog: catalog,
-    llamaCpp: catalog.llamaCpp,
   );
 }
 
@@ -1528,22 +1512,60 @@ ModelCatalogState _catalogFrom(Map<String, dynamic> json) => ModelCatalogState(
   syncedAt: _date(json['syncedAt']),
   loading: json['loading'] == true,
   error: json['error'] as String?,
-  llamaCpp: json['llamaCpp'] is Map
-      ? _llamaCppFrom(Map<String, dynamic>.from(json['llamaCpp'] as Map))
-      : const LlamaCppStatus(),
+  providers: [
+    for (final item in (json['providers'] as List? ?? const []))
+      if (item is Map) _descriptorFrom(Map<String, dynamic>.from(item)),
+  ],
+  providerStatuses: {
+    for (final entry in (json['providerStatuses'] as Map? ?? const {}).entries)
+      '${entry.key}': _providerStatusFrom(
+        Map<String, dynamic>.from(entry.value as Map),
+      ),
+  },
 );
 
-/// Статус llama.cpp из JSON-ответа. Поля без значения получают значения по умолчанию.
-LlamaCppStatus _llamaCppFrom(Map<String, dynamic> json) => LlamaCppStatus(
-  enabled: json['enabled'] != false,
-  baseUrl: '${json['baseUrl'] ?? llamaCppDefaultBaseUrl}',
-  apiKeySet: json['apiKeySet'] == true,
-  apiKeyTail: '${json['apiKeyTail'] ?? ''}',
-  available: json['available'] == true,
-  modelCount: json['modelCount'] as int?,
-  error: json['error'] as String?,
-  checkedAt: _date(json['checkedAt']),
-);
+/// Дескриптор провайдера из JSON-ответа.
+LlmProviderDescriptor _descriptorFrom(Map<String, dynamic> json) =>
+    LlmProviderDescriptor(
+      id: _string(json, 'id'),
+      label: _string(json, 'label'),
+      modelPrefix: '${json['modelPrefix'] ?? ''}',
+      defaultBaseUrl: json['defaultBaseUrl'] as String?,
+      requiresApiKey: json['requiresApiKey'] == true,
+      supportsApiKey: json['supportsApiKey'] != false,
+      supportsBaseUrl: json['supportsBaseUrl'] == true,
+      supportsEnabledToggle: json['supportsEnabledToggle'] != false,
+      supportsKeyInfo: json['supportsKeyInfo'] == true,
+      apiKeyExample: json['apiKeyExample'] as String?,
+    );
+
+/// Статус провайдера из JSON-ответа. Секрет сюда не попадает.
+LlmProviderStatus _providerStatusFrom(Map<String, dynamic> json) =>
+    LlmProviderStatus(
+      id: _string(json, 'id'),
+      enabled: json['enabled'] != false,
+      baseUrl: json['baseUrl'] as String?,
+      apiKeySet: json['apiKeySet'] == true,
+      apiKeyTail: '${json['apiKeyTail'] ?? ''}',
+      available: json['available'] == true,
+      modelCount: json['modelCount'] as int?,
+      error: json['error'] as String?,
+      checkedAt: _date(json['checkedAt']),
+      keyInfo: json['keyInfo'] is Map
+          ? _keyInfo(Map<String, dynamic>.from(json['keyInfo'] as Map))
+          : null,
+    );
+
+/// Список статусов из ответа `GET /providers`.
+List<LlmProviderStatus> _providerStatusesFrom(Object? json) {
+  if (json is! Map) return const [];
+  final items = json['providers'];
+  if (items is! List) return const [];
+  return [
+    for (final item in items)
+      if (item is Map) _providerStatusFrom(Map<String, dynamic>.from(item)),
+  ];
+}
 
 LlmModelInfo _model(Map<String, dynamic> json) => LlmModelInfo(
   id: _string(json, 'id'),

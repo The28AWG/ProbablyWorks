@@ -10,42 +10,108 @@ import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/text_tool_call_parser.dart';
 import 'package:pw_agent/providers/ai/think_tag_parser.dart';
 
-/// Адаптер OpenRouter к порту [LlmProvider]. Ключ читается при каждом вызове,
-/// поэтому смена ключа в Settings действует сразу.
+/// Стабильный id провайдера в настройках и API.
+const String openRouterProviderId = 'openrouter';
+
+/// Описание OpenRouter для каталога и интерфейса.
+const openRouterDescriptor = LlmProviderDescriptor(
+  id: openRouterProviderId,
+  label: 'OpenRouter',
+  requiresApiKey: true,
+  supportsApiKey: true,
+  supportsBaseUrl: true,
+  supportsKeyInfo: true,
+  apiKeyExample: 'sk-or-...',
+);
+
+/// Адаптер OpenRouter к порту [LlmProvider]. Настройки читаются при каждом
+/// вызове, поэтому смена ключа или адреса в Settings действует сразу.
 ///
 /// Если провайдер модели не разобрал tool call, OpenRouter оставляет разметку
 /// в `content`. Её забирает [TextToolCallParser] и кладёт в [LlmCompleted.toolCalls].
 /// Рассуждения не разбираются: вызов из `<think>` исполнять нельзя.
 class OpenRouterLlmProvider implements LlmProvider {
-  OpenRouterLlmProvider({required this._apiKey, this.baseUrl});
+  OpenRouterLlmProvider({required this.readConfig});
 
-  final Future<String?> Function() _apiKey;
-  final String? baseUrl;
+  final Future<LlmProviderConfig> Function() readConfig;
 
   static const _appTitle = 'ProbablyWorks';
 
-  Future<OpenRouter> _client() async {
-    final key = await _apiKey();
+  @override
+  List<LlmProviderDescriptor> get providers => const [openRouterDescriptor];
+
+  OpenRouter _clientOf(LlmProviderConfig config) {
+    final key = config.apiKey;
     if (key == null || key.isEmpty) {
       throw const LlmFailure('OpenRouter API key is not set');
     }
     return OpenRouter(
       apiKey: key,
-      baseUrl: baseUrl,
+      baseUrl: config.baseUrl,
       xOpenrouterTitle: _appTitle,
       xOpenrouterCategories: 'cli-agent',
     );
   }
 
-  /// Ключ задан. Используется агрегатором, чтобы не трогать сеть без ключа.
-  Future<bool> get hasKey async {
-    final key = await _apiKey();
-    return key != null && key.isNotEmpty;
+  /// Настройки без сети: ключ, адрес и маска.
+  @override
+  Future<List<LlmProviderStatus>> configStatuses() async {
+    final config = await readConfig();
+    return [_statusOf(config)];
   }
+
+  /// Проверка ключа запросом метаданных. Список моделей ключ не
+  /// подтверждает: он публичный.
+  @override
+  Future<List<LlmProviderStatus>> statuses() async {
+    final config = await readConfig();
+    final base = _statusOf(config, checkedAt: DateTime.now());
+    if (!config.enabled) return [base];
+    if (!config.hasApiKey) {
+      return [base.copyWith(error: 'OpenRouter API key is not set')];
+    }
+    final client = _clientOf(config);
+    try {
+      final key = (await client.apiKeys.getCurrentKeyMetadata()).data;
+      return [
+        base.copyWith(
+          available: true,
+          keyInfo: LlmKeyInfo(
+            label: key.label,
+            usage: key.usage.toDouble(),
+            limit: key.limit?.toDouble(),
+            limitRemaining: key.limitRemaining?.toDouble(),
+            limitReset: key.limitReset,
+            isFreeTier: key.isFreeTier,
+            // Строка ISO 8601 в UTC; пустая или неразобранная дата
+            // трактуется как бессрочный ключ.
+            expiresAt: DateTime.tryParse(key.expiresAt ?? ''),
+          ),
+        ),
+      ];
+    } on Object catch (error) {
+      return [base.copyWith(error: _messageOf(error))];
+    } finally {
+      client.close();
+    }
+  }
+
+  LlmProviderStatus _statusOf(
+    LlmProviderConfig config, {
+    DateTime? checkedAt,
+  }) => LlmProviderStatus(
+    id: openRouterProviderId,
+    enabled: config.enabled,
+    baseUrl: config.baseUrl,
+    apiKeySet: config.hasApiKey,
+    apiKeyTail: config.apiKeyTail,
+    checkedAt: checkedAt,
+  );
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) async* {
-    final client = await _client();
+    final config = await readConfig();
+    final client = _clientOf(config);
     final accumulated = <int, _PartialToolCall>{};
     final thinkTags = ThinkTagParser();
     final textCalls = request.tools.isEmpty
@@ -140,37 +206,10 @@ class OpenRouterLlmProvider implements LlmProvider {
     );
   }
 
-  /// Метаданные текущего ключа: он же подтверждает, что ключ принят сервисом.
-  @override
-  Future<LlmKeyInfo> checkKey() async {
-    final client = await _client();
-    try {
-      final key = (await client.apiKeys.getCurrentKeyMetadata()).data;
-      return LlmKeyInfo(
-        label: key.label,
-        usage: key.usage.toDouble(),
-        limit: key.limit?.toDouble(),
-        limitRemaining: key.limitRemaining?.toDouble(),
-        limitReset: key.limitReset,
-        isFreeTier: key.isFreeTier,
-        // Строка ISO 8601 в UTC; пустая или неразобранная дата трактуется как бессрочный ключ.
-        expiresAt: DateTime.tryParse(key.expiresAt ?? ''),
-      );
-    } on OpenRouterException catch (error, stack) {
-      Error.throwWithStackTrace(llmFailureOf(error), stack);
-    } on SocketException catch (error, stack) {
-      Error.throwWithStackTrace(
-        LlmFailure('Network error: ${error.message}', retryable: true),
-        stack,
-      );
-    } finally {
-      client.close();
-    }
-  }
-
   @override
   Future<List<LlmModelInfo>> listModels() async {
-    final client = await _client();
+    final config = await readConfig();
+    final client = _clientOf(config);
     try {
       final response = await client.models.list();
       return [
@@ -372,6 +411,13 @@ String? _serverDetail(String? body) {
     );
   }
 }
+
+/// Текст ошибки для статуса: типизированная причина без секретов.
+String _messageOf(Object error) => error is LlmFailure
+    ? error.message
+    : error is OpenRouterException
+    ? llmFailureOf(error).message
+    : '$error';
 
 class _PartialToolCall {
   String? id;

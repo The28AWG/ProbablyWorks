@@ -136,14 +136,18 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     final saved = _catalog.saved[id];
     return LlmModelInfo(
       id: id,
-      name: saved?.name ?? modelIdForDisplay(id),
+      name: saved?.name ?? _catalog.modelIdForDisplay(id),
       contextLength: saved?.contextLength,
       supportsTools: saved?.supportsTools ?? false,
     );
   }
 
   List<_Section> _sections(AppLocalizations l10n) {
-    final visible = applyModelQuery(_catalog.models, _query);
+    final visible = applyModelQuery(
+      _catalog.models,
+      _query,
+      providers: _catalog.providers,
+    );
     final pinnedModels = [
       for (final id in _pinned)
         for (final model in visible)
@@ -162,16 +166,21 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
       if (pinnedModels.isNotEmpty)
         _Section(l10n.modelPinnedSection, pinnedModels),
       if (_query.sort == ModelSort.provider)
-        ..._groupByProvider(rest)
+        ..._groupByProvider(rest, _catalog.providers)
       else if (rest.isNotEmpty)
         _Section(null, rest),
     ];
   }
 
-  static List<_Section> _groupByProvider(List<LlmModelInfo> models) {
+  static List<_Section> _groupByProvider(
+    List<LlmModelInfo> models,
+    List<LlmProviderDescriptor> providers,
+  ) {
     final groups = <String, List<LlmModelInfo>>{};
     for (final model in models) {
-      groups.putIfAbsent(providerOf(model.id), () => []).add(model);
+      groups
+          .putIfAbsent(providerOf(model.id, providers: providers), () => [])
+          .add(model);
     }
     return [
       for (final entry in groups.entries) _Section(entry.key, entry.value),
@@ -252,7 +261,10 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     final scheme = Theme.of(context).colorScheme;
     final size = MediaQuery.sizeOf(context);
     final sections = _sections(l10n);
-    final providers = providersOf(_catalog.models);
+    final providers = providersOf(
+      _catalog.models,
+      providers: _catalog.providers,
+    );
     // Каталог ещё не загружали: показываем загрузку или причину, а не пустой список.
     final Widget body;
     if (!_catalog.loaded && _catalog.loading) {
@@ -292,6 +304,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                       key: key,
                       model: model,
                       l10n: l10n,
+                      providers: _catalog.providers,
                       unavailable: section.unavailable,
                       current: model.id == widget.currentId,
                       highlighted: model.id == _highlightId,
@@ -545,6 +558,7 @@ class _ModelTile extends StatelessWidget {
   const _ModelTile({
     required this.model,
     required this.l10n,
+    required this.providers,
     required this.unavailable,
     required this.current,
     required this.highlighted,
@@ -557,6 +571,9 @@ class _ModelTile extends StatelessWidget {
 
   final LlmModelInfo model;
   final AppLocalizations l10n;
+
+  /// Дескрипторы провайдеров: из них снимается служебный префикс id.
+  final List<LlmProviderDescriptor> providers;
   final bool unavailable;
   final bool current;
   final bool highlighted;
@@ -592,7 +609,10 @@ class _ModelTile extends StatelessWidget {
         spacing: AppSpacing.xs,
         runSpacing: AppSpacing.xs,
         children: [
-          _Badge(text: modelIdForDisplay(model.id), mono: true),
+          _Badge(
+            text: modelIdForDisplay(model.id, providers: providers),
+            mono: true,
+          ),
           if (model.contextLength != null)
             _Badge(
               text: l10n.modelMetaContext(

@@ -9,14 +9,11 @@ import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
-class _FakeLlm implements LlmProvider {
-  _FakeLlm(this.models);
+class _FakeLlm extends LlmProviderBase {
+  _FakeLlm(this.models)
+    : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
 
   final List<LlmModelInfo> models;
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Future<List<LlmModelInfo>> listModels() async => models;

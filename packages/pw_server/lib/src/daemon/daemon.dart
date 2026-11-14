@@ -100,12 +100,7 @@ Future<int> runDaemon(List<String> args) async {
   // создаёт только клиент. Поэтому берём конкретный тип, чтобы не зависеть
   // от клиентской регистрации.
   await getIt<LocalAgentApi>().resumeAfterRestart();
-  await getIt<ModelCatalogService>().start(
-    hasKey: () async {
-      final key = await secrets.read(openRouterKeyName);
-      return key != null && key.isNotEmpty;
-    },
-  );
+  await getIt<ModelCatalogService>().start();
 
   final tokens = ApiTokenStore(secrets);
   final token = options.rotateToken

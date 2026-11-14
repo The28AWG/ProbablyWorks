@@ -21,6 +21,7 @@ import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:uuid/uuid.dart';
 
@@ -245,8 +246,9 @@ class ProfileService {
     final key = await _secrets.read(openRouterKeyName);
     if (key == null || key.isEmpty) return;
     final snapshot = await settings.load();
-    if (snapshot.apiKeyTail.isNotEmpty) return;
-    await settings.saveApiKey(key);
+    final status = snapshot.catalog.providerStatuses[openRouterProviderId];
+    if (status?.apiKeySet ?? false) return;
+    await settings.saveProviderApiKey(openRouterProviderId, key);
   }
 
   Future<void> _migrateHostSecrets(HostsApi hostsApi) async {

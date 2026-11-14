@@ -90,17 +90,16 @@ final class _DenyPolicy extends PolicyEngine {
       PolicyDecision.deny;
 }
 
-class _NoNetworkLlm implements LlmProvider {
+class _NoNetworkLlm extends LlmProviderBase {
+  _NoNetworkLlm()
+    : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   @override
   Stream<LlmEvent> stream(LlmRequest request) =>
       throw UnsupportedError('no network in tests');
 
   @override
   Future<List<LlmModelInfo>> listModels() async => const [];
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 }
 
 void main() {

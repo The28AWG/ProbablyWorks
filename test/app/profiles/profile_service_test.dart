@@ -24,7 +24,9 @@ import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 
 void main() {
   late AppDatabase db;
@@ -243,14 +245,30 @@ final class _MigrationSettingsApi implements AgentSettingsApi {
     limits: const AppLimits(),
     pinnedModels: const [],
     stepsDisplay: const StepsDisplay(),
-    apiKeyTail: savedKey == null ? '' : 'tail',
-    catalog: const ModelCatalogState(models: []),
+    catalog: ModelCatalogState(
+      models: const [],
+      providers: const [openRouterDescriptor],
+      providerStatuses: {
+        openRouterProviderId: LlmProviderStatus(
+          id: openRouterProviderId,
+          apiKeySet: savedKey != null,
+        ),
+      },
+    ),
   );
 
   @override
-  Future<void> saveApiKey(String key) async {
+  Future<LlmProviderStatus> saveProviderApiKey(
+    String providerId,
+    String key,
+  ) async {
     saves++;
     savedKey = key;
+    return LlmProviderStatus(
+      id: providerId,
+      apiKeySet: true,
+      apiKeyTail: 'tail',
+    );
   }
 
   @override

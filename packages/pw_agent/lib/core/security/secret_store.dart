@@ -1,3 +1,5 @@
+import 'package:pw_agent/core/util/char_substring.dart';
+
 /// Тип backend'а секретов. Нужен аудиту, чтобы не зависеть от Flutter-классов.
 enum SecretStoreKind { memory, osKeychain, headlessFile, unknown }
 
@@ -12,7 +14,21 @@ abstract interface class SecretStore {
   Future<void> delete(String key);
 }
 
+/// Старое имя секрета OpenRouter. Читается для существующих профилей;
+/// новые ключи пишутся в `provider.openrouter.apiKey`.
 const openRouterKeyName = 'openrouter.apiKey';
+
+/// Ключ провайдера в [SecretStore]. Схема общая для всех провайдеров.
+String providerApiKeyName(String providerId) => 'provider.$providerId.apiKey';
+
+/// id провайдера из имени секрета `provider.<id>.apiKey`. Null — не тот ключ.
+String? providerIdFromApiKeyName(String key) {
+  const prefix = 'provider.';
+  const suffix = '.apiKey';
+  if (!key.startsWith(prefix) || !key.endsWith(suffix)) return null;
+  final id = charRange(key, prefix.length, key.length - suffix.length);
+  return id.isEmpty ? null : id;
+}
 
 /// Ключ токена HTTP API в [SecretStore].
 const apiTokenKey = 'api.token';

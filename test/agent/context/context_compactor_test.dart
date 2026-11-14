@@ -13,13 +13,12 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Ответы сводки по очереди; запросы сохраняются для проверки.
-class _ScriptedLlm implements LlmProvider {
+class _ScriptedLlm extends LlmProviderBase {
+  _ScriptedLlm()
+    : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   final List<String> replies = [];
   final List<LlmRequest> requests = [];
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {

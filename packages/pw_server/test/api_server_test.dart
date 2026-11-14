@@ -30,6 +30,7 @@ import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
 
@@ -936,23 +937,36 @@ void main() {
       expect((json['catalog'] as Map)['models'], hasLength(1));
     });
 
-    test('reads and writes llama.cpp settings', () async {
-      final (status, body) = await _request(
+    test('reads and writes provider settings', () async {
+      final (listStatus, listBody) = await _request(
+        client,
+        settingsBase,
+        'GET',
+        '/api/v1/providers',
+        token: _token,
+      );
+      expect(listStatus, HttpStatus.ok);
+      final listJson = jsonDecode(listBody) as Map<String, dynamic>;
+      expect(listJson['providers'], hasLength(2));
+
+      final (snapshotStatus, snapshotBody) = await _request(
         client,
         settingsBase,
         'GET',
         '/api/v1/settings',
         token: _token,
       );
-      expect(status, HttpStatus.ok);
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      expect((json['catalog'] as Map)['llamaCpp'], isNotNull);
+      expect(snapshotStatus, HttpStatus.ok);
+      final json = jsonDecode(snapshotBody) as Map<String, dynamic>;
+      final catalog = json['catalog'] as Map;
+      expect(catalog['providers'], hasLength(2));
+      expect(catalog['providerStatuses'], contains(llamaCppProviderId));
 
       final (baseUrlStatus, _) = await _request(
         client,
         settingsBase,
         'PUT',
-        '/api/v1/settings/llama-cpp/base-url',
+        '/api/v1/providers/$llamaCppProviderId',
         token: _token,
         body: {'baseUrl': 'http://127.0.0.1:9000'},
       );
@@ -963,29 +977,31 @@ void main() {
         client,
         settingsBase,
         'PUT',
-        '/api/v1/settings/llama-cpp/enabled',
+        '/api/v1/providers/$llamaCppProviderId',
         token: _token,
         body: {'enabled': false},
       );
       expect(enabledStatus, HttpStatus.noContent);
       expect(settings.llamaCppEnabled, isFalse);
 
-      final (keyStatus, _) = await _request(
+      final (keyStatus, keyBody) = await _request(
         client,
         settingsBase,
         'POST',
-        '/api/v1/settings/llama-cpp/api-key',
+        '/api/v1/providers/$llamaCppProviderId/key',
         token: _token,
         body: {'key': 'secret-key'},
       );
-      expect(keyStatus, HttpStatus.noContent);
+      expect(keyStatus, HttpStatus.ok);
       expect(settings.llamaCppApiKey, isTrue);
+      final keyJson = jsonDecode(keyBody) as Map<String, dynamic>;
+      expect(keyJson['apiKeySet'], isTrue);
 
       final (checkStatus, checkBody) = await _request(
         client,
         settingsBase,
         'POST',
-        '/api/v1/settings/llama-cpp/check',
+        '/api/v1/providers/$llamaCppProviderId/check',
         token: _token,
       );
       expect(checkStatus, HttpStatus.ok);
@@ -999,7 +1015,7 @@ void main() {
         client,
         settingsBase,
         'DELETE',
-        '/api/v1/settings/llama-cpp/api-key',
+        '/api/v1/providers/$llamaCppProviderId/key',
         token: _token,
       );
       expect(deleteStatus, HttpStatus.noContent);
@@ -1075,33 +1091,37 @@ void main() {
       expect(settings.written, isEmpty);
     });
 
-    test('saves and deletes the api key', () async {
-      final (saveStatus, _) = await _request(
+    test('saves and deletes the OpenRouter key', () async {
+      final (saveStatus, saveBody) = await _request(
         client,
         settingsBase,
         'POST',
-        '/api/v1/settings/api-key',
+        '/api/v1/providers/$openRouterProviderId/key',
         token: _token,
         body: {'key': 'sk-or-v1-secret-abc'},
       );
-      expect(saveStatus, HttpStatus.noContent);
+      expect(saveStatus, HttpStatus.ok);
       expect(settings.savedKey, 'sk-or-v1-secret-abc');
+      expect((jsonDecode(saveBody) as Map)['apiKeySet'], isTrue);
 
       final (checkStatus, checkBody) = await _request(
         client,
         settingsBase,
         'POST',
-        '/api/v1/settings/api-key/check',
+        '/api/v1/providers/$openRouterProviderId/check',
         token: _token,
       );
       expect(checkStatus, HttpStatus.ok);
-      expect((jsonDecode(checkBody) as Map)['label'], 'sk-or-v1-...abc');
+      expect(
+        ((jsonDecode(checkBody) as Map)['keyInfo'] as Map)['label'],
+        'sk-or-v1-...abc',
+      );
 
       final (deleteStatus, _) = await _request(
         client,
         settingsBase,
         'DELETE',
-        '/api/v1/settings/api-key',
+        '/api/v1/providers/$openRouterProviderId/key',
         token: _token,
       );
       expect(deleteStatus, HttpStatus.noContent);
@@ -1900,7 +1920,7 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
-final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
+final class _FakeSettings implements AgentSettingsApi {
   String? savedKey;
   final written = <String, String?>{};
   var pinned = <String>['openai/gpt-4o'];
@@ -1915,6 +1935,31 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   var llamaCppApiKey = false;
   var llamaCppChecked = 0;
 
+  LlmProviderStatus get _openRouter => LlmProviderStatus(
+    id: openRouterProviderId,
+    apiKeySet: savedKey != null,
+    apiKeyTail: savedKey == null ? '' : 'abc',
+    available: savedKey != null,
+    keyInfo: savedKey == null
+        ? null
+        : const LlmKeyInfo(
+            label: 'sk-or-v1-...abc',
+            usage: 1,
+            limit: 10,
+            limitRemaining: 9,
+          ),
+  );
+
+  LlmProviderStatus get _llamaCpp => LlmProviderStatus(
+    id: llamaCppProviderId,
+    enabled: llamaCppEnabled,
+    baseUrl: llamaCppBaseUrl,
+    apiKeySet: llamaCppApiKey,
+    apiKeyTail: llamaCppApiKey ? 'key' : '',
+    available: true,
+    modelCount: 1,
+  );
+
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
     titleModel: '',
@@ -1927,19 +1972,15 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
     limits: limits,
     pinnedModels: pinned,
     stepsDisplay: steps,
-    apiKeyTail: savedKey == null ? '' : 'abc',
-    catalog: const ModelCatalogState(
-      models: [
+    catalog: ModelCatalogState(
+      models: const [
         LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
       ],
-    ),
-    llamaCpp: LlamaCppStatus(
-      enabled: llamaCppEnabled,
-      baseUrl: llamaCppBaseUrl,
-      apiKeySet: llamaCppApiKey,
-      apiKeyTail: llamaCppApiKey ? 'key' : '',
-      available: true,
-      modelCount: 1,
+      providers: const [openRouterDescriptor, llamaCppDescriptor],
+      providerStatuses: {
+        openRouterProviderId: _openRouter,
+        llamaCppProviderId: _llamaCpp,
+      },
     ),
   );
 
@@ -1983,27 +2024,6 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   }
 
   @override
-  Future<void> saveApiKey(String key) async {
-    savedKey = key;
-  }
-
-  @override
-  Future<void> deleteApiKey() async {
-    savedKey = null;
-  }
-
-  @override
-  Future<LlmKeyInfo?> checkKey() async => savedKey == null
-      ? null
-      : LlmKeyInfo(
-          label: 'sk-or-v1-...abc',
-          usage: 1,
-          limit: 10,
-          limitRemaining: 9,
-          isFreeTier: false,
-        );
-
-  @override
   Future<void> refreshModels() async {
     refreshed++;
   }
@@ -2014,37 +2034,49 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   }
 
   @override
-  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
-    llamaCppBaseUrl = baseUrl;
+  Future<List<LlmProviderStatus>> providerStatuses() async => [
+    _openRouter,
+    _llamaCpp,
+  ];
+
+  @override
+  Future<LlmProviderStatus> checkProvider(String providerId) async {
+    if (providerId == llamaCppProviderId) llamaCppChecked++;
+    return providerId == openRouterProviderId ? _openRouter : _llamaCpp;
   }
 
   @override
-  Future<void> saveLlamaCppApiKey(String key) async {
+  Future<void> saveProviderBaseUrl(String providerId, String? baseUrl) async {
+    if (providerId == llamaCppProviderId) {
+      llamaCppBaseUrl = baseUrl ?? llamaCppDefaultBaseUrl;
+    }
+  }
+
+  @override
+  Future<LlmProviderStatus> saveProviderApiKey(
+    String providerId,
+    String key,
+  ) async {
+    if (providerId == openRouterProviderId) {
+      savedKey = key;
+      return _openRouter;
+    }
     llamaCppApiKey = true;
+    return _llamaCpp;
   }
 
   @override
-  Future<void> deleteLlamaCppApiKey() async {
-    llamaCppApiKey = false;
+  Future<void> deleteProviderApiKey(String providerId) async {
+    if (providerId == openRouterProviderId) {
+      savedKey = null;
+    } else {
+      llamaCppApiKey = false;
+    }
   }
 
   @override
-  Future<void> setLlamaCppEnabled(bool enabled) async {
-    llamaCppEnabled = enabled;
-  }
-
-  @override
-  Future<LlamaCppStatus?> checkLlamaCpp() async {
-    llamaCppChecked++;
-    return LlamaCppStatus(
-      enabled: llamaCppEnabled,
-      baseUrl: llamaCppBaseUrl,
-      apiKeySet: llamaCppApiKey,
-      apiKeyTail: llamaCppApiKey ? 'key' : '',
-      available: true,
-      modelCount: 1,
-      checkedAt: DateTime.utc(2026, 11, 14),
-    );
+  Future<void> setProviderEnabled(String providerId, bool enabled) async {
+    if (providerId == llamaCppProviderId) llamaCppEnabled = enabled;
   }
 }
 

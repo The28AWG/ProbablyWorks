@@ -9,8 +9,9 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_llm_provider.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
-import 'package:pw_agent/providers/ai/multi_llm_provider.dart';
+import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
+import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
 /// Ресурсы агента, которым нужны каталоги и секреты.
 ///
@@ -28,26 +29,37 @@ abstract class AgentCoreModule {
   TurnChangesetStore turnChangesetStore(AppPaths paths) =>
       TurnChangesetStore(paths.root);
 
+  /// Общие ключи настроек и секретов всех провайдеров.
+  @singleton
+  LlmProviderSettingsStore llmProviderSettingsStore(
+    SettingsRepository settings,
+    SecretStore secrets,
+  ) => LlmProviderSettingsStore(settings, secrets);
+
   /// Ключ OpenRouter читается при каждом запросе: смена ключа в Settings действует сразу.
   @singleton
-  OpenRouterLlmProvider openRouterLlmProvider(SecretStore secrets) =>
-      OpenRouterLlmProvider(apiKey: () => secrets.read(openRouterKeyName));
+  OpenRouterLlmProvider openRouterLlmProvider(
+    LlmProviderSettingsStore settings,
+  ) => OpenRouterLlmProvider(
+    readConfig: () => settings.read(openRouterDescriptor),
+  );
 
   /// Настройки llama.cpp читаются при каждом запросе.
   @singleton
-  LlamaCppSettingsReader llamaCppSettingsReader(
-    SettingsRepository settings,
-    SecretStore secrets,
-  ) => LlamaCppSettingsReader(settings, secrets);
+  LlamaCppLlmProvider llamaCppLlmProvider(LlmProviderSettingsStore settings) =>
+      LlamaCppLlmProvider(readConfig: () => settings.read(llamaCppDescriptor));
 
+  /// Единый провайдер для агента и каталога.
+  ///
+  /// Новый провайдер добавляется в этот список: остальные слои работают
+  /// через дескрипторы и не знают его имени.
   @singleton
-  LlamaCppLlmProvider llamaCppLlmProvider(LlamaCppSettingsReader settings) =>
-      LlamaCppLlmProvider(settings: settings);
-
-  /// Агент видит единый провайдер: он маршрутизирует по префиксу id модели.
-  @singleton
-  LlmProvider llmProvider(
+  LlmProviderRegistry llmProviderRegistry(
     OpenRouterLlmProvider openRouter,
     LlamaCppLlmProvider llamaCpp,
-  ) => MultiLlmProvider(openRouter: openRouter, llamaCpp: llamaCpp);
+  ) => LlmProviderRegistry([openRouter, llamaCpp]);
+
+  /// Алиас для потребителей, которым нужен только порт [LlmProvider].
+  @singleton
+  LlmProvider llmProvider(LlmProviderRegistry registry) => registry;
 }

@@ -4,6 +4,9 @@ library;
 import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
+import 'package:pw_agent/providers/ai/llm_provider_meta.dart';
+
+export 'llm_provider_meta.dart';
 
 enum LlmRole { system, user, assistant, tool }
 
@@ -154,51 +157,31 @@ class LlmModelInfo {
 
   /// Входные модальности (`text`, `image`, `file`, ...). Null — неизвестно.
   final List<String>? inputModalities;
+
+  /// Копия модели с заменённым id: реестр добавляет префикс провайдера.
+  LlmModelInfo copyWith({
+    String? id,
+    String? name,
+    int? contextLength,
+    bool? supportsTools,
+    String? promptPrice,
+    String? completionPrice,
+    int? created,
+    List<String>? inputModalities,
+  }) => LlmModelInfo(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    contextLength: contextLength ?? this.contextLength,
+    supportsTools: supportsTools ?? this.supportsTools,
+    promptPrice: promptPrice ?? this.promptPrice,
+    completionPrice: completionPrice ?? this.completionPrice,
+    created: created ?? this.created,
+    inputModalities: inputModalities ?? this.inputModalities,
+  );
 }
 
 /// Сведения о ключе сервиса: что показывает экран настроек. Все суммы в USD.
-class LlmKeyInfo extends Equatable {
-  const LlmKeyInfo({
-    required this.label,
-    required this.usage,
-    this.limit,
-    this.limitRemaining,
-    this.limitReset,
-    this.isFreeTier = false,
-    this.expiresAt,
-  });
-
-  /// Метка ключа, которую сервис выдаёт сам (обычно маска вида `sk-or-v1-...`).
-  final String label;
-
-  /// Всего потрачено по ключу.
-  final double usage;
-
-  /// Лимит ключа; null — без лимита.
-  final double? limit;
-
-  /// Остаток лимита; null — без лимита.
-  final double? limitRemaining;
-
-  /// Период сброса лимита (`monthly`, `weekly`, ...); null — лимит не сбрасывается.
-  final String? limitReset;
-
-  final bool isFreeTier;
-
-  /// Дата истечения ключа; null — ключ бессрочный.
-  final DateTime? expiresAt;
-
-  @override
-  List<Object?> get props => [
-    label,
-    usage,
-    limit,
-    limitRemaining,
-    limitReset,
-    isFreeTier,
-    expiresAt,
-  ];
-}
+/// Вынесены в `llm_provider_meta.dart`; здесь остались только типы порта.
 
 /// Принимает ли модель файл данного типа: `image/*` требует модальность image,
 /// `audio/*` — audio, `video/*` — video, остальное — file.
@@ -244,12 +227,45 @@ class SavedModel extends Equatable {
 }
 
 abstract interface class LlmProvider {
+  /// Провайдеры, которые обслуживает этот экземпляр.
+  ///
+  /// Обычный адаптер возвращает один дескриптор, [LlmProviderRegistry] —
+  /// все зарегистрированные. Общие слои читают отсюда id, подписи и префиксы.
+  List<LlmProviderDescriptor> get providers;
+
   /// Стрим ответа. Ошибки выбрасываются как [LlmFailure] (см. core/error).
   Stream<LlmEvent> stream(LlmRequest request);
 
+  /// Список моделей провайдера в его локальных id (без префикса).
   Future<List<LlmModelInfo>> listModels();
 
-  /// Проверяет, что сервис принимает ключ (запрос с авторизацией), и возвращает сведения о нём.
-  /// Ошибка — [LlmFailure] с причиной. В отличие от [listModels], публичный список моделей ключ не подтверждает.
-  Future<LlmKeyInfo> checkKey();
+  /// Настройки без обращения к сети: включённость, адрес, наличие ключа.
+  /// Нужны каталогу и настройкам до первой проверки.
+  Future<List<LlmProviderStatus>> configStatuses();
+
+  /// Проверка доступности и статуса. Ошибки возвращаются в
+  /// [LlmProviderStatus.error], метод не бросает: один недоступный провайдер
+  /// не должен ломать статусы остальных.
+  Future<List<LlmProviderStatus>> statuses();
+}
+
+/// Удобная база для провайдеров без собственных настроек и проверки.
+///
+/// Адаптеру достаточно задать дескриптор, [stream] и [listModels].
+/// Статусы по умолчанию описывают включённого провайдера без ключа.
+abstract class LlmProviderBase implements LlmProvider {
+  const LlmProviderBase(this.descriptor);
+
+  final LlmProviderDescriptor descriptor;
+
+  @override
+  List<LlmProviderDescriptor> get providers => [descriptor];
+
+  @override
+  Future<List<LlmProviderStatus>> configStatuses() async => [
+    LlmProviderStatus(id: descriptor.id),
+  ];
+
+  @override
+  Future<List<LlmProviderStatus>> statuses() => configStatuses();
 }

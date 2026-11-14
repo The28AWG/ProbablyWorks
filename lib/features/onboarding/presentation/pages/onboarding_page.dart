@@ -12,14 +12,14 @@ import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/onboarding/presentation/bloc/onboarding_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Мастер первого запуска: ключ OpenRouter с проверкой, модель по умолчанию, папка локального Host,
-/// необязательный SSH-хост и первый чат. Без рабочего ключа приложение не пускает дальше настроек.
+/// необязательный SSH-хост и первый чат. Если локальный провайдер уже настроен, шаг ключа можно пропустить.
 @RoutePage()
 class OnboardingPage extends StatelessWidget {
   const OnboardingPage({super.key});
@@ -35,7 +35,7 @@ class OnboardingPage extends StatelessWidget {
     }
     return BlocProvider(
       create: (_) => OnboardingCubit(
-        getIt<SecretStore>(),
+        getIt<AgentSettingsApi>(),
         getIt<ModelCatalogService>(),
         getIt<SettingsRepository>(),
         getIt<HostRepository>(),
@@ -240,6 +240,13 @@ class _OnboardingViewState extends State<_OnboardingView> {
             tone: AppTone.success,
             icon: Icons.check_circle_outline,
             message: l10n.onboardingKeyVerified(state.models.length),
+          )
+        else if (state.canSkipKey)
+          AppBanner(
+            margin: EdgeInsets.zero,
+            tone: AppTone.info,
+            icon: Icons.info_outline,
+            message: l10n.onboardingKeySkipHint,
           ),
       ],
     ),
@@ -340,14 +347,15 @@ class _OnboardingViewState extends State<_OnboardingView> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      OnboardingStep.key when state.keyVerified => FilledButton(
-        onPressed: cubit.next,
-        child: Text(
-          l10n.onboardingContinue,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+      OnboardingStep.key when state.keyVerified || state.canSkipKey =>
+        FilledButton(
+          onPressed: cubit.next,
+          child: Text(
+            l10n.onboardingContinue,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
       OnboardingStep.key => FilledButton(
         onPressed: state.checking ? null : () => cubit.verifyKey(_key.text),
         child: Text(

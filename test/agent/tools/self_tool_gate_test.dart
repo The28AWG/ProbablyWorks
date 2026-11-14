@@ -37,17 +37,16 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 import '../../test_support/fake_appearance.dart';
 
-class _NoNetworkLlm implements LlmProvider {
+class _NoNetworkLlm extends LlmProviderBase {
+  _NoNetworkLlm()
+    : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   @override
   Stream<LlmEvent> stream(LlmRequest request) =>
       throw UnsupportedError('no network in tests');
 
   @override
   Future<List<LlmModelInfo>> listModels() async => const [];
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 }
 
 void main() {

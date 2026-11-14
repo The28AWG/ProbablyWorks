@@ -2,13 +2,14 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 
 /// Шаги мастера первого запуска. Порядок важен: индекс шага — текущая позиция в Stepper.
 enum OnboardingStep { welcome, key, model, workspace, ssh, finish }
@@ -24,6 +25,7 @@ class OnboardingState extends Equatable {
     this.workspace,
     this.created,
     this.canCreate = true,
+    this.canSkipKey = false,
   });
 
   final OnboardingStep step;
@@ -37,6 +39,10 @@ class OnboardingState extends Equatable {
   final String? keyError;
   final List<LlmModelInfo> models;
   final String? defaultModel;
+
+  /// Провайдер уже настроен (например, локальный llama.cpp): шаг ключа
+  /// OpenRouter можно пропустить.
+  final bool canSkipKey;
 
   /// Сохранённая рабочая папка локального Host.
   final String? workspace;
@@ -55,6 +61,7 @@ class OnboardingState extends Equatable {
     String? workspace,
     String? created,
     bool? canCreate,
+    bool? canSkipKey,
   }) => OnboardingState(
     canCreate: canCreate ?? this.canCreate,
     step: step ?? this.step,
@@ -65,6 +72,7 @@ class OnboardingState extends Equatable {
     defaultModel: defaultModel ?? this.defaultModel,
     workspace: workspace ?? this.workspace,
     created: created ?? this.created,
+    canSkipKey: canSkipKey ?? this.canSkipKey,
   );
 
   @override
@@ -78,12 +86,13 @@ class OnboardingState extends Equatable {
     workspace,
     created,
     canCreate,
+    canSkipKey,
   ];
 }
 
 class OnboardingCubit extends Cubit<OnboardingState> {
   OnboardingCubit(
-    this._secrets,
+    this._settingsApi,
     this._catalog,
     this._settings,
     this._hosts,
@@ -92,7 +101,7 @@ class OnboardingCubit extends Cubit<OnboardingState> {
   }) : platform = platform ?? AppPlatform.current,
        super(const OnboardingState());
 
-  final SecretStore _secrets;
+  final AgentSettingsApi _settingsApi;
   final ModelCatalogService _catalog;
   final SettingsRepository _settings;
   final HostRepository _hosts;
@@ -108,10 +117,52 @@ class OnboardingCubit extends Cubit<OnboardingState> {
 
   Future<void> next() async {
     final index = steps.indexOf(state.step);
-    if (index < steps.length - 1) {
-      emit(state.copyWith(step: steps[index + 1]));
+    if (index >= steps.length - 1) {
+      if (state.step == OnboardingStep.finish) await _refreshCanCreate();
+      return;
     }
-    if (state.step == OnboardingStep.finish) await _refreshCanCreate();
+    final next = steps[index + 1];
+    if (next == OnboardingStep.key) {
+      await _refreshProviderStatuses();
+      emit(
+        state.copyWith(
+          step: next,
+          canSkipKey: _catalog.state.hasUsableProvider,
+        ),
+      );
+      return;
+    }
+    if (next == OnboardingStep.model && state.models.isEmpty) {
+      await _loadModelsQuietly();
+    }
+    emit(
+      state.copyWith(
+        step: next,
+        models: next == OnboardingStep.model
+            ? _catalog.state.models
+            : state.models,
+      ),
+    );
+  }
+
+  /// Загружает модели для шага выбора. Ошибка уже в состоянии каталога:
+  /// шаг всё равно открывается, пользователь увидит причину.
+  Future<void> _loadModelsQuietly() async {
+    try {
+      await _catalog.refresh();
+    } on Object {
+      // Причина показана в состоянии каталога и на экране настроек.
+    }
+  }
+
+  /// Проверяет провайдеров перед шагом ключа: локальный сервер мог уже
+  /// быть настроен, и тогда шаг OpenRouter можно пропустить.
+  Future<void> _refreshProviderStatuses() async {
+    try {
+      await _catalog.refreshStatuses();
+    } on Object {
+      // Статус останется прежним; пользователь увидит ошибку в настройках.
+    }
   }
 
   void back() {
@@ -132,25 +183,20 @@ class OnboardingCubit extends Cubit<OnboardingState> {
   }
 
   /// Ключ сохраняется, только если им действительно можно загрузить список моделей.
-  /// Иначе прежнее значение возвращается, чтобы guard не пустил в приложение с неработающим ключом.
+  /// Иначе прежнее значение возвращает адаптер, чтобы guard не пустил
+  /// в приложение с неработающим ключом.
   Future<void> verifyKey(String key) async {
     final value = key.trim();
     if (value.isEmpty) return;
     emit(state.copyWith(checking: true, clearKeyError: true));
-    final previous = await _secrets.read(openRouterKeyName);
-    await _secrets.write(openRouterKeyName, value);
     try {
-      // Успешный ответ сразу попадает в каталог в памяти: чат и Settings увидят модели без повторной загрузки.
-      await _catalog.checkKey();
+      await _settingsApi.saveProviderApiKey(openRouterProviderId, value);
+      // Успешный ответ сразу попадает в каталог в памяти: чат и Settings
+      // увидят модели без повторной загрузки.
       await _catalog.refresh();
       final models = _catalog.state.models;
       emit(state.copyWith(checking: false, keyVerified: true, models: models));
     } on Object catch (error) {
-      if (previous == null) {
-        await _secrets.delete(openRouterKeyName);
-      } else {
-        await _secrets.write(openRouterKeyName, previous);
-      }
       emit(
         state.copyWith(
           checking: false,

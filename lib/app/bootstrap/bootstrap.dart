@@ -34,7 +34,6 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/security/system_secret_store.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -160,7 +159,7 @@ Future<bool> _bootstrapEmbedded(
   final themeMode = await clientSettings.read(ClientSettingsKeys.themeMode);
   getIt<ThemeController>().apply(ThemeController.modeFrom(themeMode));
   // Не ждём сеть: выбранные модели уже известны из БД, а список придёт в фоне.
-  await getIt<ModelCatalogService>().start(hasKey: _hasOpenRouterKey);
+  await getIt<ModelCatalogService>().start();
   return true;
 }
 
@@ -241,9 +240,4 @@ Future<ClientInfo> _loadClientInfo() async {
     AppLog.root.warning('cannot read package info', error);
     return const ClientInfo.fallback();
   }
-}
-
-Future<bool> _hasOpenRouterKey() async {
-  final key = await getIt<SecretStore>().read(openRouterKeyName);
-  return key != null && key.isNotEmpty;
 }

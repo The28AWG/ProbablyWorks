@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
-import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -86,7 +85,7 @@ class ModelSettingField extends StatelessWidget {
                     if (modelId.isNotEmpty) ...[
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        modelIdForDisplay(modelId),
+                        catalog.modelIdForDisplay(modelId),
                         style: theme.textTheme.labelSmall?.copyWith(
                           fontFamily: AppTheme.monoFamily,
                         ),

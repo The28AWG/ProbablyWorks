@@ -91,8 +91,7 @@ extension GetItInjectableX on _i174.GetIt {
       ),
     );
     gh.lazySingleton<_i519.ApiKeyGuard>(
-      () => _i519.ApiKeyGuard(
-        gh<_i564.SecretStore>(),
+      () => coreModule.apiKeyGuard(
         gh<_i740.ProfileService>(),
         gh<_i412.LocalAgentApisProvider>(),
       ),

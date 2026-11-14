@@ -19,76 +19,64 @@ import 'package:pw_agent/providers/ai/think_tag_parser.dart';
 
 /// Провайдер llama.cpp. Настройки читаются при каждом вызове, поэтому
 /// смена адреса или ключа в Settings действует сразу.
-class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
+class LlamaCppLlmProvider implements LlmProvider {
   LlamaCppLlmProvider({
-    required this._settings,
+    required this.readConfig,
     this.requestTimeout = const Duration(seconds: 60),
   });
 
-  final LlamaCppSettingsReader _settings;
+  final Future<LlmProviderConfig> Function() readConfig;
   final Duration requestTimeout;
 
-  /// Включён ли провайдер. Выключенный не опрашивается и не попадает в каталог.
   @override
-  Future<bool> get isEnabled async => (await _settings.read()).enabled;
+  List<LlmProviderDescriptor> get providers => const [llamaCppDescriptor];
 
-  /// Сервер отвечает на health-запрос. Выключенный провайдер всегда недоступен.
+  /// Настройки без сети: только включённость, адрес и маска ключа.
   @override
-  Future<bool> get isAvailable async {
-    final connection = await _settings.read();
-    if (!connection.enabled) return false;
-    return _client(connection).isAvailable;
+  Future<List<LlmProviderStatus>> configStatuses() async {
+    final config = await readConfig();
+    return [_statusOf(config)];
   }
 
   /// Проверка доступности и размера каталога. Не бросает исключение:
-  /// ошибка возвращается в [LlamaCppStatus.error].
+  /// ошибка возвращается в [LlmProviderStatus.error].
   @override
-  Future<LlamaCppStatus> checkHealth() async {
-    final connection = await _settings.read();
-    final base = LlamaCppStatus(
-      enabled: connection.enabled,
-      baseUrl: connection.baseUrl,
-      apiKeySet: connection.hasApiKey,
-      apiKeyTail: connection.keyTail,
-      checkedAt: DateTime.now(),
-    );
-    if (!connection.enabled) return base;
+  Future<List<LlmProviderStatus>> statuses() async {
+    final config = await readConfig();
+    final base = _statusOf(config, checkedAt: DateTime.now());
+    if (!config.enabled) return [base];
     try {
-      final available = await _client(connection).isAvailable;
+      final available = await _client(config).isAvailable;
       if (!available) {
-        return base.copyWith(error: 'llama.cpp server is not responding');
+        return [base.copyWith(error: 'llama.cpp server is not responding')];
       }
       final models = await listModels();
-      return base.copyWith(available: true, modelCount: models.length);
+      return [base.copyWith(available: true, modelCount: models.length)];
     } on Object catch (error) {
-      return base.copyWith(error: llamaCppFailureOf(error).message);
+      return [base.copyWith(error: llamaCppFailureOf(error).message)];
     }
   }
 
-  /// Ключа с лимитами у llama.cpp нет; метод подтверждает доступность сервера.
-  @override
-  Future<LlmKeyInfo> checkKey() async {
-    final connection = await _settings.read();
-    if (!connection.enabled) {
-      throw const LlmFailure('llama.cpp provider is disabled');
-    }
-    if (!await _client(connection).isAvailable) {
-      throw const LlmFailure(
-        'llama.cpp server is not available',
-        retryable: true,
-      );
-    }
-    return const LlmKeyInfo(label: 'llama.cpp server', usage: 0);
-  }
+  LlmProviderStatus _statusOf(
+    LlmProviderConfig config, {
+    DateTime? checkedAt,
+  }) => LlmProviderStatus(
+    id: llamaCppProviderId,
+    enabled: config.enabled,
+    baseUrl: config.baseUrl,
+    apiKeySet: config.hasApiKey,
+    apiKeyTail: config.apiKeyTail,
+    checkedAt: checkedAt,
+  );
 
   @override
   Future<List<LlmModelInfo>> listModels() async {
-    final connection = await _settings.read();
-    if (!connection.enabled) return const [];
+    final config = await readConfig();
+    if (!config.enabled) return const [];
     final router = LlamaCpp(
-      baseUrl: connection.baseUrl,
+      baseUrl: config.baseUrl!,
       requestTimeout: requestTimeout,
-      apiKey: connection.apiKey,
+      apiKey: config.apiKey,
     );
     try {
       final routerModels = await router.listModels();
@@ -96,7 +84,7 @@ class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
         for (final model in routerModels.data ?? const <LlamaCppModelInfo>[])
           if (model.id != null && model.id!.isNotEmpty)
             LlmModelInfo(
-              id: llamaCppModelId(model.id!),
+              id: llamaCppDescriptor.localModelId(model.id!),
               name: _displayName(model),
               contextLength: model.meta?.nCtxTrain ?? model.meta?.nCtx,
               // В router cache есть теги; пустой список тегов ничего не
@@ -120,7 +108,7 @@ class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
       // См. выше.
     }
 
-    final openAi = _client(connection);
+    final openAi = _client(config);
     try {
       final response = await openAi.listModels();
       return [
@@ -128,7 +116,7 @@ class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
             in response.data ?? const <LlamaCppOpenAiModelSummary>[])
           if (model.id != null && model.id!.isNotEmpty)
             LlmModelInfo(
-              id: llamaCppModelId(model.id!),
+              id: llamaCppDescriptor.localModelId(model.id!),
               name: _stripQuantization(model.id!),
               contextLength: model.meta?.nCtxTrain,
               created: model.created,
@@ -156,11 +144,11 @@ class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) async* {
-    final connection = await _settings.read();
-    if (!connection.enabled) {
+    final config = await readConfig();
+    if (!config.enabled) {
       throw const LlmFailure('llama.cpp provider is disabled');
     }
-    final client = _client(connection);
+    final client = _client(config);
     final accumulated = <int, _PartialToolCall>{};
     final thinkTags = ThinkTagParser();
     final textCalls = request.tools.isEmpty
@@ -258,15 +246,15 @@ class LlamaCppLlmProvider implements LlmProvider, LlamaCppStatusProvider {
     );
   }
 
-  LlamaCppOpenAi _client(LlamaCppConnection connection) => LlamaCppOpenAi(
-    baseUrl: connection.baseUrl,
+  LlamaCppOpenAi _client(LlmProviderConfig config) => LlamaCppOpenAi(
+    baseUrl: config.baseUrl!,
     requestTimeout: requestTimeout,
-    apiKey: connection.apiKey,
+    apiKey: config.apiKey,
   );
 
   LlamaCppOpenAiChatRequest _toRequest(LlmRequest request) =>
       LlamaCppOpenAiChatRequest(
-        model: llamaCppModelId(request.model),
+        model: llamaCppDescriptor.localModelId(request.model),
         messages: [for (final message in request.messages) _messageOf(message)],
         stream: true,
         temperature: request.temperature,

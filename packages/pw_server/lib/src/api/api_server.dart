@@ -26,7 +26,6 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
@@ -458,53 +457,29 @@ final class ApiServer {
         if (rest.length == 1 && request.method == 'PUT') {
           return _saveSetting(request, rest.first);
         }
-        if (rest.length == 1 &&
-            rest.first == 'api-key' &&
-            request.method == 'POST') {
-          return _saveApiKey(request);
+      case 'providers':
+        if (rest.isEmpty && request.method == 'GET') {
+          return _providerStatuses(request);
         }
-        if (rest.length == 1 &&
-            rest.first == 'api-key' &&
-            request.method == 'DELETE') {
-          await _requireSettingsApi().deleteApiKey();
-          return _json(request.response, HttpStatus.noContent, {});
+        if (rest.length == 1 && request.method == 'GET') {
+          return _providerStatus(request, rest.first);
+        }
+        if (rest.length == 1 && request.method == 'PUT') {
+          return _saveProvider(request, rest.first);
         }
         if (rest.length == 2 &&
-            rest.first == 'api-key' &&
             rest[1] == 'check' &&
             request.method == 'POST') {
-          return _checkKey(request);
+          return _checkProvider(request, rest.first);
+        }
+        if (rest.length == 2 && rest[1] == 'key' && request.method == 'POST') {
+          return _saveProviderApiKey(request, rest.first);
         }
         if (rest.length == 2 &&
-            rest.first == 'llama-cpp' &&
-            rest[1] == 'base-url' &&
-            request.method == 'PUT') {
-          return _saveLlamaCppBaseUrl(request);
-        }
-        if (rest.length == 2 &&
-            rest.first == 'llama-cpp' &&
-            rest[1] == 'api-key' &&
-            request.method == 'POST') {
-          return _saveLlamaCppApiKey(request);
-        }
-        if (rest.length == 2 &&
-            rest.first == 'llama-cpp' &&
-            rest[1] == 'api-key' &&
+            rest[1] == 'key' &&
             request.method == 'DELETE') {
-          await _requireLlamaCppSettingsApi().deleteLlamaCppApiKey();
+          await _requireSettingsApi().deleteProviderApiKey(rest.first);
           return _json(request.response, HttpStatus.noContent, {});
-        }
-        if (rest.length == 2 &&
-            rest.first == 'llama-cpp' &&
-            rest[1] == 'enabled' &&
-            request.method == 'PUT') {
-          return _setLlamaCppEnabled(request);
-        }
-        if (rest.length == 2 &&
-            rest.first == 'llama-cpp' &&
-            rest[1] == 'check' &&
-            request.method == 'POST') {
-          return _checkLlamaCpp(request);
         }
       case 'models':
         if (rest.isEmpty && request.method == 'GET') return _models(request);
@@ -1214,7 +1189,6 @@ final class ApiServer {
       'limits': snapshot.limits.toMap(),
       'pinnedModels': snapshot.pinnedModels,
       'steps': _stepsJson(snapshot.stepsDisplay),
-      'apiKeyTail': snapshot.apiKeyTail,
       'catalog': _catalogJson(snapshot.catalog),
     });
   }
@@ -1233,69 +1207,87 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
-  Future<void> _saveApiKey(HttpRequest request) async {
+  Future<void> _providerStatuses(HttpRequest request) async {
+    final statuses = await _requireSettingsApi().providerStatuses();
+    _json(request.response, HttpStatus.ok, {
+      'providers': [for (final status in statuses) _providerStatusJson(status)],
+    });
+  }
+
+  Future<void> _providerStatus(HttpRequest request, String providerId) async {
+    final statuses = await _requireSettingsApi().providerStatuses();
+    for (final status in statuses) {
+      if (status.id == providerId) {
+        return _json(
+          request.response,
+          HttpStatus.ok,
+          _providerStatusJson(status),
+        );
+      }
+    }
+    throw AgentApiException(
+      HttpStatus.notFound,
+      'provider_not_found',
+      'AI provider $providerId is not registered',
+    );
+  }
+
+  Future<void> _saveProvider(HttpRequest request, String providerId) async {
+    await _ensureProvider(providerId);
+    final body = await _body(request);
+    if (!body.containsKey('enabled') && !body.containsKey('baseUrl')) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_provider_settings',
+        'enabled or baseUrl is required',
+      );
+    }
+    final api = _requireSettingsApi();
+    if (body.containsKey('enabled')) {
+      await api.setProviderEnabled(providerId, body['enabled'] == true);
+    }
+    if (body.containsKey('baseUrl')) {
+      final value = body['baseUrl'];
+      await api.saveProviderBaseUrl(providerId, value is String ? value : null);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveProviderApiKey(
+    HttpRequest request,
+    String providerId,
+  ) async {
+    await _ensureProvider(providerId);
     final body = await _body(request);
     try {
-      await _requireSettingsApi().saveApiKey(_string(body, 'key'));
+      final status = await _requireSettingsApi().saveProviderApiKey(
+        providerId,
+        _string(body, 'key'),
+      );
+      _json(request.response, HttpStatus.ok, _providerStatusJson(status));
     } on Object catch (error, stackTrace) {
       Error.throwWithStackTrace(
         AgentApiException(HttpStatus.badRequest, 'api_key_rejected', '$error'),
         stackTrace,
       );
     }
-    _json(request.response, HttpStatus.noContent, {});
   }
 
-  Future<void> _checkKey(HttpRequest request) async {
-    final info = await _requireSettingsApi().checkKey();
-    if (info == null) {
-      return _json(request.response, HttpStatus.noContent, {});
-    }
-    _json(request.response, HttpStatus.ok, _keyInfoJson(info));
+  Future<void> _checkProvider(HttpRequest request, String providerId) async {
+    await _ensureProvider(providerId);
+    final status = await _requireSettingsApi().checkProvider(providerId);
+    _json(request.response, HttpStatus.ok, _providerStatusJson(status));
   }
 
-  Future<void> _saveLlamaCppBaseUrl(HttpRequest request) async {
-    final body = await _body(request);
-    await _requireLlamaCppSettingsApi().saveLlamaCppBaseUrl(
-      _string(body, 'baseUrl'),
-    );
-    _json(request.response, HttpStatus.noContent, {});
-  }
-
-  Future<void> _saveLlamaCppApiKey(HttpRequest request) async {
-    final body = await _body(request);
-    await _requireLlamaCppSettingsApi().saveLlamaCppApiKey(
-      _string(body, 'key'),
-    );
-    _json(request.response, HttpStatus.noContent, {});
-  }
-
-  Future<void> _setLlamaCppEnabled(HttpRequest request) async {
-    final body = await _body(request);
-    await _requireLlamaCppSettingsApi().setLlamaCppEnabled(
-      body['enabled'] == true,
-    );
-    _json(request.response, HttpStatus.noContent, {});
-  }
-
-  Future<void> _checkLlamaCpp(HttpRequest request) async {
-    final status = await _requireLlamaCppSettingsApi().checkLlamaCpp();
-    if (status == null) {
-      return _json(request.response, HttpStatus.noContent, {});
-    }
-    _json(request.response, HttpStatus.ok, _llamaCppJson(status));
-  }
-
-  LlamaCppSettingsApi _requireLlamaCppSettingsApi() {
-    final settings = _requireSettingsApi();
-    // ignore: avoid-unrelated-type-assertions, LocalAgentSettingsApi implements both interfaces.
-    if (settings is LlamaCppSettingsApi) {
-      return settings as LlamaCppSettingsApi;
-    }
-    throw const AgentApiException(
-      HttpStatus.notImplemented,
-      'llama_cpp_settings_not_available',
-      'llama.cpp settings API is not available',
+  /// Проверяет, что провайдер зарегистрирован. Иначе 404, а не 500
+  /// из недр локального адаптера.
+  Future<void> _ensureProvider(String providerId) async {
+    final statuses = await _requireSettingsApi().providerStatuses();
+    if (statuses.any((status) => status.id == providerId)) return;
+    throw AgentApiException(
+      HttpStatus.notFound,
+      'provider_not_found',
+      'AI provider $providerId is not registered',
     );
   }
 
@@ -1979,11 +1971,30 @@ Map<String, Object?> _catalogJson(ModelCatalogState state) => {
   'syncedAt': state.syncedAt?.toUtc().toIso8601String(),
   'loading': state.loading,
   'error': state.error,
-  'llamaCpp': _llamaCppJson(state.llamaCpp),
+  'providers': [for (final item in state.providers) _descriptorJson(item)],
+  'providerStatuses': {
+    for (final entry in state.providerStatuses.entries)
+      entry.key: _providerStatusJson(entry.value),
+  },
 };
 
-/// Статус llama.cpp в JSON-ответе. Ключ не передаётся: только признак и маска.
-Map<String, Object?> _llamaCppJson(LlamaCppStatus status) => {
+/// Дескриптор провайдера в JSON-ответе.
+Map<String, Object?> _descriptorJson(LlmProviderDescriptor descriptor) => {
+  'id': descriptor.id,
+  'label': descriptor.label,
+  'modelPrefix': descriptor.modelPrefix,
+  'defaultBaseUrl': descriptor.defaultBaseUrl,
+  'requiresApiKey': descriptor.requiresApiKey,
+  'supportsApiKey': descriptor.supportsApiKey,
+  'supportsBaseUrl': descriptor.supportsBaseUrl,
+  'supportsEnabledToggle': descriptor.supportsEnabledToggle,
+  'supportsKeyInfo': descriptor.supportsKeyInfo,
+  'apiKeyExample': descriptor.apiKeyExample,
+};
+
+/// Статус провайдера в JSON-ответе. Ключ не передаётся: только признак и маска.
+Map<String, Object?> _providerStatusJson(LlmProviderStatus status) => {
+  'id': status.id,
   'enabled': status.enabled,
   'baseUrl': status.baseUrl,
   'apiKeySet': status.apiKeySet,
@@ -1992,6 +2003,7 @@ Map<String, Object?> _llamaCppJson(LlamaCppStatus status) => {
   'modelCount': status.modelCount,
   'error': status.error,
   'checkedAt': status.checkedAt?.toUtc().toIso8601String(),
+  'keyInfo': status.keyInfo == null ? null : _keyInfoJson(status.keyInfo!),
 };
 
 Map<String, Object?> _modelJson(LlmModelInfo model) => {

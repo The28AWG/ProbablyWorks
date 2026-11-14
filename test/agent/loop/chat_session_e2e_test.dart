@@ -67,7 +67,9 @@ import '../../test_support/fake_appearance.dart';
 import '../../test_support/fake_url_opener.dart';
 
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной сценарий ответа.
-class _FakeLlm implements LlmProvider {
+class _FakeLlm extends LlmProviderBase {
+  _FakeLlm() : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   final List<List<LlmEvent>> script = [];
   final List<LlmRequest> requests = [];
   final List<LlmRequest> titleRequests = [];
@@ -81,10 +83,6 @@ class _FakeLlm implements LlmProvider {
 
   /// Если задано — следующий ход завершится этой ошибкой вместо ответа.
   LlmFailure? nextFailure;
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {

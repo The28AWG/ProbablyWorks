@@ -4,24 +4,31 @@ import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
 /// Локальные настройки агента.
 @LazySingleton(as: AgentSettingsApi)
-final class LocalAgentSettingsApi
-    implements AgentSettingsApi, LlamaCppSettingsApi {
-  LocalAgentSettingsApi(this._settings, this._secrets, this._catalog);
+final class LocalAgentSettingsApi implements AgentSettingsApi {
+  LocalAgentSettingsApi(
+    this._settings,
+    this._catalog,
+    this._registry,
+    this._providers,
+  );
 
   final SettingsRepository _settings;
-  final SecretStore _secrets;
   final ModelCatalogService _catalog;
+  final LlmProviderRegistry _registry;
+  final LlmProviderSettingsStore _providers;
 
   @override
   Future<AgentSettingsSnapshot> load() async {
-    final key = await _secrets.read(openRouterKeyName);
+    // Конфиг провайдеров нужен до первого кадра настроек: без сети.
+    await _catalog.loadProviderConfigs();
     return AgentSettingsSnapshot(
       defaultModel:
           await _settings.read(SettingsRepository.keyDefaultModel) ?? '',
@@ -39,9 +46,7 @@ final class LocalAgentSettingsApi
       limits: await _settings.limits(),
       pinnedModels: await _settings.readPinnedModels(),
       stepsDisplay: await _settings.readStepsDisplay(),
-      apiKeyTail: _tailOf(key),
       catalog: _catalog.state,
-      llamaCpp: _catalog.state.llamaCpp,
     );
   }
 
@@ -77,70 +82,81 @@ final class LocalAgentSettingsApi
   Future<void> saveLimits(AppLimits limits) => _settings.saveLimits(limits);
 
   @override
-  Future<void> saveApiKey(String key) async {
-    final previous = await _secrets.read(openRouterKeyName);
-    await _secrets.write(openRouterKeyName, key);
-    try {
-      await _catalog.checkKey();
-    } on Object {
-      if (previous == null) {
-        await _secrets.delete(openRouterKeyName);
-      } else {
-        await _secrets.write(openRouterKeyName, previous);
-      }
-      rethrow;
-    }
-  }
-
-  @override
-  Future<void> deleteApiKey() => _secrets.delete(openRouterKeyName);
-
-  @override
-  Future<LlmKeyInfo?> checkKey() async {
-    final key = await _secrets.read(openRouterKeyName);
-    if (key == null || key.isEmpty) return null;
-    return _catalog.checkKey();
-  }
-
-  @override
   Future<void> refreshModels() => _catalog.refresh();
 
   @override
   Future<void> rememberModels(List<String> ids) => _catalog.remember(ids);
 
   @override
-  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
-    final trimmed = baseUrl.trim();
-    await _settings.write(
-      SettingsRepository.keyLlamaCppBaseUrl,
-      trimmed.isEmpty ? null : trimmed,
-    );
+  Future<List<LlmProviderStatus>> providerStatuses() =>
+      _registry.configStatuses();
+
+  @override
+  Future<LlmProviderStatus> checkProvider(String providerId) async {
+    final status = await _catalog.checkProvider(providerId);
+    if (status == null) {
+      throw LlmFailure('Unknown AI provider: $providerId');
+    }
+    return status;
   }
 
   @override
-  Future<void> saveLlamaCppApiKey(String key) async {
-    final trimmed = key.trim();
-    if (trimmed.isEmpty) return;
-    await _secrets.write(llamaCppKeyName, trimmed);
+  Future<void> saveProviderBaseUrl(String providerId, String? baseUrl) async {
+    final descriptor = _descriptorOf(providerId);
+    await _providers.saveBaseUrl(descriptor, baseUrl);
+    await _catalog.loadProviderConfigs();
   }
 
   @override
-  Future<void> deleteLlamaCppApiKey() => _secrets.delete(llamaCppKeyName);
+  Future<LlmProviderStatus> saveProviderApiKey(
+    String providerId,
+    String key,
+  ) async {
+    final descriptor = _descriptorOf(providerId);
+    final previous = (await _providers.read(descriptor)).apiKey;
+    await _providers.saveApiKey(descriptor, key);
+    final status = await _catalog.checkProvider(providerId);
+    if (descriptor.requiresApiKey &&
+        (status == null || !status.apiKeySet || status.error != null)) {
+      await _restoreKey(descriptor, previous);
+      await _catalog.loadProviderConfigs();
+      throw LlmFailure(status?.error ?? 'The API key was rejected');
+    }
+    await _catalog.loadProviderConfigs();
+    return status ?? await _providers.readStatus(descriptor);
+  }
 
   @override
-  Future<void> setLlamaCppEnabled(bool enabled) => _settings.write(
-    SettingsRepository.keyLlamaCppEnabled,
-    enabled ? null : 'false',
-  );
+  Future<void> deleteProviderApiKey(String providerId) async {
+    final descriptor = _descriptorOf(providerId);
+    await _providers.deleteApiKey(descriptor);
+    await _catalog.loadProviderConfigs();
+  }
 
   @override
-  Future<LlamaCppStatus?> checkLlamaCpp() => _catalog.checkLlamaCpp();
+  Future<void> setProviderEnabled(String providerId, bool enabled) async {
+    final descriptor = _descriptorOf(providerId);
+    await _providers.setEnabled(descriptor, enabled);
+    await _catalog.loadProviderConfigs();
+  }
 
-  static String _tailOf(String? key) {
-    if (key == null || key.isEmpty) return '';
-    final runes = key.runes.toList();
-    return String.fromCharCodes(
-      runes.skip(runes.length > 3 ? runes.length - 3 : 0),
-    );
+  LlmProviderDescriptor _descriptorOf(String providerId) {
+    final descriptor = _registry.descriptorById(providerId);
+    if (descriptor == null) {
+      throw LlmFailure('Unknown AI provider: $providerId');
+    }
+    return descriptor;
+  }
+
+  /// Возвращает прежний ключ после отказа сервиса. Пустой ключ удаляется.
+  Future<void> _restoreKey(
+    LlmProviderDescriptor descriptor,
+    String? previous,
+  ) async {
+    if (previous == null || previous.isEmpty) {
+      await _providers.deleteApiKey(descriptor);
+    } else {
+      await _providers.saveApiKey(descriptor, previous);
+    }
   }
 }

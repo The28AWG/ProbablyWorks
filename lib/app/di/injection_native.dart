@@ -1,6 +1,7 @@
 import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/di/injection_native.config.dart';
+import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
@@ -12,6 +13,7 @@ import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent_di.dart' as agent;
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 export 'package:probably_works/app/di/injection.dart';
 
@@ -33,6 +35,9 @@ Future<void> configureDependencies() async {
 /// Регистрирует агентские зависимости и собирает embedded-bundle.
 Future<void> configureEmbeddedAgentDependencies() async {
   await agent.configureAgentDependencies();
+  // Guard создан раньше агентских зависимостей: подключаем каталог сейчас.
+  getIt<ApiKeyGuard>().hasProvider = () =>
+      getIt<ModelCatalogService>().hasUsableProvider;
   getIt<LocalAgentApisProvider>().set(
     LocalAgentApis(
       agent: getIt<LocalAgentApi>(),

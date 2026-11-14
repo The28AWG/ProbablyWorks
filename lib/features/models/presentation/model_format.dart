@@ -1,8 +1,14 @@
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 
-/// Id модели для показа: у моделей llama.cpp префикс `llamacpp:` нужен
-/// только для маршрутизации и в интерфейсе не показывается.
-String modelIdForDisplay(String id) => llamaCppModelId(id);
+/// Id модели для показа: префикс провайдера нужен только для маршрутизации
+/// и в интерфейсе не показывается.
+String modelIdForDisplay(
+  String id, {
+  List<LlmProviderDescriptor> providers = const [],
+}) {
+  final descriptor = providerDescriptorOf(id, providers);
+  return descriptor == null ? id : descriptor.localModelId(id);
+}
 
 /// Время последнего обновления каталога для подписи, например `02.11 20:54` (локальное время).
 String formatModelSyncTime(DateTime at) {

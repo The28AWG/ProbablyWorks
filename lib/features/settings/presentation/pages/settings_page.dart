@@ -16,12 +16,11 @@ import 'package:probably_works/features/models/presentation/widgets/model_picker
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
-import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
-import 'package:probably_works/features/settings/presentation/widgets/llama_cpp_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/provider_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/push_notifications_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_audit_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
@@ -39,6 +38,7 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 @RoutePage()
@@ -397,7 +397,23 @@ class _SettingsViewState extends State<_SettingsView> {
     final scheme = Theme.of(context).colorScheme;
     final catalog = state.catalog;
     return [
-      ApiKeySection(state: state, cubit: cubit),
+      for (final descriptor in catalog.providers)
+        ProviderSection(
+          descriptor: descriptor,
+          status:
+              catalog.providerStatuses[descriptor.id] ??
+              LlmProviderStatus(id: descriptor.id),
+          loading: state.providerLoading.contains(descriptor.id),
+          error: state.providerErrors[descriptor.id],
+          modelCount: catalog.modelCountOf(descriptor.id),
+          onCheck: () => cubit.checkProvider(descriptor.id),
+          onEnabledChanged: (enabled) =>
+              cubit.setProviderEnabled(descriptor.id, enabled),
+          onBaseUrlSaved: (url) =>
+              cubit.saveProviderBaseUrl(descriptor.id, url),
+          onApiKeySaved: (key) => cubit.saveProviderApiKey(descriptor.id, key),
+          onApiKeyDeleted: () => cubit.deleteProviderApiKey(descriptor.id),
+        ),
       AppSection(
         title: l10n.settingsDefaultModel,
         children: [
@@ -538,7 +554,6 @@ class _SettingsViewState extends State<_SettingsView> {
             ),
         ],
       ),
-      LlamaCppSection(state: state, cubit: cubit),
     ];
   }
 

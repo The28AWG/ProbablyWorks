@@ -44,7 +44,8 @@ class SettingsRepository {
   static const keyStepsTools = 'stepsTools';
   static const keySidebarWidth = 'sidebarWidth';
 
-  /// Настройки llama.cpp: включён ли провайдер и адрес сервера.
+  /// Старые ключи llama.cpp. Читаются `LlmProviderSettingsStore` для
+  /// существующих профилей; новые значения пишутся в `provider.llamacpp.*`.
   static const keyLlamaCppEnabled = 'llamaCpp.enabled';
   static const keyLlamaCppBaseUrl = 'llamaCpp.baseUrl';
 

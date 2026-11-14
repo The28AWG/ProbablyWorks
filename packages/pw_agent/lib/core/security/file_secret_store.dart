@@ -8,8 +8,9 @@ import 'package:pw_agent/core/security/secret_store.dart';
 /// Файловый fallback для headless-режима.
 ///
 /// Значения лежат в JSON-файле `0600` внутри каталога приложения `0700`.
-/// Ключ OpenRouter и токен API можно переопределить переменными окружения —
-/// так демон запускается на сервере без графической сессии и без keyring.
+/// Ключи провайдеров и токен API можно переопределить переменными
+/// окружения — так демон запускается на сервере без графической сессии
+/// и без keyring.
 final class FileSecretStore implements SecretStore {
   FileSecretStore(Directory support, {this.environment = const {}})
     : _file = File(p.join(support.path, 'secrets.json'));
@@ -77,15 +78,35 @@ final class FileSecretStore implements SecretStore {
 ///
 /// Нужны для серверного запуска без GUI и keyring. Возвращает null, если
 /// переменная не задана или пуста.
+///
+/// Для любого провайдера работает общее имя
+/// `PROBABLY_WORKS_<ID>_KEY`, где id переведён в верхний регистр, а всё
+/// кроме латинских букв и цифр заменено на `_`. OpenRouter дополнительно
+/// читает старые имена, чтобы не ломать существующие запуски.
 String? secretFromEnvironment(String key, Map<String, String> environment) {
   String? nonEmpty(String? value) =>
       value == null || value.isEmpty ? null : value;
+  if (key == apiTokenKey) {
+    return nonEmpty(environment[FileSecretStore.apiTokenEnvironment]);
+  }
+  final providerId = providerIdFromApiKeyName(key);
+  if (providerId != null) {
+    final envName = _providerEnvironment(providerId);
+    final value = nonEmpty(environment[envName]);
+    if (value != null) return value;
+    if (providerId == 'openrouter') {
+      return nonEmpty(environment[FileSecretStore.openRouterEnvironment]) ??
+          nonEmpty(environment[FileSecretStore.openRouterFallbackEnvironment]);
+    }
+    return null;
+  }
   if (key == openRouterKeyName) {
     return nonEmpty(environment[FileSecretStore.openRouterEnvironment]) ??
         nonEmpty(environment[FileSecretStore.openRouterFallbackEnvironment]);
   }
-  if (key == apiTokenKey) {
-    return nonEmpty(environment[FileSecretStore.apiTokenEnvironment]);
-  }
   return null;
 }
+
+/// Имя переменной окружения для ключа провайдера.
+String _providerEnvironment(String providerId) =>
+    'PROBABLY_WORKS_${providerId.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '_')}_KEY';

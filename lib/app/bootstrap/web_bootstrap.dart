@@ -64,7 +64,7 @@ Future<void> bootstrapWeb() async {
   final themeMode = await settings.read(ClientSettingsKeys.themeMode);
   theme.apply(ThemeController.modeFrom(themeMode));
 
-  final guard = ApiKeyGuard(secrets, profiles, local);
+  final guard = ApiKeyGuard(profiles, local);
   getIt
     ..registerSingleton<ApiKeyGuard>(guard)
     ..registerSingleton<AppRouter>(AppRouter(apiKeyGuard: guard));

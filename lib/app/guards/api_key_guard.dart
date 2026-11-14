@@ -1,23 +1,29 @@
 import 'package:auto_route/auto_route.dart';
-import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.gr.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
-import 'package:pw_agent/core/security/secret_store.dart';
 
-/// Без ключа OpenRouter локальный агент не работает: ведём на онбординг.
+/// Без настроенного LLM-провайдера локальный агент не работает: ведём на онбординг.
 ///
-/// Удалённый профиль держит ключ у себя на сервере, поэтому локальный ключ
-/// для его ветки не требуется. Проверка идёт только при входе в ветку, а не
-/// при каждом переходе внутри неё.
-@lazySingleton
+/// Проверяется не конкретный ключ OpenRouter, а наличие хотя бы одного
+/// провайдера с нужными настройками. Проверка не трогает сеть: локальный
+/// сервер может быть просто выключен, и это не повод блокировать интерфейс.
+///
+/// Удалённый профиль держит настройки у себя на сервере, поэтому локальная
+/// проверка для его ветки не требуется. Проверка идёт только при входе
+/// в ветку, а не при каждом переходе внутри неё.
 class ApiKeyGuard extends AutoRouteGuard {
-  ApiKeyGuard(this._secrets, this._profiles, this._local);
+  ApiKeyGuard(this._profiles, this._local);
 
-  final SecretStore _secrets;
   final ProfileService _profiles;
   final LocalAgentApisProvider _local;
+
+  /// Настроен ли хоть один провайдер. В embedded-режиме выставляется
+  /// каталогом моделей после регистрации агентских зависимостей.
+  Future<bool> Function() hasProvider = _noProvider;
+
+  static Future<bool> _noProvider() async => false;
 
   @override
   Future<void> onNavigation(
@@ -42,8 +48,7 @@ class ApiKeyGuard extends AutoRouteGuard {
       resolver.redirectUntil(const WebConnectRoute());
       return;
     }
-    final key = await _secrets.read(openRouterKeyName);
-    if (key != null && key.isNotEmpty) {
+    if (await hasProvider()) {
       resolver.next();
     } else {
       resolver.redirectUntil(const OnboardingRoute());

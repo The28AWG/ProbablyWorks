@@ -70,7 +70,7 @@
   "@onboardingTitle": {
     "description": "Title of the first-run screen that asks for the API key."
   },
-  "onboardingBody": "ProbablyWorks runs an AI agent on your machines. The model is served by OpenRouter, so an API key is required. The key is stored in the system secure storage.",
+  "onboardingBody": "ProbablyWorks runs an AI agent on your machines. Models can come from OpenRouter or a local OpenAI-compatible server. Add an OpenRouter key here, or skip this step if a local provider is already configured. The key is stored in the system secure storage.",
   "@onboardingBody": {
     "description": "Explanation on the first-run screen of why the key is needed and where it is stored."
   },
@@ -593,14 +593,6 @@
   "@settingsTitle": {
     "description": "Header of the settings page."
   },
-  "settingsApiKey": "OpenRouter API key",
-  "@settingsApiKey": {
-    "description": "Section title for the API key in settings."
-  },
-  "settingsApiKeySaved": "API key saved",
-  "@settingsApiKeySaved": {
-    "description": "Snackbar after the API key is saved."
-  },
   "settingsDefaultModel": "Default model",
   "@settingsDefaultModel": {
     "description": "Setting: model used for new chats when none is chosen."
@@ -753,33 +745,9 @@
   "@settingsLimitsInvalid": {
     "description": "Error shown when the limits JSON cannot be parsed."
   },
-  "settingsApiKeySet": "Key saved",
-  "@settingsApiKeySet": {
-    "description": "Status line above the masked API key: the key is stored."
-  },
-  "settingsApiKeyCheck": "Check",
-  "@settingsApiKeyCheck": {
-    "description": "Button that asks the service to verify the saved API key and reload its details."
-  },
   "settingsApiKeyReplace": "Replace",
   "@settingsApiKeyReplace": {
     "description": "Button that opens the input field to enter a new API key."
-  },
-  "settingsApiKeyDelete": "Delete key",
-  "@settingsApiKeyDelete": {
-    "description": "Button that removes the saved API key."
-  },
-  "settingsApiKeyDeleteTitle": "Delete the API key?",
-  "@settingsApiKeyDeleteTitle": {
-    "description": "Confirmation dialog title before deleting the API key."
-  },
-  "settingsApiKeyDeleteBody": "Chats cannot reach models until you add a new key. The model list stays.",
-  "@settingsApiKeyDeleteBody": {
-    "description": "Confirmation dialog text before deleting the API key: what stops working."
-  },
-  "settingsApiKeyNotSet": "No API key",
-  "@settingsApiKeyNotSet": {
-    "description": "Empty state of the API key section when no key is saved."
   },
   "settingsKeyInfoTitle": "Key details",
   "@settingsKeyInfoTitle": {
@@ -1557,120 +1525,135 @@
   "@hostEnvironmentNameInvalid": {
     "description": "Error shown when an environment variable name is not a shell identifier."
   },
-  "settingsGroupAccount": "API and models",
-  "@settingsGroupAccount": {
-    "description": "Settings group: OpenRouter key and models."
+  "providerDescription": "Connection and availability are checked when the model list is refreshed.",
+  "@providerDescription": {
+    "description": "Description of a generic LLM provider settings card."
   },
-  "settingsGroupAccountHint": "OpenRouter key and models for the agent and chat titles.",
-  "@settingsGroupAccountHint": {
-    "description": "Description of the API and models settings group."
+  "providerEnabledOn": "Enabled",
+  "@providerEnabledOn": {
+    "description": "Generic provider toggle: enabled."
   },
-  "settingsLlamaCppTitle": "llama.cpp server",
-  "@settingsLlamaCppTitle": {
-    "description": "Settings section: llama.cpp server provider."
+  "providerEnabledOff": "Disabled",
+  "@providerEnabledOff": {
+    "description": "Generic provider toggle: disabled."
   },
-  "settingsLlamaCppDescription": "OpenAI-compatible server. Its models appear in the catalog when the server is reachable.",
-  "@settingsLlamaCppDescription": {
-    "description": "Description of the llama.cpp server settings section."
+  "providerEnabledHint": "A disabled provider is not polled and its models are not shown.",
+  "@providerEnabledHint": {
+    "description": "Hint for the generic provider enabled toggle."
   },
-  "settingsLlamaCppEnabledOn": "Enabled",
-  "@settingsLlamaCppEnabledOn": {
-    "description": "Choice: llama.cpp provider is enabled."
+  "providerBaseUrl": "Server address",
+  "@providerBaseUrl": {
+    "description": "Label of the generic provider base URL field."
   },
-  "settingsLlamaCppEnabledOff": "Disabled",
-  "@settingsLlamaCppEnabledOff": {
-    "description": "Choice: llama.cpp provider is disabled."
+  "providerBaseUrlHint": "The server is checked at startup and when the model list is refreshed.",
+  "@providerBaseUrlHint": {
+    "description": "Hint for the generic provider base URL field."
   },
-  "settingsLlamaCppEnabledHint": "When disabled, the server is not polled and its models are not shown.",
-  "@settingsLlamaCppEnabledHint": {
-    "description": "Hint for the llama.cpp enabled/disabled choice."
+  "providerBaseUrlInvalid": "Enter a valid http:// or https:// address.",
+  "@providerBaseUrlInvalid": {
+    "description": "Validation error of the generic provider base URL field."
   },
-  "settingsLlamaCppBaseUrl": "Server address",
-  "@settingsLlamaCppBaseUrl": {
-    "description": "Field label: llama.cpp server address."
+  "providerApiKey": "API key",
+  "@providerApiKey": {
+    "description": "Label of the generic provider API key field."
   },
-  "settingsLlamaCppHint": "The server is checked at startup and when the model list is refreshed.",
-  "@settingsLlamaCppHint": {
-    "description": "Hint under the llama.cpp address field."
+  "providerApiKeyHint": "The key is stored in secure storage.",
+  "@providerApiKeyHint": {
+    "description": "Hint for the generic provider API key field."
   },
-  "settingsLlamaCppBaseUrlHint": "http://localhost:8080",
-  "@settingsLlamaCppBaseUrlHint": {
-    "description": "Placeholder for the llama.cpp server address."
+  "providerApiKeySet": "Key saved",
+  "@providerApiKeySet": {
+    "description": "Description when a provider API key is saved."
   },
-  "settingsLlamaCppBaseUrlInvalid": "Enter a valid http:// or https:// address.",
-  "@settingsLlamaCppBaseUrlInvalid": {
-    "description": "Error when the llama.cpp address is not a valid http(s) URL."
+  "providerApiKeyNotSet": "No API key",
+  "@providerApiKeyNotSet": {
+    "description": "Description when a provider API key is not set."
   },
-  "settingsLlamaCppCheck": "Check server",
-  "@settingsLlamaCppCheck": {
-    "description": "Tooltip of the button that checks the llama.cpp server."
+  "providerKeyRequired": "Add an API key to enable this provider.",
+  "@providerKeyRequired": {
+    "description": "Banner when a provider requires an API key that is not set."
   },
-  "settingsLlamaCppSave": "Save",
-  "@settingsLlamaCppSave": {
-    "description": "Tooltip of the button that saves the llama.cpp address."
+  "providerApiKeyDelete": "Delete key",
+  "@providerApiKeyDelete": {
+    "description": "Tooltip of the generic provider key delete button."
   },
-  "settingsLlamaCppApiKey": "API key",
-  "@settingsLlamaCppApiKey": {
-    "description": "Field label: llama.cpp API key."
-  },
-  "settingsLlamaCppKeyHint": "The key is stored in secure storage.",
-  "@settingsLlamaCppKeyHint": {
-    "description": "Hint under the llama.cpp API key field."
-  },
-  "settingsLlamaCppApiKeyHint": "Optional key if the server was started with --api-key",
-  "@settingsLlamaCppApiKeyHint": {
-    "description": "Placeholder for the llama.cpp API key."
-  },
-  "settingsLlamaCppApiKeyDelete": "Delete key",
-  "@settingsLlamaCppApiKeyDelete": {
-    "description": "Button that removes the llama.cpp API key."
-  },
-  "settingsLlamaCppApiKeyDeleteTitle": "Delete the llama.cpp key?",
-  "@settingsLlamaCppApiKeyDeleteTitle": {
-    "description": "Confirmation dialog title before deleting the llama.cpp key."
-  },
-  "settingsLlamaCppApiKeyDeleteBody": "The server will be available without a key. The address and models stay.",
-  "@settingsLlamaCppApiKeyDeleteBody": {
-    "description": "Confirmation dialog text before deleting the llama.cpp key."
-  },
-  "settingsLlamaCppDisabled": "llama.cpp is disabled.",
-  "@settingsLlamaCppDisabled": {
-    "description": "Banner when the llama.cpp provider is disabled."
-  },
-  "settingsLlamaCppAvailable": "Server available: {count} models.",
-  "@settingsLlamaCppAvailable": {
-    "description": "Banner when the llama.cpp server is reachable.",
+  "providerApiKeyDeleteTitle": "Delete the {provider} key?",
+  "@providerApiKeyDeleteTitle": {
+    "description": "Confirmation title before deleting a provider key.",
     "placeholders": {
-      "count": {
+      "provider": {
         "type": "String"
       }
     }
   },
-  "settingsLlamaCppError": "Server error: {error}",
-  "@settingsLlamaCppError": {
-    "description": "Banner when the llama.cpp server returns an error.",
+  "providerApiKeyDeleteBody": "The {provider} provider will be available without a key. Its address and models stay.",
+  "@providerApiKeyDeleteBody": {
+    "description": "Confirmation body before deleting a provider key.",
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "providerCheck": "Check provider",
+  "@providerCheck": {
+    "description": "Tooltip of the generic provider check button."
+  },
+  "providerDisabled": "{provider} is disabled.",
+  "@providerDisabled": {
+    "description": "Banner when a provider is disabled.",
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "providerAvailable": "Available: models — {count}.",
+  "@providerAvailable": {
+    "description": "Banner when a provider is reachable.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "providerError": "Provider error: {error}",
+  "@providerError": {
+    "description": "Banner when a provider returns an error.",
     "placeholders": {
       "error": {
         "type": "String"
       }
     }
   },
-  "settingsLlamaCppCheckHint": "Checks the server and refreshes the model list.",
-  "@settingsLlamaCppCheckHint": {
-    "description": "Banner hint before the first llama.cpp check."
+  "providerCheckHint": "Not checked yet. Press the check button to query the provider.",
+  "@providerCheckHint": {
+    "description": "Banner hint before the first provider check."
   },
-  "settingsLlamaCppUnavailable": "Server is not responding.",
-  "@settingsLlamaCppUnavailable": {
-    "description": "Banner when the llama.cpp server is not reachable."
+  "providerUnavailable": "No response during the last check.",
+  "@providerUnavailable": {
+    "description": "Banner when a provider is not reachable."
   },
-  "settingsLlamaCppCheckedAt": "Checked at {time}.",
-  "@settingsLlamaCppCheckedAt": {
-    "description": "Time of the last llama.cpp check.",
+  "providerCheckedAt": "Checked at {time}.",
+  "@providerCheckedAt": {
+    "description": "Time of the last provider check.",
     "placeholders": {
       "time": {
         "type": "String"
       }
     }
+  },
+  "onboardingKeySkipHint": "A provider is already configured. You can continue and change it later in settings.",
+  "@onboardingKeySkipHint": {
+    "description": "Onboarding hint when a local provider is already configured."
+  },
+  "settingsGroupAccount": "Providers and models",
+  "@settingsGroupAccount": {
+    "description": "Settings group: LLM providers and models."
+  },
+  "settingsGroupAccountHint": "Provider keys, local servers and models for the agent and chat titles.",
+  "@settingsGroupAccountHint": {
+    "description": "Description of the providers and models settings group."
   },
   "settingsGroupInterface": "Interface",
   "@settingsGroupInterface": {

@@ -19,10 +19,6 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 class SettingsState extends Equatable {
   const SettingsState({
-    this.apiKeyTail = '',
-    this.keyInfo,
-    this.keyInfoLoading = false,
-    this.keyInfoError,
     this.catalog = const ModelCatalogState(),
     this.defaultModel = '',
     this.titleModel = '',
@@ -39,29 +35,20 @@ class SettingsState extends Equatable {
     this.pinnedModels = const [],
     this.stepsDisplay = StepsDisplay.defaults,
     this.saved = 0,
-    this.keyError,
+    this.providerErrors = const {},
+    this.providerLoading = const {},
   });
 
-  /// Последние три символа ключа для показа. Полный ключ в состояние не попадает. Пусто — ключа нет.
-  final String apiKeyTail;
-
-  /// Ключ задан (есть хвост). Ключ хранится только в `SecretStore`.
-  bool get apiKeySet => apiKeyTail.isNotEmpty;
-
-  /// Сведения о ключе из сервиса. Null — ещё не получены или ключа нет.
-  final LlmKeyInfo? keyInfo;
-
-  /// Запрос сведений о ключе в полёте.
-  final bool keyInfoLoading;
-
-  /// Ошибка последнего запроса сведений о ключе; null после успеха.
-  final String? keyInfoError;
-
-  /// Причина, по которой ключ не принят сервисом. Прежний ключ при этом сохраняется.
-  final String? keyError;
-
-  /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
+  /// Каталог моделей: список, статус загрузки, дескрипторы провайдеров
+  /// и их статусы.
   final ModelCatalogState catalog;
+
+  /// Ошибки сохранения и проверки по id провайдера.
+  final Map<String, String> providerErrors;
+
+  /// Провайдеры, для которых идёт сохранение или проверка.
+  final Set<String> providerLoading;
+
   final String defaultModel;
   final String titleModel;
   final String memoryModel;
@@ -89,12 +76,6 @@ class SettingsState extends Equatable {
   final int saved;
 
   SettingsState copyWith({
-    String? apiKeyTail,
-    LlmKeyInfo? keyInfo,
-    bool clearKeyInfo = false,
-    bool? keyInfoLoading,
-    String? keyInfoError,
-    bool clearKeyInfoError = false,
     ModelCatalogState? catalog,
     String? defaultModel,
     String? titleModel,
@@ -111,16 +92,9 @@ class SettingsState extends Equatable {
     List<String>? pinnedModels,
     StepsDisplay? stepsDisplay,
     int? saved,
-    String? keyError,
-    bool clearKeyError = false,
+    Map<String, String>? providerErrors,
+    Set<String>? providerLoading,
   }) => SettingsState(
-    apiKeyTail: apiKeyTail ?? this.apiKeyTail,
-    keyInfo: clearKeyInfo ? null : (keyInfo ?? this.keyInfo),
-    keyInfoLoading: keyInfoLoading ?? this.keyInfoLoading,
-    keyInfoError: clearKeyInfoError
-        ? null
-        : (keyInfoError ?? this.keyInfoError),
-    keyError: clearKeyError ? null : (keyError ?? this.keyError),
     catalog: catalog ?? this.catalog,
     defaultModel: defaultModel ?? this.defaultModel,
     titleModel: titleModel ?? this.titleModel,
@@ -137,15 +111,12 @@ class SettingsState extends Equatable {
     pinnedModels: pinnedModels ?? this.pinnedModels,
     stepsDisplay: stepsDisplay ?? this.stepsDisplay,
     saved: saved ?? this.saved,
+    providerErrors: providerErrors ?? this.providerErrors,
+    providerLoading: providerLoading ?? this.providerLoading,
   );
 
   @override
   List<Object?> get props => [
-    apiKeyTail,
-    keyInfo,
-    keyInfoLoading,
-    keyInfoError,
-    keyError,
     catalog,
     defaultModel,
     titleModel,
@@ -162,6 +133,8 @@ class SettingsState extends Equatable {
     pinnedModels,
     stepsDisplay,
     saved,
+    providerErrors,
+    providerLoading,
   ];
 }
 
@@ -175,14 +148,6 @@ class SettingsCubit extends Cubit<SettingsState> {
   final ThemeController _theme;
   StreamSubscription<ModelCatalogState>? _catalogSub;
   StreamSubscription<List<String>>? _pinsSub;
-
-  /// Настройки llama.cpp, если адаптер их поддерживает. Удалённый агент
-  /// реализует их через тот же интерфейс, поэтому проверка не зависит от режима.
-  LlamaCppSettingsApi? get _llamaCppSettings =>
-      // ignore: avoid-unrelated-type-assertions, LocalAgentSettingsApi implements both interfaces.
-      _agentSettings is LlamaCppSettingsApi
-      ? _agentSettings as LlamaCppSettingsApi
-      : null;
 
   @override
   Future<void> close() async {
@@ -210,7 +175,6 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
     emit(
       state.copyWith(
-        apiKeyTail: snapshot.apiKeyTail,
         defaultModel: snapshot.defaultModel,
         titleModel: snapshot.titleModel,
         memoryModel: snapshot.memoryModel,
@@ -248,67 +212,8 @@ class SettingsCubit extends Cubit<SettingsState> {
     _pinsSub = _agentSettings.watchPinnedModels().listen(
       (pinned) => emit(state.copyWith(pinnedModels: pinned)),
     );
-    if (!snapshot.catalog.loaded &&
-        (state.apiKeySet || snapshot.catalog.llamaCpp.enabled)) {
+    if (!snapshot.catalog.loaded && snapshot.catalog.hasEnabledProvider) {
       await refreshModels();
-    } else {
-      // Каталог уже загружен: статус llama.cpp обновляем отдельно.
-      unawaited(refreshLlamaCpp());
-    }
-    await refreshKeyInfo();
-  }
-
-  /// Ключ сохраняется, только если сервис его принял. Иначе адаптер возвращает прежнее значение.
-  Future<void> saveApiKey(String key) async {
-    final trimmed = key.trim();
-    if (trimmed.isEmpty) return;
-    final LlmKeyInfo? info;
-    try {
-      await _agentSettings.saveApiKey(trimmed);
-      info = await _agentSettings.checkKey();
-    } on Object catch (error) {
-      emit(state.copyWith(keyError: _messageOf(error)));
-      return;
-    }
-    emit(
-      state.copyWith(
-        apiKeyTail: _tailOf(trimmed),
-        keyInfo: info,
-        clearKeyInfo: info == null,
-        clearKeyInfoError: true,
-        clearKeyError: true,
-        saved: state.saved + 1,
-      ),
-    );
-    await refreshModels();
-  }
-
-  /// Удаляет ключ из защищённого хранилища. Список моделей публичный и остаётся в памяти.
-  /// Фоновые обновления без ключа не запускаются: ModelCatalogService проверяет ключ перед каждой попыткой.
-  Future<void> deleteApiKey() async {
-    await _agentSettings.deleteApiKey();
-    emit(
-      state.copyWith(
-        apiKeyTail: '',
-        clearKeyInfo: true,
-        clearKeyInfoError: true,
-        clearKeyError: true,
-        saved: state.saved + 1,
-      ),
-    );
-  }
-
-  /// Запрашивает у сервиса сведения о ключе (лимит, остаток, срок). Ошибка показывается в карточке ключа.
-  Future<void> refreshKeyInfo() async {
-    if (!state.apiKeySet) return;
-    emit(state.copyWith(keyInfoLoading: true, clearKeyInfoError: true));
-    try {
-      final info = await _agentSettings.checkKey();
-      emit(state.copyWith(keyInfo: info, keyInfoLoading: false));
-    } on Object catch (error) {
-      emit(
-        state.copyWith(keyInfoLoading: false, keyInfoError: _messageOf(error)),
-      );
     }
   }
 
@@ -322,58 +227,135 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
-  /// Проверяет доступность llama.cpp и обновляет статус в каталоге.
-  Future<void> refreshLlamaCpp() async {
-    final api = _llamaCppSettings;
-    if (api == null) return;
+  /// Проверяет доступность провайдера и обновляет его статус в каталоге.
+  /// После проверки обновляется и список моделей: сервер мог включиться.
+  Future<void> checkProvider(String providerId) async {
+    await _changeProvider(providerId, () => Future<void>.value(), save: false);
+    await refreshModels();
+  }
+
+  /// Сохраняет адрес сервера и перезагружает каталог.
+  Future<void> saveProviderBaseUrl(String providerId, String baseUrl) =>
+      _changeProvider(
+        providerId,
+        () => _agentSettings.saveProviderBaseUrl(providerId, baseUrl),
+      );
+
+  /// Сохраняет ключ. Провайдер с обязательным ключом сам откатывает
+  /// нерабочее значение. Возвращает true, если ключ принят.
+  Future<bool> saveProviderApiKey(String providerId, String key) async {
+    _setProviderLoading(providerId, true);
+    _clearProviderError(providerId);
     try {
-      final status = await api.checkLlamaCpp();
-      if (status != null) {
-        emit(state.copyWith(catalog: state.catalog.copyWith(llamaCpp: status)));
-      }
-    } on Object {
-      // Статус обновится при следующем запросе или обновлении каталога.
+      final status = await _agentSettings.saveProviderApiKey(providerId, key);
+      _putProviderStatus(status);
+      await refreshModels();
+      emit(state.copyWith(saved: state.saved + 1));
+      return true;
+    } on Object catch (error) {
+      _setProviderError(providerId, _messageOf(error));
+      // Ключ мог быть откатан адаптером: забираем актуальные настройки,
+      // чтобы маска не показывала отклонённое значение.
+      await _refreshProviderConfigs();
+      return false;
+    } finally {
+      _setProviderLoading(providerId, false);
     }
   }
 
-  /// Сохраняет адрес llama.cpp server и перезагружает каталог.
-  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
-    final api = _llamaCppSettings;
-    if (api == null) return;
-    await api.saveLlamaCppBaseUrl(baseUrl);
-    await refreshLlamaCpp();
-    await refreshModels();
-    emit(state.copyWith(saved: state.saved + 1));
+  /// Удаляет ключ провайдера. Адрес и модели остаются.
+  Future<void> deleteProviderApiKey(String providerId) => _changeProvider(
+    providerId,
+    () => _agentSettings.deleteProviderApiKey(providerId),
+  );
+
+  /// Включает или выключает провайдера.
+  Future<void> setProviderEnabled(String providerId, bool enabled) =>
+      _changeProvider(
+        providerId,
+        () => _agentSettings.setProviderEnabled(providerId, enabled),
+      );
+
+  /// Общая обёртка изменения настроек провайдера: сохранение, проверка
+  /// и обновление каталога. Ошибка остаётся в карточке провайдера.
+  Future<void> _changeProvider(
+    String providerId,
+    Future<void> Function() action, {
+    bool save = true,
+  }) async {
+    _setProviderLoading(providerId, true);
+    _clearProviderError(providerId);
+    try {
+      await action();
+      final status = await _agentSettings.checkProvider(providerId);
+      _putProviderStatus(status);
+      if (save) {
+        await refreshModels();
+        emit(state.copyWith(saved: state.saved + 1));
+      }
+    } on Object catch (error) {
+      _setProviderError(providerId, _messageOf(error));
+    } finally {
+      _setProviderLoading(providerId, false);
+    }
   }
 
-  /// Сохраняет ключ llama.cpp server. Ключ не показывается в состоянии.
-  Future<void> saveLlamaCppApiKey(String key) async {
-    final api = _llamaCppSettings;
-    if (api == null) return;
-    await api.saveLlamaCppApiKey(key);
-    await refreshLlamaCpp();
-    await refreshModels();
-    emit(state.copyWith(saved: state.saved + 1));
+  void _putProviderStatus(LlmProviderStatus status) {
+    final merged = mergeProviderStatus(
+      state.catalog.providerStatuses[status.id],
+      status,
+    );
+    emit(
+      state.copyWith(
+        catalog: state.catalog.copyWith(
+          providerStatuses: {
+            ...state.catalog.providerStatuses,
+            merged.id: merged,
+          },
+        ),
+      ),
+    );
   }
 
-  /// Удаляет ключ llama.cpp server. Сам сервер остаётся доступным.
-  Future<void> deleteLlamaCppApiKey() async {
-    final api = _llamaCppSettings;
-    if (api == null) return;
-    await api.deleteLlamaCppApiKey();
-    await refreshLlamaCpp();
-    await refreshModels();
-    emit(state.copyWith(saved: state.saved + 1));
+  void _setProviderLoading(String providerId, bool loading) {
+    final next = {...state.providerLoading};
+    if (loading) {
+      next.add(providerId);
+    } else {
+      next.remove(providerId);
+    }
+    emit(state.copyWith(providerLoading: next));
   }
 
-  /// Включает или выключает провайдер llama.cpp.
-  Future<void> setLlamaCppEnabled(bool enabled) async {
-    final api = _llamaCppSettings;
-    if (api == null) return;
-    await api.setLlamaCppEnabled(enabled);
-    await refreshLlamaCpp();
-    await refreshModels();
-    emit(state.copyWith(saved: state.saved + 1));
+  void _setProviderError(String providerId, String message) {
+    emit(
+      state.copyWith(
+        providerErrors: {...state.providerErrors, providerId: message},
+      ),
+    );
+  }
+
+  void _clearProviderError(String providerId) {
+    if (!state.providerErrors.containsKey(providerId)) return;
+    final next = {...state.providerErrors}..remove(providerId);
+    emit(state.copyWith(providerErrors: next));
+  }
+
+  /// Перечитывает настройки провайдеров без сети и обновляет статусы,
+  /// сохраняя уже полученные метаданные ключа.
+  Future<void> _refreshProviderConfigs() async {
+    try {
+      final statuses = await _agentSettings.providerStatuses();
+      final next = {...state.catalog.providerStatuses};
+      for (final status in statuses) {
+        next[status.id] = mergeProviderStatus(next[status.id], status);
+      }
+      emit(
+        state.copyWith(catalog: state.catalog.copyWith(providerStatuses: next)),
+      );
+    } on Object {
+      // Статус обновится при следующей загрузке настроек.
+    }
   }
 
   Future<void> saveModels({
@@ -507,16 +489,6 @@ class SettingsCubit extends Cubit<SettingsState> {
     } on FormatException {
       return null;
     }
-  }
-
-  /// Последние три символа ключа; пустая строка, если ключа нет. Полный ключ наружу не выводится.
-  static String _tailOf(String? key) {
-    if (key == null || key.isEmpty) return '';
-    // По code points, а не по UTF-16: символ из суррогатной пары не должен разрезаться.
-    final runes = key.runes.toList();
-    return String.fromCharCodes(
-      runes.skip(runes.length > 3 ? runes.length - 3 : 0),
-    );
   }
 
   static String _messageOf(Object error) =>

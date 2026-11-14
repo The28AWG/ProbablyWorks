@@ -5,17 +5,17 @@ import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Провайдер со сценарием ответов на listModels: по одному ответу на вызов.
-class _ScriptedLlm implements LlmProvider {
+class _ScriptedLlm extends LlmProviderBase {
+  _ScriptedLlm()
+    : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   final List<Future<List<LlmModelInfo>> Function()> script = [];
   int calls = 0;
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Future<List<LlmModelInfo>> listModels() {
@@ -26,6 +26,36 @@ class _ScriptedLlm implements LlmProvider {
   @override
   Stream<LlmEvent> stream(LlmRequest request) =>
       throw UnimplementedError('not used by the catalog');
+}
+
+/// Провайдер со статусом: конфиг и проверка отличаются, чтобы проверить
+/// слияние состояния каталога.
+class _StatusLlm extends LlmProviderBase {
+  _StatusLlm() : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
+  bool enabled = true;
+
+  @override
+  Future<List<LlmProviderStatus>> configStatuses() async => [
+    LlmProviderStatus(id: descriptor.id, enabled: enabled, apiKeySet: true),
+  ];
+
+  @override
+  Future<List<LlmProviderStatus>> statuses() async => [
+    LlmProviderStatus(
+      id: descriptor.id,
+      enabled: enabled,
+      apiKeySet: true,
+      error: 'boom',
+      checkedAt: DateTime.utc(2026, 11, 14),
+    ),
+  ];
+
+  @override
+  Future<List<LlmModelInfo>> listModels() async => const [];
+
+  @override
+  Stream<LlmEvent> stream(LlmRequest request) => Stream<LlmEvent>.empty();
 }
 
 LlmModelInfo _model(String id, {String? name, bool tools = true}) =>
@@ -211,7 +241,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await sub.cancel();
 
-    expect(sizes, [0, 0, 2]);
+    expect(sizes, [0, 0, 0, 0, 2]);
   });
 
   test('retry delay grows and stops at the last step', () {
@@ -220,5 +250,80 @@ void main() {
     expect(ModelCatalogService.retryDelayFor(2), const Duration(minutes: 1));
     expect(ModelCatalogService.retryDelayFor(4), const Duration(minutes: 5));
     expect(ModelCatalogService.retryDelayFor(50), const Duration(minutes: 5));
+  });
+
+  group('provider readiness', () {
+    const providers = [llamaCppDescriptor];
+    const notChecked = ModelCatalogState(
+      providers: providers,
+      providerStatuses: {
+        llamaCppProviderId: LlmProviderStatus(
+          id: llamaCppProviderId,
+          enabled: true,
+        ),
+      },
+    );
+
+    test('a local provider is usable only after a successful check', () {
+      expect(notChecked.hasUsableProvider, isFalse);
+      expect(notChecked.hasEnabledProvider, isTrue);
+
+      final available = notChecked.copyWith(
+        providerStatuses: const {
+          llamaCppProviderId: LlmProviderStatus(
+            id: llamaCppProviderId,
+            enabled: true,
+            available: true,
+          ),
+        },
+      );
+      expect(available.hasUsableProvider, isTrue);
+    });
+
+    test('a disabled provider is not usable', () {
+      final disabled = notChecked.copyWith(
+        providerStatuses: const {
+          llamaCppProviderId: LlmProviderStatus(
+            id: llamaCppProviderId,
+            enabled: false,
+            available: true,
+          ),
+        },
+      );
+      expect(disabled.hasUsableProvider, isFalse);
+      expect(disabled.hasEnabledProvider, isFalse);
+    });
+
+    test('reading config again keeps the last check result', () async {
+      final statusLlm = _StatusLlm();
+      final service = ModelCatalogService(repository, statusLlm);
+      await service.loadProviderConfigs();
+      await service.refreshStatuses();
+
+      expect(service.state.providerStatuses['test']!.error, 'boom');
+      final checkedAt = service.state.providerStatuses['test']!.checkedAt;
+      final before = service.state.providerStatuses['test']!;
+
+      await service.loadProviderConfigs();
+
+      final after = service.state.providerStatuses['test']!;
+      expect(after.error, before.error);
+      expect(after.checkedAt, checkedAt);
+    });
+
+    test('a changed config resets the old check result', () async {
+      final statusLlm = _StatusLlm();
+      final service = ModelCatalogService(repository, statusLlm);
+      await service.loadProviderConfigs();
+      await service.refreshStatuses();
+
+      statusLlm.enabled = false;
+      await service.loadProviderConfigs();
+
+      final status = service.state.providerStatuses['test']!;
+      expect(status.enabled, isFalse);
+      expect(status.error, isNull);
+      expect(status.checkedAt, isNull);
+    });
   });
 }

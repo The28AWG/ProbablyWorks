@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/models/domain/model_list_query.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 
 LlmModelInfo _model(
   String id, {
@@ -157,23 +159,47 @@ void main() {
     expect(providersOf(models), ['anthropic', 'google', 'meta', 'openai']);
   });
 
-  test('llama.cpp models share one provider', () {
-    expect(providerOf('llamacpp:Hy-MT2-1.8B-Q4_K_M'), 'llama.cpp');
+  test('a provider without a prefix keeps upstream grouping', () {
     expect(
-      providersOf([
-        _model('llamacpp:Hy-MT2-1.8B-Q4_K_M'),
-        _model('llamacpp:Qwen3-Embedding-8B-Q4_K_M'),
-        _model('openai/gpt-4o'),
-      ]),
+      providerOf('openai/gpt-4o', providers: const [openRouterDescriptor]),
+      'openai',
+    );
+    expect(
+      providersOf(
+        [_model('openai/gpt-4o'), _model('anthropic/claude')],
+        providers: const [openRouterDescriptor],
+      ),
+      ['anthropic', 'openai'],
+    );
+  });
+
+  test('llama.cpp models share one provider', () {
+    expect(
+      providerOf(
+        'llamacpp:Hy-MT2-1.8B-Q4_K_M',
+        providers: const [llamaCppDescriptor],
+      ),
+      'llama.cpp',
+    );
+    expect(
+      providersOf(
+        [
+          _model('llamacpp:Hy-MT2-1.8B-Q4_K_M'),
+          _model('llamacpp:Qwen3-Embedding-8B-Q4_K_M'),
+          _model('openai/gpt-4o'),
+        ],
+        providers: const [llamaCppDescriptor],
+      ),
       ['llama.cpp', 'openai'],
     );
   });
 
   test('provider filter accepts llama.cpp models', () {
-    final result = applyModelQuery([
-      _model('llamacpp:Hy-MT2-1.8B-Q4_K_M'),
-      _model('openai/gpt-4o'),
-    ], const ModelListQuery(provider: 'llama.cpp'));
+    final result = applyModelQuery(
+      [_model('llamacpp:Hy-MT2-1.8B-Q4_K_M'), _model('openai/gpt-4o')],
+      const ModelListQuery(provider: 'llama.cpp'),
+      providers: const [llamaCppDescriptor],
+    );
     expect(_ids(result), ['llamacpp:Hy-MT2-1.8B-Q4_K_M']);
   });
 }

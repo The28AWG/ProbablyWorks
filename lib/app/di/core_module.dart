@@ -9,6 +9,7 @@ import 'package:plugin_declarative_http_core/declarative_http_plugin.dart'
     as http_core;
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
+import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/shortcuts/keybinding_service.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
@@ -25,6 +26,14 @@ abstract class CoreModule {
 
   @lazySingleton
   AppRouter appRouter(ApiKeyGuard guard) => AppRouter(apiKeyGuard: guard);
+
+  /// Guard проверяет наличие настроенного провайдера. Сам каталог
+  /// подключается после регистрации агентских зависимостей.
+  @lazySingleton
+  ApiKeyGuard apiKeyGuard(
+    ProfileService profiles,
+    LocalAgentApisProvider local,
+  ) => ApiKeyGuard(profiles, local);
 
   /// Backend локального профиля выбирает bootstrap.
   @lazySingleton

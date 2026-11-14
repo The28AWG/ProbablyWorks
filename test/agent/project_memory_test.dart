@@ -14,13 +14,11 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной ответ.
-class _MemoryLlm implements LlmProvider {
+class _MemoryLlm extends LlmProviderBase {
+  _MemoryLlm() : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+
   final script = <List<LlmEvent>>[];
   final requests = <LlmRequest>[];
-
-  @override
-  Future<LlmKeyInfo> checkKey() =>
-      Future.value(const LlmKeyInfo(label: 'test', usage: 0));
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {

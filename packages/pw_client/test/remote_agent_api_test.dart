@@ -25,9 +25,11 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
@@ -247,7 +249,10 @@ void main() {
     await remote.saveDenylist(['rm -rf']);
     await remote.saveSecurityProfile(const SecurityProfile());
     await remote.saveLimits(const AppLimits(attachmentsPerMessage: 2));
-    await remote.saveApiKey('sk-or-v1-secret-abc');
+    await remote.saveProviderApiKey(
+      openRouterProviderId,
+      'sk-or-v1-secret-abc',
+    );
 
     expect(settings.written['titleModel'], 'openai/gpt-4o-mini');
     expect(settings.pinned, ['a']);
@@ -255,37 +260,41 @@ void main() {
     expect(settings.steps.thoughts, ThoughtsVisibility.expanded);
     expect(settings.denylist, ['rm -rf']);
     expect(settings.limits.attachmentsPerMessage, 2);
-    expect(settings.savedKey, 'sk-or-v1-secret-abc');
+    expect(settings.statuses[openRouterProviderId]!.apiKeySet, isTrue);
 
-    final info = await remote.checkKey();
-    expect(info?.label, 'sk-or-v1-...abc');
+    final info = await remote.checkProvider(openRouterProviderId);
+    expect(info.keyInfo?.label, 'sk-or-v1-...abc');
 
     await remote.refreshModels();
     await remote.rememberModels(['openai/gpt-4o']);
-    await remote.deleteApiKey();
+    await remote.deleteProviderApiKey(openRouterProviderId);
     expect(settings.refreshed, 1);
     expect(settings.remembered, ['openai/gpt-4o']);
-    expect(settings.savedKey, isNull);
+    expect(settings.statuses[openRouterProviderId]!.apiKeySet, isFalse);
   });
 
   test('reads and writes llama.cpp settings through the remote API', () async {
     final snapshot = await remote.load();
-    expect(snapshot.llamaCpp.enabled, isTrue);
-    expect(snapshot.llamaCpp.baseUrl, llamaCppDefaultBaseUrl);
-    expect(snapshot.llamaCpp.available, isTrue);
+    final llama = snapshot.catalog.providerStatuses[llamaCppProviderId]!;
+    expect(llama.enabled, isTrue);
+    expect(llama.baseUrl, llamaCppDefaultBaseUrl);
+    expect(llama.available, isTrue);
 
-    await remote.saveLlamaCppBaseUrl('http://127.0.0.1:9000');
-    await remote.setLlamaCppEnabled(false);
-    await remote.saveLlamaCppApiKey('secret-key');
-    final status = await remote.checkLlamaCpp();
-    expect(status?.enabled, isFalse);
-    expect(status?.baseUrl, 'http://127.0.0.1:9000');
-    expect(status?.apiKeySet, isTrue);
-    expect(status?.apiKeyTail, 'key');
+    await remote.saveProviderBaseUrl(
+      llamaCppProviderId,
+      'http://127.0.0.1:9000',
+    );
+    await remote.setProviderEnabled(llamaCppProviderId, false);
+    await remote.saveProviderApiKey(llamaCppProviderId, 'secret-key');
+    final status = await remote.checkProvider(llamaCppProviderId);
+    expect(status.enabled, isFalse);
+    expect(status.baseUrl, 'http://127.0.0.1:9000');
+    expect(status.apiKeySet, isTrue);
+    expect(status.apiKeyTail, 'key');
     expect(settings.llamaCppChecked, 1);
 
-    await remote.deleteLlamaCppApiKey();
-    expect(settings.llamaCppApiKey, isFalse);
+    await remote.deleteProviderApiKey(llamaCppProviderId);
+    expect(settings.statuses[llamaCppProviderId]!.apiKeySet, isFalse);
   });
 
   test('streams catalog and pin updates without polling', () async {
@@ -1001,8 +1010,7 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
-final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
-  String? savedKey;
+final class _FakeSettings implements AgentSettingsApi {
   final written = <String, String?>{};
   var pinned = <String>['openai/gpt-4o'];
   var denylist = <String>[];
@@ -1012,10 +1020,21 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   var defaultPolicy = 'ask';
   var refreshed = 0;
   var remembered = <String>[];
-  var llamaCppBaseUrl = llamaCppDefaultBaseUrl;
-  var llamaCppEnabled = true;
-  var llamaCppApiKey = false;
   var llamaCppChecked = 0;
+
+  final statuses = <String, LlmProviderStatus>{
+    openRouterProviderId: const LlmProviderStatus(
+      id: openRouterProviderId,
+      available: true,
+    ),
+    llamaCppProviderId: LlmProviderStatus(
+      id: llamaCppProviderId,
+      baseUrl: llamaCppDefaultBaseUrl,
+      available: true,
+      modelCount: 1,
+      checkedAt: DateTime.utc(2026, 11, 14),
+    ),
+  };
 
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
@@ -1029,20 +1048,13 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
     limits: limits,
     pinnedModels: pinned,
     stepsDisplay: steps,
-    apiKeyTail: savedKey == null ? '' : 'abc',
     catalog: ModelCatalogState(
       models: [
         LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
       ],
       syncedAt: DateTime.utc(2026, 11, 11),
-      llamaCpp: LlamaCppStatus(
-        enabled: llamaCppEnabled,
-        baseUrl: llamaCppBaseUrl,
-        apiKeySet: llamaCppApiKey,
-        apiKeyTail: llamaCppApiKey ? 'key' : '',
-        available: true,
-        modelCount: 1,
-      ),
+      providers: const [openRouterDescriptor, llamaCppDescriptor],
+      providerStatuses: Map.of(statuses),
     ),
   );
 
@@ -1091,27 +1103,6 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   }
 
   @override
-  Future<void> saveApiKey(String key) async {
-    savedKey = key;
-  }
-
-  @override
-  Future<void> deleteApiKey() async {
-    savedKey = null;
-  }
-
-  @override
-  Future<LlmKeyInfo?> checkKey() async => savedKey == null
-      ? null
-      : LlmKeyInfo(
-          label: 'sk-or-v1-...abc',
-          usage: 1,
-          limit: 10,
-          limitRemaining: 9,
-          isFreeTier: false,
-        );
-
-  @override
   Future<void> refreshModels() async {
     refreshed++;
   }
@@ -1122,37 +1113,59 @@ final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   }
 
   @override
-  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
-    llamaCppBaseUrl = baseUrl;
+  Future<List<LlmProviderStatus>> providerStatuses() async =>
+      statuses.values.toList();
+
+  @override
+  Future<LlmProviderStatus> checkProvider(String providerId) async {
+    if (providerId == llamaCppProviderId) llamaCppChecked++;
+    final current = statuses[providerId]!;
+    final next = current.copyWith(checkedAt: DateTime.utc(2026, 11, 14));
+    statuses[providerId] = next;
+    return next;
   }
 
   @override
-  Future<void> saveLlamaCppApiKey(String key) async {
-    llamaCppApiKey = true;
+  Future<void> saveProviderBaseUrl(String providerId, String? baseUrl) async {
+    statuses[providerId] = statuses[providerId]!.copyWith(baseUrl: baseUrl);
   }
 
   @override
-  Future<void> deleteLlamaCppApiKey() async {
-    llamaCppApiKey = false;
-  }
-
-  @override
-  Future<void> setLlamaCppEnabled(bool enabled) async {
-    llamaCppEnabled = enabled;
-  }
-
-  @override
-  Future<LlamaCppStatus?> checkLlamaCpp() async {
-    llamaCppChecked++;
-    return LlamaCppStatus(
-      enabled: llamaCppEnabled,
-      baseUrl: llamaCppBaseUrl,
-      apiKeySet: llamaCppApiKey,
-      apiKeyTail: llamaCppApiKey ? 'key' : '',
+  Future<LlmProviderStatus> saveProviderApiKey(
+    String providerId,
+    String key,
+  ) async {
+    final current = statuses[providerId]!;
+    final next = current.copyWith(
+      apiKeySet: true,
+      apiKeyTail: charSuffix(key, 3),
       available: true,
-      modelCount: 1,
-      checkedAt: DateTime.utc(2026, 11, 14),
+      clearError: true,
+      keyInfo: providerId == openRouterProviderId
+          ? const LlmKeyInfo(
+              label: 'sk-or-v1-...abc',
+              usage: 1,
+              limit: 10,
+              limitRemaining: 9,
+            )
+          : null,
     );
+    statuses[providerId] = next;
+    return next;
+  }
+
+  @override
+  Future<void> deleteProviderApiKey(String providerId) async {
+    statuses[providerId] = statuses[providerId]!.copyWith(
+      apiKeySet: false,
+      apiKeyTail: '',
+      clearKeyInfo: true,
+    );
+  }
+
+  @override
+  Future<void> setProviderEnabled(String providerId, bool enabled) async {
+    statuses[providerId] = statuses[providerId]!.copyWith(enabled: enabled);
   }
 }
 

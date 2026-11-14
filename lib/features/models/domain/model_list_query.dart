@@ -1,15 +1,19 @@
 import 'package:pw_agent/core/util/char_substring.dart';
-import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Порядок списка в диалоге выбора моделей. [provider] — группы по провайдеру, остальные — плоский список.
 enum ModelSort { provider, name, context, price, newest }
 
-/// Провайдер модели: часть id до первого `/` (`openai/gpt-4o` → `openai`).
-/// Модели llama.cpp получают общий провайдер `llama.cpp`, а не отдельный
-/// на каждую модель: в каталоге у них нет `/`.
-String providerOf(String id) {
-  if (isLlamaCppModel(id)) return 'llama.cpp';
+/// Подпись провайдера модели: для провайдера с префиксом — его label,
+/// иначе часть id до `/` (upstream-провайдер OpenRouter).
+String providerOf(
+  String id, {
+  List<LlmProviderDescriptor> providers = const [],
+}) {
+  final descriptor = providerDescriptorOf(id, providers);
+  if (descriptor != null && descriptor.modelPrefix.isNotEmpty) {
+    return descriptor.label;
+  }
   final slash = id.indexOf('/');
   return slash <= 0 ? id : charPrefix(id, slash);
 }
@@ -26,9 +30,14 @@ double? totalPriceOf(LlmModelInfo model) {
 bool isFreeModel(LlmModelInfo model) => totalPriceOf(model) == 0;
 
 /// Провайдеры доступных моделей, по алфавиту.
-List<String> providersOf(List<LlmModelInfo> models) {
-  final providers = <String>{for (final model in models) providerOf(model.id)};
-  return providers.toList()..sort();
+List<String> providersOf(
+  List<LlmModelInfo> models, {
+  List<LlmProviderDescriptor> providers = const [],
+}) {
+  final labels = <String>{
+    for (final model in models) providerOf(model.id, providers: providers),
+  };
+  return labels.toList()..sort();
 }
 
 /// Фильтры и сортировка диалога выбора. Пустой [provider] — все провайдеры.
@@ -61,10 +70,16 @@ class ModelListQuery {
     sort: sort ?? this.sort,
   );
 
-  bool accepts(LlmModelInfo model) {
+  bool accepts(
+    LlmModelInfo model, {
+    List<LlmProviderDescriptor> providers = const [],
+  }) {
     if (toolsOnly && !model.supportsTools) return false;
     if (freeOnly && !isFreeModel(model)) return false;
-    if (provider.isNotEmpty && providerOf(model.id) != provider) return false;
+    if (provider.isNotEmpty &&
+        providerOf(model.id, providers: providers) != provider) {
+      return false;
+    }
     final text = search.trim().toLowerCase();
     if (text.isEmpty) return true;
     return model.id.toLowerCase().contains(text) ||
@@ -75,11 +90,12 @@ class ModelListQuery {
 /// Отбирает и сортирует модели из загруженного списка.
 List<LlmModelInfo> applyModelQuery(
   List<LlmModelInfo> models,
-  ModelListQuery query,
-) {
+  ModelListQuery query, {
+  List<LlmProviderDescriptor> providers = const [],
+}) {
   final result = [
     for (final model in models)
-      if (query.accepts(model)) model,
+      if (query.accepts(model, providers: providers)) model,
   ];
   final comparator = _comparatorOf(query.sort);
   if (comparator != null) result.sort(comparator);

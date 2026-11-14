@@ -11,6 +11,7 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_llm_provider.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 import 'package:test/test.dart';
 
 /// Локальный HTTP-сервер, который отвечает как llama.cpp server.
@@ -60,20 +61,20 @@ void main() {
   late AppDatabase db;
   late SettingsRepository settings;
   late MemorySecretStore secrets;
-  late LlamaCppSettingsReader reader;
+  late LlmProviderSettingsStore store;
 
   setUp(() {
     db = openInMemoryDatabase();
     settings = SettingsRepository(db);
     secrets = MemorySecretStore();
-    reader = LlamaCppSettingsReader(settings, secrets);
+    store = LlmProviderSettingsStore(settings, secrets);
   });
 
   tearDown(() => db.close());
 
-  group('LlamaCppSettingsReader', () {
+  group('LlmProviderSettingsStore for llama.cpp', () {
     test('defaults to enabled and localhost', () async {
-      final connection = await reader.read();
+      final connection = await store.read(llamaCppDescriptor);
 
       expect(connection.enabled, isTrue);
       expect(connection.baseUrl, llamaCppDefaultBaseUrl);
@@ -88,18 +89,18 @@ void main() {
       );
       await secrets.write(llamaCppKeyName, 'secret-key');
 
-      final connection = await reader.read();
+      final connection = await store.read(llamaCppDescriptor);
 
       expect(connection.enabled, isFalse);
       expect(connection.baseUrl, 'http://127.0.0.1:9000');
       expect(connection.hasApiKey, isTrue);
-      expect(connection.keyTail, 'key');
+      expect(connection.apiKeyTail, 'key');
     });
 
     test('readStatus exposes the key mask without the key', () async {
       await secrets.write(llamaCppKeyName, 'secret-key');
 
-      final status = await reader.readStatus();
+      final status = await store.readStatus(llamaCppDescriptor);
 
       expect(status.apiKeySet, isTrue);
       expect(status.apiKeyTail, 'key');
@@ -118,7 +119,9 @@ void main() {
         SettingsRepository.keyLlamaCppBaseUrl,
         server.baseUrl,
       );
-      provider = LlamaCppLlmProvider(settings: reader);
+      provider = LlamaCppLlmProvider(
+        readConfig: () => store.read(llamaCppDescriptor),
+      );
     });
 
     tearDown(() => server.close());
@@ -215,7 +218,7 @@ void main() {
       },
     );
 
-    test('checkHealth reports the server and model count', () async {
+    test('statuses report the server and model count', () async {
       server.handlers['/health'] = (request) =>
           _json(request, 200, {'status': 'ok'});
       server.handlers['/models'] = (request) => _json(request, 200, {
@@ -225,7 +228,7 @@ void main() {
         ],
       });
 
-      final status = await provider.checkHealth();
+      final status = (await provider.statuses()).single;
 
       expect(status.available, isTrue);
       expect(status.modelCount, 2);
@@ -233,11 +236,11 @@ void main() {
       expect(status.checkedAt, isNotNull);
     });
 
-    test('checkHealth reports a missing server without throwing', () async {
+    test('statuses report a missing server without throwing', () async {
       server.handlers['/health'] = (request) =>
           _json(request, 503, {'status': 'error'});
 
-      final status = await provider.checkHealth();
+      final status = (await provider.statuses()).single;
 
       expect(status.available, isFalse);
       expect(status.error, contains('not responding'));
@@ -246,8 +249,9 @@ void main() {
     test('a disabled provider does not call the server', () async {
       await settings.write(SettingsRepository.keyLlamaCppEnabled, 'false');
 
-      expect(await provider.isEnabled, isFalse);
-      expect(await provider.isAvailable, isFalse);
+      final status = (await provider.statuses()).single;
+      expect(status.enabled, isFalse);
+      expect(status.available, isFalse);
       expect(await provider.listModels(), isEmpty);
       expect(server.requests, isEmpty);
     });
@@ -423,10 +427,11 @@ void main() {
     });
   });
 
-  group('LlamaCppStatus', () {
+  group('LlmProviderStatus', () {
     test('copyWith keeps values and clears the error', () {
       final now = DateTime(2026, 1, 1);
-      const status = LlamaCppStatus(
+      const status = LlmProviderStatus(
+        id: llamaCppProviderId,
         enabled: true,
         baseUrl: 'http://localhost:8080',
         available: true,

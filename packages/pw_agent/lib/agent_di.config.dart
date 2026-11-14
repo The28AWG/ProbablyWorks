@@ -76,11 +76,12 @@ import 'host/host_runtime_factory.dart' as _i611;
 import 'host/portable_pty_launcher.dart' as _i480;
 import 'host/pty_launcher.dart' as _i363;
 import 'host/ssh_connection_pool.dart' as _i414;
-import 'providers/ai/llama_cpp/llama_cpp_connection.dart' as _i38;
 import 'providers/ai/llama_cpp/llama_cpp_llm_provider.dart' as _i924;
 import 'providers/ai/llm_port.dart' as _i179;
+import 'providers/ai/llm_provider_registry.dart' as _i502;
 import 'providers/ai/model_catalog.dart' as _i370;
 import 'providers/ai/openrouter/openrouter_llm_provider.dart' as _i1042;
+import 'providers/ai/provider_settings_store.dart' as _i119;
 import 'src/agent/loop/agent_hub.dart' as _i667;
 
 extension GetItInjectableX on _i174.GetIt {
@@ -142,8 +143,8 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i154.SessionStateService>(
       () => _i154.SessionStateService(gh<_i906.ChatRepository>()),
     );
-    gh.singleton<_i38.LlamaCppSettingsReader>(
-      () => agentCoreModule.llamaCppSettingsReader(
+    gh.singleton<_i119.LlmProviderSettingsStore>(
+      () => agentCoreModule.llmProviderSettingsStore(
         gh<_i384.SettingsRepository>(),
         gh<_i249.SecretStore>(),
       ),
@@ -164,16 +165,21 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i408.PluginRegistry>(),
       ),
     );
+    gh.singleton<_i1042.OpenRouterLlmProvider>(
+      () => agentCoreModule.openRouterLlmProvider(
+        gh<_i119.LlmProviderSettingsStore>(),
+      ),
+    );
+    gh.singleton<_i924.LlamaCppLlmProvider>(
+      () => agentCoreModule.llamaCppLlmProvider(
+        gh<_i119.LlmProviderSettingsStore>(),
+      ),
+    );
     gh.lazySingleton<_i993.CommandExecutor>(
       () => _i993.CommandExecutor(
         gh<_i473.ExecLogStore>(),
         gh<_i1048.ActiveExecRegistry>(),
         gh<_i378.LiveOutputBus>(),
-      ),
-    );
-    gh.singleton<_i924.LlamaCppLlmProvider>(
-      () => agentCoreModule.llamaCppLlmProvider(
-        gh<_i38.LlamaCppSettingsReader>(),
       ),
     );
     gh.lazySingleton<_i985.HostRepository>(
@@ -190,9 +196,6 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i384.SettingsRepository>(),
         gh<_i249.SecretStore>(),
       ),
-    );
-    gh.singleton<_i1042.OpenRouterLlmProvider>(
-      () => agentCoreModule.openRouterLlmProvider(gh<_i249.SecretStore>()),
     );
     gh.lazySingleton<_i290.McpClientManager>(
       () => _i290.McpClientManager(
@@ -214,11 +217,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i414.HostKeyConfirmations>(),
       ),
     );
-    gh.singleton<_i179.LlmProvider>(
-      () => agentCoreModule.llmProvider(
+    gh.singleton<_i502.LlmProviderRegistry>(
+      () => agentCoreModule.llmProviderRegistry(
         gh<_i1042.OpenRouterLlmProvider>(),
         gh<_i924.LlamaCppLlmProvider>(),
       ),
+    );
+    gh.singleton<_i179.LlmProvider>(
+      () => agentCoreModule.llmProvider(gh<_i502.LlmProviderRegistry>()),
     );
     gh.lazySingleton<_i611.HostRuntimeFactory>(
       () => _i611.HostRuntimeFactory(
@@ -270,13 +276,6 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i179.LlmProvider>(),
       ),
     );
-    gh.lazySingleton<_i110.AgentSettingsApi>(
-      () => _i825.LocalAgentSettingsApi(
-        gh<_i384.SettingsRepository>(),
-        gh<_i249.SecretStore>(),
-        gh<_i370.ModelCatalogService>(),
-      ),
-    );
     gh.lazySingleton<_i346.ProjectsApi>(
       () => _i623.LocalProjectsApi(
         gh<_i518.ProjectRepository>(),
@@ -302,6 +301,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i196.AppearancePort>(),
         gh<_i370.ModelCatalogService>(),
         gh<_i1011.HostDiagnostics>(),
+      ),
+    );
+    gh.lazySingleton<_i110.AgentSettingsApi>(
+      () => _i825.LocalAgentSettingsApi(
+        gh<_i384.SettingsRepository>(),
+        gh<_i370.ModelCatalogService>(),
+        gh<_i502.LlmProviderRegistry>(),
+        gh<_i119.LlmProviderSettingsStore>(),
       ),
     );
     gh.lazySingleton<_i780.ToolExecutor>(
