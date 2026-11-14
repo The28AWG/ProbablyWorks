@@ -5,12 +5,14 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Локальные настройки агента.
 @LazySingleton(as: AgentSettingsApi)
-final class LocalAgentSettingsApi implements AgentSettingsApi {
+final class LocalAgentSettingsApi
+    implements AgentSettingsApi, LlamaCppSettingsApi {
   LocalAgentSettingsApi(this._settings, this._secrets, this._catalog);
 
   final SettingsRepository _settings;
@@ -39,6 +41,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
       stepsDisplay: await _settings.readStepsDisplay(),
       apiKeyTail: _tailOf(key),
       catalog: _catalog.state,
+      llamaCpp: _catalog.state.llamaCpp,
     );
   }
 
@@ -104,6 +107,34 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
 
   @override
   Future<void> rememberModels(List<String> ids) => _catalog.remember(ids);
+
+  @override
+  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
+    final trimmed = baseUrl.trim();
+    await _settings.write(
+      SettingsRepository.keyLlamaCppBaseUrl,
+      trimmed.isEmpty ? null : trimmed,
+    );
+  }
+
+  @override
+  Future<void> saveLlamaCppApiKey(String key) async {
+    final trimmed = key.trim();
+    if (trimmed.isEmpty) return;
+    await _secrets.write(llamaCppKeyName, trimmed);
+  }
+
+  @override
+  Future<void> deleteLlamaCppApiKey() => _secrets.delete(llamaCppKeyName);
+
+  @override
+  Future<void> setLlamaCppEnabled(bool enabled) => _settings.write(
+    SettingsRepository.keyLlamaCppEnabled,
+    enabled ? null : 'false',
+  );
+
+  @override
+  Future<LlamaCppStatus?> checkLlamaCpp() => _catalog.checkLlamaCpp();
 
   static String _tailOf(String? key) {
     if (key == null || key.isEmpty) return '';

@@ -176,6 +176,14 @@ class SettingsCubit extends Cubit<SettingsState> {
   StreamSubscription<ModelCatalogState>? _catalogSub;
   StreamSubscription<List<String>>? _pinsSub;
 
+  /// Настройки llama.cpp, если адаптер их поддерживает. Удалённый агент
+  /// реализует их через тот же интерфейс, поэтому проверка не зависит от режима.
+  LlamaCppSettingsApi? get _llamaCppSettings =>
+      // ignore: avoid-unrelated-type-assertions, LocalAgentSettingsApi implements both interfaces.
+      _agentSettings is LlamaCppSettingsApi
+      ? _agentSettings as LlamaCppSettingsApi
+      : null;
+
   @override
   Future<void> close() async {
     await _catalogSub?.cancel();
@@ -240,7 +248,13 @@ class SettingsCubit extends Cubit<SettingsState> {
     _pinsSub = _agentSettings.watchPinnedModels().listen(
       (pinned) => emit(state.copyWith(pinnedModels: pinned)),
     );
-    if (!snapshot.catalog.loaded && state.apiKeySet) await refreshModels();
+    if (!snapshot.catalog.loaded &&
+        (state.apiKeySet || snapshot.catalog.llamaCpp.enabled)) {
+      await refreshModels();
+    } else {
+      // Каталог уже загружен: статус llama.cpp обновляем отдельно.
+      unawaited(refreshLlamaCpp());
+    }
     await refreshKeyInfo();
   }
 
@@ -298,13 +312,68 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
-  /// Обновляет список из OpenRouter. Загрузка и ошибка приходят в состоянии каталога.
+  /// Обновляет список моделей из всех провайдеров. Загрузка и ошибка приходят
+  /// в состоянии каталога.
   Future<void> refreshModels() async {
     try {
       await _agentSettings.refreshModels();
     } on Object {
       // Ошибка уже в state.catalog.error; повтор запланирован каталогом.
     }
+  }
+
+  /// Проверяет доступность llama.cpp и обновляет статус в каталоге.
+  Future<void> refreshLlamaCpp() async {
+    final api = _llamaCppSettings;
+    if (api == null) return;
+    try {
+      final status = await api.checkLlamaCpp();
+      if (status != null) {
+        emit(state.copyWith(catalog: state.catalog.copyWith(llamaCpp: status)));
+      }
+    } on Object {
+      // Статус обновится при следующем запросе или обновлении каталога.
+    }
+  }
+
+  /// Сохраняет адрес llama.cpp server и перезагружает каталог.
+  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
+    final api = _llamaCppSettings;
+    if (api == null) return;
+    await api.saveLlamaCppBaseUrl(baseUrl);
+    await refreshLlamaCpp();
+    await refreshModels();
+    emit(state.copyWith(saved: state.saved + 1));
+  }
+
+  /// Сохраняет ключ llama.cpp server. Ключ не показывается в состоянии.
+  Future<void> saveLlamaCppApiKey(String key) async {
+    final api = _llamaCppSettings;
+    if (api == null) return;
+    await api.saveLlamaCppApiKey(key);
+    await refreshLlamaCpp();
+    await refreshModels();
+    emit(state.copyWith(saved: state.saved + 1));
+  }
+
+  /// Удаляет ключ llama.cpp server. Сам сервер остаётся доступным.
+  Future<void> deleteLlamaCppApiKey() async {
+    final api = _llamaCppSettings;
+    if (api == null) return;
+    await api.deleteLlamaCppApiKey();
+    await refreshLlamaCpp();
+    await refreshModels();
+    emit(state.copyWith(saved: state.saved + 1));
+  }
+
+  /// Включает или выключает провайдер llama.cpp.
+  Future<void> setLlamaCppEnabled(bool enabled) async {
+    final api = _llamaCppSettings;
+    if (api == null) return;
+    await api.setLlamaCppEnabled(enabled);
+    await refreshLlamaCpp();
+    await refreshModels();
+    emit(state.copyWith(saved: state.saved + 1));
   }
 
   Future<void> saveModels({

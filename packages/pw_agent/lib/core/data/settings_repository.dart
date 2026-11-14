@@ -44,6 +44,10 @@ class SettingsRepository {
   static const keyStepsTools = 'stepsTools';
   static const keySidebarWidth = 'sidebarWidth';
 
+  /// Настройки llama.cpp: включён ли провайдер и адрес сервера.
+  static const keyLlamaCppEnabled = 'llamaCpp.enabled';
+  static const keyLlamaCppBaseUrl = 'llamaCpp.baseUrl';
+
   /// Одноразовая миграция прав файлов, созданных до их ужесточения.
   static const keyPermissionsMigrated = 'permissionsMigrated';
   static const keyLastUsageContextPrefix = 'contextLength:';

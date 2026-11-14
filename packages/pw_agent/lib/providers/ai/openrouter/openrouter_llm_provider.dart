@@ -37,6 +37,12 @@ class OpenRouterLlmProvider implements LlmProvider {
     );
   }
 
+  /// Ключ задан. Используется агрегатором, чтобы не трогать сеть без ключа.
+  Future<bool> get hasKey async {
+    final key = await _apiKey();
+    return key != null && key.isNotEmpty;
+  }
+
   @override
   Stream<LlmEvent> stream(LlmRequest request) async* {
     final client = await _client();
@@ -274,7 +280,8 @@ ChatMessages openRouterMessageOf(LlmMessage message) => switch (message.role) {
   ),
 };
 
-/// Файл → часть content: изображение как image_url, остальное как file (PDF и т.п.). Всё в data URL.
+/// Файл → часть content: изображение как image_url, аудио и видео — свои
+/// типы, остальное как file (PDF и т.п.). Всё в data URL.
 ChatContentItems _filePartOf(LlmFilePart file) {
   final dataUrl = 'data:${file.mimeType};base64,${base64Encode(file.bytes)}';
   if (file.isImage) {
@@ -285,12 +292,45 @@ ChatContentItems _filePartOf(LlmFilePart file) {
       ),
     );
   }
+  if (file.mimeType.startsWith('audio/')) {
+    return ChatContentItems.inputAudio(
+      value: ChatContentAudio(
+        inputAudio: ChatContentAudioInputAudioValue(
+          data: base64Encode(file.bytes),
+          format: _audioFormat(file.mimeType),
+        ),
+        type: ChatContentAudioTypeValue.inputAudio,
+      ),
+    );
+  }
+  if (file.mimeType.startsWith('video/')) {
+    return ChatContentItems.videoUrl(
+      value: ChatContentVideo(
+        type: ChatContentVideoTypeValue.videoUrl,
+        videoUrl: ChatContentVideoInput(url: dataUrl),
+      ),
+    );
+  }
   return ChatContentItems.file(
     value: ChatContentFile(
       file: ChatContentFileFileValue(fileData: dataUrl, filename: file.name),
       type: ChatContentFileTypeValue.file,
     ),
   );
+}
+
+/// MIME-тип аудио → формат, который понимает OpenRouter.
+String _audioFormat(String mimeType) {
+  final subtype = mimeType.split('/').last;
+  return switch (subtype) {
+    'mpeg' || 'mp3' => 'mp3',
+    'wav' || 'x-wav' => 'wav',
+    'flac' || 'x-flac' => 'flac',
+    'ogg' => 'ogg',
+    'mp4' || 'm4a' || 'x-m4a' => 'm4a',
+    'webm' => 'webm',
+    _ => subtype,
+  };
 }
 
 /// Ошибка OpenRouter → типизированная [LlmFailure]. Модель, которой нет на сервере, отдаётся с 404.

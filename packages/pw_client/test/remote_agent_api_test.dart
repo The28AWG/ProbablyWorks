@@ -25,6 +25,7 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_client/pw_client.dart';
@@ -265,6 +266,26 @@ void main() {
     expect(settings.refreshed, 1);
     expect(settings.remembered, ['openai/gpt-4o']);
     expect(settings.savedKey, isNull);
+  });
+
+  test('reads and writes llama.cpp settings through the remote API', () async {
+    final snapshot = await remote.load();
+    expect(snapshot.llamaCpp.enabled, isTrue);
+    expect(snapshot.llamaCpp.baseUrl, llamaCppDefaultBaseUrl);
+    expect(snapshot.llamaCpp.available, isTrue);
+
+    await remote.saveLlamaCppBaseUrl('http://127.0.0.1:9000');
+    await remote.setLlamaCppEnabled(false);
+    await remote.saveLlamaCppApiKey('secret-key');
+    final status = await remote.checkLlamaCpp();
+    expect(status?.enabled, isFalse);
+    expect(status?.baseUrl, 'http://127.0.0.1:9000');
+    expect(status?.apiKeySet, isTrue);
+    expect(status?.apiKeyTail, 'key');
+    expect(settings.llamaCppChecked, 1);
+
+    await remote.deleteLlamaCppApiKey();
+    expect(settings.llamaCppApiKey, isFalse);
   });
 
   test('streams catalog and pin updates without polling', () async {
@@ -980,7 +1001,7 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
-final class _FakeSettings implements AgentSettingsApi {
+final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   String? savedKey;
   final written = <String, String?>{};
   var pinned = <String>['openai/gpt-4o'];
@@ -991,6 +1012,10 @@ final class _FakeSettings implements AgentSettingsApi {
   var defaultPolicy = 'ask';
   var refreshed = 0;
   var remembered = <String>[];
+  var llamaCppBaseUrl = llamaCppDefaultBaseUrl;
+  var llamaCppEnabled = true;
+  var llamaCppApiKey = false;
+  var llamaCppChecked = 0;
 
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
@@ -1010,6 +1035,14 @@ final class _FakeSettings implements AgentSettingsApi {
         LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
       ],
       syncedAt: DateTime.utc(2026, 11, 11),
+      llamaCpp: LlamaCppStatus(
+        enabled: llamaCppEnabled,
+        baseUrl: llamaCppBaseUrl,
+        apiKeySet: llamaCppApiKey,
+        apiKeyTail: llamaCppApiKey ? 'key' : '',
+        available: true,
+        modelCount: 1,
+      ),
     ),
   );
 
@@ -1086,6 +1119,40 @@ final class _FakeSettings implements AgentSettingsApi {
   @override
   Future<void> rememberModels(List<String> ids) async {
     remembered = ids;
+  }
+
+  @override
+  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
+    llamaCppBaseUrl = baseUrl;
+  }
+
+  @override
+  Future<void> saveLlamaCppApiKey(String key) async {
+    llamaCppApiKey = true;
+  }
+
+  @override
+  Future<void> deleteLlamaCppApiKey() async {
+    llamaCppApiKey = false;
+  }
+
+  @override
+  Future<void> setLlamaCppEnabled(bool enabled) async {
+    llamaCppEnabled = enabled;
+  }
+
+  @override
+  Future<LlamaCppStatus?> checkLlamaCpp() async {
+    llamaCppChecked++;
+    return LlamaCppStatus(
+      enabled: llamaCppEnabled,
+      baseUrl: llamaCppBaseUrl,
+      apiKeySet: llamaCppApiKey,
+      apiKeyTail: llamaCppApiKey ? 'key' : '',
+      available: true,
+      modelCount: 1,
+      checkedAt: DateTime.utc(2026, 11, 14),
+    );
   }
 }
 

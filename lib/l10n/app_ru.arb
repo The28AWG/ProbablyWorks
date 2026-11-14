@@ -1565,6 +1565,113 @@
   "@settingsGroupAccountHint": {
     "description": "Description of the API and models settings group."
   },
+  "settingsLlamaCppTitle": "Сервер llama.cpp",
+  "@settingsLlamaCppTitle": {
+    "description": "Settings section: llama.cpp server provider."
+  },
+  "settingsLlamaCppDescription": "OpenAI-совместимый сервер. Его модели появляются в каталоге, когда сервер доступен.",
+  "@settingsLlamaCppDescription": {
+    "description": "Description of the llama.cpp server settings section."
+  },
+  "settingsLlamaCppEnabledOn": "Включён",
+  "@settingsLlamaCppEnabledOn": {
+    "description": "Choice: llama.cpp provider is enabled."
+  },
+  "settingsLlamaCppEnabledOff": "Выключен",
+  "@settingsLlamaCppEnabledOff": {
+    "description": "Choice: llama.cpp provider is disabled."
+  },
+  "settingsLlamaCppEnabledHint": "Выключенный провайдер не опрашивает сервер, и его модели не показываются.",
+  "@settingsLlamaCppEnabledHint": {
+    "description": "Hint for the llama.cpp enabled/disabled choice."
+  },
+  "settingsLlamaCppBaseUrl": "Адрес сервера",
+  "@settingsLlamaCppBaseUrl": {
+    "description": "Field label: llama.cpp server address."
+  },
+  "settingsLlamaCppHint": "Сервер проверяется при запуске и при обновлении списка моделей.",
+  "@settingsLlamaCppHint": {
+    "description": "Hint under the llama.cpp address field."
+  },
+  "settingsLlamaCppBaseUrlHint": "http://localhost:8080",
+  "@settingsLlamaCppBaseUrlHint": {
+    "description": "Placeholder for the llama.cpp server address."
+  },
+  "settingsLlamaCppBaseUrlInvalid": "Укажите корректный адрес http:// или https://.",
+  "@settingsLlamaCppBaseUrlInvalid": {
+    "description": "Error when the llama.cpp address is not a valid http(s) URL."
+  },
+  "settingsLlamaCppCheck": "Проверить сервер",
+  "@settingsLlamaCppCheck": {
+    "description": "Tooltip of the button that checks the llama.cpp server."
+  },
+  "settingsLlamaCppSave": "Сохранить",
+  "@settingsLlamaCppSave": {
+    "description": "Tooltip of the button that saves the llama.cpp address."
+  },
+  "settingsLlamaCppApiKey": "Ключ API",
+  "@settingsLlamaCppApiKey": {
+    "description": "Field label: llama.cpp API key."
+  },
+  "settingsLlamaCppKeyHint": "Ключ хранится в защищённом хранилище.",
+  "@settingsLlamaCppKeyHint": {
+    "description": "Hint under the llama.cpp API key field."
+  },
+  "settingsLlamaCppApiKeyHint": "Необязательный ключ, если сервер запущен с --api-key",
+  "@settingsLlamaCppApiKeyHint": {
+    "description": "Placeholder for the llama.cpp API key."
+  },
+  "settingsLlamaCppApiKeyDelete": "Удалить ключ",
+  "@settingsLlamaCppApiKeyDelete": {
+    "description": "Button that removes the llama.cpp API key."
+  },
+  "settingsLlamaCppApiKeyDeleteTitle": "Удалить ключ llama.cpp?",
+  "@settingsLlamaCppApiKeyDeleteTitle": {
+    "description": "Confirmation dialog title before deleting the llama.cpp key."
+  },
+  "settingsLlamaCppApiKeyDeleteBody": "Сервер будет доступен без ключа. Адрес и модели останутся.",
+  "@settingsLlamaCppApiKeyDeleteBody": {
+    "description": "Confirmation dialog text before deleting the llama.cpp key."
+  },
+  "settingsLlamaCppDisabled": "llama.cpp выключен.",
+  "@settingsLlamaCppDisabled": {
+    "description": "Banner when the llama.cpp provider is disabled."
+  },
+  "settingsLlamaCppAvailable": "Сервер доступен: моделей — {count}.",
+  "@settingsLlamaCppAvailable": {
+    "description": "Banner when the llama.cpp server is reachable.",
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsLlamaCppError": "Ошибка сервера: {error}",
+  "@settingsLlamaCppError": {
+    "description": "Banner when the llama.cpp server returns an error.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsLlamaCppCheckHint": "Проверяет сервер и обновляет список моделей.",
+  "@settingsLlamaCppCheckHint": {
+    "description": "Banner hint before the first llama.cpp check."
+  },
+  "settingsLlamaCppUnavailable": "Сервер не отвечает.",
+  "@settingsLlamaCppUnavailable": {
+    "description": "Banner when the llama.cpp server is not reachable."
+  },
+  "settingsLlamaCppCheckedAt": "Проверено в {time}.",
+  "@settingsLlamaCppCheckedAt": {
+    "description": "Time of the last llama.cpp check.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "settingsGroupInterface": "Интерфейс",
   "@settingsGroupInterface": {
     "description": "Settings group: interface options."

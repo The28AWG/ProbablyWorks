@@ -136,7 +136,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     final saved = _catalog.saved[id];
     return LlmModelInfo(
       id: id,
-      name: saved?.name ?? id,
+      name: saved?.name ?? modelIdForDisplay(id),
       contextLength: saved?.contextLength,
       supportsTools: saved?.supportsTools ?? false,
     );
@@ -592,7 +592,7 @@ class _ModelTile extends StatelessWidget {
         spacing: AppSpacing.xs,
         runSpacing: AppSpacing.xs,
         children: [
-          _Badge(text: model.id, mono: true),
+          _Badge(text: modelIdForDisplay(model.id), mono: true),
           if (model.contextLength != null)
             _Badge(
               text: l10n.modelMetaContext(

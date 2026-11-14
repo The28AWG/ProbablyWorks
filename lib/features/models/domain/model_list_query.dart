@@ -1,11 +1,15 @@
 import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Порядок списка в диалоге выбора моделей. [provider] — группы по провайдеру, остальные — плоский список.
 enum ModelSort { provider, name, context, price, newest }
 
 /// Провайдер модели: часть id до первого `/` (`openai/gpt-4o` → `openai`).
+/// Модели llama.cpp получают общий провайдер `llama.cpp`, а не отдельный
+/// на каждую модель: в каталоге у них нет `/`.
 String providerOf(String id) {
+  if (isLlamaCppModel(id)) return 'llama.cpp';
   final slash = id.indexOf('/');
   return slash <= 0 ? id : charPrefix(id, slash);
 }

@@ -156,4 +156,24 @@ void main() {
   test('providersOf lists providers, sorted', () {
     expect(providersOf(models), ['anthropic', 'google', 'meta', 'openai']);
   });
+
+  test('llama.cpp models share one provider', () {
+    expect(providerOf('llamacpp:Hy-MT2-1.8B-Q4_K_M'), 'llama.cpp');
+    expect(
+      providersOf([
+        _model('llamacpp:Hy-MT2-1.8B-Q4_K_M'),
+        _model('llamacpp:Qwen3-Embedding-8B-Q4_K_M'),
+        _model('openai/gpt-4o'),
+      ]),
+      ['llama.cpp', 'openai'],
+    );
+  });
+
+  test('provider filter accepts llama.cpp models', () {
+    final result = applyModelQuery([
+      _model('llamacpp:Hy-MT2-1.8B-Q4_K_M'),
+      _model('openai/gpt-4o'),
+    ], const ModelListQuery(provider: 'llama.cpp'));
+    expect(_ids(result), ['llamacpp:Hy-MT2-1.8B-Q4_K_M']);
+  });
 }

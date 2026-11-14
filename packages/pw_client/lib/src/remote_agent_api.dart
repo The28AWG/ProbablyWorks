@@ -32,6 +32,7 @@ import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:uuid/uuid.dart';
@@ -47,6 +48,7 @@ class RemoteAgentApi
         HostsApi,
         ProjectsApi,
         AgentSettingsApi,
+        LlamaCppSettingsApi,
         McpApi,
         PluginApi,
         SecurityAuditApi,
@@ -770,6 +772,41 @@ class RemoteAgentApi
   }
 
   @override
+  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
+    await _send(
+      'PUT',
+      '/settings/llama-cpp/base-url',
+      body: {'baseUrl': baseUrl},
+    );
+  }
+
+  @override
+  Future<void> saveLlamaCppApiKey(String key) async {
+    await _send('POST', '/settings/llama-cpp/api-key', body: {'key': key});
+  }
+
+  @override
+  Future<void> deleteLlamaCppApiKey() async {
+    await _send('DELETE', '/settings/llama-cpp/api-key');
+  }
+
+  @override
+  Future<void> setLlamaCppEnabled(bool enabled) async {
+    await _send(
+      'PUT',
+      '/settings/llama-cpp/enabled',
+      body: {'enabled': enabled},
+    );
+  }
+
+  @override
+  Future<LlamaCppStatus?> checkLlamaCpp() async {
+    final json = await _send('POST', '/settings/llama-cpp/check');
+    if (json is! Map) return null;
+    return _llamaCppFrom(Map<String, dynamic>.from(json));
+  }
+
+  @override
   Future<McpSnapshot> mcpSnapshot() async {
     final snapshot = mcpSnapshotFromJson(await _get('/mcp'));
     _mcpSnapshot = snapshot;
@@ -1427,6 +1464,9 @@ Map<String, Object?> _policyBody(PolicyProfile profile) => {
 AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
   final rawLimits = json['limits'];
   final rawCatalog = json['catalog'];
+  final catalog = rawCatalog is Map
+      ? _catalogFrom(Map<String, dynamic>.from(rawCatalog))
+      : const ModelCatalogState();
   return AgentSettingsSnapshot(
     defaultModel: '${json['defaultModel'] ?? ''}',
     titleModel: '${json['titleModel'] ?? ''}',
@@ -1452,9 +1492,8 @@ AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
         ? _steps(Map<String, dynamic>.from(json['steps'] as Map))
         : StepsDisplay.defaults,
     apiKeyTail: '${json['apiKeyTail'] ?? ''}',
-    catalog: rawCatalog is Map
-        ? _catalogFrom(Map<String, dynamic>.from(rawCatalog))
-        : const ModelCatalogState(),
+    catalog: catalog,
+    llamaCpp: catalog.llamaCpp,
   );
 }
 
@@ -1489,6 +1528,21 @@ ModelCatalogState _catalogFrom(Map<String, dynamic> json) => ModelCatalogState(
   syncedAt: _date(json['syncedAt']),
   loading: json['loading'] == true,
   error: json['error'] as String?,
+  llamaCpp: json['llamaCpp'] is Map
+      ? _llamaCppFrom(Map<String, dynamic>.from(json['llamaCpp'] as Map))
+      : const LlamaCppStatus(),
+);
+
+/// Статус llama.cpp из JSON-ответа. Поля без значения получают значения по умолчанию.
+LlamaCppStatus _llamaCppFrom(Map<String, dynamic> json) => LlamaCppStatus(
+  enabled: json['enabled'] != false,
+  baseUrl: '${json['baseUrl'] ?? llamaCppDefaultBaseUrl}',
+  apiKeySet: json['apiKeySet'] == true,
+  apiKeyTail: '${json['apiKeyTail'] ?? ''}',
+  available: json['available'] == true,
+  modelCount: json['modelCount'] as int?,
+  error: json['error'] as String?,
+  checkedAt: _date(json['checkedAt']),
 );
 
 LlmModelInfo _model(Map<String, dynamic> json) => LlmModelInfo(

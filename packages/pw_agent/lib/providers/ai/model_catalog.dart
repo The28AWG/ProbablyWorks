@@ -5,6 +5,7 @@ import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Статус выбранной модели относительно последнего успешного списка OpenRouter.
@@ -25,6 +26,7 @@ class ModelCatalogState extends Equatable {
     this.loading = false,
     this.error,
     this.saved = const {},
+    this.llamaCpp = const LlamaCppStatus(),
   });
 
   /// Список из последней успешной загрузки. Хранится только в памяти.
@@ -41,6 +43,9 @@ class ModelCatalogState extends Equatable {
 
   /// Выбранные модели с деталями (из БД). Нужны до загрузки списка и после того, как модель пропала.
   final Map<String, SavedModel> saved;
+
+  /// Статус подключения к llama.cpp. Сервер не опрашивается, если провайдер выключен.
+  final LlamaCppStatus llamaCpp;
 
   bool get loaded => syncedAt != null;
 
@@ -81,16 +86,25 @@ class ModelCatalogState extends Equatable {
     String? error,
     bool clearError = false,
     Map<String, SavedModel>? saved,
+    LlamaCppStatus? llamaCpp,
   }) => ModelCatalogState(
     models: models ?? this.models,
     syncedAt: syncedAt ?? this.syncedAt,
     loading: loading ?? this.loading,
     error: clearError ? null : (error ?? this.error),
     saved: saved ?? this.saved,
+    llamaCpp: llamaCpp ?? this.llamaCpp,
   );
 
   @override
-  List<Object?> get props => [models, syncedAt, loading, error, saved];
+  List<Object?> get props => [
+    models,
+    syncedAt,
+    loading,
+    error,
+    saved,
+    llamaCpp,
+  ];
 }
 
 /// Источник каталога моделей для диалогов выбора: локальный сервис или
@@ -132,6 +146,13 @@ class ModelCatalogService implements ModelCatalogSource {
   int _failures = 0;
   bool _started = false;
   Future<bool> Function() _hasKey = () async => false;
+  Future<bool> Function()? _hasProvider;
+
+  /// Провайдер llama.cpp, если он есть среди зарегистрированных. Тестовые
+  /// провайдеры интерфейс не реализуют, и статус остаётся значением по умолчанию.
+  LlamaCppStatusProvider? get _llamaCpp =>
+      // ignore: avoid-unrelated-type-assertions, MultiLlmProvider implements both interfaces.
+      _llm is LlamaCppStatusProvider ? _llm as LlamaCppStatusProvider : null;
 
   @override
   ModelCatalogState get state => _state;
@@ -148,13 +169,25 @@ class ModelCatalogService implements ModelCatalogSource {
   });
 
   /// Старт приложения: выбранные модели из БД, загрузка списка и периодическое обновление.
-  /// [hasKey] проверяется перед каждой автоматической попыткой: без ключа сеть не трогаем и не повторяем.
-  Future<void> start({required Future<bool> Function() hasKey}) async {
+  /// [hasKey] проверяется перед каждой автоматической попыткой OpenRouter: без ключа сеть не трогаем.
+  /// [hasProvider] — дополнительный провайдер (llama.cpp); по умолчанию проверяется его включённость.
+  Future<void> start({
+    required Future<bool> Function() hasKey,
+    Future<bool> Function()? hasProvider,
+  }) async {
     await loadSaved();
     _hasKey = hasKey;
+    _hasProvider = hasProvider ?? _defaultHasProvider;
     _started = true;
     _periodic ??= Timer.periodic(_refreshEvery, (_) => _quietRefresh());
     _quietRefresh();
+  }
+
+  /// Проверка, что дополнительный провайдер включён. Не трогает сеть.
+  Future<bool> _defaultHasProvider() {
+    final provider = _llamaCpp;
+    if (provider == null) return Future.value(false);
+    return provider.isEnabled;
   }
 
   /// Выбранные модели из БД: доступны сразу, до загрузки списка.
@@ -175,8 +208,19 @@ class ModelCatalogService implements ModelCatalogSource {
   Future<void> refresh() =>
       _refreshing ??= _load().whenComplete(() => _refreshing = null);
 
-  /// Проверяет ключ запросом с авторизацией и возвращает его сведения. Список моделей ключ не подтверждает: он публичный.
+  /// Проверяет ключ OpenRouter запросом с авторизацией и возвращает его сведения.
+  /// Список моделей ключ не подтверждает: он публичный.
   Future<LlmKeyInfo> checkKey() => _llm.checkKey();
+
+  /// Проверяет доступность llama.cpp и обновляет статус в состоянии.
+  /// Возвращает null, если провайдера llama.cpp нет среди зарегистрированных.
+  Future<LlamaCppStatus?> checkLlamaCpp() async {
+    final provider = _llamaCpp;
+    if (provider == null) return null;
+    final status = await provider.checkHealth();
+    _emit(_state.copyWith(llamaCpp: status));
+    return status;
+  }
 
   /// Запоминает выбранные модели с деталями. Если модели нет в загруженном списке,
   /// сохраняются только id и уже известные данные.
@@ -199,12 +243,15 @@ class ModelCatalogService implements ModelCatalogSource {
 
   Future<void> _load() async {
     _emit(_state.copyWith(loading: true));
+    // Статус llama.cpp проверяем до списка: он не должен падать вместе с ним.
+    final llamaCpp = await _llamaCpp?.checkHealth();
+    if (llamaCpp != null) _emit(_state.copyWith(llamaCpp: llamaCpp));
     final List<LlmModelInfo> listed;
     try {
       listed = await _llm.listModels();
       // Пустой ответ не считаем успехом: иначе сбой выглядел бы как исчезновение всех моделей.
       if (listed.isEmpty) {
-        throw const LlmFailure('OpenRouter returned an empty model list');
+        throw const LlmFailure('No AI provider returned a model list');
       }
     } on Object catch (error, stack) {
       _log.warning('model list refresh failed', error, stack);
@@ -252,7 +299,8 @@ class ModelCatalogService implements ModelCatalogSource {
     _retry = Timer(retryDelayFor(_failures++), _quietRefresh);
   }
 
-  /// Автоматическое обновление (старт, таймер, повтор): без ключа ничего не делает.
+  /// Автоматическое обновление (старт, таймер, повтор): без ключа OpenRouter
+  /// и без включённого дополнительного провайдера ничего не делает.
   /// Ошибка уже записана в состоянии и залогирована, поэтому здесь её не пробрасываем.
   void _quietRefresh() => unawaited(
     _autoRefresh().catchError(
@@ -261,8 +309,11 @@ class ModelCatalogService implements ModelCatalogSource {
   );
 
   Future<void> _autoRefresh() async {
-    if (!await _hasKey()) return;
-    await refresh();
+    if (await _hasKey()) {
+      await refresh();
+      return;
+    }
+    if (await (_hasProvider ?? _defaultHasProvider)()) await refresh();
   }
 
   void _emit(ModelCatalogState next) {

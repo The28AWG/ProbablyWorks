@@ -26,6 +26,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
@@ -473,6 +474,37 @@ final class ApiServer {
             rest[1] == 'check' &&
             request.method == 'POST') {
           return _checkKey(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'llama-cpp' &&
+            rest[1] == 'base-url' &&
+            request.method == 'PUT') {
+          return _saveLlamaCppBaseUrl(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'llama-cpp' &&
+            rest[1] == 'api-key' &&
+            request.method == 'POST') {
+          return _saveLlamaCppApiKey(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'llama-cpp' &&
+            rest[1] == 'api-key' &&
+            request.method == 'DELETE') {
+          await _requireLlamaCppSettingsApi().deleteLlamaCppApiKey();
+          return _json(request.response, HttpStatus.noContent, {});
+        }
+        if (rest.length == 2 &&
+            rest.first == 'llama-cpp' &&
+            rest[1] == 'enabled' &&
+            request.method == 'PUT') {
+          return _setLlamaCppEnabled(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'llama-cpp' &&
+            rest[1] == 'check' &&
+            request.method == 'POST') {
+          return _checkLlamaCpp(request);
         }
       case 'models':
         if (rest.isEmpty && request.method == 'GET') return _models(request);
@@ -1222,6 +1254,51 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, _keyInfoJson(info));
   }
 
+  Future<void> _saveLlamaCppBaseUrl(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireLlamaCppSettingsApi().saveLlamaCppBaseUrl(
+      _string(body, 'baseUrl'),
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveLlamaCppApiKey(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireLlamaCppSettingsApi().saveLlamaCppApiKey(
+      _string(body, 'key'),
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _setLlamaCppEnabled(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireLlamaCppSettingsApi().setLlamaCppEnabled(
+      body['enabled'] == true,
+    );
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _checkLlamaCpp(HttpRequest request) async {
+    final status = await _requireLlamaCppSettingsApi().checkLlamaCpp();
+    if (status == null) {
+      return _json(request.response, HttpStatus.noContent, {});
+    }
+    _json(request.response, HttpStatus.ok, _llamaCppJson(status));
+  }
+
+  LlamaCppSettingsApi _requireLlamaCppSettingsApi() {
+    final settings = _requireSettingsApi();
+    // ignore: avoid-unrelated-type-assertions, LocalAgentSettingsApi implements both interfaces.
+    if (settings is LlamaCppSettingsApi) {
+      return settings as LlamaCppSettingsApi;
+    }
+    throw const AgentApiException(
+      HttpStatus.notImplemented,
+      'llama_cpp_settings_not_available',
+      'llama.cpp settings API is not available',
+    );
+  }
+
   Future<void> _refreshModels(HttpRequest request) async {
     await _requireSettingsApi().refreshModels();
     _json(request.response, HttpStatus.accepted, {});
@@ -1902,6 +1979,19 @@ Map<String, Object?> _catalogJson(ModelCatalogState state) => {
   'syncedAt': state.syncedAt?.toUtc().toIso8601String(),
   'loading': state.loading,
   'error': state.error,
+  'llamaCpp': _llamaCppJson(state.llamaCpp),
+};
+
+/// Статус llama.cpp в JSON-ответе. Ключ не передаётся: только признак и маска.
+Map<String, Object?> _llamaCppJson(LlamaCppStatus status) => {
+  'enabled': status.enabled,
+  'baseUrl': status.baseUrl,
+  'apiKeySet': status.apiKeySet,
+  'apiKeyTail': status.apiKeyTail,
+  'available': status.available,
+  'modelCount': status.modelCount,
+  'error': status.error,
+  'checkedAt': status.checkedAt?.toUtc().toIso8601String(),
 };
 
 Map<String, Object?> _modelJson(LlmModelInfo model) => {

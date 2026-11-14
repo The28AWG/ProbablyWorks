@@ -200,11 +200,18 @@ class LlmKeyInfo extends Equatable {
   ];
 }
 
-/// Принимает ли модель файл данного типа: `image/*` требует модальность image, остальное — file.
+/// Принимает ли модель файл данного типа: `image/*` требует модальность image,
+/// `audio/*` — audio, `video/*` — video, остальное — file.
 /// Неизвестные модальности (null) означают «не принимает»: лучше отказать, чем отправить зря.
 bool acceptsFileType(List<String>? modalities, String mimeType) {
   if (modalities == null) return false;
-  final needed = mimeType.startsWith('image/') ? 'image' : 'file';
+  final needed = mimeType.startsWith('image/')
+      ? 'image'
+      : mimeType.startsWith('audio/')
+      ? 'audio'
+      : mimeType.startsWith('video/')
+      ? 'video'
+      : 'file';
   return modalities.contains(needed);
 }
 

@@ -925,6 +925,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.1"
+  llama_cpp:
+    dependency: transitive
+    description:
+      path: "."
+      ref: "v1.1.0"
+      resolved-ref: e3a48a03e02ed39237f91dd18df8067cc6e813bf
+      url: "https://github.com/The28AWG/llama_cpp.git"
+    source: git
+    version: "1.1.0"
   logging:
     dependency: "direct main"
     description:

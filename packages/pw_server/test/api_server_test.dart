@@ -27,6 +27,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/pw_server.dart';
@@ -935,6 +936,76 @@ void main() {
       expect((json['catalog'] as Map)['models'], hasLength(1));
     });
 
+    test('reads and writes llama.cpp settings', () async {
+      final (status, body) = await _request(
+        client,
+        settingsBase,
+        'GET',
+        '/api/v1/settings',
+        token: _token,
+      );
+      expect(status, HttpStatus.ok);
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      expect((json['catalog'] as Map)['llamaCpp'], isNotNull);
+
+      final (baseUrlStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/llama-cpp/base-url',
+        token: _token,
+        body: {'baseUrl': 'http://127.0.0.1:9000'},
+      );
+      expect(baseUrlStatus, HttpStatus.noContent);
+      expect(settings.llamaCppBaseUrl, 'http://127.0.0.1:9000');
+
+      final (enabledStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/settings/llama-cpp/enabled',
+        token: _token,
+        body: {'enabled': false},
+      );
+      expect(enabledStatus, HttpStatus.noContent);
+      expect(settings.llamaCppEnabled, isFalse);
+
+      final (keyStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/settings/llama-cpp/api-key',
+        token: _token,
+        body: {'key': 'secret-key'},
+      );
+      expect(keyStatus, HttpStatus.noContent);
+      expect(settings.llamaCppApiKey, isTrue);
+
+      final (checkStatus, checkBody) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/settings/llama-cpp/check',
+        token: _token,
+      );
+      expect(checkStatus, HttpStatus.ok);
+      final statusJson = jsonDecode(checkBody) as Map<String, dynamic>;
+      expect(statusJson['enabled'], isFalse);
+      expect(statusJson['baseUrl'], 'http://127.0.0.1:9000');
+      expect(statusJson['apiKeySet'], isTrue);
+      expect(settings.llamaCppChecked, 1);
+
+      final (deleteStatus, _) = await _request(
+        client,
+        settingsBase,
+        'DELETE',
+        '/api/v1/settings/llama-cpp/api-key',
+        token: _token,
+      );
+      expect(deleteStatus, HttpStatus.noContent);
+      expect(settings.llamaCppApiKey, isFalse);
+    });
+
     test('writes an arbitrary setting', () async {
       final (status, _) = await _request(
         client,
@@ -1829,7 +1900,7 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
-final class _FakeSettings implements AgentSettingsApi {
+final class _FakeSettings implements AgentSettingsApi, LlamaCppSettingsApi {
   String? savedKey;
   final written = <String, String?>{};
   var pinned = <String>['openai/gpt-4o'];
@@ -1839,6 +1910,10 @@ final class _FakeSettings implements AgentSettingsApi {
   var limits = const AppLimits();
   var refreshed = 0;
   var remembered = <String>[];
+  var llamaCppBaseUrl = llamaCppDefaultBaseUrl;
+  var llamaCppEnabled = true;
+  var llamaCppApiKey = false;
+  var llamaCppChecked = 0;
 
   AgentSettingsSnapshot get _snapshot => AgentSettingsSnapshot(
     defaultModel: 'openai/gpt-4o',
@@ -1857,6 +1932,14 @@ final class _FakeSettings implements AgentSettingsApi {
       models: [
         LlmModelInfo(id: 'openai/gpt-4o', name: 'GPT-4o', supportsTools: true),
       ],
+    ),
+    llamaCpp: LlamaCppStatus(
+      enabled: llamaCppEnabled,
+      baseUrl: llamaCppBaseUrl,
+      apiKeySet: llamaCppApiKey,
+      apiKeyTail: llamaCppApiKey ? 'key' : '',
+      available: true,
+      modelCount: 1,
     ),
   );
 
@@ -1928,6 +2011,40 @@ final class _FakeSettings implements AgentSettingsApi {
   @override
   Future<void> rememberModels(List<String> ids) async {
     remembered = ids;
+  }
+
+  @override
+  Future<void> saveLlamaCppBaseUrl(String baseUrl) async {
+    llamaCppBaseUrl = baseUrl;
+  }
+
+  @override
+  Future<void> saveLlamaCppApiKey(String key) async {
+    llamaCppApiKey = true;
+  }
+
+  @override
+  Future<void> deleteLlamaCppApiKey() async {
+    llamaCppApiKey = false;
+  }
+
+  @override
+  Future<void> setLlamaCppEnabled(bool enabled) async {
+    llamaCppEnabled = enabled;
+  }
+
+  @override
+  Future<LlamaCppStatus?> checkLlamaCpp() async {
+    llamaCppChecked++;
+    return LlamaCppStatus(
+      enabled: llamaCppEnabled,
+      baseUrl: llamaCppBaseUrl,
+      apiKeySet: llamaCppApiKey,
+      apiKeyTail: llamaCppApiKey ? 'key' : '',
+      available: true,
+      modelCount: 1,
+      checkedAt: DateTime.utc(2026, 11, 14),
+    );
   }
 }
 

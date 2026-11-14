@@ -24,6 +24,14 @@ const binaryMimeTypes = {
   'jpeg': 'image/jpeg',
   'gif': 'image/gif',
   'webp': 'image/webp',
+  'mp3': 'audio/mpeg',
+  'wav': 'audio/wav',
+  'flac': 'audio/flac',
+  'ogg': 'audio/ogg',
+  'm4a': 'audio/mp4',
+  'mp4': 'video/mp4',
+  'webm': 'video/webm',
+  'mov': 'video/quicktime',
 };
 
 /// Классифицирует уже прочитанные байты файла. Не трогает файловую систему.

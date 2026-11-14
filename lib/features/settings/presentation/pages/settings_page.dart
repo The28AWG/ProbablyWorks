@@ -18,6 +18,7 @@ import 'package:probably_works/features/settings/presentation/settings_navigatio
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/llama_cpp_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
@@ -537,6 +538,7 @@ class _SettingsViewState extends State<_SettingsView> {
             ),
         ],
       ),
+      LlamaCppSection(state: state, cubit: cubit),
     ];
   }
 
