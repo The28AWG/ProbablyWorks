@@ -17,6 +17,7 @@ import 'package:probably_works/features/settings/presentation/bloc/settings_cubi
 import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/local_models_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
@@ -67,7 +68,16 @@ class SettingsPage extends StatelessWidget {
 }
 
 /// Группы настроек. На широком экране выбирается одна группа слева, на узком — все группы списком.
-enum _Group { account, agents, interface, safety, plugins, mcp, advanced }
+enum _Group {
+  account,
+  agents,
+  models,
+  interface,
+  safety,
+  plugins,
+  mcp,
+  advanced,
+}
 
 class _SettingsView extends StatefulWidget {
   const _SettingsView({required this.initialGroup});
@@ -132,6 +142,7 @@ class _SettingsViewState extends State<_SettingsView> {
   static _Group? _groupFromName(String? name) => switch (name) {
     'account' => _Group.account,
     'agents' => _Group.agents,
+    'models' => _Group.models,
     'interface' => _Group.interface,
     'safety' => _Group.safety,
     'plugins' => _Group.plugins,
@@ -201,6 +212,7 @@ class _SettingsViewState extends State<_SettingsView> {
     final securityAuditApi =
         scope?.securityAuditApi ?? getIt<SecurityAuditApi>();
     final pushApi = scope?.pushApi ?? getIt<PushApi>();
+    final settingsApi = scope?.settingsApi ?? getIt<AgentSettingsApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
       listener: (context, state) =>
@@ -223,6 +235,10 @@ class _SettingsViewState extends State<_SettingsView> {
           _Group.agents: (
             l10n.settingsGroupAgents,
             l10n.settingsGroupAgentsHint,
+          ),
+          _Group.models: (
+            l10n.settingsGroupModels,
+            l10n.settingsGroupModelsHint,
           ),
           _Group.interface: (
             l10n.settingsGroupInterface,
@@ -261,6 +277,7 @@ class _SettingsViewState extends State<_SettingsView> {
             final groups = <_Group, List<Widget>>{
               _Group.account: _accountSections(state, cubit, l10n, source),
               _Group.agents: const [AgentProfilesSection()],
+              _Group.models: _modelSections(settingsApi, source),
               _Group.interface: _interfaceSections(
                 state,
                 cubit,
@@ -387,6 +404,11 @@ class _SettingsViewState extends State<_SettingsView> {
       },
     );
   }
+
+  /// Локальные модели: файлы среды выполнения, отдельно от провайдера.
+  List<Widget> _modelSections(AgentSettingsApi settings, ModelStore source) => [
+    LocalModelsSection(source: settings.localModels, runtime: source),
+  ];
 
   List<Widget> _accountSections(
     SettingsState state,
@@ -925,6 +947,7 @@ class _SettingsViewState extends State<_SettingsView> {
   static IconData _groupIcon(_Group group) => switch (group) {
     _Group.account => Icons.key_outlined,
     _Group.agents => Icons.devices_other_outlined,
+    _Group.models => Icons.memory,
     _Group.interface => Icons.translate,
     _Group.safety => Icons.shield_outlined,
     _Group.plugins => Icons.extension_outlined,

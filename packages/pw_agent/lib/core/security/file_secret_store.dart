@@ -18,6 +18,8 @@ final class FileSecretStore implements SecretStore {
   static const openRouterEnvironment = 'PROBABLY_WORKS_OPENROUTER_KEY';
   static const openRouterFallbackEnvironment = 'OPENROUTER_API_KEY';
   static const apiTokenEnvironment = 'PROBABLY_WORKS_API_TOKEN';
+  static const huggingFaceEnvironment = 'PROBABLY_WORKS_HUGGINGFACE_TOKEN';
+  static const huggingFaceFallbackEnvironment = 'HF_TOKEN';
 
   final File _file;
   final Map<String, String> environment;
@@ -88,6 +90,10 @@ String? secretFromEnvironment(String key, Map<String, String> environment) {
       value == null || value.isEmpty ? null : value;
   if (key == apiTokenKey) {
     return nonEmpty(environment[FileSecretStore.apiTokenEnvironment]);
+  }
+  if (key == huggingFaceTokenKey) {
+    return nonEmpty(environment[FileSecretStore.huggingFaceEnvironment]) ??
+        nonEmpty(environment[FileSecretStore.huggingFaceFallbackEnvironment]);
   }
   final providerId = providerIdFromApiKeyName(key);
   if (providerId != null) {

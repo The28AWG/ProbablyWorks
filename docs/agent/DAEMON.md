@@ -325,6 +325,8 @@ Headless `SecretStore` — MVP: JSON-файл `0600` в каталоге `0700`.
 OpenRouter и токен API можно задать переменными окружения:
 
 - `PROBABLY_WORKS_OPENROUTER_KEY` или `OPENROUTER_API_KEY`;
+- `PROBABLY_WORKS_HUGGINGFACE_TOKEN` или `HF_TOKEN` для закрытых репозиториев
+  локальных моделей;
 - `PROBABLY_WORKS_API_TOKEN`.
 
 Ключ llama.cpp задаётся в настройках агента и хранится в том же `SecretStore`.

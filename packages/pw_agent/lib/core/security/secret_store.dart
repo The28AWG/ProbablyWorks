@@ -33,6 +33,12 @@ String? providerIdFromApiKeyName(String key) {
 /// Ключ токена HTTP API в [SecretStore].
 const apiTokenKey = 'api.token';
 
+/// Токен Hugging Face для закрытых репозиториев моделей.
+///
+/// Это не ключ LLM-провайдера: токен нужен среде выполнения, чтобы скачать
+/// файл. Поэтому он живёт отдельно от `provider.<id>.apiKey`.
+const huggingFaceTokenKey = 'huggingface.token';
+
 String hostPasswordKey(String hostId) => 'host.$hostId.password';
 String hostPassphraseKey(String hostId) => 'host.$hostId.passphrase';
 

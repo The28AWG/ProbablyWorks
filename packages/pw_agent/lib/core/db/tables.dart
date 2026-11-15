@@ -333,3 +333,54 @@ class ScheduledTasks extends Table {
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
+
+/// Файлы локальных моделей среды выполнения (llamadart).
+///
+/// Это модели среды, а не модели провайдера: файл можно скачать, настроить и
+/// удалить при выключенном провайдере. Путь в БД не хранится: на iOS контейнер
+/// приложения переезжает между запусками, поэтому источник и `cacheKey`
+/// разрешаются в актуальный путь при чтении.
+@DataClassName('LocalModelRow')
+@TableIndex(name: 'local_models_source', columns: {#source})
+class LocalModels extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+
+  /// Исходник: `hf://...`, HTTP(S)-ссылка или путь на диске.
+  TextColumn get source => text()();
+
+  /// `LocalModelSourceKind` в виде строки.
+  TextColumn get sourceKind => text()();
+
+  /// Ключ кэша llamadart. Null — импортированный файл, которым владеет пользователь.
+  TextColumn get cacheKey => text().nullable()();
+  IntColumn get sizeBytes => integer().nullable()();
+  TextColumn get sha256 => text().nullable()();
+
+  /// `LocalModelSettings` в JSON. Параметры запуска и генерации файла.
+  TextColumn get settingsJson => text().withDefault(const Constant('{}'))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get lastUsedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
+/// Активные скачивания файлов локальных моделей.
+///
+/// Запись живёт с момента установки до завершения, отмены или ошибки. После
+/// перезапуска процесса сервис читает её и возобновляет загрузку: файл
+/// докачивается с `.part` (Dart-менеджер) или подхватывается платформенной
+/// задачей по `id`.
+@DataClassName('LocalModelDownloadRow')
+class LocalModelDownloads extends Table {
+  TextColumn get id => text()();
+  TextColumn get source => text()();
+  TextColumn get name => text()();
+  TextColumn get sha256 => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}

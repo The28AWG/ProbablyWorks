@@ -13,6 +13,7 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
@@ -22,6 +23,43 @@ const _key = 'sk-or-v1-secret-abc';
 
 /// Провайдер OpenRouter без сети: читает ключ из хранилища и принимает его,
 /// пока [accept] = true.
+class _EmptyLocalModels implements LocalModelsSource {
+  @override
+  LocalModelsState get state => const LocalModelsState();
+
+  @override
+  Stream<LocalModelsState> watch() => Stream.value(state);
+
+  @override
+  Future<void> refresh() => Future<void>.value();
+
+  @override
+  Future<String> startInstall(
+    String source, {
+    String? name,
+    String? sha256,
+  }) async => '';
+
+  @override
+  Future<void> cancelInstall(String id) => Future<void>.value();
+
+  @override
+  Future<String> importPath(String path, {String? name}) async => '';
+
+  @override
+  Future<void> delete(String id) => Future<void>.value();
+
+  @override
+  Future<void> updateSettings(String id, LocalModelSettings settings) =>
+      Future<void>.value();
+
+  @override
+  Future<void> clearCache() => Future<void>.value();
+
+  @override
+  Future<void> saveAutoUnload(int minutes) => Future<void>.value();
+}
+
 class _KeyLlm extends LlmProviderBase {
   _KeyLlm(this.secrets) : super(openRouterDescriptor);
 
@@ -106,6 +144,7 @@ void main() {
       registry,
       LlmProviderSettingsStore(settings, secrets),
       ModelRuntimeService(registry),
+      _EmptyLocalModels(),
     );
     theme = ThemeController();
     cubit = SettingsCubit(

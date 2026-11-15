@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bg_downloader_notification_channel_name">Загрузка моделей</string>
+    <string name="bg_downloader_notification_channel_description">Скачивание локальных моделей</string>
+    <string name="bg_downloader_cancel">Отменить</string>
+    <string name="bg_downloader_pause">Пауза</string>
+    <string name="bg_downloader_resume">Продолжить</string>
+</resources>

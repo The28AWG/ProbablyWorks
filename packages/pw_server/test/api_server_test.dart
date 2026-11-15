@@ -29,6 +29,7 @@ import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
@@ -971,6 +972,86 @@ void main() {
       );
       expect(unloadStatus, HttpStatus.noContent);
       expect(settings.runtime.unloads, ['llamacpp:qwen']);
+    });
+
+    test('serves local model files and routes actions', () async {
+      final (status, body) = await _request(
+        client,
+        settingsBase,
+        'GET',
+        '/api/v1/models/files',
+        token: _token,
+      );
+      expect(status, HttpStatus.ok);
+      expect((jsonDecode(body) as Map)['supported'], isTrue);
+
+      final (installStatus, installBody) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/files/install',
+        token: _token,
+        body: {'source': 'hf://owner/repo/model.gguf', 'name': 'Model'},
+      );
+      expect(installStatus, HttpStatus.ok);
+      expect(jsonDecode(installBody), {'id': 'model-1'});
+      expect(settings.localModelsApi.installs, ['hf://owner/repo/model.gguf']);
+
+      final (importStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/files/import',
+        token: _token,
+        body: {'path': '/models/local.gguf'},
+      );
+      expect(importStatus, HttpStatus.ok);
+      expect(settings.localModelsApi.imports, ['/models/local.gguf']);
+
+      final (settingsStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PATCH',
+        '/api/v1/models/files/model-1',
+        token: _token,
+        body: {
+          'settings': {'contextSize': 8192, 'supportsTools': false},
+        },
+      );
+      expect(settingsStatus, HttpStatus.noContent);
+      expect(settings.localModelsApi.settings?.contextSize, 8192);
+      expect(settings.localModelsApi.settings?.supportsTools, isFalse);
+
+      final (autoStatus, _) = await _request(
+        client,
+        settingsBase,
+        'PUT',
+        '/api/v1/models/files/auto-unload',
+        token: _token,
+        body: {'minutes': 30},
+      );
+      expect(autoStatus, HttpStatus.noContent);
+      expect(settings.localModelsApi.autoUnload, 30);
+
+      final (deleteStatus, _) = await _request(
+        client,
+        settingsBase,
+        'DELETE',
+        '/api/v1/models/files/model-1',
+        token: _token,
+      );
+      expect(deleteStatus, HttpStatus.noContent);
+      expect(settings.localModelsApi.deleted, ['model-1']);
+
+      final (clearStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/files/clear',
+        token: _token,
+      );
+      expect(clearStatus, HttpStatus.noContent);
+      expect(settings.localModelsApi.cleared, 1);
     });
 
     test('reads and writes provider settings', () async {
@@ -1957,6 +2038,60 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
+final class _FakeLocalModels implements LocalModelsSource {
+  final installs = <String>[];
+  final imports = <String>[];
+  final deleted = <String>[];
+  var cleared = 0;
+  var autoUnload = 0;
+  LocalModelSettings? settings;
+
+  @override
+  LocalModelsState get state => const LocalModelsState();
+
+  @override
+  Stream<LocalModelsState> watch() => Stream.value(state);
+
+  @override
+  Future<void> refresh() => Future<void>.value();
+
+  Future<String> install(String source, {String? name, String? sha256}) =>
+      startInstall(source, name: name, sha256: sha256);
+
+  @override
+  Future<String> startInstall(
+    String source, {
+    String? name,
+    String? sha256,
+  }) async {
+    installs.add(source);
+    return 'model-1';
+  }
+
+  @override
+  Future<void> cancelInstall(String id) => Future<void>.value();
+
+  @override
+  Future<String> importPath(String path, {String? name}) async {
+    imports.add(path);
+    return 'model-2';
+  }
+
+  @override
+  Future<void> delete(String id) async => deleted.add(id);
+
+  @override
+  Future<void> updateSettings(String id, LocalModelSettings value) async {
+    settings = value;
+  }
+
+  @override
+  Future<void> clearCache() async => cleared++;
+
+  @override
+  Future<void> saveAutoUnload(int minutes) async => autoUnload = minutes;
+}
+
 final class _FakeSettings implements AgentSettingsApi {
   String? savedKey;
   final written = <String, String?>{};
@@ -1973,9 +2108,13 @@ final class _FakeSettings implements AgentSettingsApi {
   var llamaCppChecked = 0;
 
   final runtime = _FakeRuntime();
+  final localModelsApi = _FakeLocalModels();
 
   @override
   ModelRuntimeSource get modelRuntime => runtime;
+
+  @override
+  LocalModelsSource get localModels => localModelsApi;
 
   LlmProviderStatus get _openRouter => LlmProviderStatus(
     id: openRouterProviderId,

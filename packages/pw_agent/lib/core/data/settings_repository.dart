@@ -58,6 +58,10 @@ class SettingsRepository {
 
   /// Одноразовая миграция прав файлов, созданных до их ужесточения.
   static const keyPermissionsMigrated = 'permissionsMigrated';
+
+  /// Через сколько минут простоя среда выполнения выгружает локальную
+  /// модель из памяти. `0` — никогда.
+  static const keyLocalModelsAutoUnload = 'localModelsAutoUnload';
   static const keyLastUsageContextPrefix = 'contextLength:';
   static const keyDailyBudgetPrefix = 'dailyBudget:';
   static const keyDailyUsagePrefix = 'dailyUsage:';

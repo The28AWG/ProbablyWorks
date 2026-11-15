@@ -28,6 +28,7 @@ import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
@@ -235,6 +236,60 @@ void main() {
     expect(remote.draftChat(hostId: 'local').hostId, 'local');
     expect(remote.session('c1').isRunning, isFalse);
     expect(remote.chatStore, isNotNull);
+  });
+
+  test('receives local model downloads over SSE', () async {
+    await remote.startEvents();
+    await remote.eventsReady.timeout(const Duration(seconds: 3));
+    final states = <LocalModelsState>[];
+    final sub = remote.localModels.watch().listen(states.add);
+    addTearDown(sub.cancel);
+
+    settings.localModelsApi.publish(
+      const LocalModelsState(
+        downloads: [
+          LocalModelDownload(
+            id: 'd',
+            name: 'Qwen 4B',
+            source: 'hf://owner/repo/qwen.gguf',
+            receivedBytes: 10,
+            totalBytes: 100,
+          ),
+        ],
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(states.last.downloads.single.receivedBytes, 10);
+  });
+
+  test('manages local model files through the remote API', () async {
+    final state = await remote.localModels.watch().first;
+    expect(state.supported, isTrue);
+
+    await remote.localModels.startInstall(
+      'hf://owner/repo/model.gguf',
+      name: 'M',
+    );
+    expect(settings.localModelsApi.installs, ['hf://owner/repo/model.gguf']);
+
+    await remote.localModels.importPath('/models/local.gguf');
+    expect(settings.localModelsApi.imports, ['/models/local.gguf']);
+
+    await remote.localModels.updateSettings(
+      'model-1',
+      const LocalModelSettings(contextSize: 8192),
+    );
+    expect(settings.localModelsApi.settings?.contextSize, 8192);
+
+    await remote.localModels.saveAutoUnload(30);
+    expect(settings.localModelsApi.autoUnload, 30);
+
+    await remote.localModels.delete('model-1');
+    expect(settings.localModelsApi.deleted, ['model-1']);
+
+    await remote.localModels.clearCache();
+    expect(settings.localModelsApi.cleared, 1);
   });
 
   test('reads and writes settings through the remote API', () async {
@@ -1017,6 +1072,93 @@ final class _FakeMcp implements McpApi {
   Future<String> exportConfig() async => '{"mcpServers":{}}';
 }
 
+final class _FakeLocalModels implements LocalModelsSource {
+  final installs = <String>[];
+  final imports = <String>[];
+  final deleted = <String>[];
+  final changes = StreamController<LocalModelsState>.broadcast();
+  LocalModelSettings? settings;
+  var autoUnload = 0;
+  var cleared = 0;
+  LocalModelsState _state = const LocalModelsState();
+
+  @override
+  LocalModelsState get state => _state;
+
+  void publish(LocalModelsState state) {
+    _state = state;
+    changes.add(state);
+  }
+
+  @override
+  Stream<LocalModelsState> watch() => Stream.multi((controller) {
+    controller.add(_state);
+    final sub = changes.stream.listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    controller.onCancel = sub.cancel;
+  });
+
+  @override
+  Future<void> refresh() => Future<void>.value();
+
+  Future<String> install(String source, {String? name, String? sha256}) =>
+      startInstall(source, name: name, sha256: sha256);
+
+  @override
+  Future<String> startInstall(
+    String source, {
+    String? name,
+    String? sha256,
+  }) async {
+    installs.add(source);
+    publish(
+      LocalModelsState(
+        models: [
+          LocalModelFile(
+            id: 'model-1',
+            name: name ?? 'Model',
+            source: source,
+            sourceKind: LocalModelSourceKind.huggingFace,
+            cacheKey: 'cache-1',
+            settings: const LocalModelSettings(),
+            createdAt: DateTime.utc(2026),
+          ),
+        ],
+      ),
+    );
+    return 'model-1';
+  }
+
+  @override
+  Future<void> cancelInstall(String id) => Future<void>.value();
+
+  @override
+  Future<String> importPath(String path, {String? name}) async {
+    imports.add(path);
+    return 'model-2';
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    deleted.add(id);
+    _state = const LocalModelsState();
+  }
+
+  @override
+  Future<void> updateSettings(String id, LocalModelSettings value) async {
+    settings = value;
+  }
+
+  @override
+  Future<void> clearCache() async => cleared++;
+
+  @override
+  Future<void> saveAutoUnload(int minutes) async => autoUnload = minutes;
+}
+
 final class _FakeSettings implements AgentSettingsApi {
   final written = <String, String?>{};
   var pinned = <String>['openai/gpt-4o'];
@@ -1031,6 +1173,11 @@ final class _FakeSettings implements AgentSettingsApi {
 
   @override
   ModelRuntimeSource get modelRuntime => _FakeRuntime();
+
+  final localModelsApi = _FakeLocalModels();
+
+  @override
+  LocalModelsSource get localModels => localModelsApi;
 
   final statuses = <String, LlmProviderStatus>{
     openRouterProviderId: const LlmProviderStatus(

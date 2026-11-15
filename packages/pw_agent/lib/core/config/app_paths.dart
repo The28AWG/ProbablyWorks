@@ -26,4 +26,10 @@ class AppPaths {
 
   /// Discovery-файл локального демона. Содержит токен, поэтому `0600`.
   File get daemonInfo => File(p.join(support.path, 'daemon.json'));
+
+  /// Скачанные файлы локальных моделей (llamadart).
+  ///
+  /// Лежат в support, а не в кэше: ОС не должна вычищать гигабайты модели
+  /// под давлением на хранилище. Каталог создаётся при первой загрузке.
+  Directory get models => Directory(p.join(support.path, 'models'));
 }

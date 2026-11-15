@@ -25,8 +25,10 @@ import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
+import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
@@ -504,6 +506,34 @@ final class ApiServer {
             rest.first == 'refresh' &&
             request.method == 'POST') {
           return _refreshModels(request);
+        }
+        if (rest.length == 1 &&
+            rest.first == 'files' &&
+            request.method == 'GET') {
+          return _modelFiles(request);
+        }
+        if (rest.length == 2 && rest.first == 'files') {
+          if (rest[1] == 'install' && request.method == 'POST') {
+            return _installModelFile(request);
+          }
+          if (rest[1] == 'import' && request.method == 'POST') {
+            return _importModelFile(request);
+          }
+          if (rest[1] == 'cancel' && request.method == 'POST') {
+            return _cancelModelFile(request);
+          }
+          if (rest[1] == 'clear' && request.method == 'POST') {
+            return _clearModelFiles(request);
+          }
+          if (rest[1] == 'auto-unload' && request.method == 'PUT') {
+            return _saveModelAutoUnload(request);
+          }
+          if (request.method == 'PATCH') {
+            return _updateModelFile(request, rest[1]);
+          }
+          if (request.method == 'DELETE') {
+            return _deleteModelFile(request, rest[1]);
+          }
         }
       case 'search':
         if (rest.isEmpty && request.method == 'GET') return _search(request);
@@ -1475,6 +1505,98 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
+  Future<void> _modelFiles(HttpRequest request) {
+    final models = _requireSettingsApi().localModels;
+    _json(request.response, HttpStatus.ok, models.state.toJson());
+    return Future<void>.value();
+  }
+
+  Future<void> _installModelFile(HttpRequest request) async {
+    final body = await _body(request);
+    final source = _string(body, 'source');
+    try {
+      final id = await _requireSettingsApi().localModels.startInstall(
+        source,
+        name: _optionalString(body, 'name'),
+        sha256: _optionalString(body, 'sha256'),
+      );
+      _json(request.response, HttpStatus.ok, {'id': id});
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(_localModelsFailure(error), stackTrace);
+    }
+  }
+
+  Future<void> _importModelFile(HttpRequest request) async {
+    final body = await _body(request);
+    final path = _string(body, 'path');
+    try {
+      final id = await _requireSettingsApi().localModels.importPath(
+        path,
+        name: _optionalString(body, 'name'),
+      );
+      _json(request.response, HttpStatus.ok, {'id': id});
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(_localModelsFailure(error), stackTrace);
+    }
+  }
+
+  Future<void> _cancelModelFile(HttpRequest request) async {
+    final body = await _body(request);
+    await _requireSettingsApi().localModels.cancelInstall(_string(body, 'id'));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _clearModelFiles(HttpRequest request) async {
+    try {
+      await _requireSettingsApi().localModels.clearCache();
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(_localModelsFailure(error), stackTrace);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _saveModelAutoUnload(HttpRequest request) async {
+    final body = await _body(request);
+    final minutes = body['minutes'];
+    if (minutes is! int || minutes < 0) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_minutes',
+        'minutes must be a non-negative integer',
+      );
+    }
+    await _requireSettingsApi().localModels.saveAutoUnload(minutes);
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _updateModelFile(HttpRequest request, String id) async {
+    final body = await _body(request);
+    final settings = LocalModelSettings.fromJson(body['settings']);
+    try {
+      await _requireSettingsApi().localModels.updateSettings(id, settings);
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(_localModelsFailure(error), stackTrace);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _deleteModelFile(HttpRequest request, String id) async {
+    try {
+      await _requireSettingsApi().localModels.delete(id);
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(_localModelsFailure(error), stackTrace);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  /// Ошибка среды выполнения → 400 с текстом причины.
+  static AgentApiException _localModelsFailure(Object error) =>
+      AgentApiException(
+        HttpStatus.badRequest,
+        'local_models_failed',
+        error is AppFailure ? error.message : '$error',
+      );
+
   Future<void> _rememberModels(HttpRequest request) async {
     final body = await _body(request);
     final ids = body['ids'];
@@ -1795,8 +1917,10 @@ final class ApiServer {
       _backend.questions.listen(controller.add),
       _backend.editChanges.listen(controller.add),
       _stateEvents.stream.listen(controller.add),
-      if (settingsApi case final api?)
+      if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
+        api.localModels.watch().listen(controller.add),
+      ],
     ];
     controller.onCancel = () async {
       for (final subscription in subscriptions) {
@@ -1850,6 +1974,21 @@ final class ApiServer {
       'missing_field',
       'expected non-empty string field "$key"',
     );
+  }
+
+  /// Необязательное строковое поле: пустая строка считается отсутствующей.
+  static String? _optionalString(Map<String, dynamic> body, String key) {
+    final value = body[key];
+    if (value == null) return null;
+    if (value is! String) {
+      throw AgentApiException(
+        HttpStatus.badRequest,
+        'bad_field',
+        'expected string field "$key"',
+      );
+    }
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   static void _json(HttpResponse response, int status, Object body) {
@@ -2265,8 +2404,8 @@ Map<String, Object?> _editJson(EditFileChangesRequest request) => {
 };
 
 bool _matchesChat(Object event, String? chatId) {
-  // Runtime моделей — глобальное состояние, а не событие чата.
-  if (event is ModelRuntimeState) return true;
+  // Runtime и файлы моделей — глобальное состояние, а не событие чата.
+  if (event is ModelRuntimeState || event is LocalModelsState) return true;
   final eventChatId = switch (event) {
     AgentEvent value => value.chatId,
     ApprovalRequest value => value.chatId,
@@ -2326,6 +2465,7 @@ bool _matchesChat(Object event, String? chatId) {
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
   ModelRuntimeState value => ('modelRuntime', {'runtime': value.toJson()}),
+  LocalModelsState value => ('localModels', value.toJson()),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',

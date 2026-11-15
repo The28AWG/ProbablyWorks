@@ -538,6 +538,14 @@ class _ProviderStatusBanner extends StatelessWidget {
         message: l10n.providerError(TextClip.headTail(message, maxChars: 300)),
       );
     }
+    if (descriptor.localModels && modelCount == 0) {
+      return AppBanner(
+        margin: EdgeInsets.zero,
+        tone: AppTone.info,
+        icon: Icons.memory,
+        message: l10n.providerNoModels(descriptor.label),
+      );
+    }
     if (status.available) {
       return AppBanner(
         margin: EdgeInsets.zero,

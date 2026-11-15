@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/background/background_run_guard.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/exit/engine_shutdown.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
@@ -13,8 +14,10 @@ import 'package:probably_works/app/profiles/profiles_cubit.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:probably_works/core/storage/download_notifications.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter_stub.dart'
     if (dart.library.io) 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter.dart';
+import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 
@@ -41,6 +44,10 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
     if (!AppPlatform.current.isWeb) {
       _runGuard = BackgroundRunGuard(getIt<AgentApi>(), _locale)..start();
     }
+    if (AppPlatform.current.isMobile) {
+      _configureDownloadNotifications();
+      _locale.addListener(_configureDownloadNotifications);
+    }
     // Черновики пишутся в БД с задержкой: при сворачивании и выходе из приложения сохраняем их сразу.
     _lifecycle = AppLifecycleListener(
       onInactive: _saveDrafts,
@@ -51,6 +58,10 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
       onDetach: _saveDrafts,
       onExitRequested: () async {
         await _drafts.flush();
+        // Linux и macOS требуют освободить нативные модели до выхода:
+        // иначе ggml завершает процесс аварийно. В режиме клиента демона
+        // агентских зависимостей в этом процессе нет.
+        await shutdownLocalEngine();
         return AppExitResponse.exit;
       },
     );
@@ -58,9 +69,18 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
 
   @override
   void dispose() {
+    if (AppPlatform.current.isMobile) {
+      _locale.removeListener(_configureDownloadNotifications);
+    }
     _runGuard?.dispose();
     _lifecycle.dispose();
     super.dispose();
+  }
+
+  void _configureDownloadNotifications() {
+    DownloadNotifications.configure(
+      lookupAppLocalizations(resolveAppLocale(_locale.value?.languageCode)),
+    );
   }
 
   void _saveDrafts() => unawaited(_drafts.flush());

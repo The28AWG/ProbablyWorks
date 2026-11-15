@@ -1,7 +1,7 @@
 # ProbablyWorks server
 
-Headless-сервер ProbablyWorks: SQLite, HTTP API, планировщик, MCP и выполнение
-команд без GUI.
+Headless-сервер ProbablyWorks: SQLite, HTTP API, планировщик, MCP, выполнение
+команд без GUI и локальные модели (`llamadart`).
 
 ## Запуск
 
@@ -29,7 +29,8 @@ Windows:
 
 Токен и секреты хранятся в OS-keyring, если он доступен. В headless-режиме
 используется файл `secrets.json` с правами `0600`; переменные окружения
-`PROBABLY_WORKS_OPENROUTER_KEY`/`OPENROUTER_API_KEY` и
+`PROBABLY_WORKS_OPENROUTER_KEY`/`OPENROUTER_API_KEY`,
+`PROBABLY_WORKS_HUGGINGFACE_TOKEN`/`HF_TOKEN` (закрытые репозитории моделей) и
 `PROBABLY_WORKS_API_TOKEN` имеют приоритет.
 
 ## Подключение GUI

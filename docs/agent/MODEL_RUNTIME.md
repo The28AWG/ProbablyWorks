@@ -48,6 +48,7 @@ runtime и работает как раньше.
 | --- | --- | --- | --- |
 | llama.cpp router | `GET /models`, `GET /models/sse` | `model_status` / `status_change`, `progress.value` по этапам | `POST /models/load`, `POST /models/unload` |
 | llama.cpp single-model | `/health` 200/503, `/v1/models` | нет | нет |
+| llamadart (локальные файлы) | состояние движка в процессе | только скачивание проектора при загрузке | `load`/`unload` через среду |
 | OpenRouter | нет | нет | нет |
 | Ollama (при добавлении) | `/api/ps` | нет | `generate` с `keep_alive: 0` |
 | LM Studio (при добавлении) | `/api/v1/models` | только в SSE нативного чата | `/api/v1/models/load|unload` |
@@ -79,6 +80,13 @@ SSE не присылает начальный снимок: сначала `GET
   выбор модели скрывает их и показывает предупреждение, чип чата помечает
   текущую модель `!`, в доке появляется баннер. После переподключения статус
   и модели возвращаются сами.
+
+## Локальные модели
+
+`llamadart` сообщает только состояние памяти: скачивание файла — это
+операция среды выполнения, она видна в `/models/files` и SSE `localModels`.
+В `/models/runtime` попадают лишь `unloaded/loading/loaded/unloading/failed`
+по установленным файлам. См. [LOCAL_MODELS.md](LOCAL_MODELS.md).
 
 ## API
 

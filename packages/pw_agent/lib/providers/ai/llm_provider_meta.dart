@@ -19,6 +19,7 @@ class LlmProviderDescriptor extends Equatable {
     this.supportsBaseUrl = false,
     this.supportsEnabledToggle = true,
     this.supportsKeyInfo = false,
+    this.localModels = false,
     this.apiKeyExample,
   });
 
@@ -53,6 +54,10 @@ class LlmProviderDescriptor extends Equatable {
   /// провайдеров настройки показывают [LlmKeyInfo].
   final bool supportsKeyInfo;
 
+  /// Провайдер обслуживает модели из локальной среды выполнения: у него нет
+  /// адреса и ключа, а карточка подсказывает установить файл, когда моделей нет.
+  final bool localModels;
+
   /// Пример формата ключа для подсказки в поле ввода. Null — общая подсказка.
   final String? apiKeyExample;
 
@@ -81,6 +86,7 @@ class LlmProviderDescriptor extends Equatable {
     supportsBaseUrl,
     supportsEnabledToggle,
     supportsKeyInfo,
+    localModels,
     apiKeyExample,
   ];
 }

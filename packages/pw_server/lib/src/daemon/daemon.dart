@@ -31,6 +31,8 @@ import 'package:pw_agent/core/platform/external_url_opener.dart';
 import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/security/system_secret_store.dart';
+import 'package:pw_agent/providers/ai/llamadart/local_models_service.dart';
+import 'package:pw_agent/providers/ai/llamadart/local_storage.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_server.dart';
@@ -83,6 +85,13 @@ Future<int> runDaemon(List<String> args) async {
         DeclarativeCommandsPlugin(),
         DeclarativeHttpPlugin(),
       ]),
+    )
+    // Демон всегда использует Dart-менеджер: платформенных загрузчиков здесь нет.
+    ..registerSingleton<LocalModelStorage>(
+      LlamadartLocalStorage(
+        cacheDirectory: paths.models.path,
+        secrets: secrets,
+      ),
     );
   await configureAgentDependencies();
 
@@ -167,6 +176,10 @@ Future<int> runDaemon(List<String> args) async {
   }
   scheduler.stop();
   await server.stop();
+  // Освобождаем нативные модели до закрытия БД и выхода процесса.
+  if (getIt.isRegistered<LocalModelsService>()) {
+    await getIt<LocalModelsService>().shutdown();
+  }
   if (paths.daemonInfo.existsSync()) paths.daemonInfo.deleteSync();
   await getIt<AppDatabase>().close();
   lock.release();

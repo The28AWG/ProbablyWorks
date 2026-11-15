@@ -2,6 +2,7 @@ import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 
@@ -84,6 +85,10 @@ abstract interface class AgentSettingsApi implements LlmProviderSettingsApi {
   /// Состояние моделей и управление загрузкой. Провайдеры без runtime
   /// возвращают пустое состояние.
   ModelRuntimeSource get modelRuntime;
+
+  /// Файлы локальных моделей и их параметры. Не зависит от того, включён ли
+  /// провайдер `llamadart`: средой можно управлять всегда.
+  LocalModelsSource get localModels;
   Stream<List<String>> watchPinnedModels();
 
   Future<void> writeSetting(String key, String? value);

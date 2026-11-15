@@ -3,6 +3,8 @@ import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/di/injection_native.config.dart';
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
+import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:probably_works/core/storage/background_local_storage.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
@@ -13,6 +15,9 @@ import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent_di.dart' as agent;
+import 'package:pw_agent/core/config/app_paths.dart';
+import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/providers/ai/llamadart/local_storage.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 export 'package:probably_works/app/di/injection.dart';
@@ -34,6 +39,21 @@ Future<void> configureDependencies() async {
 
 /// Регистрирует агентские зависимости и собирает embedded-bundle.
 Future<void> configureEmbeddedAgentDependencies() async {
+  // Хранилище локальных моделей выбирается по платформе: на телефоне —
+  // платформенный загрузчик с фоновыми задачами, на desktop — Dart-менеджер.
+  final paths = getIt<AppPaths>();
+  final secrets = getIt<SecretStore>();
+  getIt.registerSingleton<LocalModelStorage>(
+    AppPlatform.current.isMobile
+        ? BackgroundLocalStorage(
+            modelsDirectory: paths.models.path,
+            secrets: secrets,
+          )
+        : LlamadartLocalStorage(
+            cacheDirectory: paths.models.path,
+            secrets: secrets,
+          ),
+  );
   await agent.configureAgentDependencies();
   // Guard создан раньше агентских зависимостей: подключаем каталог сейчас.
   getIt<ApiKeyGuard>().hasProvider = () =>

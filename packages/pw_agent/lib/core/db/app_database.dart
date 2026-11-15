@@ -27,12 +27,14 @@ part 'app_database.g.dart';
     PolicyProfiles,
     McpServers,
     ScheduledTasks,
+    LocalModels,
+    LocalModelDownloads,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 19;
+  static const currentSchemaVersion = 21;
 
   static const _uuid = Uuid();
 
@@ -143,6 +145,16 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(savedModels, savedModels.reasoningJson);
         }
       }
+      // Версия 20: файлы локальных моделей (llamadart) и их параметры.
+      // Таблица не зависит от провайдера: файлами можно управлять, даже
+      // когда провайдер выключен.
+      if (from < 20) {
+        await m.createTable(localModels);
+        await m.createIndex(localModelsSource);
+      }
+      // Версия 21: активные скачивания локальных моделей. Нужны, чтобы
+      // продолжить загрузку после перезапуска процесса.
+      if (from < 21) await m.createTable(localModelDownloads);
     },
   );
 

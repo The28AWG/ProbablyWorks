@@ -522,6 +522,57 @@ void main() {
     expect(columns, contains('draft_revision'));
   });
 
+  test('v19 → v20 creates local model files and index', () async {
+    final db = _openAtVersion(19);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(local_models)')
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(
+      columns,
+      containsAll([
+        'id',
+        'name',
+        'source',
+        'source_kind',
+        'cache_key',
+        'size_bytes',
+        'sha256',
+        'settings_json',
+        'created_at',
+        'last_used_at',
+      ]),
+    );
+    final indexes = await db
+        .customSelect('PRAGMA index_list(local_models)')
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(indexes, contains('local_models_source'));
+  });
+
+  test('v20 → v21 creates local model download jobs', () async {
+    final db = _openAtVersion(20);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect('PRAGMA table_info(local_model_downloads)')
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(
+      columns,
+      containsAll([
+        'id',
+        'source',
+        'name',
+        'sha256',
+        'created_at',
+        'updated_at',
+      ]),
+    );
+  });
+
   test('v14 → v15 creates scheduled tasks table and index', () async {
     final db = _openAtVersion(14);
     addTearDown(db.close);

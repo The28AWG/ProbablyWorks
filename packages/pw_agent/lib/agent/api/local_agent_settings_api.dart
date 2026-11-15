@@ -7,6 +7,7 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/model_runtime_service.dart';
@@ -21,6 +22,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
     this._registry,
     this._providers,
     this._runtime,
+    this._localModels,
   );
 
   final SettingsRepository _settings;
@@ -28,9 +30,13 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
   final LlmProviderRegistry _registry;
   final LlmProviderSettingsStore _providers;
   final ModelRuntimeService _runtime;
+  final LocalModelsSource _localModels;
 
   @override
   ModelRuntimeSource get modelRuntime => _runtime;
+
+  @override
+  LocalModelsSource get localModels => _localModels;
 
   @override
   Future<AgentSettingsSnapshot> load() async {

@@ -18,6 +18,7 @@ import 'package:probably_works/core/notify/notification_action.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
+import 'package:probably_works/core/storage/download_notifications.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -132,6 +133,12 @@ Future<bool> _bootstrapEmbedded(
   // До чтения mcp.json: старые версии оставили 0644, и аудит считал бы это изменением.
   await migrateFilePermissions(paths, getIt<SettingsRepository>());
   final language = await clientSettings.read(ClientSettingsKeys.language);
+  if (AppPlatform.current.isMobile) {
+    // До первого возобновлённого скачивания: уведомления должны быть уже настроены.
+    DownloadNotifications.configure(
+      lookupAppLocalizations(resolveAppLocale(language)),
+    );
+  }
   final closedText = lookupAppLocalizations(resolveAppLocale(language))
       .runInterruptedByClose;
   await getIt<StartupRecovery>().run(closedText: closedText);

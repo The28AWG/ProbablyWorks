@@ -33,6 +33,7 @@ import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:uuid/uuid.dart';
@@ -84,6 +85,7 @@ class RemoteAgentApi
   final _projectsByChat = <String, Project?>{};
   ModelCatalogState? _catalog;
   ModelRuntimeState? _runtime;
+  LocalModelsState? _localModels;
   final _approvalsById = <String, ApprovalRequest>{};
   final _questionsById = <String, UserQuestion>{};
   final _editsById = <String, EditFileChangesRequest>{};
@@ -93,6 +95,7 @@ class RemoteAgentApi
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _runtimeChanges = StreamController<ModelRuntimeState>.broadcast();
+  final _localModelsChanges = StreamController<LocalModelsState>.broadcast();
   final _pinnedChanges = StreamController<List<String>>.broadcast();
   final _settingsChanges = StreamController<void>.broadcast();
   final _mcpStateChanges = StreamController<McpServerState>.broadcast();
@@ -167,6 +170,9 @@ class RemoteAgentApi
   ModelRuntimeSource get modelRuntime => models;
 
   @override
+  late final LocalModelsSource localModels = _RemoteLocalModels(this);
+
+  @override
   late final HostStore hostStore = _RemoteHosts(this);
 
   @override
@@ -218,6 +224,7 @@ class RemoteAgentApi
     await _editChanges.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
+    await _localModelsChanges.close();
     await _pinnedChanges.close();
     await _settingsChanges.close();
     await _mcpStateChanges.close();
@@ -477,6 +484,22 @@ class RemoteAgentApi
   void _publishRuntime(ModelRuntimeState runtime) {
     _runtime = runtime;
     if (!_runtimeChanges.isClosed) _runtimeChanges.add(runtime);
+  }
+
+  Future<void> _loadLocalModels() async {
+    try {
+      _publishLocalModels(
+        LocalModelsState.fromJson(await _get('/models/files')),
+      );
+    } on AgentApiException {
+      // Старый демон не умеет локальные модели: раздел просто скрыт.
+      _publishLocalModels(const LocalModelsState(supported: false));
+    }
+  }
+
+  void _publishLocalModels(LocalModelsState state) {
+    _localModels = state;
+    if (!_localModelsChanges.isClosed) _localModelsChanges.add(state);
   }
 
   @override
@@ -1235,6 +1258,7 @@ class RemoteAgentApi
     if (status == AgentStatus.online && wasOffline) {
       if (!_stateChanges.isClosed) _stateChanges.add('reconnect');
       unawaited(_loadRuntime());
+      unawaited(_loadLocalModels());
     }
   }
 
@@ -1413,6 +1437,8 @@ class RemoteAgentApi
         _publishState(_string(json, 'area'));
       case 'modelRuntime':
         _publishRuntime(ModelRuntimeState.fromJson(json['runtime']));
+      case 'localModels':
+        _publishLocalModels(LocalModelsState.fromJson(json));
       case 'draftChanged':
         if (!_draftChanges.isClosed) {
           _draftChanges.add(_string(json, 'chatId'));
@@ -2437,5 +2463,99 @@ final class _RemoteChatSession implements ChatSessionApi {
       '/chats/$_chatId/compactions',
       body: {'force': force},
     );
+  }
+}
+
+/// Файлы локальных моделей через HTTP API демона.
+final class _RemoteLocalModels implements LocalModelsSource {
+  _RemoteLocalModels(this._api);
+
+  final RemoteAgentApi _api;
+
+  @override
+  LocalModelsState get state => _api._localModels ?? const LocalModelsState();
+
+  @override
+  Stream<LocalModelsState> watch() => Stream.multi((controller) {
+    // Подписка на изменения ставится сразу, до сетевого снимка: иначе
+    // прогресс скачивания, пришедший между GET и подпиской, теряется.
+    controller.add(state);
+    final sub = _api._localModelsChanges.stream.listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    controller.onCancel = sub.cancel;
+    unawaited(_api._loadLocalModels());
+  });
+
+  @override
+  Future<void> refresh() => _api._loadLocalModels();
+
+  /// Совместимый алиас: на клиенте завершение приходит через SSE.
+  Future<String> install(String source, {String? name, String? sha256}) =>
+      startInstall(source, name: name, sha256: sha256);
+
+  @override
+  Future<String> startInstall(
+    String source, {
+    String? name,
+    String? sha256,
+  }) async {
+    final json = await _api._send(
+      'POST',
+      '/models/files/install',
+      body: {'source': source, 'name': name, 'sha256': sha256},
+    );
+    await _api._loadLocalModels();
+    return json is Map ? '${json['id'] ?? ''}' : '';
+  }
+
+  @override
+  Future<void> cancelInstall(String id) async {
+    await _api._send('POST', '/models/files/cancel', body: {'id': id});
+  }
+
+  @override
+  Future<String> importPath(String path, {String? name}) async {
+    final json = await _api._send(
+      'POST',
+      '/models/files/import',
+      body: {'path': path, 'name': name},
+    );
+    await _api._loadLocalModels();
+    return json is Map ? '${json['id'] ?? ''}' : '';
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    await _api._send('DELETE', '/models/files/$id');
+    await _api._loadLocalModels();
+  }
+
+  @override
+  Future<void> updateSettings(String id, LocalModelSettings settings) async {
+    await _api._send(
+      'PATCH',
+      '/models/files/$id',
+      body: {'settings': settings.toJson()},
+    );
+    await _api._loadLocalModels();
+  }
+
+  @override
+  Future<void> clearCache() async {
+    await _api._send('POST', '/models/files/clear');
+    await _api._loadLocalModels();
+  }
+
+  @override
+  Future<void> saveAutoUnload(int minutes) async {
+    await _api._send(
+      'PUT',
+      '/models/files/auto-unload',
+      body: {'minutes': minutes},
+    );
+    await _api._loadLocalModels();
   }
 }

@@ -2,14 +2,21 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/exec/exec_log_store.dart';
 import 'package:pw_agent/agent/turn/turn_changeset_store.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
+import 'package:pw_agent/core/data/local_model_download_repository.dart';
+import 'package:pw_agent/core/data/local_model_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_llm_provider.dart';
+import 'package:pw_agent/providers/ai/llamadart/llamadart_connection.dart';
+import 'package:pw_agent/providers/ai/llamadart/llamadart_llm_provider.dart';
+import 'package:pw_agent/providers/ai/llamadart/local_models_service.dart';
+import 'package:pw_agent/providers/ai/llamadart/local_storage.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
+import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_agent/providers/ai/provider_settings_store.dart';
@@ -50,6 +57,35 @@ abstract class AgentCoreModule {
   LlamaCppLlmProvider llamaCppLlmProvider(LlmProviderSettingsStore settings) =>
       LlamaCppLlmProvider(readConfig: () => settings.read(llamaCppDescriptor));
 
+  /// Среда выполнения локальных моделей. Живёт независимо от провайдера:
+  /// файлами и параметрами можно управлять при выключенном провайдере.
+  ///
+  /// [LocalModelStorage] регистрируется снаружи: приложение на мобильных
+  /// использует платформенный загрузчик, демон и desktop — Dart-менеджер.
+  @singleton
+  LocalModelsService localModelsService(
+    AppPaths paths,
+    LocalModelRepository repository,
+    LocalModelDownloadRepository downloadJobs,
+    SettingsRepository settings,
+    LocalModelStorage storage,
+  ) => LocalModelsService(paths, repository, downloadJobs, settings, storage);
+
+  /// Среда выполнения под интерфейсом: API настроек зависит от порта,
+  /// а провайдер — от конкретного сервиса.
+  @singleton
+  LocalModelsSource localModelsSource(LocalModelsService service) => service;
+
+  /// Провайдер локальных моделей. Настройки читаются при каждом запросе.
+  @singleton
+  LlamadartLlmProvider llamadartLlmProvider(
+    LocalModelsService runtime,
+    LlmProviderSettingsStore settings,
+  ) => LlamadartLlmProvider(
+    runtime: runtime,
+    readConfig: () => settings.read(llamadartDescriptor),
+  );
+
   /// Единый провайдер для агента и каталога.
   ///
   /// Новый провайдер добавляется в этот список: остальные слои работают
@@ -58,7 +94,8 @@ abstract class AgentCoreModule {
   LlmProviderRegistry llmProviderRegistry(
     OpenRouterLlmProvider openRouter,
     LlamaCppLlmProvider llamaCpp,
-  ) => LlmProviderRegistry([openRouter, llamaCpp]);
+    LlamadartLlmProvider llamadart,
+  ) => LlmProviderRegistry([openRouter, llamaCpp, llamadart]);
 
   /// Алиас для потребителей, которым нужен только порт [LlmProvider].
   @singleton

@@ -16,6 +16,13 @@ const _descriptor = LlmProviderDescriptor(
   supportsKeyInfo: true,
 );
 
+const _localDescriptor = LlmProviderDescriptor(
+  id: 'local',
+  label: 'Local',
+  supportsApiKey: false,
+  localModels: true,
+);
+
 /// Счётчик нажатий: обработчики не должны быть пустыми блоками.
 int _callbacks = 0;
 
@@ -35,9 +42,10 @@ void _onDelete() => _callbacks++;
 /// Карточка провайдера в минимальном приложении: обработчики не нужны,
 /// проверяется только отрисовка и режим замены ключа.
 class _Host extends StatelessWidget {
-  const _Host({required this.status});
+  const _Host({required this.status, this.descriptor = _descriptor});
 
   final LlmProviderStatus status;
+  final LlmProviderDescriptor descriptor;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -50,7 +58,7 @@ class _Host extends StatelessWidget {
         child: SizedBox(
           width: 720,
           child: ProviderSection(
-            descriptor: _descriptor,
+            descriptor: descriptor,
             status: status,
             runtime: const ModelRuntimeState(),
             modelNames: const {},
@@ -71,6 +79,26 @@ class _Host extends StatelessWidget {
 }
 
 void main() {
+  testWidgets('local provider without files points to the Models section', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _Host(
+        descriptor: _localDescriptor,
+        status: LlmProviderStatus(
+          id: _localDescriptor.id,
+          checkedAt: DateTime.utc(2026),
+        ),
+      ),
+    );
+
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ProviderSection)),
+    );
+    expect(find.text(l10n.providerNoModels('Local')), findsOneWidget);
+    expect(find.text(l10n.providerUnavailable), findsNothing);
+  });
+
   testWidgets('saved and empty key share the same row height', (tester) async {
     await tester.pumpWidget(
       const _Host(
