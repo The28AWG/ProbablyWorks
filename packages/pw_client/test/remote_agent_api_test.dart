@@ -150,12 +150,14 @@ void main() {
         id: 'new-chat',
         hostId: 'local',
         title: 'New',
+        reasoning: ReasoningPreference.high,
         createdAt: DateTime.utc(2026, 11, 11),
         updatedAt: DateTime.utc(2026, 11, 11),
       ),
     );
 
     expect(backend.savedChatId, 'new-chat');
+    expect(backend.savedReasoning, ReasoningPreference.high);
   });
 
   test('searches chats and messages through the remote API', () async {
@@ -238,6 +240,7 @@ void main() {
     final snapshot = await remote.load();
 
     expect(snapshot.defaultModel, 'openai/gpt-4o');
+    expect(snapshot.defaultReasoning, ReasoningPreference.high);
     expect(snapshot.pinnedModels, ['openai/gpt-4o']);
     expect(snapshot.catalog.loaded, isTrue);
 
@@ -523,6 +526,7 @@ final class _FakeAgent implements AgentApi {
   final searchQueries = <SearchQuery>[];
   String? updatedModel;
   String? savedChatId;
+  ReasoningPreference? savedReasoning;
 
   final _chat = Chat(
     id: 'c1',
@@ -625,6 +629,7 @@ final class _FakeAgent implements AgentApi {
   @override
   Future<void> saveChat(Chat chat) async {
     savedChatId = chat.id;
+    savedReasoning = chat.reasoning;
   }
 
   @override
@@ -635,6 +640,7 @@ final class _FakeAgent implements AgentApi {
     String chatId, {
     String? title,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool workspaceSpecified = false,
@@ -1042,6 +1048,10 @@ final class _FakeSettings implements AgentSettingsApi {
     memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
+    defaultReasoning: ReasoningPreference.high,
+    memoryReasoning: ReasoningPreference.auto,
+    subagentReasoning: ReasoningPreference.auto,
+    fallbackReasoning: ReasoningPreference.auto,
     defaultPolicy: defaultPolicy,
     denylist: denylist,
     securityProfile: const SecurityProfile(),

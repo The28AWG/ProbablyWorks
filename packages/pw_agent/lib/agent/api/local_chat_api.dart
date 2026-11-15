@@ -17,6 +17,7 @@ import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
 /// Локальный [AgentApi]: прямые вызовы [AgentHub], брокера и планировщика.
@@ -109,6 +110,7 @@ class LocalChatApi implements ChatApi {
     String chatId, {
     String? title,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool workspaceSpecified = false,
@@ -125,6 +127,7 @@ class LocalChatApi implements ChatApi {
             ? null
             : ChatTitleSource.user,
         model: model,
+        reasoning: reasoning,
         policyMode: policyMode,
         workspace: workspaceSpecified ? workspace : null,
         clearWorkspace: workspaceSpecified && workspace == null,
@@ -394,6 +397,10 @@ final class _LocalSettings implements SettingsStore {
   Future<String?> read(String key) => _settings.read(key);
 
   @override
+  Future<ReasoningPreference> readReasoning(String key) =>
+      _settings.readReasoning(key);
+
+  @override
   Future<List<String>> readPinnedModels() => _settings.readPinnedModels();
 
   @override
@@ -434,6 +441,10 @@ final class _LocalSettings implements SettingsStore {
 
   @override
   StepsDisplay cachedStepsDisplay() => _settings.cachedStepsDisplay();
+
+  @override
+  ReasoningPreference cachedReasoning(String key) =>
+      _settings.cachedReasoning(key);
 
   @override
   String? cached(String key) => _settings.cached(key);

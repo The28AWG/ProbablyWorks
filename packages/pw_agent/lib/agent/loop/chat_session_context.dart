@@ -49,6 +49,15 @@ extension _ChatSessionContext on ChatSession {
       throw const LlmFailure('model is not selected');
     }
     _ensureModelSupportsTools(model);
+    final reasoningPreference = chat.reasoning == ReasoningPreference.inherit
+        ? await _hub.settings.readReasoning(
+            SettingsRepository.keyDefaultReasoning,
+          )
+        : chat.reasoning;
+    final reasoning = resolveReasoning(
+      capability: _reasoningCapabilityOf(model),
+      preference: reasoningPreference,
+    );
 
     final state = await _hub.state.current(chat);
     final messages = await _messages();
@@ -87,6 +96,7 @@ extension _ChatSessionContext on ChatSession {
     chat = await _hub.compactor.compactIfNeeded(
       inputFor(chat),
       summaryModel: model,
+      summaryReasoning: resolveUtilityReasoning(_reasoningCapabilityOf(model)),
       force: forceCompact,
       limits: limits,
     );
@@ -136,9 +146,20 @@ extension _ChatSessionContext on ChatSession {
       model: model,
       inlineIds: inline.keys.toList(),
       project: project,
-      request: LlmRequest(model: model, messages: llmMessages, tools: tools),
+      request: LlmRequest(
+        model: model,
+        messages: llmMessages,
+        tools: tools,
+        reasoning: reasoning,
+      ),
     );
   }
+
+  /// Возможности рассуждений модели из каталога или сохранённых деталей.
+  /// Null — модель не описана; тогда явный уровень всё равно отправляется.
+  LlmReasoningCapability? _reasoningCapabilityOf(String model) =>
+      _hub.models.state.modelOf(model)?.reasoning ??
+      _hub.models.state.saved[model]?.reasoning;
 
   static String _subagentContext(List<SubagentRun> runs) {
     final buffer = StringBuffer('Active subagents started in this chat:');
@@ -248,13 +269,18 @@ extension _ChatSessionContext on ChatSession {
     return configured;
   }
 
-  static LlmRequest _withModel(LlmRequest request, String model) => LlmRequest(
+  LlmRequest _withModel(LlmRequest request, String model) => LlmRequest(
     model: model,
     messages: request.messages,
     tools: request.tools,
     maxTokens: request.maxTokens,
     temperature: request.temperature,
-    skipReasoning: request.skipReasoning,
+    // Запасная модель может поддерживать другой набор уровней. Понижаем
+    // сохранённый уровень, чтобы не получить 400 при fallback.
+    reasoning: resolveReasoning(
+      capability: _reasoningCapabilityOf(model),
+      preference: ReasoningPreference.fromEffort(request.reasoning),
+    ),
   );
 
   Future<StepResult> _streamOnce(

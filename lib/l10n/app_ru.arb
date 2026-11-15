@@ -1099,6 +1099,181 @@
       }
     }
   },
+  "reasoningLabel": "Размышления",
+  "@reasoningLabel": {
+    "description": "Label of the reasoning effort setting."
+  },
+  "reasoningInherit": "По умолчанию",
+  "@reasoningInherit": {
+    "description": "Reasoning option: use the app default from Settings."
+  },
+  "reasoningInheritHint": "Использовать значение из настроек: {level}.",
+  "@reasoningInheritHint": {
+    "description": "Hint of the default reasoning option.",
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningAuto": "Авто",
+  "@reasoningAuto": {
+    "description": "Reasoning option: let the provider choose."
+  },
+  "reasoningAutoHint": "Провайдер решит сам. Уровень в запрос не передаётся.",
+  "@reasoningAutoHint": {
+    "description": "Hint of the auto reasoning option."
+  },
+  "reasoningNone": "Выключено",
+  "@reasoningNone": {
+    "description": "Reasoning option: disable reasoning."
+  },
+  "reasoningNoneHint": "Не тратить токены на рассуждения. Недоступно для моделей, где рассуждения обязательны.",
+  "@reasoningNoneHint": {
+    "description": "Hint of the off reasoning option."
+  },
+  "reasoningMinimal": "Минимальный",
+  "@reasoningMinimal": {
+    "description": "Reasoning effort: minimal."
+  },
+  "reasoningMinimalHint": "Самый быстрый и дешёвый вариант.",
+  "@reasoningMinimalHint": {
+    "description": "Hint of the minimal reasoning effort."
+  },
+  "reasoningLow": "Низкий",
+  "@reasoningLow": {
+    "description": "Reasoning effort: low."
+  },
+  "reasoningLowHint": "Быстрые рассуждения для простых задач.",
+  "@reasoningLowHint": {
+    "description": "Hint of the low reasoning effort."
+  },
+  "reasoningMedium": "Средний",
+  "@reasoningMedium": {
+    "description": "Reasoning effort: medium."
+  },
+  "reasoningMediumHint": "Баланс для повседневных задач.",
+  "@reasoningMediumHint": {
+    "description": "Hint of the medium reasoning effort."
+  },
+  "reasoningHigh": "Высокий",
+  "@reasoningHigh": {
+    "description": "Reasoning effort: high."
+  },
+  "reasoningHighHint": "Глубокие рассуждения для сложных задач.",
+  "@reasoningHighHint": {
+    "description": "Hint of the high reasoning effort."
+  },
+  "reasoningXhigh": "Очень высокий",
+  "@reasoningXhigh": {
+    "description": "Reasoning effort: very high."
+  },
+  "reasoningXhighHint": "Очень глубокие рассуждения; медленнее и дороже.",
+  "@reasoningXhighHint": {
+    "description": "Hint of the very high reasoning effort."
+  },
+  "reasoningMax": "Максимальный",
+  "@reasoningMax": {
+    "description": "Reasoning effort: maximum."
+  },
+  "reasoningMaxHint": "Максимум рассуждений; самый медленный и дорогой.",
+  "@reasoningMaxHint": {
+    "description": "Hint of the maximum reasoning effort."
+  },
+  "reasoningHigherCostHint": "Чем выше уровень, тем больше токенов и времени.",
+  "@reasoningHigherCostHint": {
+    "description": "Hint under the reasoning selector."
+  },
+  "reasoningDialogTitle": "Размышления для {model}",
+  "@reasoningDialogTitle": {
+    "description": "Title of the reasoning dialog after model selection.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningDialogHint": "Выберите, сколько модель должна думать перед ответом.",
+  "@reasoningDialogHint": {
+    "description": "Subtitle of the reasoning dialog."
+  },
+  "reasoningNotSupported": "Эта модель не поддерживает размышления.",
+  "@reasoningNotSupported": {
+    "description": "Shown when the selected model cannot use reasoning."
+  },
+  "reasoningAlwaysOn": "У этой модели размышления всегда включены.",
+  "@reasoningAlwaysOn": {
+    "description": "Shown when the model does not allow disabling reasoning."
+  },
+  "reasoningAdjustedForModel": "Запрошен {requested}, для этой модели используется {actual}.",
+  "@reasoningAdjustedForModel": {
+    "description": "Shown when the selected reasoning level is not supported and was lowered.",
+    "placeholders": {
+      "requested": {
+        "type": "String"
+      },
+      "actual": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningModelChipTooltip": "Модель: {model} · Размышления: {level}",
+  "@reasoningModelChipTooltip": {
+    "description": "Tooltip of the model chip when reasoning is active.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningModelBadge": "размышления",
+  "@reasoningModelBadge": {
+    "description": "Badge in the model list for a model that supports reasoning."
+  },
+  "reasoningAlwaysBadge": "всегда включены",
+  "@reasoningAlwaysBadge": {
+    "description": "Badge in the model list for a model that requires reasoning."
+  },
+  "settingsReasoning": "Размышления",
+  "@settingsReasoning": {
+    "description": "Title of the reasoning setting in model settings."
+  },
+  "settingsReasoningHint": "Сколько модель думает перед ответом.",
+  "@settingsReasoningHint": {
+    "description": "Hint of the reasoning setting in model settings."
+  },
+  "composerReasoningLabel": "Размышления",
+  "@composerReasoningLabel": {
+    "description": "Submenu title in the composer plus menu."
+  },
+  "composerReasoningUnsupported": "Эта модель не поддерживает размышления.",
+  "@composerReasoningUnsupported": {
+    "description": "Disabled item in the composer reasoning submenu."
+  },
+  "chatReasoningSwitched": "Размышления: {level}",
+  "@chatReasoningSwitched": {
+    "description": "Snackbar after changing reasoning without changing the model.",
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "chatModelAndReasoningSwitched": "Модель: {model} · Размышления: {level}",
+  "@chatModelAndReasoningSwitched": {
+    "description": "Snackbar after changing the model and reasoning.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "level": {
+        "type": "String"
+      }
+    }
+  },
   "statusThinking": "Думает…",
   "@statusThinking": {
     "description": "Status strip under the composer: the model is generating a reply."

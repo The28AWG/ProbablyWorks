@@ -328,6 +328,7 @@ class ModelCatalogService implements ModelCatalogSource {
       contextLength: live?.contextLength ?? known?.contextLength,
       supportsTools: live?.supportsTools ?? known?.supportsTools ?? false,
       inputModalities: live?.inputModalities ?? known?.inputModalities,
+      reasoning: live?.reasoning ?? known?.reasoning,
     );
   }
 

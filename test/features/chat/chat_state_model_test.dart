@@ -4,13 +4,17 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
-Chat _chat({String? model}) => Chat(
+Chat _chat({
+  String? model,
+  ReasoningPreference reasoning = ReasoningPreference.inherit,
+}) => Chat(
   id: 'c',
   hostId: 'local',
   title: '',
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),
   model: model,
+  reasoning: reasoning,
 );
 
 ModelCatalogState _loaded(List<LlmModelInfo> models) =>
@@ -122,5 +126,72 @@ void main() {
     expect(state.failureIsModelMissing, isTrue);
     expect(ChatState(failure: 'network down').failureIsModelMissing, isFalse);
     expect(ChatState(failureModelMissing: true).failureIsModelMissing, isFalse);
+  });
+
+  test('an inherited chat uses the default reasoning', () {
+    final state = ChatState(
+      chat: _chat(model: 'openai/gpt-4o'),
+      defaultReasoning: ReasoningPreference.high,
+    );
+    expect(state.chatReasoning, ReasoningPreference.inherit);
+    expect(state.effectiveReasoning, ReasoningPreference.high);
+  });
+
+  test('an explicit chat reasoning wins over the default', () {
+    final state = ChatState(
+      chat: _chat(model: 'openai/gpt-4o', reasoning: ReasoningPreference.low),
+      defaultReasoning: ReasoningPreference.high,
+    );
+    expect(state.effectiveReasoning, ReasoningPreference.low);
+  });
+
+  test('the effective effort is resolved for the selected model', () {
+    final state = ChatState(
+      chat: _chat(model: 'openai/gpt-4o', reasoning: ReasoningPreference.high),
+      catalog: _loaded([
+        const LlmModelInfo(
+          id: 'openai/gpt-4o',
+          name: 'GPT-4o',
+          reasoning: LlmReasoningCapability(
+            supported: true,
+            efforts: [ReasoningEffort.low, ReasoningEffort.medium],
+          ),
+        ),
+      ]),
+    );
+    expect(state.effectiveReasoningEffort, ReasoningEffort.medium);
+  });
+
+  test('a model without reasoning resolves to no effort', () {
+    final state = ChatState(
+      chat: _chat(model: 'openai/gpt-4o', reasoning: ReasoningPreference.high),
+      catalog: _loaded([
+        const LlmModelInfo(
+          id: 'openai/gpt-4o',
+          name: 'GPT-4o',
+          reasoning: LlmReasoningCapability(supported: false),
+        ),
+      ]),
+    );
+    expect(state.effectiveReasoningEffort, isNull);
+  });
+
+  test('saved capabilities are used before the catalog is loaded', () {
+    final state = ChatState(
+      chat: _chat(model: 'llamacpp:local', reasoning: ReasoningPreference.high),
+      catalog: const ModelCatalogState(
+        saved: {
+          'llamacpp:local': SavedModel(
+            id: 'llamacpp:local',
+            name: 'Local',
+            reasoning: LlmReasoningCapability(
+              supported: true,
+              efforts: [ReasoningEffort.low],
+            ),
+          ),
+        },
+      ),
+    );
+    expect(state.effectiveReasoningEffort, ReasoningEffort.low);
   });
 }

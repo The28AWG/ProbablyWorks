@@ -6,6 +6,7 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Настройки приложения (kv-таблица) и доверие workspace.
 @lazySingleton
@@ -31,6 +32,12 @@ class SettingsRepository {
 
   /// Запасная модель на случай 429/5xx/404 основной. Пусто — без fallback.
   static const keyFallbackModel = 'fallbackModel';
+
+  /// Уровни рассуждений для моделей из настроек. Пусто — auto.
+  static const keyDefaultReasoning = 'defaultReasoning';
+  static const keyMemoryReasoning = 'memoryReasoning';
+  static const keySubagentReasoning = 'subagentReasoning';
+  static const keyFallbackReasoning = 'fallbackReasoning';
   static const keyLanguage = 'language';
   static const keyThemeMode = 'themeMode';
   static const keyDefaultPolicy = 'defaultPolicy';
@@ -106,6 +113,14 @@ class SettingsRepository {
   }
 
   Future<AppLimits> limits() async => AppLimits.fromJson(await read(keyLimits));
+
+  /// Уровень рассуждений по ключу. Неизвестное или пустое значение — auto.
+  Future<ReasoningPreference> readReasoning(String key) async =>
+      ReasoningPreference.parse(await read(key));
+
+  /// Уровень из памяти (см. [cached]).
+  ReasoningPreference cachedReasoning(String key) =>
+      ReasoningPreference.parse(cached(key));
 
   /// Лимиты из памяти (см. [cached]).
   AppLimits cachedLimits() => AppLimits.fromJson(cached(keyLimits));

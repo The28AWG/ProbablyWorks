@@ -36,6 +36,7 @@ class ContextCompactor {
   Future<Chat> compactIfNeeded(
     ContextInput input, {
     required String summaryModel,
+    ReasoningEffort? summaryReasoning,
     bool force = false,
     AppLimits limits = AppLimits.defaults,
   }) async {
@@ -53,7 +54,12 @@ class ContextCompactor {
     final window = force || hardExceeded
         ? _halfWindow(input.recentWindow)
         : _fullWindow(input.recentWindow);
-    return _compact(input, window: window, summaryModel: summaryModel);
+    return _compact(
+      input,
+      window: window,
+      summaryModel: summaryModel,
+      summaryReasoning: summaryReasoning,
+    );
   }
 
   /// Окно не может быть нулевым: иначе сжатие нечего оставлять и `_compact` ничего не сделает.
@@ -79,6 +85,7 @@ class ContextCompactor {
     ContextInput input, {
     required int window,
     required String summaryModel,
+    ReasoningEffort? summaryReasoning,
   }) async {
     final chat = input.chat;
     final history = input.messages
@@ -99,7 +106,12 @@ class ContextCompactor {
     final toSummarize = history.sublist(0, cutIndex);
     final cutSeq = history[cutIndex].seq;
     final summary = Redactor.redact(
-      await _summarize(chat.compactionSummary, toSummarize, summaryModel),
+      await _summarize(
+        chat.compactionSummary,
+        toSummarize,
+        summaryModel,
+        reasoning: summaryReasoning,
+      ),
     );
     final updated = chat.copyWith(
       compactionSummary: summary,
@@ -129,8 +141,9 @@ class ContextCompactor {
   Future<String> _summarize(
     String? previous,
     List<ChatMessage> messages,
-    String model,
-  ) async {
+    String model, {
+    ReasoningEffort? reasoning,
+  }) async {
     final transcript = StringBuffer();
     for (final m in messages) {
       transcript.writeln(
@@ -148,6 +161,7 @@ class ContextCompactor {
           'Previous summary:\n${previous ?? '(none)'}\n\nNew messages:\n$transcript',
         ),
       ],
+      reasoning: reasoning,
     );
     try {
       final text = StringBuffer();

@@ -49,6 +49,8 @@ class ChatMetaBar extends StatelessWidget {
     this.modelUnavailable = false,
     this.modelLoading = false,
     this.modelPending = false,
+    this.reasoningLabel,
+    this.reasoningActive = false,
     super.key,
   });
 
@@ -76,6 +78,13 @@ class ChatMetaBar extends StatelessWidget {
   /// Модель ещё не известна: чат грузится, а модель по умолчанию не прочитана. Чип без текста и предупреждения,
   /// со спиннером. Когда загрузка закончится, null в [modelLabel] станет реальным предупреждением.
   final bool modelPending;
+
+  /// Действующий уровень рассуждений для подсказки. Null — рассуждения не
+  /// используются или модель их не поддерживает.
+  final String? reasoningLabel;
+
+  /// Рассуждения включены: меняем значок чипа модели, не добавляя новый чип.
+  final bool reasoningActive;
   final VoidCallback onPickModel;
 
   /// Доля заполненного окна контекста (0..1) или `null`, пока модель не отчиталась.
@@ -202,10 +211,17 @@ class ChatMetaBar extends StatelessWidget {
               _ActionChip(
                 tooltip: modelUnavailable
                     ? l10n.chatModelUnavailableTooltip
+                    : reasoningActive &&
+                          modelLabel != null &&
+                          reasoningLabel != null
+                    ? l10n.reasoningModelChipTooltip(
+                        modelLabel!,
+                        reasoningLabel!,
+                      )
                     : iconOnly(_Chip.model) && modelLabel != null
                     ? l10n.chatModelTooltip(modelLabel!)
                     : l10n.chatModelLabel,
-                icon: Icons.memory,
+                icon: reasoningActive ? Icons.psychology : Icons.memory,
                 label: iconOnly(_Chip.model) || modelPending ? null : modelText,
                 tone: !modelPending && (modelLabel == null || modelUnavailable)
                     ? AppTone.warning

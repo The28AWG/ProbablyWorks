@@ -419,13 +419,14 @@ class _SettingsViewState extends State<_SettingsView> {
         children: [
           ModelSettingField(
             modelId: state.defaultModel,
+            reasoning: state.defaultReasoning,
             catalog: catalog,
             source: source,
             pinned: state.pinnedModels,
-            onSelected: (id) => cubit.saveModels(
-              defaultModel: id,
-              titleModel: state.titleModel,
-            ),
+            onSelected: (selection) =>
+                cubit.saveDefaultModel(selection.model.id, selection.reasoning),
+            onReasoningSelected: (reasoning) =>
+                cubit.saveDefaultModel(state.defaultModel, reasoning),
           ),
         ],
       ),
@@ -435,14 +436,13 @@ class _SettingsViewState extends State<_SettingsView> {
           // Заголовки чатов работают с любой моделью, поэтому tool calling здесь не требуем.
           ModelSettingField(
             modelId: state.titleModel,
+            reasoning: ReasoningPreference.auto,
             catalog: catalog,
             source: source,
             pinned: state.pinnedModels,
             requireTools: false,
-            onSelected: (id) => cubit.saveModels(
-              defaultModel: state.defaultModel,
-              titleModel: id,
-            ),
+            showReasoning: false,
+            onSelected: (selection) => cubit.saveTitleModel(selection.model.id),
           ),
         ],
       ),
@@ -452,10 +452,14 @@ class _SettingsViewState extends State<_SettingsView> {
         children: [
           ModelSettingField(
             modelId: state.memoryModel,
+            reasoning: state.memoryReasoning,
             catalog: catalog,
             source: source,
             pinned: state.pinnedModels,
-            onSelected: cubit.saveMemoryModel,
+            onSelected: (selection) =>
+                cubit.saveMemoryModel(selection.model.id, selection.reasoning),
+            onReasoningSelected: (reasoning) =>
+                cubit.saveMemoryModel(state.memoryModel, reasoning),
           ),
         ],
       ),
@@ -465,10 +469,16 @@ class _SettingsViewState extends State<_SettingsView> {
         children: [
           ModelSettingField(
             modelId: state.subagentModel,
+            reasoning: state.subagentReasoning,
             catalog: catalog,
             source: source,
             pinned: state.pinnedModels,
-            onSelected: cubit.saveSubagentModel,
+            onSelected: (selection) => cubit.saveSubagentModel(
+              selection.model.id,
+              selection.reasoning,
+            ),
+            onReasoningSelected: (reasoning) =>
+                cubit.saveSubagentModel(state.subagentModel, reasoning),
           ),
         ],
       ),
@@ -478,10 +488,16 @@ class _SettingsViewState extends State<_SettingsView> {
         children: [
           ModelSettingField(
             modelId: state.fallbackModel,
+            reasoning: state.fallbackReasoning,
             catalog: catalog,
             source: source,
             pinned: state.pinnedModels,
-            onSelected: cubit.saveFallbackModel,
+            onSelected: (selection) => cubit.saveFallbackModel(
+              selection.model.id,
+              selection.reasoning,
+            ),
+            onReasoningSelected: (reasoning) =>
+                cubit.saveFallbackModel(state.fallbackModel, reasoning),
           ),
         ],
       ),

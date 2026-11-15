@@ -6,8 +6,10 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_density.d
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/composer_input.dart';
+import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Композер: поле ввода, вложения, настройки чата и отправка в одной карточке.
 ///
@@ -29,9 +31,13 @@ class ChatComposer extends StatelessWidget {
     required this.settings,
     required this.workspace,
     required this.policy,
+    required this.reasoning,
+    required this.reasoningOptions,
+    required this.defaultReasoning,
     required this.onAttach,
     required this.onPickWorkspace,
     required this.onPolicySelected,
+    required this.onReasoningSelected,
     required this.onRemoveAttachment,
     required this.onSubmit,
     required this.onStop,
@@ -55,9 +61,17 @@ class ChatComposer extends StatelessWidget {
   /// Рабочая папка чата; null — не назначена.
   final String? workspace;
   final PolicyMode policy;
+
+  /// Текущий выбор уровня чата (может быть inherit).
+  final ReasoningPreference reasoning;
+
+  /// Варианты для подменю «+». Пустой список — модель не поддерживает.
+  final List<ReasoningPreference> reasoningOptions;
+  final ReasoningPreference defaultReasoning;
   final VoidCallback onAttach;
   final VoidCallback onPickWorkspace;
   final ValueChanged<PolicyMode> onPolicySelected;
+  final ValueChanged<ReasoningPreference> onReasoningSelected;
   final void Function(int index) onRemoveAttachment;
 
   /// Отправка; `sendNow` — Ctrl/Cmd+Enter во время работы агента (вперёд очереди).
@@ -162,9 +176,13 @@ class ChatComposer extends StatelessWidget {
                     workspace: workspace,
                     running: busy,
                     policy: policy,
+                    reasoning: reasoning,
+                    reasoningOptions: reasoningOptions,
+                    defaultReasoning: defaultReasoning,
                     onAttach: onAttach,
                     onPickWorkspace: onPickWorkspace,
                     onPolicySelected: onPolicySelected,
+                    onReasoningSelected: onReasoningSelected,
                   ),
                   const SizedBox(width: AppSpacing.xs),
                   Expanded(child: settings),
@@ -371,17 +389,25 @@ class _PlusMenu extends StatelessWidget {
     required this.workspace,
     required this.running,
     required this.policy,
+    required this.reasoning,
+    required this.reasoningOptions,
+    required this.defaultReasoning,
     required this.onAttach,
     required this.onPickWorkspace,
     required this.onPolicySelected,
+    required this.onReasoningSelected,
   });
 
   final String? workspace;
   final bool running;
   final PolicyMode policy;
+  final ReasoningPreference reasoning;
+  final List<ReasoningPreference> reasoningOptions;
+  final ReasoningPreference defaultReasoning;
   final VoidCallback onAttach;
   final VoidCallback onPickWorkspace;
   final ValueChanged<PolicyMode> onPolicySelected;
+  final ValueChanged<ReasoningPreference> onReasoningSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -454,6 +480,37 @@ class _PlusMenu extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (reasoningOptions.isEmpty)
+          MenuItemButton(
+            leadingIcon: const Icon(Icons.psychology_outlined),
+            onPressed: null,
+            child: SizedBox(
+              width: 260,
+              child: Text(
+                l10n.composerReasoningUnsupported,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          )
+        else
+          SubmenuButton(
+            leadingIcon: const Icon(Icons.psychology_outlined),
+            menuChildren: [
+              for (final option in reasoningOptions)
+                _ReasoningMenuItem(
+                  preference: option,
+                  current: reasoning,
+                  defaultPreference: defaultReasoning,
+                  onSelected: onReasoningSelected,
+                ),
+            ],
+            child: Text(
+              l10n.composerReasoningLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
       ],
       builder: (context, controller, child) => IconButton(
         tooltip: l10n.composerAddTooltip,
@@ -515,6 +572,66 @@ class _PolicyMenuItem extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Пункт подменю «Размышления»: название, пояснение и отметка текущего уровня.
+class _ReasoningMenuItem extends StatelessWidget {
+  const _ReasoningMenuItem({
+    required this.preference,
+    required this.current,
+    required this.defaultPreference,
+    required this.onSelected,
+  });
+
+  final ReasoningPreference preference;
+  final ReasoningPreference current;
+  final ReasoningPreference defaultPreference;
+  final ValueChanged<ReasoningPreference> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return MenuItemButton(
+      leadingIcon: Icon(
+        preference == ReasoningPreference.none
+            ? Icons.psychology_outlined
+            : Icons.psychology,
+      ),
+      trailingIcon: preference == current
+          ? const Icon(Icons.check, size: 18)
+          : null,
+      onPressed: () => onSelected(preference),
+      child: SizedBox(
+        width: 280,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              reasoningLabel(l10n, preference),
+              style: theme.textTheme.titleSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              reasoningHint(
+                l10n,
+                preference,
+                defaultPreference: defaultPreference,
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

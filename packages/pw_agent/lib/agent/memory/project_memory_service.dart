@@ -72,9 +72,15 @@ class ProjectMemoryService {
         _log.warning('memory update skipped: no model configured');
         return;
       }
+      final reasoning = await _reasoningFor(chat);
       await _serialize(
         projectId,
-        () => _run(project: project, model: model, context: context),
+        () => _run(
+          project: project,
+          model: model,
+          reasoning: reasoning,
+          context: context,
+        ),
       );
     } on Object catch (error, stack) {
       _log.warning('memory update failed', error, stack);
@@ -99,11 +105,13 @@ class ProjectMemoryService {
     if (model == null) {
       throw StateError('model is not selected');
     }
+    final reasoning = await _reasoningFor(null);
     await _serialize(
       project.id,
       () => _run(
         project: project,
         model: model,
+        reasoning: reasoning,
         context: _instructionContext(trimmed),
       ),
     );
@@ -121,10 +129,30 @@ class ProjectMemoryService {
     return defaultModel == null || defaultModel.isEmpty ? null : defaultModel;
   }
 
+  /// Уровень рассуждений для memory-цикла.
+  ///
+  /// Отдельная модель памяти берёт свой уровень из настроек. Если используется
+  /// модель чата, наследуется уровень чата, иначе — уровень по умолчанию.
+  Future<ReasoningPreference> _reasoningFor(Chat? chat) async {
+    final memoryModel =
+        await _settings.read(SettingsRepository.keyMemoryModel) ?? '';
+    if (memoryModel.isNotEmpty) {
+      return _settings.readReasoning(SettingsRepository.keyMemoryReasoning);
+    }
+    final chatModel = chat?.model ?? '';
+    if (chatModel.isNotEmpty && chat != null) {
+      return chat.reasoning == ReasoningPreference.inherit
+          ? _settings.readReasoning(SettingsRepository.keyDefaultReasoning)
+          : chat.reasoning;
+    }
+    return _settings.readReasoning(SettingsRepository.keyDefaultReasoning);
+  }
+
   /// Выполняет memory-цикл и сохраняет результат только при валидном изменении.
   Future<void> _run({
     required Project project,
     required String model,
+    required ReasoningPreference reasoning,
     required String context,
   }) async {
     final current = await _projects.memory(project.id);
@@ -142,7 +170,9 @@ class ProjectMemoryService {
         tools: const [_applyPatchTool],
         maxTokens: 4096,
         // Некоторые модели (например, openrouter/free) требуют reasoning
-        // и отвечают 400, если его отключить. Память не экономит на этом.
+        // и отвечают 400, если его отключить. Уровень памяти настраивается
+        // отдельно, по умолчанию auto.
+        reasoning: reasoning.effort,
       );
       final calls = <LlmToolCall>[];
       final text = StringBuffer();

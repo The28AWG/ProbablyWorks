@@ -144,12 +144,25 @@ final class ChatDeletedAfter extends ChatEvent {
 }
 
 final class ChatModelChanged extends ChatEvent {
-  const ChatModelChanged(this.model);
+  const ChatModelChanged(this.model, {this.reasoning});
 
   final LlmModelInfo model;
 
+  /// Новый уровень чата. Null — оставить прежний выбор.
+  final ReasoningPreference? reasoning;
+
   @override
-  List<Object?> get props => [model.id];
+  List<Object?> get props => [model.id, reasoning];
+}
+
+/// Уровень рассуждений изменён без смены модели (подменю «+»).
+final class ChatReasoningChanged extends ChatEvent {
+  const ChatReasoningChanged(this.reasoning);
+
+  final ReasoningPreference reasoning;
+
+  @override
+  List<Object?> get props => [reasoning];
 }
 
 final class ChatPolicyChanged extends ChatEvent {

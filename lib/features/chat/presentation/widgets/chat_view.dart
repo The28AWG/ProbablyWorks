@@ -20,7 +20,9 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_density.d
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
+import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
+import 'package:probably_works/features/models/presentation/widgets/reasoning_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -31,6 +33,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Окно контекста, когда модель не сообщила свой лимит.
 const _defaultContextLimit = 128000;
@@ -259,9 +262,17 @@ class _ChatBodyState extends State<ChatBody> {
                       dragging: _dragging && _editingId == null,
                       workspace: chat.workspace,
                       policy: chat.policyMode,
+                      reasoning: state.chatReasoning,
+                      reasoningOptions: reasoningOptions(
+                        state.reasoningCapability,
+                        allowInherit: true,
+                      ),
+                      defaultReasoning: state.defaultReasoning,
                       onPickWorkspace: () => _pickWorkspace(bloc, chat),
                       onPolicySelected: (mode) =>
                           bloc.add(ChatPolicyChanged(mode)),
+                      onReasoningSelected: (reasoning) =>
+                          bloc.add(ChatReasoningChanged(reasoning)),
                       settings: _ChatSettings(
                         state: state,
                         onPickWorkspace: () => _pickWorkspace(bloc, chat),
@@ -805,9 +816,41 @@ class _ChatBodyState extends State<ChatBody> {
       currentId: state.effectiveModelId,
       onTogglePin: (id) => bloc.add(ChatModelPinToggled(id)),
     );
-    if (picked == null || picked.id == chat.model || !mounted) return;
-    bloc.add(ChatModelChanged(picked));
-    AppSnackBar.show(context, l10n.chatModelSwitched(picked.name));
+    if (picked == null || !mounted) return;
+    final capability =
+        picked.reasoning ?? bloc.modelCatalog.state.saved[picked.id]?.reasoning;
+    ReasoningPreference? reasoning;
+    if (capability?.supported != false) {
+      reasoning = await showReasoningDialog(
+        context,
+        modelName: picked.name,
+        capability: capability,
+        initial: state.chatReasoning,
+        defaultPreference: state.defaultReasoning,
+        allowInherit: true,
+      );
+      if (!mounted) return;
+    }
+    final sameModel = picked.id == chat.model;
+    final sameReasoning = reasoning == null || reasoning == state.chatReasoning;
+    if (sameModel && sameReasoning) return;
+    bloc.add(ChatModelChanged(picked, reasoning: reasoning));
+    if (sameModel && reasoning != null) {
+      AppSnackBar.show(
+        context,
+        l10n.chatReasoningSwitched(reasoningLabel(l10n, reasoning)),
+      );
+      return;
+    }
+    AppSnackBar.show(
+      context,
+      reasoning == null
+          ? l10n.chatModelSwitched(picked.name)
+          : l10n.chatModelAndReasoningSwitched(
+              picked.name,
+              reasoningLabel(l10n, reasoning),
+            ),
+    );
   }
 }
 
@@ -859,9 +902,14 @@ class _ChatSettings extends StatelessWidget {
     final chat = state.chat;
     if (chat == null) return const SizedBox.shrink();
     final bloc = context.read<ChatBloc>();
+    final l10n = AppLocalizations.of(context);
     final fraction = state.promptTokens == null
         ? null
         : state.promptTokens! / (state.contextLimit ?? _defaultContextLimit);
+    final reasoning = state.effectiveReasoningEffort;
+    final reasoningLabelText = reasoning == null
+        ? null
+        : reasoningLabel(l10n, ReasoningPreference.fromEffort(reasoning));
     return ChatMetaBar(
       hosts: state.hosts,
       hostId: chat.hostId,
@@ -875,6 +923,8 @@ class _ChatSettings extends StatelessWidget {
           state.catalog.initialLoading &&
           !state.catalog.knowsName(state.effectiveModelId),
       modelPending: state.modelPending,
+      reasoningLabel: reasoningLabelText,
+      reasoningActive: reasoning != null && reasoning != ReasoningEffort.none,
       onPickModel: onPickModel,
       contextFraction: fraction,
       onOpenContext: onOpenContext,
@@ -940,6 +990,12 @@ class _MessageEditComposer extends StatelessWidget {
         hint: l10n.messageEditHint,
         workspace: chat.workspace,
         policy: chat.policyMode,
+        reasoning: state.chatReasoning,
+        reasoningOptions: reasoningOptions(
+          state.reasoningCapability,
+          allowInherit: true,
+        ),
+        defaultReasoning: state.defaultReasoning,
         settings: _ChatSettings(
           state: state,
           onPickWorkspace: onPickWorkspace,
@@ -949,6 +1005,8 @@ class _MessageEditComposer extends StatelessWidget {
         onAttach: onAttach,
         onPickWorkspace: onPickWorkspace,
         onPolicySelected: onPolicySelected,
+        onReasoningSelected: (reasoning) =>
+            context.read<ChatBloc>().add(ChatReasoningChanged(reasoning)),
         onRemoveAttachment: onRemoveAttachment,
         onSubmit: (_) => onSubmit(),
         // Остановка в правке не показывается: кнопка есть только у нижнего композера.

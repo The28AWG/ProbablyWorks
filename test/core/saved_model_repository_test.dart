@@ -68,6 +68,36 @@ void main() {
     );
   });
 
+  test('reasoning capabilities round-trip, null means unknown', () async {
+    await repository.save(const [
+      SavedModel(
+        id: 'a/reasoning',
+        name: 'Reasoning',
+        reasoning: LlmReasoningCapability(
+          supported: true,
+          efforts: [ReasoningEffort.low, ReasoningEffort.high],
+          defaultEffort: ReasoningEffort.low,
+          mandatory: true,
+          supportsMaxTokens: true,
+        ),
+      ),
+      SavedModel(id: 'a/unknown', name: 'Unknown'),
+    ]);
+
+    final byId = {for (final m in await repository.all()) m.id: m};
+    expect(
+      byId['a/reasoning']!.reasoning,
+      const LlmReasoningCapability(
+        supported: true,
+        efforts: [ReasoningEffort.low, ReasoningEffort.high],
+        defaultEffort: ReasoningEffort.low,
+        mandatory: true,
+        supportsMaxTokens: true,
+      ),
+    );
+    expect(byId['a/unknown']!.reasoning, isNull);
+  });
+
   test('saving the same id updates its details', () async {
     await repository.save(const [SavedModel(id: 'a/x', name: 'Old')]);
     await repository.save(const [SavedModel(id: 'a/x', name: 'New')]);

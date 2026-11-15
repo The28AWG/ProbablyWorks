@@ -1088,10 +1088,14 @@ final class ApiServer {
         'unknown policy mode',
       );
     }
+    final reasoning = body['reasoning'] is String
+        ? ReasoningPreference.parse(body['reasoning'] as String?)
+        : null;
     await _backend.updateChat(
       id,
       title: body['title'] is String ? body['title'] as String : null,
       model: body['model'] is String ? body['model'] as String : null,
+      reasoning: reasoning,
       policyMode: policy,
       workspace: body['workspace'] is String
           ? body['workspace'] as String
@@ -1183,6 +1187,10 @@ final class ApiServer {
       'memoryModel': snapshot.memoryModel,
       'subagentModel': snapshot.subagentModel,
       'fallbackModel': snapshot.fallbackModel,
+      'defaultReasoning': snapshot.defaultReasoning.name,
+      'memoryReasoning': snapshot.memoryReasoning.name,
+      'subagentReasoning': snapshot.subagentReasoning.name,
+      'fallbackReasoning': snapshot.fallbackReasoning.name,
       'defaultPolicy': snapshot.defaultPolicy,
       'denylist': snapshot.denylist,
       'securityProfile': snapshot.securityProfile.encode(),
@@ -1966,6 +1974,7 @@ Map<String, Object?> _catalogJson(ModelCatalogState state) => {
         'contextLength': entry.value.contextLength,
         'supportsTools': entry.value.supportsTools,
         'inputModalities': entry.value.inputModalities,
+        'reasoning': entry.value.reasoning?.toJson(),
       },
   },
   'syncedAt': state.syncedAt?.toUtc().toIso8601String(),
@@ -2015,6 +2024,7 @@ Map<String, Object?> _modelJson(LlmModelInfo model) => {
   'completionPrice': model.completionPrice,
   'created': model.created,
   'inputModalities': model.inputModalities,
+  'reasoning': model.reasoning?.toJson(),
 };
 
 List<AttachmentRef> _attachments(Object? raw) {
@@ -2052,6 +2062,10 @@ Chat _chatFromJson(String id, Map<String, dynamic> json) {
       '${json['titleSource'] ?? 'none'}',
     ),
     model: json['model'] as String?,
+    reasoning: ReasoningPreference.parse(
+      json['reasoning'] as String?,
+      fallback: ReasoningPreference.inherit,
+    ),
     policyMode: PolicyMode.values.byName('${json['policyMode'] ?? 'ask'}'),
     workspace: json['workspace'] as String?,
     lastPromptTokens: json['lastPromptTokens'] as int?,
@@ -2095,6 +2109,7 @@ Map<String, Object?> _chatJson(
   'title': chat.title,
   'titleSource': chat.titleSource.name,
   'model': chat.model,
+  'reasoning': chat.reasoning.name,
   'policyMode': chat.policyMode.name,
   'workspace': chat.workspace,
   'lastPromptTokens': chat.lastPromptTokens,

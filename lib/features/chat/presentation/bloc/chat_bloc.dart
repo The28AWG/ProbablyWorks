@@ -63,6 +63,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatMessageEdited>(_onEdited);
     on<ChatDeletedAfter>(_onDeletedAfter);
     on<ChatModelChanged>(_onModelChanged);
+    on<ChatReasoningChanged>(_onReasoningChanged);
     on<ChatModelPinToggled>(_onModelPinToggled);
     on<ChatPolicyChanged>(_onPolicyChanged);
     on<ChatHostChanged>(_onHostChanged);
@@ -117,6 +118,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final _stepsSubs = <StreamSubscription<String?>>[];
   StreamSubscription<String?>? _pinsSub;
   StreamSubscription<String?>? _defaultModelSub;
+  StreamSubscription<String?>? _defaultReasoningSub;
   StreamSubscription<String>? _draftSub;
   final Map<String, StringBuffer> _pendingLive = {};
   Timer? _liveTimer;
@@ -147,6 +149,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         pinnedModels: state.pinnedModels,
         stepsDisplay: state.stepsDisplay,
         defaultModelId: state.defaultModelId,
+        defaultReasoning: state.defaultReasoning,
         contextLimit: state.contextLimit,
         draftId: state.draftId,
         isRunning: _session?.isRunning ?? false,
@@ -198,6 +201,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       chat: chat,
       hosts: hosts,
       catalog: hub.models.state,
+      defaultReasoning: hub.settings.cachedReasoning(
+        SettingsRepository.keyDefaultReasoning,
+      ),
       approvals: hub.broker.pendingApprovals(chat.id),
       questions: hub.broker.pendingQuestions(chat.id),
       isRunning: session.isRunning,
@@ -216,6 +222,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
     await _pinsSub?.cancel();
     await _defaultModelSub?.cancel();
+    await _defaultReasoningSub?.cancel();
     await _draftSub?.cancel();
     await _sessionSub?.cancel();
     await _liveSub?.cancel();
@@ -264,6 +271,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // первом кадре, поэтому новый чат догоняет модель по умолчанию подпиской.
     _defaultModelSub = _hub.settings
         .watch(SettingsRepository.keyDefaultModel)
+        .listen((_) => add(const _DefaultModelChanged()));
+    _defaultReasoningSub = _hub.settings
+        .watch(SettingsRepository.keyDefaultReasoning)
         .listen((_) => add(const _DefaultModelChanged()));
     // Каталог может обновиться в фоне (старт, таймер, Settings): чат перерисует подпись модели и маркер.
     _catalogSub = _hub.models.watch().listen(
@@ -341,6 +351,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       pinnedModels: shared.pinned,
       stepsDisplay: shared.stepsDisplay,
       defaultModelId: shared.defaultModel,
+      defaultReasoning: shared.defaultReasoning,
       chat: snapshot.chat,
       project: project,
       messages: snapshot.messages,
@@ -386,6 +397,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       List<String> pinned,
       StepsDisplay stepsDisplay,
       String? defaultModel,
+      ReasoningPreference defaultReasoning,
     })
   >
   _readShared() async => (
@@ -394,6 +406,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     pinned: await _hub.settings.readPinnedModels(),
     stepsDisplay: await _hub.settings.readStepsDisplay(),
     defaultModel: await _hub.settings.read(SettingsRepository.keyDefaultModel),
+    defaultReasoning: await _hub.settings.readReasoning(
+      SettingsRepository.keyDefaultReasoning,
+    ),
   );
 
   /// Состояние нового чата из настроек и хостов в памяти: без чтений БД и сети. Черновик в блоке пока
@@ -414,6 +429,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       pinnedModels: settings.cachedPinnedModels(),
       stepsDisplay: settings.cachedStepsDisplay(),
       defaultModelId: settings.cached(SettingsRepository.keyDefaultModel),
+      defaultReasoning: settings.cachedReasoning(
+        SettingsRepository.keyDefaultReasoning,
+      ),
       draftId: draftId,
       chatId: chat.id,
       chat: chat,
@@ -607,9 +625,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final chat = state.chat;
     if (chat == null) return;
+    final modelChanged = chat.model != event.model.id;
     final updated = chat.copyWith(
       model: event.model.id,
       contextLength: event.model.contextLength,
+      reasoning: event.reasoning,
     );
     await _hub.models.remember([event.model.id]);
     await _persistChat(updated);
@@ -617,8 +637,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       state.copyWith(chat: updated, contextLimit: event.model.contextLength),
     );
     // Новое окно модели может быть меньше: проверяем бюджет сразу, не дожидаясь следующего хода.
+    // Смена только уровня рассуждений окно не меняет.
+    if (!modelChanged) return;
     final session = _session;
     if (session != null && !session.isRunning) unawaited(session.compactNow());
+  }
+
+  Future<void> _onReasoningChanged(
+    ChatReasoningChanged event,
+    Emitter<ChatState> emit,
+  ) async {
+    final chat = state.chat;
+    if (chat == null || chat.reasoning == event.reasoning) return;
+    final updated = chat.copyWith(reasoning: event.reasoning);
+    await _persistChat(updated);
+    emit(state.copyWith(chat: updated));
   }
 
   Future<void> _onModelPinToggled(
@@ -878,7 +911,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Emitter<ChatState> emit,
   ) async {
     final model = await _hub.settings.read(SettingsRepository.keyDefaultModel);
-    emit(state.copyWith(defaultModelId: model));
+    final reasoning = await _hub.settings.readReasoning(
+      SettingsRepository.keyDefaultReasoning,
+    );
+    emit(state.copyWith(defaultModelId: model, defaultReasoning: reasoning));
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {

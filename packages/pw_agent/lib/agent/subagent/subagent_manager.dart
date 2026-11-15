@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/loop/chat_session.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 import 'package:uuid/uuid.dart';
 
@@ -125,6 +126,7 @@ final class SubagentManager {
       throw StateError('subagent depth limit reached');
     }
     final model = await _resolveModel(parent, modelStrategy);
+    final reasoning = await _reasoningFor(parent, model);
     final id = _uuid.v4();
     final now = DateTime.now();
     await _hub.chats.saveChat(
@@ -139,6 +141,7 @@ final class SubagentManager {
         title: TextClip.headTail(trimmedTitle, maxChars: 80),
         titleSource: ChatTitleSource.user,
         model: model,
+        reasoning: reasoning,
         policyMode: parent.policyMode,
         workspace: parent.workspace,
         createdAt: now,
@@ -190,6 +193,19 @@ final class SubagentManager {
     for (final run in activeFor(chatId)) {
       await _hub.session(run.id).stop();
     }
+  }
+
+  /// Уровень субагента: отдельная модель берёт настройку, модель родителя
+  /// наследует его уровень.
+  Future<ReasoningPreference> _reasoningFor(Chat parent, String model) async {
+    final configured =
+        await _hub.settings.read(SettingsRepository.keySubagentModel) ?? '';
+    if (configured.isNotEmpty && model != parent.model) {
+      return _hub.settings.readReasoning(
+        SettingsRepository.keySubagentReasoning,
+      );
+    }
+    return parent.reasoning;
   }
 
   Future<String> _resolveModel(Chat parent, String? strategy) async {

@@ -218,6 +218,26 @@ DELETE /providers/{id}/key
   дескрипторы, а не проверки вида `id.startsWith('llamacpp:')`;
 - у провайдера без префикса (OpenRouter) id остаются прежними.
 
+## Уровень размышлений
+
+`LlmModelInfo.reasoning` описывает возможности модели, а `LlmRequest.reasoning`
+несёт уже разрешённый уровень (`none`, `minimal`, `low`, `medium`, `high`,
+`xhigh`, `max`) или null.
+
+- OpenRouter заполняет capability из `model.reasoning`
+  (`supported_efforts`, `default_effort`, `mandatory`, `supports_max_tokens`);
+- llama.cpp возможностей не сообщает, поэтому `reasoning == null` означает
+  «неизвестно». UI показывает общий набор, по умолчанию ничего не отправляет.
+  Если сервер не поддерживает явный уровень, он вернёт ошибку;
+- адаптер опускает поле при `reasoning == null` и переводит значение в своё
+  поле (`reasoning.effort` у OpenRouter, `reasoning_effort` у llama.cpp).
+
+Не добавляйте провайдерские поля в `ModelCatalogState` или
+`AgentSettingsSnapshot`: возможности живут в `LlmModelInfo`/`SavedModel`,
+а выбор пользователя — в `Chat.reasoning` и ключах настроек.
+
+Подробности и дорожная карта — в [REASONING.md](REASONING.md).
+
 ## Грабли
 
 - `aliases.first` на пустом списке → `Bad state: No element`; проверяйте

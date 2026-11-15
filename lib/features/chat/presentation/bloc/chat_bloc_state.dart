@@ -18,6 +18,7 @@ class ChatState extends Equatable {
     this.pinnedModels = const [],
     this.stepsDisplay = StepsDisplay.defaults,
     this.defaultModelId,
+    this.defaultReasoning = ReasoningPreference.auto,
     this.limits = AppLimits.defaults,
     this.streamText = '',
     this.streamReasoning = '',
@@ -68,6 +69,9 @@ class ChatState extends Equatable {
 
   /// Модель по умолчанию из Settings. Новый чат её не копирует: агент берёт её, пока у чата нет своей.
   final String? defaultModelId;
+
+  /// Уровень рассуждений по умолчанию. Чат с `inherit` следует ему.
+  final ReasoningPreference defaultReasoning;
   final AppLimits limits;
 
   /// Модель, которую агент реально использует в этом чате: своя или по умолчанию. Null, если ничего не выбрано.
@@ -79,6 +83,30 @@ class ChatState extends Equatable {
     }
     return null;
   }
+
+  /// Выбор уровня чата: `inherit` означает «как в настройках».
+  ReasoningPreference get chatReasoning =>
+      chat?.reasoning ?? ReasoningPreference.inherit;
+
+  /// Действующий выбор с учётом настроек.
+  ReasoningPreference get effectiveReasoning =>
+      chatReasoning == ReasoningPreference.inherit
+      ? defaultReasoning
+      : chatReasoning;
+
+  /// Возможности рассуждений выбранной модели. Null — каталог модель не описал;
+  /// для таких моделей UI показывает общий набор уровней.
+  LlmReasoningCapability? get reasoningCapability {
+    final id = effectiveModelId;
+    if (id == null) return null;
+    return catalog.modelOf(id)?.reasoning ?? catalog.saved[id]?.reasoning;
+  }
+
+  /// Уровень, который реально уйдёт в запрос. Null — поле не отправляется.
+  ReasoningEffort? get effectiveReasoningEffort => resolveReasoning(
+    capability: reasoningCapability,
+    preference: effectiveReasoning,
+  );
 
   /// Модели пока нет, но чат ещё грузится: модель по умолчанию из Settings не прочитана, и отсутствие
   /// выбора пока не доказано. Предупреждать об этом рано; после загрузки null означает реальную ошибку.
@@ -156,6 +184,7 @@ class ChatState extends Equatable {
     List<String>? pinnedModels,
     StepsDisplay? stepsDisplay,
     String? defaultModelId,
+    ReasoningPreference? defaultReasoning,
     AppLimits? limits,
     String? streamText,
     String? streamReasoning,
@@ -194,6 +223,7 @@ class ChatState extends Equatable {
     pinnedModels: pinnedModels ?? this.pinnedModels,
     stepsDisplay: stepsDisplay ?? this.stepsDisplay,
     defaultModelId: defaultModelId ?? this.defaultModelId,
+    defaultReasoning: defaultReasoning ?? this.defaultReasoning,
     limits: limits ?? this.limits,
     streamText: streamText ?? this.streamText,
     streamReasoning: streamReasoning ?? this.streamReasoning,
@@ -236,6 +266,7 @@ class ChatState extends Equatable {
     pinnedModels,
     stepsDisplay,
     defaultModelId,
+    defaultReasoning,
     limits,
     streamText,
     streamReasoning,

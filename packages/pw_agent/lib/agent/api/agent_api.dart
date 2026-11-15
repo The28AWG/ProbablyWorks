@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Состояние соединения с агентом.
 enum AgentStatus { online, offline, connecting }
@@ -83,6 +84,7 @@ abstract interface class AgentApi {
     String chatId, {
     String? title,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool workspaceSpecified = false,

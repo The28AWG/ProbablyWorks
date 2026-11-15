@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/core/util/redactor.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 enum PolicyMode { ask, yolo }
 
@@ -180,6 +181,7 @@ class Chat {
     this.projectId,
     this.titleSource = ChatTitleSource.none,
     this.model,
+    this.reasoning = ReasoningPreference.inherit,
     this.policyMode = PolicyMode.ask,
     this.workspace,
     this.lastPromptTokens,
@@ -214,6 +216,10 @@ class Chat {
   final String title;
   final ChatTitleSource titleSource;
   final String? model;
+
+  /// Уровень рассуждений чата. [ReasoningPreference.inherit] — следовать
+  /// настройке по умолчанию из Settings.
+  final ReasoningPreference reasoning;
   final PolicyMode policyMode;
   final String? workspace;
   final int? lastPromptTokens;
@@ -247,6 +253,7 @@ class Chat {
     String? title,
     ChatTitleSource? titleSource,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool clearWorkspace = false,
@@ -273,6 +280,7 @@ class Chat {
     title: title ?? this.title,
     titleSource: titleSource ?? this.titleSource,
     model: model ?? this.model,
+    reasoning: reasoning ?? this.reasoning,
     policyMode: policyMode ?? this.policyMode,
     workspace: clearWorkspace ? null : (workspace ?? this.workspace),
     lastPromptTokens: lastPromptTokens ?? this.lastPromptTokens,

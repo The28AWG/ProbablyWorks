@@ -25,6 +25,10 @@ class SettingsState extends Equatable {
     this.memoryModel = '',
     this.subagentModel = '',
     this.fallbackModel = '',
+    this.defaultReasoning = ReasoningPreference.auto,
+    this.memoryReasoning = ReasoningPreference.auto,
+    this.subagentReasoning = ReasoningPreference.auto,
+    this.fallbackReasoning = ReasoningPreference.auto,
     this.language = 'system',
     this.themeMode = ThemeMode.system,
     this.defaultPolicy = PolicyMode.ask,
@@ -54,6 +58,10 @@ class SettingsState extends Equatable {
   final String memoryModel;
   final String subagentModel;
   final String fallbackModel;
+  final ReasoningPreference defaultReasoning;
+  final ReasoningPreference memoryReasoning;
+  final ReasoningPreference subagentReasoning;
+  final ReasoningPreference fallbackReasoning;
   final String language;
 
   /// Тема: системная, светлая или тёмная.
@@ -82,6 +90,10 @@ class SettingsState extends Equatable {
     String? memoryModel,
     String? subagentModel,
     String? fallbackModel,
+    ReasoningPreference? defaultReasoning,
+    ReasoningPreference? memoryReasoning,
+    ReasoningPreference? subagentReasoning,
+    ReasoningPreference? fallbackReasoning,
     String? language,
     ThemeMode? themeMode,
     PolicyMode? defaultPolicy,
@@ -101,6 +113,10 @@ class SettingsState extends Equatable {
     memoryModel: memoryModel ?? this.memoryModel,
     subagentModel: subagentModel ?? this.subagentModel,
     fallbackModel: fallbackModel ?? this.fallbackModel,
+    defaultReasoning: defaultReasoning ?? this.defaultReasoning,
+    memoryReasoning: memoryReasoning ?? this.memoryReasoning,
+    subagentReasoning: subagentReasoning ?? this.subagentReasoning,
+    fallbackReasoning: fallbackReasoning ?? this.fallbackReasoning,
     language: language ?? this.language,
     themeMode: themeMode ?? this.themeMode,
     defaultPolicy: defaultPolicy ?? this.defaultPolicy,
@@ -123,6 +139,10 @@ class SettingsState extends Equatable {
     memoryModel,
     subagentModel,
     fallbackModel,
+    defaultReasoning,
+    memoryReasoning,
+    subagentReasoning,
+    fallbackReasoning,
     language,
     themeMode,
     defaultPolicy,
@@ -180,6 +200,10 @@ class SettingsCubit extends Cubit<SettingsState> {
         memoryModel: snapshot.memoryModel,
         subagentModel: snapshot.subagentModel,
         fallbackModel: snapshot.fallbackModel,
+        defaultReasoning: snapshot.defaultReasoning,
+        memoryReasoning: snapshot.memoryReasoning,
+        subagentReasoning: snapshot.subagentReasoning,
+        fallbackReasoning: snapshot.fallbackReasoning,
         defaultPolicy: PolicyMode.values.byName(snapshot.defaultPolicy),
         denylist: snapshot.denylist.join('\n'),
         securityProfile: snapshot.securityProfile,
@@ -358,44 +382,83 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
-  Future<void> saveModels({
-    required String defaultModel,
-    required String titleModel,
-  }) async {
+  Future<void> saveDefaultModel(
+    String id,
+    ReasoningPreference reasoning,
+  ) async {
+    await _agentSettings.writeSetting(SettingsRepository.keyDefaultModel, id);
     await _agentSettings.writeSetting(
-      SettingsRepository.keyDefaultModel,
-      defaultModel,
+      SettingsRepository.keyDefaultReasoning,
+      reasoning.name,
     );
-    await _agentSettings.writeSetting(
-      SettingsRepository.keyTitleModel,
-      titleModel,
-    );
-    await _agentSettings.rememberModels([defaultModel, titleModel]);
+    await _agentSettings.rememberModels([id]);
     emit(
       state.copyWith(
-        defaultModel: defaultModel,
-        titleModel: titleModel,
+        defaultModel: id,
+        defaultReasoning: reasoning,
         saved: state.saved + 1,
       ),
     );
   }
 
-  Future<void> saveMemoryModel(String id) async {
+  Future<void> saveTitleModel(String id) async {
+    await _agentSettings.writeSetting(SettingsRepository.keyTitleModel, id);
+    await _agentSettings.rememberModels([id]);
+    emit(state.copyWith(titleModel: id, saved: state.saved + 1));
+  }
+
+  Future<void> saveMemoryModel(String id, ReasoningPreference reasoning) async {
     await _agentSettings.writeSetting(SettingsRepository.keyMemoryModel, id);
+    await _agentSettings.writeSetting(
+      SettingsRepository.keyMemoryReasoning,
+      reasoning.name,
+    );
     await _agentSettings.rememberModels([id]);
-    emit(state.copyWith(memoryModel: id, saved: state.saved + 1));
+    emit(
+      state.copyWith(
+        memoryModel: id,
+        memoryReasoning: reasoning,
+        saved: state.saved + 1,
+      ),
+    );
   }
 
-  Future<void> saveSubagentModel(String id) async {
+  Future<void> saveSubagentModel(
+    String id,
+    ReasoningPreference reasoning,
+  ) async {
     await _agentSettings.writeSetting(SettingsRepository.keySubagentModel, id);
+    await _agentSettings.writeSetting(
+      SettingsRepository.keySubagentReasoning,
+      reasoning.name,
+    );
     await _agentSettings.rememberModels([id]);
-    emit(state.copyWith(subagentModel: id, saved: state.saved + 1));
+    emit(
+      state.copyWith(
+        subagentModel: id,
+        subagentReasoning: reasoning,
+        saved: state.saved + 1,
+      ),
+    );
   }
 
-  Future<void> saveFallbackModel(String id) async {
+  Future<void> saveFallbackModel(
+    String id,
+    ReasoningPreference reasoning,
+  ) async {
     await _agentSettings.writeSetting(SettingsRepository.keyFallbackModel, id);
+    await _agentSettings.writeSetting(
+      SettingsRepository.keyFallbackReasoning,
+      reasoning.name,
+    );
     await _agentSettings.rememberModels([id]);
-    emit(state.copyWith(fallbackModel: id, saved: state.saved + 1));
+    emit(
+      state.copyWith(
+        fallbackModel: id,
+        fallbackReasoning: reasoning,
+        saved: state.saved + 1,
+      ),
+    );
   }
 
   Future<void> saveLanguage(String code) async {

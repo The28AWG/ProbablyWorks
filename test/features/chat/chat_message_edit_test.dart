@@ -10,6 +10,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_message_t
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 ChatMessage _user(String text) => ChatMessage(
   id: 'u',
@@ -165,6 +166,13 @@ void main() {
             settings: const SizedBox.shrink(),
             workspace: null,
             policy: PolicyMode.ask,
+            reasoning: ReasoningPreference.inherit,
+            reasoningOptions: const [
+              ReasoningPreference.inherit,
+              ReasoningPreference.auto,
+            ],
+            defaultReasoning: ReasoningPreference.auto,
+            onReasoningSelected: _noopReasoning,
             onAttach: _noop,
             onPickWorkspace: _noop,
             onPolicySelected: _noopPolicy,
@@ -196,6 +204,10 @@ void _ignoreMessage(ChatMessage _) {
 }
 
 void _noop() {
+  return;
+}
+
+void _noopReasoning(ReasoningPreference _) {
   return;
 }
 

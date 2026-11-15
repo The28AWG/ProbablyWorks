@@ -8,6 +8,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_density.d
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 ChatState _state({bool running = false}) => ChatState(
   chatId: 'c',
@@ -28,6 +29,7 @@ class _Harness extends StatefulWidget {
     this.running = false,
     this.onPickWorkspace,
     this.onPolicySelected,
+    this.onReasoningSelected,
     this.onAttach,
     this.settings,
     this.density = ChatDensity.regular,
@@ -36,6 +38,7 @@ class _Harness extends StatefulWidget {
   final bool running;
   final VoidCallback? onPickWorkspace;
   final ValueChanged<PolicyMode>? onPolicySelected;
+  final ValueChanged<ReasoningPreference>? onReasoningSelected;
   final VoidCallback? onAttach;
 
   /// Строка настроек под полем; по умолчанию пустая, как в тестах без строки.
@@ -74,6 +77,10 @@ class _HarnessState extends State<_Harness> {
             settings: widget.settings ?? const SizedBox.shrink(),
             workspace: '/home/me/projects/app',
             policy: PolicyMode.ask,
+            reasoning: ReasoningPreference.inherit,
+            reasoningOptions: ReasoningPreference.values,
+            defaultReasoning: ReasoningPreference.auto,
+            onReasoningSelected: widget.onReasoningSelected ?? _noopReasoning,
             onAttach: widget.onAttach ?? _noop,
             onPickWorkspace: widget.onPickWorkspace ?? _noop,
             onPolicySelected: widget.onPolicySelected ?? _noopPolicy,
@@ -154,6 +161,27 @@ void main() {
     await tester.tap(find.text(l10n.policyYolo));
     await tester.pumpAndSettle();
     expect(picked, PolicyMode.yolo);
+  });
+
+  testWidgets('reasoning submenu switches the level without a model', (
+    tester,
+  ) async {
+    ReasoningPreference? picked;
+    await tester.pumpWidget(
+      _Harness(onReasoningSelected: (value) => picked = value),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(tester.element(find.byType(ChatComposer)));
+
+    await tester.tap(find.byTooltip(l10n.composerAddTooltip));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.composerReasoningLabel));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.reasoningHigh), findsOneWidget);
+
+    await tester.tap(find.text(l10n.reasoningHigh));
+    await tester.pumpAndSettle();
+    expect(picked, ReasoningPreference.high);
   });
 
   testWidgets('idle empty composer shows no action button', (tester) async {
@@ -321,6 +349,10 @@ void _expectSettingsInsideCard(WidgetTester tester) {
     expect(rect.left, greaterThanOrEqualTo(card.left - 0.5));
     expect(rect.right, lessThanOrEqualTo(card.right + 0.5));
   }
+}
+
+void _noopReasoning(ReasoningPreference _) {
+  return;
 }
 
 void _noopVoid() {

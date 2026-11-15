@@ -1099,6 +1099,181 @@
       }
     }
   },
+  "reasoningLabel": "Reasoning",
+  "@reasoningLabel": {
+    "description": "Label of the reasoning effort setting."
+  },
+  "reasoningInherit": "Default",
+  "@reasoningInherit": {
+    "description": "Reasoning option: use the app default from Settings."
+  },
+  "reasoningInheritHint": "Use the app default: {level}.",
+  "@reasoningInheritHint": {
+    "description": "Hint of the default reasoning option.",
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningAuto": "Auto",
+  "@reasoningAuto": {
+    "description": "Reasoning option: let the provider choose."
+  },
+  "reasoningAutoHint": "Let the provider choose. The request does not set an effort.",
+  "@reasoningAutoHint": {
+    "description": "Hint of the auto reasoning option."
+  },
+  "reasoningNone": "Off",
+  "@reasoningNone": {
+    "description": "Reasoning option: disable reasoning."
+  },
+  "reasoningNoneHint": "Do not spend tokens on reasoning. Not available for models that require it.",
+  "@reasoningNoneHint": {
+    "description": "Hint of the off reasoning option."
+  },
+  "reasoningMinimal": "Minimal",
+  "@reasoningMinimal": {
+    "description": "Reasoning effort: minimal."
+  },
+  "reasoningMinimalHint": "The least reasoning; fastest and cheapest.",
+  "@reasoningMinimalHint": {
+    "description": "Hint of the minimal reasoning effort."
+  },
+  "reasoningLow": "Low",
+  "@reasoningLow": {
+    "description": "Reasoning effort: low."
+  },
+  "reasoningLowHint": "Quick reasoning for simple tasks.",
+  "@reasoningLowHint": {
+    "description": "Hint of the low reasoning effort."
+  },
+  "reasoningMedium": "Medium",
+  "@reasoningMedium": {
+    "description": "Reasoning effort: medium."
+  },
+  "reasoningMediumHint": "Balanced reasoning for everyday tasks.",
+  "@reasoningMediumHint": {
+    "description": "Hint of the medium reasoning effort."
+  },
+  "reasoningHigh": "High",
+  "@reasoningHigh": {
+    "description": "Reasoning effort: high."
+  },
+  "reasoningHighHint": "Deeper reasoning for complex tasks.",
+  "@reasoningHighHint": {
+    "description": "Hint of the high reasoning effort."
+  },
+  "reasoningXhigh": "Very high",
+  "@reasoningXhigh": {
+    "description": "Reasoning effort: very high."
+  },
+  "reasoningXhighHint": "Very deep reasoning; slower and more expensive.",
+  "@reasoningXhighHint": {
+    "description": "Hint of the very high reasoning effort."
+  },
+  "reasoningMax": "Maximum",
+  "@reasoningMax": {
+    "description": "Reasoning effort: maximum."
+  },
+  "reasoningMaxHint": "Maximum reasoning; slowest and most expensive.",
+  "@reasoningMaxHint": {
+    "description": "Hint of the maximum reasoning effort."
+  },
+  "reasoningHigherCostHint": "Higher effort spends more tokens and takes longer.",
+  "@reasoningHigherCostHint": {
+    "description": "Hint under the reasoning selector."
+  },
+  "reasoningDialogTitle": "Reasoning for {model}",
+  "@reasoningDialogTitle": {
+    "description": "Title of the reasoning dialog after model selection.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningDialogHint": "Choose how much the model should think before answering.",
+  "@reasoningDialogHint": {
+    "description": "Subtitle of the reasoning dialog."
+  },
+  "reasoningNotSupported": "This model does not support reasoning.",
+  "@reasoningNotSupported": {
+    "description": "Shown when the selected model cannot use reasoning."
+  },
+  "reasoningAlwaysOn": "Reasoning is always on for this model.",
+  "@reasoningAlwaysOn": {
+    "description": "Shown when the model does not allow disabling reasoning."
+  },
+  "reasoningAdjustedForModel": "Requested {requested}, using {actual} for this model.",
+  "@reasoningAdjustedForModel": {
+    "description": "Shown when the selected reasoning level is not supported and was lowered.",
+    "placeholders": {
+      "requested": {
+        "type": "String"
+      },
+      "actual": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningModelChipTooltip": "Model: {model} · Reasoning: {level}",
+  "@reasoningModelChipTooltip": {
+    "description": "Tooltip of the model chip when reasoning is active.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningModelBadge": "reasoning",
+  "@reasoningModelBadge": {
+    "description": "Badge in the model list for a model that supports reasoning."
+  },
+  "reasoningAlwaysBadge": "always on",
+  "@reasoningAlwaysBadge": {
+    "description": "Badge in the model list for a model that requires reasoning."
+  },
+  "settingsReasoning": "Reasoning",
+  "@settingsReasoning": {
+    "description": "Title of the reasoning setting in model settings."
+  },
+  "settingsReasoningHint": "How much the model thinks before answering.",
+  "@settingsReasoningHint": {
+    "description": "Hint of the reasoning setting in model settings."
+  },
+  "composerReasoningLabel": "Reasoning",
+  "@composerReasoningLabel": {
+    "description": "Submenu title in the composer plus menu."
+  },
+  "composerReasoningUnsupported": "Reasoning is not supported by this model.",
+  "@composerReasoningUnsupported": {
+    "description": "Disabled item in the composer reasoning submenu."
+  },
+  "chatReasoningSwitched": "Reasoning: {level}",
+  "@chatReasoningSwitched": {
+    "description": "Snackbar after changing reasoning without changing the model.",
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "chatModelAndReasoningSwitched": "Model: {model} · Reasoning: {level}",
+  "@chatModelAndReasoningSwitched": {
+    "description": "Snackbar after changing the model and reasoning.",
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "level": {
+        "type": "String"
+      }
+    }
+  },
   "statusThinking": "Thinking…",
   "@statusThinking": {
     "description": "Status strip under the composer: the model is generating a reply."

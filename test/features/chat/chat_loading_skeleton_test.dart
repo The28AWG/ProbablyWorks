@@ -79,6 +79,10 @@ Rect _composerCard(WidgetTester tester, Type composer) => tester.getRect(
       .first,
 );
 
+void _noopReasoning(ReasoningPreference _) {
+  return;
+}
+
 class _RealComposer extends StatelessWidget {
   const _RealComposer(this.controller);
 
@@ -92,6 +96,13 @@ class _RealComposer extends StatelessWidget {
     dragging: false,
     workspace: null,
     policy: PolicyMode.ask,
+    reasoning: ReasoningPreference.inherit,
+    reasoningOptions: const [
+      ReasoningPreference.inherit,
+      ReasoningPreference.auto,
+    ],
+    defaultReasoning: ReasoningPreference.auto,
+    onReasoningSelected: _noopReasoning,
     settings: ChatMetaBar(
       hosts: const [],
       hostId: 'local',

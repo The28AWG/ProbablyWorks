@@ -11,6 +11,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// API, который нужен экрану одного чата.
 ///
@@ -58,6 +59,7 @@ abstract interface class ChatStore implements DraftPersistence {
 abstract interface class SettingsStore {
   Stream<String?> watch(String key);
   Future<String?> read(String key);
+  Future<ReasoningPreference> readReasoning(String key);
   Future<List<String>> readPinnedModels();
   Future<void> savePinnedModels(List<String> ids);
   Future<StepsDisplay> readStepsDisplay();
@@ -73,6 +75,7 @@ abstract interface class SettingsStore {
   AppLimits cachedLimits();
   List<String> cachedPinnedModels();
   StepsDisplay cachedStepsDisplay();
+  ReasoningPreference cachedReasoning(String key);
   String? cached(String key);
 }
 

@@ -264,7 +264,10 @@ class LlamaCppLlmProvider implements LlmProvider {
             : [for (final tool in request.tools) _toolOf(tool)],
         toolChoice: request.tools.isEmpty ? null : 'auto',
         parseToolCalls: true,
-        reasoningEffort: request.skipReasoning ? 'none' : null,
+        // llama.cpp не сообщает возможности модели. Null означает «не
+        // отправлять»: сервер сам решит. Явный уровень уходит как есть, и
+        // сервер вернёт ошибку, если он несовместим с загруженной моделью.
+        reasoningEffort: request.reasoning?.name,
         streamOptions: const LlamaCppOpenAiStreamOptions(includeUsage: true),
       );
 }

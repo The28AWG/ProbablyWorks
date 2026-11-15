@@ -39,6 +39,18 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
           await _settings.read(SettingsRepository.keySubagentModel) ?? '',
       fallbackModel:
           await _settings.read(SettingsRepository.keyFallbackModel) ?? '',
+      defaultReasoning: await _settings.readReasoning(
+        SettingsRepository.keyDefaultReasoning,
+      ),
+      memoryReasoning: await _settings.readReasoning(
+        SettingsRepository.keyMemoryReasoning,
+      ),
+      subagentReasoning: await _settings.readReasoning(
+        SettingsRepository.keySubagentReasoning,
+      ),
+      fallbackReasoning: await _settings.readReasoning(
+        SettingsRepository.keyFallbackReasoning,
+      ),
       defaultPolicy:
           await _settings.read(SettingsRepository.keyDefaultPolicy) ?? 'ask',
       denylist: await _settings.readDenylist(),

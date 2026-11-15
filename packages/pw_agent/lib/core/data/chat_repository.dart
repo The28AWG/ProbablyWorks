@@ -7,6 +7,7 @@ import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Чаты, сообщения, tool runs и ревизии состояния. Все многотабличные
 /// изменения выполняются через [transaction].
@@ -150,6 +151,7 @@ class ChatRepository implements DraftPersistence {
           rootChatId: Value(chat.rootChatId),
           depth: Value(chat.depth),
           model: Value(chat.model),
+          reasoning: Value(chat.reasoning.name),
           policyMode: Value(chat.policyMode.name),
           workspace: Value(chat.workspace),
           lastPromptTokens: Value(chat.lastPromptTokens),
@@ -477,6 +479,7 @@ class ChatRepository implements DraftPersistence {
     title: row.title,
     titleSource: ChatTitleSource.values.byName(row.titleSource),
     model: row.model,
+    reasoning: ReasoningPreference.parse(row.reasoning),
     policyMode: PolicyMode.values.byName(row.policyMode),
     workspace: row.workspace,
     lastPromptTokens: row.lastPromptTokens,

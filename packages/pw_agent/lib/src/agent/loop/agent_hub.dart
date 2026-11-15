@@ -263,6 +263,7 @@ class AgentHub {
       title: title?.trim().isNotEmpty == true ? title!.trim() : source.title,
       titleSource: ChatTitleSource.user,
       model: source.model,
+      reasoning: source.reasoning,
       policyMode: source.policyMode,
       workspace: source.workspace,
       lastPromptTokens: source.lastPromptTokens,

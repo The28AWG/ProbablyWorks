@@ -86,7 +86,7 @@ void main() {
 
     final saved = await projects.memory(project.id);
     expect(saved?.summary, contains('pnpm install'));
-    expect(llm.requests.first.skipReasoning, isFalse);
+    expect(llm.requests.first.reasoning, isNull);
   });
 
   test('no tool call leaves memory untouched', () async {

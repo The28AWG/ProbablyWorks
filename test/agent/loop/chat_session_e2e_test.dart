@@ -1019,7 +1019,7 @@ void main() {
       final chat = await waitForGeneratedTitle(chatId);
       expect(chat.title, 'Счётчик от 1 до 40');
       expect(chat.titleSource, ChatTitleSource.generated);
-      expect(llm.titleRequests.single.skipReasoning, isTrue);
+      expect(llm.titleRequests.single.reasoning, ReasoningEffort.none);
       expect(llm.titleRequests.single.maxTokens, ChatTitle.maxTokens);
     });
 

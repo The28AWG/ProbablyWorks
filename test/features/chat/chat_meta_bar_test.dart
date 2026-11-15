@@ -57,6 +57,8 @@ class _TestChatMetaBar extends StatelessWidget {
     this.modelUnavailable = false,
     this.modelLoading = false,
     this.modelPending = false,
+    this.reasoningLabel,
+    this.reasoningActive = false,
   });
 
   final bool running;
@@ -69,6 +71,8 @@ class _TestChatMetaBar extends StatelessWidget {
   final bool modelUnavailable;
   final bool modelLoading;
   final bool modelPending;
+  final String? reasoningLabel;
+  final bool reasoningActive;
 
   static void _noopHost(String _) {
     return;
@@ -89,6 +93,8 @@ class _TestChatMetaBar extends StatelessWidget {
     modelUnavailable: modelUnavailable,
     modelLoading: modelLoading,
     modelPending: modelPending,
+    reasoningLabel: reasoningLabel,
+    reasoningActive: reasoningActive,
     onPickModel: _noop,
     contextFraction: contextFraction,
     onOpenContext: onOpenContext ?? _noop,
@@ -481,6 +487,33 @@ void main() {
     expect(find.text('Claude Sonnet'), findsOneWidget);
     expect(find.text('42%'), findsOneWidget);
   });
+
+  _desktopWidgetTest(
+    'reasoning keeps the model chip width and changes its icon',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestHost(
+          const _TestChatMetaBar(reasoningLabel: 'High', reasoningActive: true),
+          AppTheme.light,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.psychology), findsOneWidget);
+      expect(
+        find.byTooltip('Model: Claude Sonnet · Reasoning: High'),
+        findsOneWidget,
+      );
+      // Отдельного чипа нет: в строке остаются только хост и модель.
+      expect(
+        find.descendant(
+          of: find.byType(ChatMetaBar),
+          matching: find.byType(InkWell),
+        ),
+        findsNWidgets(2),
+      );
+    },
+  );
 }
 
 /// Проверяет, что каждый чип строки настроек (его `InkWell`) лежит внутри [bounds] по горизонтали.

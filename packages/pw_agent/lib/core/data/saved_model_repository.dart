@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -20,6 +22,7 @@ class SavedModelRepository {
           contextLength: row.contextLength,
           supportsTools: row.supportsTools,
           inputModalities: _parseModalities(row.inputModalities),
+          reasoning: _parseReasoning(row.reasoningJson),
         ),
     ];
   }
@@ -33,6 +36,7 @@ class SavedModelRepository {
           contextLength: Value(model.contextLength),
           supportsTools: Value(model.supportsTools),
           inputModalities: Value(_joinModalities(model.inputModalities)),
+          reasoningJson: Value(_encodeReasoning(model.reasoning)),
         ),
     ]),
   );
@@ -46,4 +50,16 @@ class SavedModelRepository {
 
   static String? _joinModalities(List<String>? modalities) =>
       modalities?.join(',');
+
+  static LlmReasoningCapability? _parseReasoning(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return LlmReasoningCapability.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static String? _encodeReasoning(LlmReasoningCapability? reasoning) =>
+      reasoning == null ? null : jsonEncode(reasoning.toJson());
 }

@@ -5,8 +5,10 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/providers/ai/llm_provider_meta.dart';
+import 'package:pw_agent/providers/ai/reasoning.dart';
 
 export 'llm_provider_meta.dart';
+export 'reasoning.dart';
 
 enum LlmRole { system, user, assistant, tool }
 
@@ -83,7 +85,7 @@ class LlmRequest {
     this.tools = const [],
     this.maxTokens,
     this.temperature,
-    this.skipReasoning = false,
+    this.reasoning,
   });
 
   final String model;
@@ -92,8 +94,9 @@ class LlmRequest {
   final int? maxTokens;
   final double? temperature;
 
-  /// Просит модель не тратить токены на рассуждения (для коротких служебных ответов).
-  final bool skipReasoning;
+  /// Уровень рассуждений после разрешения. Null — поле не отправляется,
+  /// провайдер решает сам.
+  final ReasoningEffort? reasoning;
 }
 
 class LlmUsage {
@@ -143,6 +146,7 @@ class LlmModelInfo {
     this.completionPrice,
     this.created,
     this.inputModalities,
+    this.reasoning,
   });
 
   final String id;
@@ -158,6 +162,9 @@ class LlmModelInfo {
   /// Входные модальности (`text`, `image`, `file`, ...). Null — неизвестно.
   final List<String>? inputModalities;
 
+  /// Возможности рассуждений. Null — провайдер не сообщил.
+  final LlmReasoningCapability? reasoning;
+
   /// Копия модели с заменённым id: реестр добавляет префикс провайдера.
   LlmModelInfo copyWith({
     String? id,
@@ -168,6 +175,7 @@ class LlmModelInfo {
     String? completionPrice,
     int? created,
     List<String>? inputModalities,
+    LlmReasoningCapability? reasoning,
   }) => LlmModelInfo(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -177,6 +185,7 @@ class LlmModelInfo {
     completionPrice: completionPrice ?? this.completionPrice,
     created: created ?? this.created,
     inputModalities: inputModalities ?? this.inputModalities,
+    reasoning: reasoning ?? this.reasoning,
   );
 }
 
@@ -206,6 +215,7 @@ class SavedModel extends Equatable {
     this.contextLength,
     this.supportsTools = false,
     this.inputModalities,
+    this.reasoning,
   });
 
   final String id;
@@ -216,6 +226,9 @@ class SavedModel extends Equatable {
   /// Входные модальности; null — модель ещё не описана каталогом.
   final List<String>? inputModalities;
 
+  /// Возможности рассуждений; null — каталог их ещё не описал.
+  final LlmReasoningCapability? reasoning;
+
   @override
   List<Object?> get props => [
     id,
@@ -223,6 +236,7 @@ class SavedModel extends Equatable {
     contextLength,
     supportsTools,
     inputModalities,
+    reasoning,
   ];
 }
 

@@ -32,7 +32,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 18;
+  static const currentSchemaVersion = 19;
 
   static const _uuid = Uuid();
 
@@ -129,8 +129,29 @@ class AppDatabase extends _$AppDatabase {
       // Версия 18: FTS-индекс создавался только для новых баз. На апгрейде
       // пересобираем его целиком, чтобы старые сообщения тоже находились.
       if (from < 18) await _rebuildSearchIndex();
+      // Версия 19: уровень рассуждений чата и возможности reasoning выбранных
+      // моделей. Старые чаты наследуют настройку по умолчанию.
+      if (from < 19) {
+        // В тестовых и очень старых базах таблиц может не быть: миграция
+        // должна доходить до конца, а не падать на отсутствующей таблице.
+        if (await _hasTable('chats')) {
+          await m.addColumn(chats, chats.reasoning);
+        }
+        // До v4 таблицы saved_models нет: её создаёт блок v4 уже с текущей
+        // схемой, включая reasoning_json. Повторно колонку не добавляем.
+        if (from >= 4 && await _hasTable('saved_models')) {
+          await m.addColumn(savedModels, savedModels.reasoningJson);
+        }
+      }
     },
   );
+
+  /// Есть ли таблица в базе. Нужно миграциям, которые трогают таблицы,
+  /// отсутствующие в очень старых или тестовых базах.
+  Future<bool> _hasTable(String name) async => (await customSelect(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+    variables: [Variable.withString(name)],
+  ).get()).isNotEmpty;
 
   /// Пересоздаёт FTS-индекс из сохранённых сообщений.
   ///

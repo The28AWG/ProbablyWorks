@@ -140,6 +140,9 @@ class Chats extends Table {
   TextColumn get rootChatId => text().nullable()();
   IntColumn get depth => integer().withDefault(const Constant(0))();
   TextColumn get model => text().nullable()();
+
+  /// Уровень рассуждений чата. `inherit` — следовать настройке по умолчанию.
+  TextColumn get reasoning => text().withDefault(const Constant('inherit'))();
   TextColumn get policyMode => text().withDefault(const Constant('ask'))();
   TextColumn get workspace => text().nullable()();
   IntColumn get lastPromptTokens => integer().nullable()();
@@ -250,6 +253,9 @@ class SavedModels extends Table {
 
   /// Входные модальности через запятую (`text,image,file`). Null — каталог их не описал.
   TextColumn get inputModalities => text().nullable()();
+
+  /// Возможности рассуждений в JSON (LlmReasoningCapability). Null — неизвестно.
+  TextColumn get reasoningJson => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {id};

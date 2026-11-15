@@ -150,6 +150,25 @@ AppDatabase _openAtVersion(
   ),
 );
 
+/// База v18 с чатом и сохранённой моделью: проверяет миграцию reasoning.
+AppDatabase _openReasoningV18() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(_savedModelsV4)
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'chat', 0, 0)",
+        )
+        ..execute(
+          "INSERT INTO saved_models (id, name) VALUES ('openai/gpt-4o', 'GPT-4o')",
+        )
+        ..execute('PRAGMA user_version = 18');
+    },
+  ),
+);
+
 /// База v9 с хостами, чатами и старым ключом доверия к папке.
 AppDatabase _openProjectsV9() => AppDatabase(
   NativeDatabase.memory(
@@ -460,6 +479,35 @@ void main() {
         .get();
 
     expect(rows.map((row) => row.read<String>('message_id')), ['m1']);
+  });
+
+  test('v18 → v19 adds reasoning to chats and saved models', () async {
+    final db = _openReasoningV18();
+    addTearDown(db.close);
+
+    final chatColumns = await db
+        .customSelect('PRAGMA table_info(chats)')
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(chatColumns, contains('reasoning'));
+
+    final chat = await db
+        .customSelect("SELECT reasoning FROM chats WHERE id = 'c1'")
+        .getSingle();
+    expect(chat.read<String>('reasoning'), 'inherit');
+
+    final savedColumns = await db
+        .customSelect('PRAGMA table_info(saved_models)')
+        .map((row) => row.read<String>('name'))
+        .get();
+    expect(savedColumns, contains('reasoning_json'));
+
+    final saved = await db
+        .customSelect(
+          "SELECT reasoning_json FROM saved_models WHERE id = 'openai/gpt-4o'",
+        )
+        .getSingle();
+    expect(saved.readNullable<String>('reasoning_json'), null);
   });
 
   test('v15 → v16 adds the draft revision column', () async {

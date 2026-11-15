@@ -84,7 +84,9 @@ extension _ChatSessionRuntime on ChatSession {
           LlmMessage.user(TextClip.headTail(prompt, maxChars: 1000)),
         ],
         maxTokens: ChatTitle.maxTokens,
-        skipReasoning: true,
+        // Заголовок — служебный вызов: не тратим рассуждения, но не ломаем
+        // mandatory-модели, которым нельзя передать none.
+        reasoning: resolveUtilityReasoning(_reasoningCapabilityOf(model)),
       );
       final buffer = StringBuffer();
       await for (final event in _hub.llm.stream(request)) {

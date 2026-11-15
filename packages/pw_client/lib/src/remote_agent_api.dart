@@ -320,6 +320,7 @@ class RemoteAgentApi
     String chatId, {
     String? title,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool workspaceSpecified = false,
@@ -330,6 +331,7 @@ class RemoteAgentApi
       body: {
         'title': ?title,
         'model': ?model,
+        'reasoning': ?reasoning?.name,
         'policyMode': ?policyMode?.name,
         'workspace': ?workspace,
         if (workspaceSpecified) 'workspaceSpecified': true,
@@ -1459,6 +1461,18 @@ AgentSettingsSnapshot _snapshotFrom(Map<String, dynamic> json) {
     memoryModel: '${json['memoryModel'] ?? ''}',
     subagentModel: '${json['subagentModel'] ?? ''}',
     fallbackModel: '${json['fallbackModel'] ?? ''}',
+    defaultReasoning: ReasoningPreference.parse(
+      json['defaultReasoning'] as String?,
+    ),
+    memoryReasoning: ReasoningPreference.parse(
+      json['memoryReasoning'] as String?,
+    ),
+    subagentReasoning: ReasoningPreference.parse(
+      json['subagentReasoning'] as String?,
+    ),
+    fallbackReasoning: ReasoningPreference.parse(
+      json['fallbackReasoning'] as String?,
+    ),
     defaultPolicy: '${json['defaultPolicy'] ?? 'ask'}',
     denylist: [
       for (final item in (json['denylist'] as List? ?? const []))
@@ -1578,6 +1592,7 @@ LlmModelInfo _model(Map<String, dynamic> json) => LlmModelInfo(
   inputModalities: json['inputModalities'] is List
       ? [for (final item in json['inputModalities'] as List) '$item']
       : null,
+  reasoning: LlmReasoningCapability.fromJson(json['reasoning']),
 );
 
 SavedModel _savedModel(Map<String, dynamic> json) => SavedModel(
@@ -1588,6 +1603,7 @@ SavedModel _savedModel(Map<String, dynamic> json) => SavedModel(
   inputModalities: json['inputModalities'] is List
       ? [for (final item in json['inputModalities'] as List) '$item']
       : null,
+  reasoning: LlmReasoningCapability.fromJson(json['reasoning']),
 );
 
 Map<String, Object?> _chatBody(Chat chat) => {
@@ -1600,6 +1616,7 @@ Map<String, Object?> _chatBody(Chat chat) => {
   'title': chat.title,
   'titleSource': chat.titleSource.name,
   'model': chat.model,
+  'reasoning': chat.reasoning.name,
   'policyMode': chat.policyMode.name,
   'workspace': chat.workspace,
   'lastPromptTokens': chat.lastPromptTokens,
@@ -1622,6 +1639,10 @@ Chat _chat(Map<String, dynamic> json) => Chat(
     '${json['titleSource'] ?? 'none'}',
   ),
   model: json['model'] as String?,
+  reasoning: ReasoningPreference.parse(
+    json['reasoning'] as String?,
+    fallback: ReasoningPreference.inherit,
+  ),
   policyMode: PolicyMode.values.byName('${json['policyMode'] ?? 'ask'}'),
   workspace: json['workspace'] as String?,
   lastPromptTokens: json['lastPromptTokens'] as int?,
@@ -1901,6 +1922,7 @@ final class _RemoteChatStore implements ChatStore {
       body: {
         'title': chat.title,
         'model': chat.model,
+        'reasoning': chat.reasoning.name,
         'policyMode': chat.policyMode.name,
         'workspace': chat.workspace,
       },
@@ -1966,6 +1988,10 @@ final class _RemoteSettings implements SettingsStore {
     return _value(key);
   }
 
+  @override
+  Future<ReasoningPreference> readReasoning(String key) async =>
+      ReasoningPreference.parse(await read(key));
+
   /// Значение ключа из кэша. Журналу шагов и закреплениям важно только
   /// изменение, но ключи возвращаются в том же виде, что и локальное хранилище.
   String? _value(String key) {
@@ -1973,6 +1999,14 @@ final class _RemoteSettings implements SettingsStore {
     if (settings == null) return null;
     return switch (key) {
       SettingsRepository.keyDefaultModel => settings['defaultModel'] as String?,
+      SettingsRepository.keyDefaultReasoning =>
+        settings['defaultReasoning'] as String?,
+      SettingsRepository.keyMemoryReasoning =>
+        settings['memoryReasoning'] as String?,
+      SettingsRepository.keySubagentReasoning =>
+        settings['subagentReasoning'] as String?,
+      SettingsRepository.keyFallbackReasoning =>
+        settings['fallbackReasoning'] as String?,
       SettingsRepository.keyDefaultPolicy =>
         settings['defaultPolicy'] as String?,
       SettingsRepository.keyPinnedModels =>
@@ -2098,9 +2132,22 @@ final class _RemoteSettings implements SettingsStore {
   }
 
   @override
+  @override
+  ReasoningPreference cachedReasoning(String key) =>
+      ReasoningPreference.parse(cached(key));
+
+  @override
   String? cached(String key) => switch (key) {
     SettingsRepository.keyDefaultModel =>
       _api._globalSettings?['defaultModel'] as String?,
+    SettingsRepository.keyDefaultReasoning =>
+      _api._globalSettings?['defaultReasoning'] as String?,
+    SettingsRepository.keyMemoryReasoning =>
+      _api._globalSettings?['memoryReasoning'] as String?,
+    SettingsRepository.keySubagentReasoning =>
+      _api._globalSettings?['subagentReasoning'] as String?,
+    SettingsRepository.keyFallbackReasoning =>
+      _api._globalSettings?['fallbackReasoning'] as String?,
     SettingsRepository.keyDefaultPolicy =>
       _api._globalSettings?['defaultPolicy'] as String?,
     _ => null,

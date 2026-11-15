@@ -932,6 +932,7 @@ void main() {
       expect(status, HttpStatus.ok);
       final json = jsonDecode(body) as Map<String, dynamic>;
       expect(json['defaultModel'], 'openai/gpt-4o');
+      expect(json['defaultReasoning'], 'high');
       expect(json['pinnedModels'], ['openai/gpt-4o']);
       expect(json['steps'], containsPair('thoughts', 'all'));
       expect((json['catalog'] as Map)['models'], hasLength(1));
@@ -1484,6 +1485,7 @@ final class _FakeBackend implements AgentApi {
     String chatId, {
     String? title,
     String? model,
+    ReasoningPreference? reasoning,
     PolicyMode? policyMode,
     String? workspace,
     bool workspaceSpecified = false,
@@ -1966,6 +1968,10 @@ final class _FakeSettings implements AgentSettingsApi {
     memoryModel: '',
     subagentModel: '',
     fallbackModel: '',
+    defaultReasoning: ReasoningPreference.high,
+    memoryReasoning: ReasoningPreference.auto,
+    subagentReasoning: ReasoningPreference.auto,
+    fallbackReasoning: ReasoningPreference.auto,
     defaultPolicy: 'ask',
     denylist: denylist,
     securityProfile: const SecurityProfile(),

@@ -12,6 +12,10 @@ final class AgentSettingsSnapshot {
     required this.memoryModel,
     required this.subagentModel,
     required this.fallbackModel,
+    required this.defaultReasoning,
+    required this.memoryReasoning,
+    required this.subagentReasoning,
+    required this.fallbackReasoning,
     required this.defaultPolicy,
     required this.denylist,
     required this.securityProfile,
@@ -26,6 +30,10 @@ final class AgentSettingsSnapshot {
   final String memoryModel;
   final String subagentModel;
   final String fallbackModel;
+  final ReasoningPreference defaultReasoning;
+  final ReasoningPreference memoryReasoning;
+  final ReasoningPreference subagentReasoning;
+  final ReasoningPreference fallbackReasoning;
   final String defaultPolicy;
   final List<String> denylist;
   final SecurityProfile securityProfile;

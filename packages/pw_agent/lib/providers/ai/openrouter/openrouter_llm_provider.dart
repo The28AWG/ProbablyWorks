@@ -6,7 +6,8 @@ import 'package:openrouter/openrouter.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
-import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/llm_port.dart' hide ReasoningEffort;
+import 'package:pw_agent/providers/ai/reasoning.dart' as reasoning;
 import 'package:pw_agent/providers/ai/text_tool_call_parser.dart';
 import 'package:pw_agent/providers/ai/think_tag_parser.dart';
 
@@ -226,6 +227,7 @@ class OpenRouterLlmProvider implements LlmProvider {
               for (final modality in model.architecture.inputModalities)
                 if (modality != InputModality.unknown_) modality.name,
             ],
+            reasoning: _reasoningCapabilityOf(model),
           ),
       ];
     } on OpenRouterException catch (error, stack) {
@@ -243,11 +245,11 @@ class OpenRouterLlmProvider implements LlmProvider {
         : [for (final t in request.tools) _toTool(t)],
     maxTokens: request.maxTokens,
     temperature: request.temperature,
-    reasoning: request.skipReasoning
-        ? const ChatRequestReasoningValue(
-            effort: ChatRequestReasoningValueEffortValue.none,
-          )
-        : null,
+    reasoning: request.reasoning == null
+        ? null
+        : ChatRequestReasoningValue(
+            effort: _openRouterEffort(request.reasoning!),
+          ),
   );
 
   ChatFunctionTool _toTool(LlmToolSpec spec) => ChatFunctionTool.function(
@@ -261,6 +263,69 @@ class OpenRouterLlmProvider implements LlmProvider {
     ),
   );
 }
+
+/// Возможности рассуждений из метаданных OpenRouter.
+///
+/// `reasoning == null` у OpenRouter означает и «модель не умеет», и
+/// «динамический роутер». Второй случай отличается по `supported_parameters`:
+/// если там есть reasoning, возможности считаем известными, но список уровней
+/// неизвестным.
+LlmReasoningCapability _reasoningCapabilityOf(Model model) {
+  final value = model.reasoning;
+  if (value != null) {
+    return LlmReasoningCapability(
+      supported: true,
+      efforts: [
+        for (final effort
+            in value.supportedEfforts ?? const <ReasoningEffort?>[])
+          if (effort != null && effort != ReasoningEffort.unknown_)
+            _reasoningEffortOf(effort),
+      ].whereType<reasoning.ReasoningEffort>().toList(),
+      defaultEffort: _reasoningEffortOf(value.defaultEffort),
+      mandatory: value.mandatory,
+      supportsMaxTokens: value.supportsMaxTokens ?? false,
+    );
+  }
+  final canReason = model.supportedParameters.any(
+    (parameter) =>
+        parameter == Parameter.reasoning ||
+        parameter == Parameter.reasoningEffort ||
+        parameter == Parameter.includeReasoning,
+  );
+  return LlmReasoningCapability(
+    supported: canReason,
+    efforts: canReason ? null : const [],
+  );
+}
+
+/// OpenRouter reasoning effort → доменный уровень. Неизвестное значение
+/// отбрасывается: лучше не показывать уровень, чем отправить мусор.
+reasoning.ReasoningEffort? _reasoningEffortOf(ReasoningEffort? effort) =>
+    switch (effort) {
+      ReasoningEffort.none => reasoning.ReasoningEffort.none,
+      ReasoningEffort.minimal => reasoning.ReasoningEffort.minimal,
+      ReasoningEffort.low => reasoning.ReasoningEffort.low,
+      ReasoningEffort.medium => reasoning.ReasoningEffort.medium,
+      ReasoningEffort.high => reasoning.ReasoningEffort.high,
+      ReasoningEffort.xhigh => reasoning.ReasoningEffort.xhigh,
+      ReasoningEffort.max => reasoning.ReasoningEffort.max,
+      ReasoningEffort.unknown_ || null => null,
+    };
+
+/// Доменный уровень → enum OpenRouter для тела запроса.
+ChatRequestReasoningValueEffortValue _openRouterEffort(
+  reasoning.ReasoningEffort effort,
+) => switch (effort) {
+  reasoning.ReasoningEffort.none => ChatRequestReasoningValueEffortValue.none,
+  reasoning.ReasoningEffort.minimal =>
+    ChatRequestReasoningValueEffortValue.minimal,
+  reasoning.ReasoningEffort.low => ChatRequestReasoningValueEffortValue.low,
+  reasoning.ReasoningEffort.medium =>
+    ChatRequestReasoningValueEffortValue.medium,
+  reasoning.ReasoningEffort.high => ChatRequestReasoningValueEffortValue.high,
+  reasoning.ReasoningEffort.xhigh => ChatRequestReasoningValueEffortValue.xhigh,
+  reasoning.ReasoningEffort.max => ChatRequestReasoningValueEffortValue.max,
+};
 
 /// Сообщение порта → сообщение OpenRouter. Файлы уходят частями content (base64 data URL).
 ChatMessages openRouterMessageOf(LlmMessage message) => switch (message.role) {

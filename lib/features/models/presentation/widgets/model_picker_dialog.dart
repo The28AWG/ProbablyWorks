@@ -628,6 +628,12 @@ class _ModelTile extends StatelessWidget {
             ),
           if (requireTools && !model.supportsTools)
             _Badge(text: l10n.modelNoTools, tone: AppTone.warning),
+          if (model.reasoning?.supported == true)
+            _Badge(
+              text: model.reasoning?.mandatory ?? false
+                  ? l10n.reasoningAlwaysBadge
+                  : l10n.reasoningModelBadge,
+            ),
           if (unavailable)
             _Badge(
               text: '! ${l10n.modelUnavailableBadge}',
