@@ -103,6 +103,9 @@ POST   /api/v1/providers/{id}/check
 GET    /api/v1/models
 POST   /api/v1/models/refresh
 POST   /api/v1/models/remember                {"ids": ["..."]}
+GET    /api/v1/models/runtime
+POST   /api/v1/models/runtime/load            {"model": "llamacpp:..."}
+POST   /api/v1/models/runtime/unload          {"model": "llamacpp:..."}
 
 GET    /api/v1/security/audit
 GET    /api/v1/plugins
@@ -159,7 +162,9 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `runChanged`, `queueChanged`, `failure`, `trustNeeded`,
 `usage`, `stateChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
-`question`, `editFileChanges`. `stateAreaChanged` сообщает, что после
+`question`, `editFileChanges`, `modelRuntime`. `modelRuntime` — глобальное
+состояние загрузки моделей, не привязанное к чату; оно приходит и в
+чат-фильтрованный SSE. `stateAreaChanged` сообщает, что после
 изменяющего запроса нужно перечитать список (`chats`, `projects` или
 `hosts`); клиент обновляет watcher без периодического polling-а.
 `draftChanged` сообщает, что черновик чата изменил другой клиент; поле ввода

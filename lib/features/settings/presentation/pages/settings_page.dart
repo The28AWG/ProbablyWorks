@@ -403,9 +403,17 @@ class _SettingsViewState extends State<_SettingsView> {
           status:
               catalog.providerStatuses[descriptor.id] ??
               LlmProviderStatus(id: descriptor.id),
+          runtime: state.runtime,
+          modelNames: {
+            for (final model in catalog.models)
+              if (catalog.descriptorOf(model.id)?.id == descriptor.id)
+                model.id: model.name,
+          },
           loading: state.providerLoading.contains(descriptor.id),
           error: state.providerErrors[descriptor.id],
           modelCount: catalog.modelCountOf(descriptor.id),
+          onLoadModel: cubit.loadModel,
+          onUnloadModel: cubit.unloadModel,
           onCheck: () => cubit.checkProvider(descriptor.id),
           onEnabledChanged: (enabled) =>
               cubit.setProviderEnabled(descriptor.id, enabled),
@@ -422,6 +430,7 @@ class _SettingsViewState extends State<_SettingsView> {
             reasoning: state.defaultReasoning,
             catalog: catalog,
             source: source,
+            runtime: cubit.modelRuntime,
             pinned: state.pinnedModels,
             onSelected: (selection) =>
                 cubit.saveDefaultModel(selection.model.id, selection.reasoning),
@@ -439,6 +448,7 @@ class _SettingsViewState extends State<_SettingsView> {
             reasoning: ReasoningPreference.auto,
             catalog: catalog,
             source: source,
+            runtime: cubit.modelRuntime,
             pinned: state.pinnedModels,
             requireTools: false,
             showReasoning: false,
@@ -455,6 +465,7 @@ class _SettingsViewState extends State<_SettingsView> {
             reasoning: state.memoryReasoning,
             catalog: catalog,
             source: source,
+            runtime: cubit.modelRuntime,
             pinned: state.pinnedModels,
             onSelected: (selection) =>
                 cubit.saveMemoryModel(selection.model.id, selection.reasoning),
@@ -472,6 +483,7 @@ class _SettingsViewState extends State<_SettingsView> {
             reasoning: state.subagentReasoning,
             catalog: catalog,
             source: source,
+            runtime: cubit.modelRuntime,
             pinned: state.pinnedModels,
             onSelected: (selection) => cubit.saveSubagentModel(
               selection.model.id,
@@ -491,6 +503,7 @@ class _SettingsViewState extends State<_SettingsView> {
             reasoning: state.fallbackReasoning,
             catalog: catalog,
             source: source,
+            runtime: cubit.modelRuntime,
             pinned: state.pinnedModels,
             onSelected: (selection) => cubit.saveFallbackModel(
               selection.model.id,
@@ -1000,8 +1013,13 @@ class _GroupTile extends StatelessWidget {
   }
 }
 
-/// Подпись закреплённой модели: недоступная помечается `!`.
-String _modelName(String id, ModelCatalogState catalog) =>
-    catalog.statusOf(id) == ModelStatus.unavailable
-    ? '! ${catalog.nameOf(id)}'
-    : catalog.nameOf(id);
+/// Подпись закреплённой модели: недоступная или с недоступным провайдером
+/// помечается `!`.
+String _modelName(String id, ModelCatalogState catalog) {
+  final status = catalog.statusOf(id);
+  final problem =
+      status == ModelStatus.unavailable ||
+      status == ModelStatus.providerUnavailable ||
+      status == ModelStatus.providerDisabled;
+  return problem ? '! ${catalog.nameOf(id)}' : catalog.nameOf(id);
+}

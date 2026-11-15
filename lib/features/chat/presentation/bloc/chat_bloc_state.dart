@@ -117,6 +117,17 @@ class ChatState extends Equatable {
 
   bool get modelUnavailable => modelStatus == ModelStatus.unavailable;
 
+  /// Модель в каталоге есть, но её провайдер не отвечает.
+  bool get modelProviderUnavailable =>
+      modelStatus == ModelStatus.providerUnavailable;
+
+  /// Провайдер модели выключен в настройках.
+  bool get modelProviderDisabled => modelStatus == ModelStatus.providerDisabled;
+
+  /// Любая проблема с моделью или её провайдером: чип показывает `!`.
+  bool get modelHasProblem =>
+      modelUnavailable || modelProviderUnavailable || modelProviderDisabled;
+
   /// Текст шага, который ещё не записан в БД (живой стрим).
   final String streamText;
 

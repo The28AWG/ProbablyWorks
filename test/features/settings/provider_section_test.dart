@@ -6,6 +6,7 @@ import 'package:probably_works/features/settings/presentation/widgets/provider_s
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 const _descriptor = LlmProviderDescriptor(
   id: 'test',
@@ -51,8 +52,12 @@ class _Host extends StatelessWidget {
           child: ProviderSection(
             descriptor: _descriptor,
             status: status,
+            runtime: const ModelRuntimeState(),
+            modelNames: const {},
             loading: false,
             error: null,
+            onLoadModel: (_) => Future<void>.value(),
+            onUnloadModel: (_) => Future<void>.value(),
             onCheck: _onCheck,
             onEnabledChanged: _onEnabled,
             onBaseUrlSaved: _onBaseUrl,

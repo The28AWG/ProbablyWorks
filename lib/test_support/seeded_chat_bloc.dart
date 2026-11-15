@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/host/host_terminal.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Блок чата, который сразу показывает заготовленное состояние. Агент и БД не нужны:
 /// виджет-тесты проверяют только отрисовку и реакцию UI.
@@ -18,6 +19,7 @@ class SeededChatBloc extends ChatBloc {
         drafts ?? ChatDraftStore(_DiscardingChats()),
         // Начальное состояние задано сразу: хаб не нужен даже для пустого чата.
         initialState: seed,
+        modelRuntime: const _EmptyRuntime(),
       ) {
     // ignore: invalid_use_of_visible_for_testing_member, seed state for widget tests
     emit(seed);
@@ -32,6 +34,27 @@ class _UnusedHub implements ChatApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('ChatApi is not available in widget tests');
+}
+
+/// В тестах моделей нет: runtime всегда пустой.
+final class _EmptyRuntime implements ModelRuntimeSource {
+  const _EmptyRuntime();
+
+  @override
+  ModelRuntimeState get runtime => const ModelRuntimeState();
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() =>
+      Stream.value(const ModelRuntimeState());
+
+  @override
+  Future<void> refreshRuntime() => Future<void>.value();
+
+  @override
+  Future<void> loadModel(String modelId) => Future<void>.value();
+
+  @override
+  Future<void> unloadModel(String modelId) => Future<void>.value();
 }
 
 class _UnusedBus implements LiveOutputBus {

@@ -8,6 +8,7 @@ library;
 import 'package:logging/logging.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Объединяет адаптеры провайдеров в один [LlmProvider].
 class LlmProviderRegistry implements LlmProvider {
@@ -21,6 +22,13 @@ class LlmProviderRegistry implements LlmProvider {
   List<LlmProviderDescriptor> get providers => [
     for (final adapter in _adapters) ...adapter.providers,
   ];
+
+  /// Адаптеры, которые умеют сообщать состояние моделей и управлять ими.
+  ///
+  /// Возможность необязательная: провайдер без неё просто не попадает сюда,
+  /// а каталог и чат продолжают работать как раньше.
+  List<LlmModelRuntimeProvider> get runtimeProviders =>
+      _adapters.whereType<LlmModelRuntimeProvider>().toList(growable: false);
 
   /// Дескриптор по id. Null — провайдер не зарегистрирован.
   LlmProviderDescriptor? descriptorById(String id) {

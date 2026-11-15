@@ -29,6 +29,7 @@ import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_client/pw_client.dart';
 import 'package:pw_server/pw_server.dart';
@@ -1028,6 +1029,9 @@ final class _FakeSettings implements AgentSettingsApi {
   var remembered = <String>[];
   var llamaCppChecked = 0;
 
+  @override
+  ModelRuntimeSource get modelRuntime => _FakeRuntime();
+
   final statuses = <String, LlmProviderStatus>{
     openRouterProviderId: const LlmProviderStatus(
       id: openRouterProviderId,
@@ -1177,6 +1181,24 @@ final class _FakeSettings implements AgentSettingsApi {
   Future<void> setProviderEnabled(String providerId, bool enabled) async {
     statuses[providerId] = statuses[providerId]!.copyWith(enabled: enabled);
   }
+}
+
+final class _FakeRuntime implements ModelRuntimeSource {
+  @override
+  ModelRuntimeState get runtime => const ModelRuntimeState();
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() =>
+      Stream.value(const ModelRuntimeState());
+
+  @override
+  Future<void> refreshRuntime() => Future<void>.value();
+
+  @override
+  Future<void> loadModel(String modelId) => Future<void>.value();
+
+  @override
+  Future<void> unloadModel(String modelId) => Future<void>.value();
 }
 
 final class _FakeProjects implements ProjectsApi {

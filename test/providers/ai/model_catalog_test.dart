@@ -229,6 +229,40 @@ void main() {
       expect(catalog.state.statusOf('a/x'), ModelStatus.available);
       expect(catalog.state.statusOf('b/y'), ModelStatus.unavailable);
     });
+
+    test('a listed model is unavailable when its provider is offline', () {
+      final state = ModelCatalogState(
+        models: const [LlmModelInfo(id: 'a/x', name: 'A', supportsTools: true)],
+        syncedAt: DateTime.utc(2026, 11, 15),
+        providers: const [LlmProviderDescriptor(id: 'test', label: 'Test')],
+        providerStatuses: {
+          'test': LlmProviderStatus(
+            id: 'test',
+            available: false,
+            error: 'offline',
+            checkedAt: DateTime.utc(2026, 11, 15),
+          ),
+        },
+      );
+
+      expect(state.statusOf('a/x'), ModelStatus.providerUnavailable);
+      expect(state.providerUnavailableFor('a/x'), isTrue);
+      expect(state.unavailableProviders.single.id, 'test');
+    });
+
+    test('a listed model is unavailable when its provider is disabled', () {
+      final state = ModelCatalogState(
+        models: const [LlmModelInfo(id: 'a/x', name: 'A', supportsTools: true)],
+        syncedAt: DateTime.utc(2026, 11, 15),
+        providers: const [LlmProviderDescriptor(id: 'test', label: 'Test')],
+        providerStatuses: const {
+          'test': LlmProviderStatus(id: 'test', enabled: false),
+        },
+      );
+
+      expect(state.statusOf('a/x'), ModelStatus.providerDisabled);
+      expect(state.unavailableProviders.single.id, 'test');
+    });
   });
 
   test('watch emits the current state first, then every change', () async {

@@ -10,7 +10,7 @@ import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 /// Локальный [AgentApi] с расписаниями. Для экрана чата достаточно [LocalChatApi].
 @lazySingleton
 final class LocalAgentApi extends LocalChatApi implements AgentApi {
-  LocalAgentApi(super.hub, this._tasks, this._scheduler);
+  LocalAgentApi(super.hub, super.runtime, this._tasks, this._scheduler);
 
   final ScheduledTaskRepository _tasks;
   final TaskScheduler _scheduler;

@@ -8,6 +8,7 @@ import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 class _FakeLlm extends LlmProviderBase {
   _FakeLlm(this.models)
@@ -21,6 +22,29 @@ class _FakeLlm extends LlmProviderBase {
   @override
   Stream<LlmEvent> stream(LlmRequest request) =>
       throw UnimplementedError('not used by the picker');
+}
+
+final class _FakeRuntime implements ModelRuntimeSource {
+  _FakeRuntime(this.state);
+
+  final ModelRuntimeState state;
+  final loaded = <String>[];
+  final unloaded = <String>[];
+
+  @override
+  ModelRuntimeState get runtime => state;
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() => Stream.value(state);
+
+  @override
+  Future<void> refreshRuntime() => Future<void>.value();
+
+  @override
+  Future<void> loadModel(String modelId) async => loaded.add(modelId);
+
+  @override
+  Future<void> unloadModel(String modelId) async => unloaded.add(modelId);
 }
 
 /// Каталог с загруженным списком [listed] и сохранёнными выбранными моделями [saved].
@@ -44,6 +68,7 @@ class _Host extends StatelessWidget {
     required this.catalog,
     required this.currentId,
     required this.onPicked,
+    this.runtime,
     this.pinnable = true,
     this.requireTools = true,
     this.managePins = false,
@@ -51,6 +76,7 @@ class _Host extends StatelessWidget {
   }) : pins = pins ?? [];
 
   final ModelCatalogService catalog;
+  final ModelRuntimeSource? runtime;
   final String? currentId;
   final void Function(LlmModelInfo?) onPicked;
 
@@ -90,6 +116,7 @@ class _Host extends StatelessWidget {
       await showModelPickerDialog(
         context,
         catalog: catalog,
+        runtime: runtime,
         pinned: const [],
         currentId: currentId,
         onTogglePin: pinnable ? _toggle : null,
@@ -312,6 +339,40 @@ void main() {
     await tester.tap(find.text(l10n.commonClose));
     await tester.pumpAndSettle();
     expect(picked, isNull);
+  });
+
+  testWidgets('runtime action loads an unloaded model', (tester) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    final runtime = _FakeRuntime(
+      ModelRuntimeState(
+        providers: {
+          'test': ProviderRuntimeState(
+            providerId: 'test',
+            capabilities: ModelRuntimeCapabilities.full,
+            models: {
+              gpt.id: ModelRuntime(
+                modelId: gpt.id,
+                phase: ModelRuntimePhase.unloaded,
+              ),
+            },
+          ),
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        runtime: runtime,
+        onPicked: _ignorePick,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Load'));
+    await tester.pumpAndSettle();
+    expect(runtime.loaded, [gpt.id]);
   });
 }
 

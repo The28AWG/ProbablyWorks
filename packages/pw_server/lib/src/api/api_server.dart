@@ -28,6 +28,7 @@ import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 
 /// Локальный HTTP API поверх агента.
@@ -483,6 +484,17 @@ final class ApiServer {
         }
       case 'models':
         if (rest.isEmpty && request.method == 'GET') return _models(request);
+        if (rest.length == 1 &&
+            rest.first == 'runtime' &&
+            request.method == 'GET') {
+          return _modelRuntime(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'runtime' &&
+            (rest[1] == 'load' || rest[1] == 'unload') &&
+            request.method == 'POST') {
+          return _modelRuntimeAction(request, rest[1]);
+        }
         if (rest.length == 1 &&
             rest.first == 'remember' &&
             request.method == 'POST') {
@@ -1434,6 +1446,35 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, _catalogJson(state));
   }
 
+  Future<void> _modelRuntime(HttpRequest request) {
+    final runtime = _requireSettingsApi().modelRuntime;
+    _json(request.response, HttpStatus.ok, runtime.runtime.toJson());
+    return Future<void>.value();
+  }
+
+  Future<void> _modelRuntimeAction(HttpRequest request, String action) async {
+    final body = await _body(request);
+    final model = _string(body, 'model');
+    final runtime = _requireSettingsApi().modelRuntime;
+    try {
+      if (action == 'load') {
+        await runtime.loadModel(model);
+      } else {
+        await runtime.unloadModel(model);
+      }
+    } on Object catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        AgentApiException(
+          HttpStatus.badRequest,
+          'model_runtime_failed',
+          '$error',
+        ),
+        stackTrace,
+      );
+    }
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
   Future<void> _rememberModels(HttpRequest request) async {
     final body = await _body(request);
     final ids = body['ids'];
@@ -1720,6 +1761,10 @@ final class ApiServer {
       ..headers.set(HttpHeaders.cacheControlHeader, 'no-cache')
       ..headers.set(HttpHeaders.connectionHeader, 'keep-alive');
     _clients.add(response);
+    response.write(': connected\n\n');
+    await response.flush();
+    // Подписку ставим после flush: runtime может прислать снимок сразу,
+    // а запись в ответ во время flush недопустима.
     final subscription = _allEvents().listen((event) {
       if (!_matchesChat(event, filterChatId)) return;
       final encoded = _event(event);
@@ -1727,8 +1772,6 @@ final class ApiServer {
         'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
       );
     });
-    response.write(': connected\n\n');
-    await response.flush();
     final heartbeat = Timer.periodic(_eventHeartbeat, (_) {
       response.write(': ping\n\n');
     });
@@ -1752,6 +1795,8 @@ final class ApiServer {
       _backend.questions.listen(controller.add),
       _backend.editChanges.listen(controller.add),
       _stateEvents.stream.listen(controller.add),
+      if (settingsApi case final api?)
+        api.modelRuntime.watchRuntime().listen(controller.add),
     ];
     controller.onCancel = () async {
       for (final subscription in subscriptions) {
@@ -2220,6 +2265,8 @@ Map<String, Object?> _editJson(EditFileChangesRequest request) => {
 };
 
 bool _matchesChat(Object event, String? chatId) {
+  // Runtime моделей — глобальное состояние, а не событие чата.
+  if (event is ModelRuntimeState) return true;
   final eventChatId = switch (event) {
     AgentEvent value => value.chatId,
     ApprovalRequest value => value.chatId,
@@ -2278,6 +2325,7 @@ bool _matchesChat(Object event, String? chatId) {
   ApprovalRequest value => ('approval', _approvalJson(value)),
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
+  ModelRuntimeState value => ('modelRuntime', {'runtime': value.toJson()}),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',

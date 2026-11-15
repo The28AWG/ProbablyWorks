@@ -13,13 +13,15 @@ import 'dart:typed_data';
 import 'package:llama_cpp/llama_cpp.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
+import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_model_runtime.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/text_tool_call_parser.dart';
 import 'package:pw_agent/providers/ai/think_tag_parser.dart';
 
 /// Провайдер llama.cpp. Настройки читаются при каждом вызове, поэтому
 /// смена адреса или ключа в Settings действует сразу.
-class LlamaCppLlmProvider implements LlmProvider {
+class LlamaCppLlmProvider implements LlmProvider, LlmModelRuntimeProvider {
   LlamaCppLlmProvider({
     required this.readConfig,
     this.requestTimeout = const Duration(seconds: 60),
@@ -28,8 +30,30 @@ class LlamaCppLlmProvider implements LlmProvider {
   final Future<LlmProviderConfig> Function() readConfig;
   final Duration requestTimeout;
 
+  late final LlamaCppModelRuntime _runtime = LlamaCppModelRuntime(
+    readConfig: readConfig,
+    requestTimeout: requestTimeout,
+  );
+
   @override
   List<LlmProviderDescriptor> get providers => const [llamaCppDescriptor];
+
+  @override
+  Future<bool> get runtimeEnabled => _runtime.runtimeEnabled;
+
+  @override
+  Future<ProviderRuntimeState> snapshotRuntime() => _runtime.snapshotRuntime();
+
+  @override
+  Stream<ProviderRuntimeState> watchRuntime() => _runtime.watchRuntime();
+
+  @override
+  Future<void> loadRuntimeModel(String localModelId) =>
+      _runtime.loadRuntimeModel(localModelId);
+
+  @override
+  Future<void> unloadRuntimeModel(String localModelId) =>
+      _runtime.unloadRuntimeModel(localModelId);
 
   /// Настройки без сети: только включённость, адрес и маска ключа.
   @override

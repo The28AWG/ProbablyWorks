@@ -14,6 +14,7 @@ import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
@@ -98,11 +99,13 @@ void main() {
       SavedModelRepository(db),
       LlmProviderRegistry([llm]),
     );
+    final registry = LlmProviderRegistry([llm]);
     settingsApi = LocalAgentSettingsApi(
       settings,
       catalog,
-      LlmProviderRegistry([llm]),
+      registry,
       LlmProviderSettingsStore(settings, secrets),
+      ModelRuntimeService(registry),
     );
     theme = ThemeController();
     cubit = SettingsCubit(

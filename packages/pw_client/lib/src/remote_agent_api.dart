@@ -34,6 +34,7 @@ import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:uuid/uuid.dart';
 
 /// [AgentApi] поверх HTTP/SSE.
@@ -82,6 +83,7 @@ class RemoteAgentApi
   final _usageByChat = <String, Map<String, dynamic>>{};
   final _projectsByChat = <String, Project?>{};
   ModelCatalogState? _catalog;
+  ModelRuntimeState? _runtime;
   final _approvalsById = <String, ApprovalRequest>{};
   final _questionsById = <String, UserQuestion>{};
   final _editsById = <String, EditFileChangesRequest>{};
@@ -90,6 +92,7 @@ class RemoteAgentApi
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
+  final _runtimeChanges = StreamController<ModelRuntimeState>.broadcast();
   final _pinnedChanges = StreamController<List<String>>.broadcast();
   final _settingsChanges = StreamController<void>.broadcast();
   final _mcpStateChanges = StreamController<McpServerState>.broadcast();
@@ -161,6 +164,9 @@ class RemoteAgentApi
   late final ModelStore models = _RemoteModels(this);
 
   @override
+  ModelRuntimeSource get modelRuntime => models;
+
+  @override
   late final HostStore hostStore = _RemoteHosts(this);
 
   @override
@@ -211,6 +217,7 @@ class RemoteAgentApi
     await _questions.close();
     await _editChanges.close();
     await _catalogChanges.close();
+    await _runtimeChanges.close();
     await _pinnedChanges.close();
     await _settingsChanges.close();
     await _mcpStateChanges.close();
@@ -455,6 +462,21 @@ class RemoteAgentApi
     } on AgentApiException {
       // Каталог не критичен для журнала.
     }
+  }
+
+  Future<void> _loadRuntime() async {
+    try {
+      _publishRuntime(
+        ModelRuntimeState.fromJson(await _get('/models/runtime')),
+      );
+    } on AgentApiException {
+      // Runtime не критичен для журнала: провайдер мог быть без него.
+    }
+  }
+
+  void _publishRuntime(ModelRuntimeState runtime) {
+    _runtime = runtime;
+    if (!_runtimeChanges.isClosed) _runtimeChanges.add(runtime);
   }
 
   @override
@@ -1210,8 +1232,9 @@ class RemoteAgentApi
     if (!_statusChanges.isClosed) _statusChanges.add(status);
     // После offline списки могли быть очищены. Просим подписчиков
     // перечитать их, когда связь вернулась.
-    if (status == AgentStatus.online && wasOffline && !_stateChanges.isClosed) {
-      _stateChanges.add('reconnect');
+    if (status == AgentStatus.online && wasOffline) {
+      if (!_stateChanges.isClosed) _stateChanges.add('reconnect');
+      unawaited(_loadRuntime());
     }
   }
 
@@ -1388,6 +1411,8 @@ class RemoteAgentApi
         _events.add(AgentStateChanged(_string(json, 'chatId')));
       case 'stateAreaChanged':
         _publishState(_string(json, 'area'));
+      case 'modelRuntime':
+        _publishRuntime(ModelRuntimeState.fromJson(json['runtime']));
       case 'draftChanged':
         if (!_draftChanges.isClosed) {
           _draftChanges.add(_string(json, 'chatId'));
@@ -2215,6 +2240,39 @@ final class _RemoteModels implements ModelStore {
   @override
   Future<void> remember(List<String> ids) async {
     await _api.sendJson('POST', '/models/remember', body: {'ids': ids});
+  }
+
+  @override
+  ModelRuntimeState get runtime => _api._runtime ?? const ModelRuntimeState();
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() async* {
+    if (_api._runtime == null) await _api._loadRuntime();
+    yield runtime;
+    yield* _api._runtimeChanges.stream;
+  }
+
+  @override
+  Future<void> refreshRuntime() async {
+    await _api._loadRuntime();
+  }
+
+  @override
+  Future<void> loadModel(String modelId) async {
+    await _api.sendJson(
+      'POST',
+      '/models/runtime/load',
+      body: {'model': modelId},
+    );
+  }
+
+  @override
+  Future<void> unloadModel(String modelId) async {
+    await _api.sendJson(
+      'POST',
+      '/models/runtime/unload',
+      body: {'model': modelId},
+    );
   }
 }
 

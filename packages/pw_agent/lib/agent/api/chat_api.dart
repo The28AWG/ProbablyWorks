@@ -11,6 +11,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// API, который нужен экрану одного чата.
@@ -96,7 +97,8 @@ abstract interface class ProjectsStore {
   Future<void> trustWorkspace(String projectId);
 }
 
-abstract interface class ModelStore implements ModelCatalogSource {
+abstract interface class ModelStore
+    implements ModelCatalogSource, ModelRuntimeSource {
   Future<void> remember(List<String> ids);
 }
 

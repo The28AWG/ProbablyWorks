@@ -3,11 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
+import 'package:probably_works/features/models/presentation/model_runtime_labels.dart';
+import 'package:probably_works/features/models/presentation/widgets/model_runtime_builder.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Док над композером: всё, что требует решения пользователя, и ошибки.
 ///
@@ -15,14 +18,59 @@ import 'package:pw_agent/core/util/text_clip.dart';
 /// ждать ответа незаметно. Док пуст, когда решений не нужно, и не занимает место. Карточки
 /// появляются, уходят и сдвигают соседей плавно: см. [_DockList].
 class ChatAttentionDock extends StatelessWidget {
-  const ChatAttentionDock({required this.state, super.key});
+  const ChatAttentionDock({required this.state, this.runtime, super.key});
 
   final ChatState state;
+
+  /// Источник runtime моделей. Null — док не следит за загрузкой (например,
+  /// в изолированном тесте).
+  final ModelRuntimeSource? runtime;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = runtime;
+    if (source == null) return _DockBody(state: state);
+    return ModelRuntimeBuilder(
+      source: source,
+      builder: (context, runtime) => _DockBody(state: state, runtime: runtime),
+    );
+  }
+}
+
+/// Содержимое дока. Вынесено в отдельный виджет, чтобы runtime можно было
+/// подписать точечно и не перестраивать ленту чата.
+class _DockBody extends StatelessWidget {
+  const _DockBody({required this.state, this.runtime});
+
+  final ChatState state;
+  final ModelRuntimeState? runtime;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final model = runtime?.modelOf(state.effectiveModelId);
+    final showLoad =
+        state.isRunning &&
+        state.streamText.isEmpty &&
+        model?.phase == ModelRuntimePhase.loading &&
+        (model?.startedAt == null ||
+            DateTime.now().toUtc().difference(model!.startedAt!) >
+                const Duration(seconds: 1));
     final items = <_DockItem>[
+      if (showLoad && model != null)
+        _DockItem(
+          'model-loading',
+          AppBanner(
+            title: l10n.modelRuntimeBannerTitle,
+            message: modelRuntimeBannerMessage(
+              l10n,
+              state.catalog.nameOf(state.effectiveModelId ?? ''),
+              model,
+            ),
+            icon: Icons.memory,
+            tone: AppTone.progress,
+          ),
+        ),
       if (state.failure != null && !state.failureIsModelMissing)
         _DockItem(
           'failure',
@@ -32,6 +80,28 @@ class ChatAttentionDock extends StatelessWidget {
             ),
             icon: Icons.error_outline,
             tone: AppTone.danger,
+          ),
+        ),
+      if (state.modelProviderUnavailable)
+        _DockItem(
+          'provider-unavailable',
+          AppBanner(
+            message: l10n.chatModelProviderUnavailableBanner(
+              state.catalog.providerOf(state.effectiveModelId ?? ''),
+            ),
+            icon: Icons.cloud_off_outlined,
+            tone: AppTone.warning,
+          ),
+        ),
+      if (state.modelProviderDisabled)
+        _DockItem(
+          'provider-disabled',
+          AppBanner(
+            message: l10n.chatModelProviderDisabledBanner(
+              state.catalog.providerOf(state.effectiveModelId ?? ''),
+            ),
+            icon: Icons.pause_circle_outline,
+            tone: AppTone.info,
           ),
         ),
       if (state.modelUnavailable || state.failureIsModelMissing)

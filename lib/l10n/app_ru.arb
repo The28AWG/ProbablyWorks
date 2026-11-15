@@ -3224,5 +3224,168 @@
   "backendOfflineMessage": "Соединение с агентом потеряно. Проверьте сервер и повторите.",
   "@backendOfflineMessage": {"description": "Подсказка, когда бекенд агента offline."},
   "backendOfflineRetry": "Повторить",
-  "@backendOfflineRetry": {"description": "Кнопка повторить подключение."}
+  "@backendOfflineRetry": {"description": "Кнопка повторить подключение."},
+  "modelRuntimeChipLoading": "Модель: {name}\nЗагрузка в память: {percent}% · {stage}",
+  "@modelRuntimeChipLoading": {
+    "description": "Подсказка чипа модели во время загрузки.",
+    "placeholders": {"name": {"type": "String"}, "percent": {"type": "String"}, "stage": {"type": "String"}}
+  },
+  "modelRuntimeChipLoadingIndeterminate": "Модель: {name}\nЗагрузка в память…",
+  "@modelRuntimeChipLoadingIndeterminate": {
+    "description": "Подсказка чипа модели во время загрузки без процента.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipDownloading": "Модель: {name}\nСкачивание: {percent}%",
+  "@modelRuntimeChipDownloading": {
+    "description": "Подсказка чипа модели во время скачивания.",
+    "placeholders": {"name": {"type": "String"}, "percent": {"type": "String"}}
+  },
+  "modelRuntimeChipDownloadingIndeterminate": "Модель: {name}\nСкачивание…",
+  "@modelRuntimeChipDownloadingIndeterminate": {
+    "description": "Подсказка чипа модели во время скачивания без процента.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipUnloading": "Модель: {name}\nВыгрузка…",
+  "@modelRuntimeChipUnloading": {
+    "description": "Подсказка чипа модели во время выгрузки.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipLoaded": "Модель: {name}\nЗагружена",
+  "@modelRuntimeChipLoaded": {
+    "description": "Подсказка чипа модели: модель загружена.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipSleeping": "Модель: {name}\nВ спящем режиме",
+  "@modelRuntimeChipSleeping": {
+    "description": "Подсказка чипа модели: модель спит.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipIncomplete": "Модель: {name}\nСкачивание прервано",
+  "@modelRuntimeChipIncomplete": {
+    "description": "Подсказка чипа модели: скачивание прервано.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipFailed": "Модель: {name}\nНе удалось загрузить модель",
+  "@modelRuntimeChipFailed": {
+    "description": "Подсказка чипа модели: ошибка загрузки без деталей.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipFailedWith": "Модель: {name}\nНе удалось загрузить модель: {error}",
+  "@modelRuntimeChipFailedWith": {
+    "description": "Подсказка чипа модели: ошибка загрузки с деталями.",
+    "placeholders": {"name": {"type": "String"}, "error": {"type": "String"}}
+  },
+  "modelRuntimeChipUnloaded": "Модель: {name}\nНе загружена. Загрузится при первом запросе.",
+  "@modelRuntimeChipUnloaded": {
+    "description": "Подсказка чипа модели: модель не загружена.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeStageWeights": "Веса",
+  "@modelRuntimeStageWeights": {"description": "Этап загрузки: основные веса."},
+  "modelRuntimeStageProjector": "Проектор",
+  "@modelRuntimeStageProjector": {"description": "Этап загрузки: мультимодальный проектор."},
+  "modelRuntimeStageDraft": "Draft-модель",
+  "@modelRuntimeStageDraft": {"description": "Этап загрузки: спекулятивная draft-модель."},
+  "modelRuntimeStageOther": "Модель",
+  "@modelRuntimeStageOther": {"description": "Неизвестный этап загрузки."},
+  "modelRuntimeBannerTitle": "Модель загружается",
+  "@modelRuntimeBannerTitle": {"description": "Заголовок баннера в доке во время загрузки модели."},
+  "modelRuntimeBannerMessage": "{model} · {percent}% · {stage}. Первый ответ начнётся после загрузки.",
+  "@modelRuntimeBannerMessage": {
+    "description": "Текст баннера в доке с прогрессом загрузки.",
+    "placeholders": {"model": {"type": "String"}, "percent": {"type": "String"}, "stage": {"type": "String"}}
+  },
+  "modelRuntimeBannerMessageNoPercent": "{model}. Первый ответ начнётся после загрузки.",
+  "@modelRuntimeBannerMessageNoPercent": {
+    "description": "Текст баннера в доке без процента.",
+    "placeholders": {"model": {"type": "String"}}
+  },
+  "modelRuntimeUnloadTitle": "Выгрузить модель {model}?",
+  "@modelRuntimeUnloadTitle": {
+    "description": "Заголовок подтверждения выгрузки модели.",
+    "placeholders": {"model": {"type": "String"}}
+  },
+  "modelRuntimeUnloadBody": "Модель будет выгружена из памяти. Следующий запрос загрузит её снова.",
+  "@modelRuntimeUnloadBody": {"description": "Текст подтверждения выгрузки модели."},
+  "modelRuntimeUnload": "Выгрузить",
+  "@modelRuntimeUnload": {"description": "Действие: выгрузить модель из памяти."},
+  "modelRuntimeLoad": "Загрузить",
+  "@modelRuntimeLoad": {"description": "Действие: загрузить модель в память."},
+  "modelRuntimeActionError": "Не удалось изменить состояние модели: {error}",
+  "@modelRuntimeActionError": {
+    "description": "Ошибка загрузки или выгрузки модели.",
+    "placeholders": {"error": {"type": "String"}}
+  },
+  "modelRuntimeBadgeLoading": "загружается",
+  "@modelRuntimeBadgeLoading": {"description": "Бейдж выбора модели: загружается."},
+  "modelRuntimeBadgePercent": "{percent}%",
+  "@modelRuntimeBadgePercent": {
+    "description": "Бейдж выбора модели: процент загрузки.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeBadgeUnloading": "выгружается",
+  "@modelRuntimeBadgeUnloading": {"description": "Бейдж выбора модели: выгружается."},
+  "modelRuntimeBadgeDownloading": "скачивается",
+  "@modelRuntimeBadgeDownloading": {"description": "Бейдж выбора модели: скачивается."},
+  "modelRuntimeBadgeDownloadingPercent": "скачивание {percent}%",
+  "@modelRuntimeBadgeDownloadingPercent": {
+    "description": "Бейдж выбора модели: процент скачивания.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeBadgeLoaded": "загружена",
+  "@modelRuntimeBadgeLoaded": {"description": "Бейдж выбора модели: загружена."},
+  "modelRuntimeBadgeSleeping": "спит",
+  "@modelRuntimeBadgeSleeping": {"description": "Бейдж выбора модели: спит."},
+  "modelRuntimeBadgeFailed": "ошибка загрузки",
+  "@modelRuntimeBadgeFailed": {"description": "Бейдж выбора модели: ошибка загрузки."},
+  "modelRuntimeBadgeIncomplete": "скачивание прервано",
+  "@modelRuntimeBadgeIncomplete": {"description": "Бейдж выбора модели: скачивание прервано."},
+  "modelRuntimeBadgeUnloaded": "не загружена",
+  "@modelRuntimeBadgeUnloaded": {"description": "Бейдж выбора модели: не загружена."},
+  "modelRuntimeBadgeUnknown": "неизвестно",
+  "@modelRuntimeBadgeUnknown": {"description": "Бейдж выбора модели: состояние неизвестно."},
+  "modelRuntimeStatusLoading": "{percent}% · {stage}",
+  "@modelRuntimeStatusLoading": {
+    "description": "Настройки провайдера: загрузка с этапом.",
+    "placeholders": {"percent": {"type": "String"}, "stage": {"type": "String"}}
+  },
+  "modelRuntimeStatusDownloading": "скачивание {percent}%",
+  "@modelRuntimeStatusDownloading": {
+    "description": "Настройки провайдера: скачивание.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeSectionTitle": "Модели в памяти",
+  "@modelRuntimeSectionTitle": {"description": "Настройки провайдера: заголовок раздела моделей в памяти."},
+  "modelRuntimeSectionEmpty": "Нет загруженных моделей.",
+  "@modelRuntimeSectionEmpty": {"description": "Настройки провайдера: нет моделей в памяти."},
+  "modelRuntimeSectionEmptyHint": "Модель загрузится при первом запросе или через выбор модели.",
+  "@modelRuntimeSectionEmptyHint": {"description": "Настройки провайдера: подсказка для пустого списка моделей."},
+  "modelRuntimeProviderUnavailable": "Живое состояние моделей недоступно: {error}",
+  "@modelRuntimeProviderUnavailable": {
+    "description": "Настройки провайдера: потеряно наблюдение за runtime.",
+    "placeholders": {"error": {"type": "String"}}
+  },
+  "chatModelProviderUnavailableTooltip": "Провайдер модели недоступен. Проверьте настройки провайдера или запустите сервер.",
+  "@chatModelProviderUnavailableTooltip": {"description": "Подсказка чипа модели: провайдер недоступен."},
+  "chatModelProviderDisabledTooltip": "Провайдер модели выключен. Включите его в настройках провайдеров.",
+  "@chatModelProviderDisabledTooltip": {"description": "Подсказка чипа модели: провайдер выключен."},
+  "chatModelProviderUnavailableBanner": "Провайдер {provider} недоступен. Его модели скрыты, пока он не ответит.",
+  "@chatModelProviderUnavailableBanner": {
+    "description": "Баннер в чате: провайдер модели недоступен.",
+    "placeholders": {"provider": {"type": "String"}}
+  },
+  "chatModelProviderDisabledBanner": "Провайдер {provider} выключен. Включите его, чтобы использовать эту модель.",
+  "@chatModelProviderDisabledBanner": {
+    "description": "Баннер в чате: провайдер модели выключен.",
+    "placeholders": {"provider": {"type": "String"}}
+  },
+  "modelPickerProviderOffline": "Недоступные провайдеры: {providers}. Их модели скрыты.",
+  "@modelPickerProviderOffline": {
+    "description": "Баннер выбора модели со списком недоступных провайдеров.",
+    "placeholders": {"providers": {"type": "String"}}
+  },
+  "settingsModelProviderUnavailable": "Провайдер недоступен: его модели скрыты, пока он не ответит.",
+  "@settingsModelProviderUnavailable": {"description": "Предупреждение выбора модели: провайдер недоступен."},
+  "settingsModelProviderDisabled": "Провайдер выключен в настройках провайдеров.",
+  "@settingsModelProviderDisabled": {"description": "Предупреждение выбора модели: провайдер выключен."}
 }

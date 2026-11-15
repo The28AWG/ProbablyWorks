@@ -6,8 +6,10 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/domain/model_list_query.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Выбор модели: поиск по id/имени, фильтры (tool calling, бесплатные, провайдер), сортировка,
 /// закреплённые сверху и обновление списка из OpenRouter. Стрелки ↑/↓ двигают подсветку, Enter выбирает.
@@ -23,6 +25,7 @@ Future<LlmModelInfo?> showModelPickerDialog(
   required ModelCatalogSource catalog,
   required List<String> pinned,
   required String? currentId,
+  ModelRuntimeSource? runtime,
   void Function(String modelId)? onTogglePin,
   bool requireTools = true,
   bool managePins = false,
@@ -32,6 +35,7 @@ Future<LlmModelInfo?> showModelPickerDialog(
     context: context,
     builder: (_) => _ModelPickerDialog(
       catalog: catalog,
+      runtime: runtime,
       pinned: pinned,
       currentId: currentId,
       onTogglePin: onTogglePin,
@@ -44,6 +48,7 @@ Future<LlmModelInfo?> showModelPickerDialog(
 class _ModelPickerDialog extends StatefulWidget {
   const _ModelPickerDialog({
     required this.catalog,
+    required this.runtime,
     required this.pinned,
     required this.currentId,
     required this.onTogglePin,
@@ -52,6 +57,7 @@ class _ModelPickerDialog extends StatefulWidget {
   });
 
   final ModelCatalogSource catalog;
+  final ModelRuntimeSource? runtime;
   final List<String> pinned;
   final String? currentId;
   final void Function(String modelId)? onTogglePin;
@@ -83,7 +89,12 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
   late final _searchFocus = FocusNode(onKeyEvent: _onKey);
   late final List<String> _pinned = [...widget.pinned];
   late final StreamSubscription<ModelCatalogState> _catalogSub;
+  StreamSubscription<ModelRuntimeState>? _runtimeSub;
   late ModelCatalogState _catalog = widget.catalog.state;
+  late ModelRuntimeState _runtime =
+      widget.runtime?.runtime ?? const ModelRuntimeState();
+  final _runtimeBusy = <String>{};
+  String? _runtimeError;
   // Фильтр «с tool calling» по умолчанию включён только если диалог этого требует:
   // иначе для заголовков чатов модели без инструментов были бы скрыты без видимой причины.
   late ModelListQuery _query;
@@ -99,11 +110,21 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     _catalogSub = widget.catalog.watch().listen(
       (catalog) => setState(() => _catalog = catalog),
     );
+    final runtime = widget.runtime;
+    if (runtime != null) {
+      _runtimeSub = runtime.watchRuntime().listen(
+        (state) => setState(() => _runtime = state),
+        onError: (Object error, StackTrace stack) {
+          if (mounted) setState(() => _runtimeError = '$error');
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
     unawaited(_catalogSub.cancel());
+    unawaited(_runtimeSub?.cancel());
     _search.dispose();
     _scroll.dispose();
     _searchFocus.dispose();
@@ -126,11 +147,49 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
     }
   }
 
+  Future<void> _loadModel(String modelId) => _runRuntime(modelId, load: true);
+
+  Future<void> _unloadModel(String modelId) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await ConfirmDialog.confirm(
+      context,
+      title: l10n.modelRuntimeUnloadTitle(_catalog.nameOf(modelId)),
+      message: l10n.modelRuntimeUnloadBody,
+      cancelLabel: l10n.commonCancel,
+      confirmLabel: l10n.modelRuntimeUnload,
+    );
+    if (!confirmed || !mounted) return;
+    await _runRuntime(modelId, load: false);
+  }
+
+  Future<void> _runRuntime(String modelId, {required bool load}) async {
+    final runtime = widget.runtime;
+    if (runtime == null) return;
+    setState(() {
+      _runtimeBusy.add(modelId);
+      _runtimeError = null;
+    });
+    try {
+      if (load) {
+        await runtime.loadModel(modelId);
+      } else {
+        await runtime.unloadModel(modelId);
+      }
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _runtimeError = '$error');
+    } finally {
+      if (mounted) setState(() => _runtimeBusy.remove(modelId));
+    }
+  }
+
   /// Текущая модель, если её больше нет в списке: показываем с маркером, выбрать нельзя.
   /// Детали берём из сохранённых, поэтому название видно даже без списка.
   LlmModelInfo? _unavailableCurrent() {
     final id = widget.currentId;
-    if (id == null || _catalog.statusOf(id) != ModelStatus.unavailable) {
+    if (id == null) return null;
+    final status = _catalog.statusOf(id);
+    if (status == ModelStatus.unknown || status == ModelStatus.available) {
       return null;
     }
     final saved = _catalog.saved[id];
@@ -143,8 +202,12 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
   }
 
   List<_Section> _sections(AppLocalizations l10n) {
+    final available = [
+      for (final model in _catalog.models)
+        if (!_catalog.providerUnavailableFor(model.id)) model,
+    ];
     final visible = applyModelQuery(
-      _catalog.models,
+      available,
       _query,
       providers: _catalog.providers,
     );
@@ -300,6 +363,7 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                   itemBuilder: (context, i) {
                     final model = section.models[i];
                     final key = _rowKeys.putIfAbsent(model.id, GlobalKey.new);
+                    final descriptor = _catalog.descriptorOf(model.id);
                     return _ModelTile(
                       key: key,
                       model: model,
@@ -310,6 +374,17 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                       highlighted: model.id == _highlightId,
                       pinned: _pinned.contains(model.id),
                       requireTools: widget.requireTools,
+                      runtime: _runtime.modelOf(model.id),
+                      capabilities: descriptor == null
+                          ? null
+                          : _runtime.capabilitiesOf(descriptor.id),
+                      runtimeBusy: _runtimeBusy.contains(model.id),
+                      onLoadRuntime: widget.runtime == null
+                          ? null
+                          : () => _loadModel(model.id),
+                      onUnloadRuntime: widget.runtime == null
+                          ? null
+                          : () => _unloadModel(model.id),
                       onTogglePin: widget.onTogglePin == null
                           ? null
                           : () => _togglePin(model.id),
@@ -347,6 +422,22 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                 prefixIcon: Icons.search,
               ),
             ),
+            if (_runtimeError case final error?)
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: AppSpacing.lg,
+                  right: AppSpacing.lg,
+                  bottom: AppSpacing.sm,
+                ),
+                child: AppBanner(
+                  margin: EdgeInsets.zero,
+                  tone: AppTone.danger,
+                  icon: Icons.error_outline,
+                  message: l10n.modelRuntimeActionError(
+                    TextClip.headTail(error, maxChars: 240),
+                  ),
+                ),
+              ),
             if (widget.managePins)
               Padding(
                 padding: const EdgeInsets.only(
@@ -476,6 +567,25 @@ class _ModelPickerDialogState extends State<_ModelPickerDialog> {
                   style: TextStyle(color: scheme.error),
                 ),
               ),
+            if (_catalog.unavailableProviders.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.lg,
+                  AppSpacing.sm,
+                  AppSpacing.lg,
+                  AppSpacing.xs,
+                ),
+                child: AppBanner(
+                  margin: EdgeInsets.zero,
+                  tone: AppTone.warning,
+                  icon: Icons.cloud_off_outlined,
+                  message: l10n.modelPickerProviderOffline(
+                    _catalog.unavailableProviders
+                        .map((provider) => provider.label)
+                        .join(', '),
+                  ),
+                ),
+              ),
             const Divider(height: 1),
             Expanded(child: body),
             const Divider(height: 1),
@@ -564,6 +674,11 @@ class _ModelTile extends StatelessWidget {
     required this.highlighted,
     required this.pinned,
     required this.requireTools,
+    required this.runtime,
+    required this.capabilities,
+    required this.runtimeBusy,
+    required this.onLoadRuntime,
+    required this.onUnloadRuntime,
     required this.onTogglePin,
     required this.onSelect,
     super.key,
@@ -582,6 +697,12 @@ class _ModelTile extends StatelessWidget {
   /// Выбирать только модели с tool calling. Без этого бейдж «нет tool calling» не показывается.
   final bool requireTools;
 
+  final ModelRuntime? runtime;
+  final ModelRuntimeCapabilities? capabilities;
+  final bool runtimeBusy;
+  final VoidCallback? onLoadRuntime;
+  final VoidCallback? onUnloadRuntime;
+
   /// Null — кнопки закрепления нет (диалог настроек).
   final VoidCallback? onTogglePin;
   final VoidCallback onSelect;
@@ -591,6 +712,51 @@ class _ModelTile extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final usable = !unavailable && (model.supportsTools || !requireTools);
+    final phase = runtime?.phase;
+    final loading =
+        phase == ModelRuntimePhase.loading ||
+        phase == ModelRuntimePhase.unloading;
+    final canLoad = capabilities?.canLoad == true && onLoadRuntime != null;
+    final canUnload =
+        capabilities?.canUnload == true && onUnloadRuntime != null;
+    final Widget? runtimeAction;
+    if (runtimeBusy || loading) {
+      runtimeAction = SizedBox.square(
+        dimension: 40,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.sm + 2),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            value: phase == ModelRuntimePhase.loading
+                ? runtime?.progress?.fraction
+                : null,
+          ),
+        ),
+      );
+    } else if (canUnload &&
+        (phase == ModelRuntimePhase.loaded ||
+            phase == ModelRuntimePhase.sleeping)) {
+      runtimeAction = IconButton(
+        tooltip: l10n.modelRuntimeUnload,
+        icon: const Icon(Icons.power_settings_new, size: 20),
+        onPressed: onUnloadRuntime,
+      );
+    } else if (canLoad &&
+        (phase == ModelRuntimePhase.unloaded ||
+            phase == ModelRuntimePhase.failed ||
+            phase == ModelRuntimePhase.incomplete ||
+            phase == ModelRuntimePhase.unknown ||
+            phase == ModelRuntimePhase.sleeping)) {
+      runtimeAction = IconButton(
+        tooltip: l10n.modelRuntimeLoad,
+        icon: const Icon(Icons.play_circle_outline, size: 20),
+        onPressed: onLoadRuntime,
+      );
+    } else {
+      runtimeAction = null;
+    }
+    // ignore: avoid-returning-widgets, бейдж зависит от состояния строки и не переиспользуется
+    final runtimeBadge = _runtimeBadge();
     return ListTile(
       selected: current,
       selectedTileColor: scheme.secondaryContainer,
@@ -634,6 +800,7 @@ class _ModelTile extends StatelessWidget {
                   ? l10n.reasoningAlwaysBadge
                   : l10n.reasoningModelBadge,
             ),
+          ?runtimeBadge,
           if (unavailable)
             _Badge(
               text: '! ${l10n.modelUnavailableBadge}',
@@ -641,15 +808,65 @@ class _ModelTile extends StatelessWidget {
             ),
         ],
       ),
-      trailing: unavailable || onTogglePin == null
+      trailing: unavailable || (onTogglePin == null && runtimeAction == null)
           ? null
-          : IconButton(
-              tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,
-              icon: Icon(pinned ? Icons.star : Icons.star_border),
-              onPressed: onTogglePin,
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ?runtimeAction,
+                if (onTogglePin != null)
+                  IconButton(
+                    tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,
+                    icon: Icon(pinned ? Icons.star : Icons.star_border),
+                    onPressed: onTogglePin,
+                  ),
+              ],
             ),
       onTap: usable ? onSelect : null,
     );
+  }
+
+  /// Бейдж состояния модели. Для `loaded` он полезен: видно, что занимает
+  /// память. Для `unloaded` бейджа нет — это обычное состояние.
+  Widget? _runtimeBadge() {
+    final phase = runtime?.phase;
+    final percent = runtime?.progress?.fraction == null
+        ? null
+        : (runtime!.progress!.fraction! * 100).round();
+    return switch (phase) {
+      ModelRuntimePhase.loading => _Badge(
+        text: percent == null
+            ? l10n.modelRuntimeBadgeLoading
+            : l10n.modelRuntimeBadgePercent('$percent'),
+        tone: AppTone.progress,
+      ),
+      ModelRuntimePhase.unloading => _Badge(
+        text: l10n.modelRuntimeBadgeUnloading,
+        tone: AppTone.progress,
+      ),
+      ModelRuntimePhase.downloading => _Badge(
+        text: percent == null
+            ? l10n.modelRuntimeBadgeDownloading
+            : l10n.modelRuntimeBadgeDownloadingPercent('$percent'),
+        tone: AppTone.progress,
+      ),
+      ModelRuntimePhase.loaded => _Badge(
+        text: l10n.modelRuntimeBadgeLoaded,
+        tone: AppTone.success,
+      ),
+      ModelRuntimePhase.sleeping => _Badge(
+        text: l10n.modelRuntimeBadgeSleeping,
+      ),
+      ModelRuntimePhase.failed => _Badge(
+        text: l10n.modelRuntimeBadgeFailed,
+        tone: AppTone.warning,
+      ),
+      ModelRuntimePhase.incomplete => _Badge(
+        text: l10n.modelRuntimeBadgeIncomplete,
+        tone: AppTone.warning,
+      ),
+      ModelRuntimePhase.unloaded || ModelRuntimePhase.unknown || null => null,
+    };
   }
 }
 

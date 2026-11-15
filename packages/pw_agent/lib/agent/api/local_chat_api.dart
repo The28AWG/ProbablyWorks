@@ -17,6 +17,8 @@ import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
+import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
@@ -26,9 +28,13 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
 class LocalChatApi implements ChatApi {
-  LocalChatApi(AgentHub hub) : _hub = hub;
+  LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub;
 
   final AgentHub _hub;
+
+  /// Runtime-сервис есть у приложения и демона. В узких тестах его можно
+  /// не передавать: модели работают, но прогресс и управление недоступны.
+  final ModelRuntimeService? runtime;
 
   @override
   late final ChatStore chatStore = _LocalChatStore(_hub.chats);
@@ -43,7 +49,10 @@ class LocalChatApi implements ChatApi {
   late final ProjectsStore projects = _LocalProjects(_hub.projects);
 
   @override
-  late final ModelStore models = _LocalModels(_hub.models);
+  late final ModelStore models = _LocalModels(
+    _hub.models,
+    runtime ?? const _EmptyModelRuntime(),
+  );
 
   @override
   late final HostStore hostStore = _LocalHosts(_hub.hosts);
@@ -492,9 +501,10 @@ final class _LocalProjects implements ProjectsStore {
 }
 
 final class _LocalModels implements ModelStore {
-  _LocalModels(this._models);
+  _LocalModels(this._models, this._runtime);
 
-  final dynamic _models;
+  final ModelCatalogService _models;
+  final ModelRuntimeSource _runtime;
 
   @override
   ModelCatalogState get state => _models.state;
@@ -507,6 +517,21 @@ final class _LocalModels implements ModelStore {
 
   @override
   Future<void> remember(List<String> ids) => _models.remember(ids);
+
+  @override
+  ModelRuntimeState get runtime => _runtime.runtime;
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() => _runtime.watchRuntime();
+
+  @override
+  Future<void> refreshRuntime() => _runtime.refreshRuntime();
+
+  @override
+  Future<void> loadModel(String modelId) => _runtime.loadModel(modelId);
+
+  @override
+  Future<void> unloadModel(String modelId) => _runtime.unloadModel(modelId);
 }
 
 final class _LocalHosts implements HostStore {
@@ -626,4 +651,25 @@ final class _LocalChatSession implements ChatSessionApi {
   @override
   Future<void> compactNow({bool force = false}) =>
       _session.compactNow(force: force);
+}
+
+/// Заглушка для тестов без runtime-сервиса.
+final class _EmptyModelRuntime implements ModelRuntimeSource {
+  const _EmptyModelRuntime();
+
+  @override
+  ModelRuntimeState get runtime => const ModelRuntimeState();
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() =>
+      Stream.value(const ModelRuntimeState());
+
+  @override
+  Future<void> refreshRuntime() => Future<void>.value();
+
+  @override
+  Future<void> loadModel(String modelId) => Future<void>.value();
+
+  @override
+  Future<void> unloadModel(String modelId) => Future<void>.value();
 }

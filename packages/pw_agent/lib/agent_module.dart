@@ -10,6 +10,7 @@ import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_llm_provider.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
+import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
@@ -62,4 +63,10 @@ abstract class AgentCoreModule {
   /// Алиас для потребителей, которым нужен только порт [LlmProvider].
   @singleton
   LlmProvider llmProvider(LlmProviderRegistry registry) => registry;
+
+  /// Наблюдение за загрузкой моделей. Провайдеры без runtime просто не
+  /// попадают в реестр возможностей.
+  @singleton
+  ModelRuntimeService modelRuntimeService(LlmProviderRegistry registry) =>
+      ModelRuntimeService(registry);
 }

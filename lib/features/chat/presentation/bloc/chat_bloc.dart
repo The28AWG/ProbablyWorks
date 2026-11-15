@@ -23,6 +23,7 @@ import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/host/host_terminal.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 part 'chat_bloc_event.dart';
 part 'chat_bloc_state.dart';
@@ -45,7 +46,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     List<Host> seedHosts = const [],
     this.onChatCreated,
     ChatState? initialState,
-  }) : super(initialState ?? _seedState(_hub, _drafts, seedChat, seedHosts)) {
+    ModelRuntimeSource? modelRuntime,
+  }) : _runtimeOverride = modelRuntime,
+       super(initialState ?? _seedState(_hub, _drafts, seedChat, seedHosts)) {
     _composerText = state.draft;
     on<ChatOpenEvent>(_onOpenEvent, transformer: _sequential());
     on<ChatDraftEdited>(_onDraftEdited);
@@ -97,6 +100,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final LiveOutputBus _bus;
   final ChatDraftStore _drafts;
 
+  /// Подмена runtime для виджет-тестов, где за `ChatApi` стоит пустышка.
+  final ModelRuntimeSource? _runtimeOverride;
+
   /// Вызывается, когда новый чат записан в БД после первой отправки: экран переключает выбор на него.
   final void Function(String chatId)? onChatCreated;
 
@@ -127,6 +133,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   /// Каталог моделей профиля для диалога выбора в композере.
   ModelCatalogSource get modelCatalog => _hub.models;
+
+  /// Состояние загрузки моделей: чип композера и док слушают его отдельно,
+  /// чтобы прогресс не перестраивал ленту.
+  ModelRuntimeSource get modelRuntime => _runtimeOverride ?? _hub.models;
 
   /// Терминал, в котором сейчас выполняется запуск; `null`, если он не выполняется в PTY или уже завершён.
   HostTerminal? terminalFor(String runId) =>

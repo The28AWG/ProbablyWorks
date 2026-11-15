@@ -4,8 +4,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_density.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
+import 'package:probably_works/features/models/presentation/model_runtime_labels.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Название хоста для интерфейса: локальный хост показываем переводом.
 String hostLabelOf(List<Host> hosts, String hostId, AppLocalizations l10n) {
@@ -47,8 +49,11 @@ class ChatMetaBar extends StatelessWidget {
     this.projectName,
     this.onOpenProject,
     this.modelUnavailable = false,
+    this.modelProviderUnavailable = false,
+    this.modelProviderDisabled = false,
     this.modelLoading = false,
     this.modelPending = false,
+    this.modelRuntime,
     this.reasoningLabel,
     this.reasoningActive = false,
     super.key,
@@ -72,12 +77,22 @@ class ChatMetaBar extends StatelessWidget {
   /// Модели больше нет в каталоге OpenRouter: чип помечается `!` и предупреждением.
   final bool modelUnavailable;
 
+  /// Провайдер модели не отвечает: список моделей мог остаться с прошлого раза.
+  final bool modelProviderUnavailable;
+
+  /// Провайдер модели выключен в настройках.
+  final bool modelProviderDisabled;
+
   /// Список моделей грузится впервые: рядом с названием показываем спиннер.
   final bool modelLoading;
 
   /// Модель ещё не известна: чат грузится, а модель по умолчанию не прочитана. Чип без текста и предупреждения,
   /// со спиннером. Когда загрузка закончится, null в [modelLabel] станет реальным предупреждением.
   final bool modelPending;
+
+  /// Состояние выбранной модели у провайдера. Null — провайдер не сообщает
+  /// runtime (например, OpenRouter) или модель ещё не известна.
+  final ModelRuntime? modelRuntime;
 
   /// Действующий уровень рассуждений для подсказки. Null — рассуждения не
   /// используются или модель их не поддерживает.
@@ -103,11 +118,24 @@ class ChatMetaBar extends StatelessWidget {
     // Подписи в узкой области ограничены по ширине; на широкой берутся значения из темы.
     double capped(double regular) =>
         density == ChatDensity.regular ? regular : AppLayout.chipNarrowMaxWidth;
+    final modelProblem =
+        modelUnavailable || modelProviderUnavailable || modelProviderDisabled;
     final modelText = modelPending
         ? null
         : modelLabel == null
         ? l10n.chatModelPick
-        : (modelUnavailable ? '! $modelLabel' : modelLabel);
+        : (modelProblem ? '! $modelLabel' : modelLabel);
+    final runtime = modelRuntime;
+    final runtimePhase = runtime?.phase;
+    final runtimeLoading =
+        runtimePhase == ModelRuntimePhase.loading ||
+        runtimePhase == ModelRuntimePhase.unloading ||
+        runtimePhase == ModelRuntimePhase.downloading;
+    final runtimeProgress =
+        runtimePhase == ModelRuntimePhase.loading ||
+            runtimePhase == ModelRuntimePhase.downloading
+        ? runtime?.progress?.fraction
+        : null;
     // Ширины считаются заранее, до раскладки: по ним решается, какие чипы свернуть до значка.
     final labeled = <_Chip, _ChipWidth?>{
       _Chip.project: projectName == null
@@ -121,7 +149,7 @@ class ChatMetaBar extends StatelessWidget {
         context,
         modelText,
         cap: capped(180),
-        loading: modelLoading || modelPending,
+        loading: modelLoading || modelPending || runtimeLoading,
       ),
       _Chip.context: fraction == null
           ? null
@@ -211,6 +239,12 @@ class ChatMetaBar extends StatelessWidget {
               _ActionChip(
                 tooltip: modelUnavailable
                     ? l10n.chatModelUnavailableTooltip
+                    : modelProviderDisabled
+                    ? l10n.chatModelProviderDisabledTooltip
+                    : modelProviderUnavailable
+                    ? l10n.chatModelProviderUnavailableTooltip
+                    : runtime != null
+                    ? modelRuntimeTooltip(l10n, modelLabel, runtime)
                     : reasoningActive &&
                           modelLabel != null &&
                           reasoningLabel != null
@@ -223,10 +257,15 @@ class ChatMetaBar extends StatelessWidget {
                     : l10n.chatModelLabel,
                 icon: reasoningActive ? Icons.psychology : Icons.memory,
                 label: iconOnly(_Chip.model) || modelPending ? null : modelText,
-                tone: !modelPending && (modelLabel == null || modelUnavailable)
+                tone: !modelPending && (modelLabel == null || modelProblem)
                     ? AppTone.warning
+                    : runtime?.phase == ModelRuntimePhase.failed
+                    ? AppTone.warning
+                    : runtimeLoading
+                    ? AppTone.progress
                     : null,
-                loading: modelLoading || modelPending,
+                loading: modelLoading || modelPending || runtimeLoading,
+                progress: runtimeProgress,
                 maxWidth: capped(180),
                 onTap: onPickModel,
               ),
@@ -384,6 +423,7 @@ class _ActionChip extends StatelessWidget {
     this.maxWidth,
     this.tone,
     this.loading = false,
+    this.progress,
   });
 
   final String tooltip;
@@ -396,6 +436,9 @@ class _ActionChip extends StatelessWidget {
   final AppTone? tone;
   final bool loading;
 
+  /// Доля 0..1 для детерминированного индикатора. Null — спиннер.
+  final double? progress;
+
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
@@ -405,6 +448,7 @@ class _ActionChip extends StatelessWidget {
       enabled: enabled,
       tone: tone,
       loading: loading,
+      progress: progress,
     );
     return Tooltip(
       message: tooltip,
@@ -431,6 +475,7 @@ class _MetaChip extends StatelessWidget {
     this.enabled = true,
     this.tone,
     this.loading = false,
+    this.progress,
   });
 
   final IconData icon;
@@ -440,8 +485,12 @@ class _MetaChip extends StatelessWidget {
   final bool enabled;
   final AppTone? tone;
 
-  /// Спиннер рядом со значением: название ещё не известно, список моделей грузится.
+  /// Индикатор рядом со значением: название ещё не известно или модель
+  /// загружается.
   final bool loading;
+
+  /// Доля 0..1. Null при [loading] означает бесконечный спиннер.
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -485,6 +534,7 @@ class _MetaChip extends StatelessWidget {
               SizedBox.square(
                 dimension: _chipIconSize,
                 child: CircularProgressIndicator(
+                  value: progress,
                   strokeWidth: 2,
                   color: foreground,
                 ),

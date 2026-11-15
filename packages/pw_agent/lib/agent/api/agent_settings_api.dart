@@ -3,6 +3,7 @@ import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Снимок настроек агента. Язык и тема сюда не входят: это настройки клиента.
 final class AgentSettingsSnapshot {
@@ -79,6 +80,10 @@ abstract interface class LlmProviderSettingsApi {
 abstract interface class AgentSettingsApi implements LlmProviderSettingsApi {
   Future<AgentSettingsSnapshot> load();
   Stream<ModelCatalogState> watchCatalog();
+
+  /// Состояние моделей и управление загрузкой. Провайдеры без runtime
+  /// возвращают пустое состояние.
+  ModelRuntimeSource get modelRuntime;
   Stream<List<String>> watchPinnedModels();
 
   Future<void> writeSetting(String key, String? value);

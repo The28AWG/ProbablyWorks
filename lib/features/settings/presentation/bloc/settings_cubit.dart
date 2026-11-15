@@ -16,10 +16,12 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 class SettingsState extends Equatable {
   const SettingsState({
     this.catalog = const ModelCatalogState(),
+    this.runtime = const ModelRuntimeState(),
     this.defaultModel = '',
     this.titleModel = '',
     this.memoryModel = '',
@@ -46,6 +48,9 @@ class SettingsState extends Equatable {
   /// Каталог моделей: список, статус загрузки, дескрипторы провайдеров
   /// и их статусы.
   final ModelCatalogState catalog;
+
+  /// Состояние загрузки моделей и возможности управления.
+  final ModelRuntimeState runtime;
 
   /// Ошибки сохранения и проверки по id провайдера.
   final Map<String, String> providerErrors;
@@ -85,6 +90,7 @@ class SettingsState extends Equatable {
 
   SettingsState copyWith({
     ModelCatalogState? catalog,
+    ModelRuntimeState? runtime,
     String? defaultModel,
     String? titleModel,
     String? memoryModel,
@@ -108,6 +114,7 @@ class SettingsState extends Equatable {
     Set<String>? providerLoading,
   }) => SettingsState(
     catalog: catalog ?? this.catalog,
+    runtime: runtime ?? this.runtime,
     defaultModel: defaultModel ?? this.defaultModel,
     titleModel: titleModel ?? this.titleModel,
     memoryModel: memoryModel ?? this.memoryModel,
@@ -134,6 +141,7 @@ class SettingsState extends Equatable {
   @override
   List<Object?> get props => [
     catalog,
+    runtime,
     defaultModel,
     titleModel,
     memoryModel,
@@ -167,11 +175,17 @@ class SettingsCubit extends Cubit<SettingsState> {
   final LocaleController _locale;
   final ThemeController _theme;
   StreamSubscription<ModelCatalogState>? _catalogSub;
+  StreamSubscription<ModelRuntimeState>? _runtimeSub;
   StreamSubscription<List<String>>? _pinsSub;
+
+  /// Источник runtime: страница передаёт его в выбор модели и карточку
+  /// провайдера.
+  ModelRuntimeSource get modelRuntime => _agentSettings.modelRuntime;
 
   @override
   Future<void> close() async {
     await _catalogSub?.cancel();
+    await _runtimeSub?.cancel();
     await _pinsSub?.cancel();
     return super.close();
   }
@@ -212,6 +226,7 @@ class SettingsCubit extends Cubit<SettingsState> {
         pinnedModels: snapshot.pinnedModels,
         stepsDisplay: snapshot.stepsDisplay,
         catalog: snapshot.catalog,
+        runtime: _agentSettings.modelRuntime.runtime,
         language: language,
         themeMode: themeMode,
       ),
@@ -231,6 +246,10 @@ class SettingsCubit extends Cubit<SettingsState> {
     await _catalogSub?.cancel();
     _catalogSub = _agentSettings.watchCatalog().listen(
       (catalog) => emit(state.copyWith(catalog: catalog)),
+    );
+    await _runtimeSub?.cancel();
+    _runtimeSub = _agentSettings.modelRuntime.watchRuntime().listen(
+      (runtime) => emit(state.copyWith(runtime: runtime)),
     );
     await _pinsSub?.cancel();
     _pinsSub = _agentSettings.watchPinnedModels().listen(
@@ -317,6 +336,32 @@ class SettingsCubit extends Cubit<SettingsState> {
         await refreshModels();
         emit(state.copyWith(saved: state.saved + 1));
       }
+    } on Object catch (error) {
+      _setProviderError(providerId, _messageOf(error));
+    } finally {
+      _setProviderLoading(providerId, false);
+    }
+  }
+
+  /// Загружает модель из карточки провайдера. Ошибка остаётся в
+  /// `providerErrors` и показывается тем же баннером, что и ошибка проверки.
+  Future<void> loadModel(String modelId) =>
+      _changeRuntime(modelId, (runtime) => runtime.loadModel(modelId));
+
+  /// Выгружает модель из карточки провайдера.
+  Future<void> unloadModel(String modelId) =>
+      _changeRuntime(modelId, (runtime) => runtime.unloadModel(modelId));
+
+  Future<void> _changeRuntime(
+    String modelId,
+    Future<void> Function(ModelRuntimeSource runtime) action,
+  ) async {
+    final providerId = state.catalog.descriptorOf(modelId)?.id;
+    if (providerId == null) return;
+    _setProviderLoading(providerId, true);
+    _clearProviderError(providerId);
+    try {
+      await action(_agentSettings.modelRuntime);
     } on Object catch (error) {
       _setProviderError(providerId, _messageOf(error));
     } finally {

@@ -19,6 +19,9 @@
   общие ключи настроек и секретов;
 - `packages/pw_agent/lib/providers/ai/model_catalog.dart` —
   `ModelCatalogState.providers` и `providerStatuses`;
+- `packages/pw_agent/lib/providers/ai/model_runtime.dart` и
+  `model_runtime_service.dart` — необязательное состояние загрузки моделей
+  (см. [MODEL_RUNTIME.md](MODEL_RUNTIME.md));
 - `packages/pw_agent/lib/agent/api/agent_settings_api.dart` —
   `LlmProviderSettingsApi` и снимок настроек;
 - `packages/pw_client/lib/src/remote_agent_api.dart` — HTTP-клиент
@@ -93,6 +96,11 @@ class OllamaLlmProvider implements LlmProvider {
 - секреты не попадают в статус и логи;
 - вложения отправляются теми частями, которые реально понимает сервер.
 
+Если сервер умеет сообщать состояние загрузки или управлять им, адаптер
+дополнительно реализует `LlmModelRuntimeProvider`: снимок, поток изменений и
+`load/unload` по локальному id. Возможность необязательная; провайдеры без неё
+работают как раньше. Контракт и UI описаны в [MODEL_RUNTIME.md](MODEL_RUNTIME.md).
+
 ### 2. Регистрация
 
 В `AgentCoreModule`:
@@ -162,6 +170,14 @@ PUT    /providers/{id}        {"enabled": true, "baseUrl": "..."}
 POST   /providers/{id}/check
 POST   /providers/{id}/key    {"key": "..."}
 DELETE /providers/{id}/key
+```
+
+Состояние загрузки моделей — отдельный необязательный слой:
+
+```text
+GET  /models/runtime
+POST /models/runtime/load    {"model": "..."}
+POST /models/runtime/unload  {"model": "..."}
 ```
 
 `POST /providers/{id}/key` возвращает статус после проверки. Провайдер

@@ -3224,5 +3224,185 @@
   "backendOfflineMessage": "The connection to the agent is lost. Check the server and try again.",
   "@backendOfflineMessage": {"description": "Hint shown when the agent backend is offline."},
   "backendOfflineRetry": "Retry",
-  "@backendOfflineRetry": {"description": "Retry connection button."}
+  "@backendOfflineRetry": {"description": "Retry connection button."},
+  "modelRuntimeChipLoading": "Model: {name}\nLoading into memory: {percent}% · {stage}",
+  "@modelRuntimeChipLoading": {
+    "description": "Model chip tooltip while the model is loading.",
+    "placeholders": {
+      "name": {"type": "String"},
+      "percent": {"type": "String"},
+      "stage": {"type": "String"}
+    }
+  },
+  "modelRuntimeChipLoadingIndeterminate": "Model: {name}\nLoading into memory…",
+  "@modelRuntimeChipLoadingIndeterminate": {
+    "description": "Model chip tooltip while loading without a known percentage.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipDownloading": "Model: {name}\nDownloading: {percent}%",
+  "@modelRuntimeChipDownloading": {
+    "description": "Model chip tooltip while model files are downloading.",
+    "placeholders": {
+      "name": {"type": "String"},
+      "percent": {"type": "String"}
+    }
+  },
+  "modelRuntimeChipDownloadingIndeterminate": "Model: {name}\nDownloading…",
+  "@modelRuntimeChipDownloadingIndeterminate": {
+    "description": "Model chip tooltip while downloading without a known percentage.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipUnloading": "Model: {name}\nUnloading…",
+  "@modelRuntimeChipUnloading": {
+    "description": "Model chip tooltip while the model is unloading.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipLoaded": "Model: {name}\nLoaded",
+  "@modelRuntimeChipLoaded": {
+    "description": "Model chip tooltip for a loaded model.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipSleeping": "Model: {name}\nSleeping",
+  "@modelRuntimeChipSleeping": {
+    "description": "Model chip tooltip for a sleeping model.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipIncomplete": "Model: {name}\nDownload interrupted",
+  "@modelRuntimeChipIncomplete": {
+    "description": "Model chip tooltip for an interrupted model download.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipFailed": "Model: {name}\nCould not load the model",
+  "@modelRuntimeChipFailed": {
+    "description": "Model chip tooltip when loading failed without details.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeChipFailedWith": "Model: {name}\nCould not load the model: {error}",
+  "@modelRuntimeChipFailedWith": {
+    "description": "Model chip tooltip when loading failed with details.",
+    "placeholders": {
+      "name": {"type": "String"},
+      "error": {"type": "String"}
+    }
+  },
+  "modelRuntimeChipUnloaded": "Model: {name}\nNot loaded. It will load on the first request.",
+  "@modelRuntimeChipUnloaded": {
+    "description": "Model chip tooltip for an unloaded local model.",
+    "placeholders": {"name": {"type": "String"}}
+  },
+  "modelRuntimeStageWeights": "Weights",
+  "@modelRuntimeStageWeights": {"description": "Model loading stage: main weights."},
+  "modelRuntimeStageProjector": "Projector",
+  "@modelRuntimeStageProjector": {"description": "Model loading stage: multimodal projector."},
+  "modelRuntimeStageDraft": "Draft model",
+  "@modelRuntimeStageDraft": {"description": "Model loading stage: speculative draft model."},
+  "modelRuntimeStageOther": "Model",
+  "@modelRuntimeStageOther": {"description": "Unknown model loading stage."},
+  "modelRuntimeBannerTitle": "Model is loading",
+  "@modelRuntimeBannerTitle": {"description": "Attention dock banner title while a model loads."},
+  "modelRuntimeBannerMessage": "{model} · {percent}% · {stage}. The first response will start after loading.",
+  "@modelRuntimeBannerMessage": {
+    "description": "Attention dock banner text with loading progress.",
+    "placeholders": {
+      "model": {"type": "String"},
+      "percent": {"type": "String"},
+      "stage": {"type": "String"}
+    }
+  },
+  "modelRuntimeBannerMessageNoPercent": "{model}. The first response will start after loading.",
+  "@modelRuntimeBannerMessageNoPercent": {
+    "description": "Attention dock banner text without a known percentage.",
+    "placeholders": {"model": {"type": "String"}}
+  },
+  "modelRuntimeUnloadTitle": "Unload {model}?",
+  "@modelRuntimeUnloadTitle": {
+    "description": "Confirmation title before unloading a model.",
+    "placeholders": {"model": {"type": "String"}}
+  },
+  "modelRuntimeUnloadBody": "The model will be removed from memory. The next request will load it again.",
+  "@modelRuntimeUnloadBody": {"description": "Confirmation body before unloading a model."},
+  "modelRuntimeUnload": "Unload",
+  "@modelRuntimeUnload": {"description": "Action: unload a model from memory."},
+  "modelRuntimeLoad": "Load",
+  "@modelRuntimeLoad": {"description": "Action: load a model into memory."},
+  "modelRuntimeActionError": "Could not change the model state: {error}",
+  "@modelRuntimeActionError": {
+    "description": "Error shown when load/unload fails.",
+    "placeholders": {"error": {"type": "String"}}
+  },
+  "modelRuntimeBadgeLoading": "loading",
+  "@modelRuntimeBadgeLoading": {"description": "Model picker badge: loading."},
+  "modelRuntimeBadgePercent": "{percent}%",
+  "@modelRuntimeBadgePercent": {
+    "description": "Model picker badge: loading percentage.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeBadgeUnloading": "unloading",
+  "@modelRuntimeBadgeUnloading": {"description": "Model picker badge: unloading."},
+  "modelRuntimeBadgeDownloading": "downloading",
+  "@modelRuntimeBadgeDownloading": {"description": "Model picker badge: downloading."},
+  "modelRuntimeBadgeDownloadingPercent": "download {percent}%",
+  "@modelRuntimeBadgeDownloadingPercent": {
+    "description": "Model picker badge: download percentage.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeBadgeLoaded": "loaded",
+  "@modelRuntimeBadgeLoaded": {"description": "Model picker badge: loaded."},
+  "modelRuntimeBadgeSleeping": "sleeping",
+  "@modelRuntimeBadgeSleeping": {"description": "Model picker badge: sleeping."},
+  "modelRuntimeBadgeFailed": "load failed",
+  "@modelRuntimeBadgeFailed": {"description": "Model picker badge: loading failed."},
+  "modelRuntimeBadgeIncomplete": "download interrupted",
+  "@modelRuntimeBadgeIncomplete": {"description": "Model picker badge: incomplete download."},
+  "modelRuntimeBadgeUnloaded": "not loaded",
+  "@modelRuntimeBadgeUnloaded": {"description": "Model picker badge: not loaded."},
+  "modelRuntimeBadgeUnknown": "unknown",
+  "@modelRuntimeBadgeUnknown": {"description": "Model picker badge: unknown state."},
+  "modelRuntimeStatusLoading": "{percent}% · {stage}",
+  "@modelRuntimeStatusLoading": {
+    "description": "Provider settings: loading status with stage.",
+    "placeholders": {
+      "percent": {"type": "String"},
+      "stage": {"type": "String"}
+    }
+  },
+  "modelRuntimeStatusDownloading": "download {percent}%",
+  "@modelRuntimeStatusDownloading": {
+    "description": "Provider settings: downloading status.",
+    "placeholders": {"percent": {"type": "String"}}
+  },
+  "modelRuntimeSectionTitle": "Models in memory",
+  "@modelRuntimeSectionTitle": {"description": "Provider settings: runtime models section title."},
+  "modelRuntimeSectionEmpty": "No models are loaded.",
+  "@modelRuntimeSectionEmpty": {"description": "Provider settings: no runtime models."},
+  "modelRuntimeSectionEmptyHint": "A model loads on the first request or from the model picker.",
+  "@modelRuntimeSectionEmptyHint": {"description": "Provider settings: hint for empty runtime models."},
+  "modelRuntimeProviderUnavailable": "Live model state is unavailable: {error}",
+  "@modelRuntimeProviderUnavailable": {
+    "description": "Provider settings: runtime observation lost.",
+    "placeholders": {"error": {"type": "String"}}
+  },
+  "chatModelProviderUnavailableTooltip": "The model provider is offline. Check the provider settings or start the server.",
+  "@chatModelProviderUnavailableTooltip": {"description": "Model chip tooltip when the provider is unavailable."},
+  "chatModelProviderDisabledTooltip": "The model provider is disabled. Enable it in the provider settings.",
+  "@chatModelProviderDisabledTooltip": {"description": "Model chip tooltip when the provider is disabled."},
+  "chatModelProviderUnavailableBanner": "Provider {provider} is offline. Its models are hidden until it responds.",
+  "@chatModelProviderUnavailableBanner": {
+    "description": "Chat banner when the model provider is unavailable.",
+    "placeholders": {"provider": {"type": "String"}}
+  },
+  "chatModelProviderDisabledBanner": "Provider {provider} is disabled. Enable it to use this model.",
+  "@chatModelProviderDisabledBanner": {
+    "description": "Chat banner when the model provider is disabled.",
+    "placeholders": {"provider": {"type": "String"}}
+  },
+  "modelPickerProviderOffline": "Unavailable providers: {providers}. Their models are hidden.",
+  "@modelPickerProviderOffline": {
+    "description": "Model picker banner listing offline providers.",
+    "placeholders": {"providers": {"type": "String"}}
+  },
+  "settingsModelProviderUnavailable": "The provider is offline: its models are hidden until it responds.",
+  "@settingsModelProviderUnavailable": {"description": "Model setting warning when the provider is unavailable."},
+  "settingsModelProviderDisabled": "The provider is disabled in the provider settings.",
+  "@settingsModelProviderDisabled": {"description": "Model setting warning when the provider is disabled."}
 }

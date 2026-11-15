@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
+import 'package:probably_works/features/models/presentation/model_runtime_labels.dart';
 import 'package:probably_works/features/settings/presentation/widgets/api_key_info_card.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Карточка LLM-провайдера в настройках.
 ///
@@ -18,9 +20,13 @@ class ProviderSection extends StatefulWidget {
   const ProviderSection({
     required this.descriptor,
     required this.status,
+    required this.runtime,
+    required this.modelNames,
     required this.loading,
     required this.error,
     required this.onCheck,
+    required this.onLoadModel,
+    required this.onUnloadModel,
     required this.onEnabledChanged,
     required this.onBaseUrlSaved,
     required this.onApiKeySaved,
@@ -32,6 +38,12 @@ class ProviderSection extends StatefulWidget {
   final LlmProviderDescriptor descriptor;
   final LlmProviderStatus status;
 
+  /// Состояние моделей всех провайдеров.
+  final ModelRuntimeState runtime;
+
+  /// Названия моделей по глобальному id: в runtime хранятся только id.
+  final Map<String, String> modelNames;
+
   /// Запрос проверки или сохранения в полёте.
   final bool loading;
 
@@ -40,6 +52,10 @@ class ProviderSection extends StatefulWidget {
 
   final VoidCallback onCheck;
   final ValueChanged<bool> onEnabledChanged;
+
+  /// Управление моделями провайдера.
+  final Future<void> Function(String modelId) onLoadModel;
+  final Future<void> Function(String modelId) onUnloadModel;
   final ValueChanged<String> onBaseUrlSaved;
 
   /// Возвращает true, если ключ принят: тогда поле очищается.
@@ -145,6 +161,7 @@ class _ProviderSectionState extends State<ProviderSection> {
     final status = widget.status;
     final showMask = status.apiKeySet && !_replacingKey;
     final modelCount = widget.modelCount ?? status.modelCount ?? 0;
+    final providerRuntime = widget.runtime.providers[descriptor.id];
     return AppSection(
       title: descriptor.label,
       description: l10n.providerDescription,
@@ -267,12 +284,214 @@ class _ProviderSectionState extends State<ProviderSection> {
           error: widget.error ?? status.error,
           modelCount: modelCount,
         ),
+        if (status.enabled &&
+            providerRuntime != null &&
+            providerRuntime.capabilities.isSupported)
+          _ProviderRuntimeSection(
+            runtime: providerRuntime,
+            modelNames: widget.modelNames,
+            busy: widget.loading,
+            // Если провайдер уже показал ошибку в общем баннере, не дублируем
+            // её в секции моделей.
+            showError: (widget.error ?? status.error) == null,
+            onLoad: widget.onLoadModel,
+            onUnload: widget.onUnloadModel,
+          ),
         if (status.checkedAt != null)
           Text(
             l10n.providerCheckedAt(formatModelSyncTime(status.checkedAt!)),
             style: theme.textTheme.labelSmall,
           ),
       ],
+    );
+  }
+}
+
+/// Модели провайдера, которые уже занимают память или загружаются.
+///
+/// Полный список моделей живёт в выборе модели. Здесь только то, что можно
+/// выгрузить или что загружается прямо сейчас: иначе карточка настроек
+/// превратилась бы в каталог.
+class _ProviderRuntimeSection extends StatelessWidget {
+  const _ProviderRuntimeSection({
+    required this.runtime,
+    required this.modelNames,
+    required this.busy,
+    required this.showError,
+    required this.onLoad,
+    required this.onUnload,
+  });
+
+  final ProviderRuntimeState runtime;
+  final Map<String, String> modelNames;
+  final bool busy;
+  final bool showError;
+  final Future<void> Function(String modelId) onLoad;
+  final Future<void> Function(String modelId) onUnload;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final models = runtime.models.values.toList()
+      ..sort((a, b) {
+        final left = _order(a.phase);
+        final right = _order(b.phase);
+        return left.compareTo(right);
+      });
+    final error = runtime.error;
+    final banner = !showError || error == null
+        ? null
+        : AppBanner(
+            margin: EdgeInsets.zero,
+            tone: AppTone.warning,
+            icon: Icons.cloud_off_outlined,
+            message: l10n.modelRuntimeProviderUnavailable(error),
+          );
+    if (models.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ?banner,
+          Text(
+            l10n.modelRuntimeSectionTitle,
+            style: theme.textTheme.labelLarge,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            l10n.modelRuntimeSectionEmpty,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Text(
+            l10n.modelRuntimeSectionEmptyHint,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ?banner,
+        Text(l10n.modelRuntimeSectionTitle, style: theme.textTheme.labelLarge),
+        const SizedBox(height: AppSpacing.xs),
+        for (final model in models)
+          _RuntimeRow(
+            model: model,
+            name: modelNames[model.modelId] ?? model.modelId,
+            busy: busy,
+            onLoad: () => onLoad(model.modelId),
+            onUnload: () => onUnload(model.modelId),
+          ),
+      ],
+    );
+  }
+
+  static int _order(ModelRuntimePhase phase) => switch (phase) {
+    ModelRuntimePhase.loading => 0,
+    ModelRuntimePhase.downloading => 1,
+    ModelRuntimePhase.loaded => 2,
+    ModelRuntimePhase.sleeping => 3,
+    ModelRuntimePhase.unloading => 4,
+    ModelRuntimePhase.failed => 5,
+    _ => 6,
+  };
+}
+
+class _RuntimeRow extends StatelessWidget {
+  const _RuntimeRow({
+    required this.model,
+    required this.name,
+    required this.busy,
+    required this.onLoad,
+    required this.onUnload,
+  });
+
+  final ModelRuntime model;
+  final String name;
+  final bool busy;
+  final VoidCallback onLoad;
+  final VoidCallback onUnload;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final loading =
+        model.phase == ModelRuntimePhase.loading ||
+        model.phase == ModelRuntimePhase.unloading ||
+        model.phase == ModelRuntimePhase.downloading;
+    final canLoad =
+        model.phase == ModelRuntimePhase.unloaded ||
+        model.phase == ModelRuntimePhase.failed ||
+        model.phase == ModelRuntimePhase.incomplete ||
+        model.phase == ModelRuntimePhase.unknown;
+    final canUnload =
+        !loading &&
+        (model.phase == ModelRuntimePhase.loaded ||
+            model.phase == ModelRuntimePhase.sleeping);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Row(
+        children: [
+          Icon(
+            Icons.memory,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+                Text(
+                  modelRuntimeStatusLabel(l10n, model),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (loading)
+            SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                value: model.progress?.fraction,
+              ),
+            )
+          else if (canUnload)
+            IconButton(
+              tooltip: l10n.modelRuntimeUnload,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.power_settings_new, size: 18),
+              onPressed: busy ? null : onUnload,
+            )
+          else if (canLoad)
+            IconButton(
+              tooltip: l10n.modelRuntimeLoad,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.play_circle_outline, size: 18),
+              onPressed: busy ? null : onLoad,
+            ),
+        ],
+      ),
     );
   }
 }

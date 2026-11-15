@@ -7,6 +7,7 @@ import 'package:probably_works/features/models/presentation/widgets/reasoning_di
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 /// Поле выбора модели в настройках: название, id и предупреждение о статусе. Нажатие открывает
 /// [showModelPickerDialog] с поиском и фильтрами, как в композере. Заменяет выпадающий список:
@@ -19,6 +20,7 @@ class ModelSettingField extends StatelessWidget {
     required this.reasoning,
     required this.catalog,
     required this.source,
+    this.runtime,
     required this.pinned,
     required this.onSelected,
     this.onReasoningSelected,
@@ -39,6 +41,9 @@ class ModelSettingField extends StatelessWidget {
   /// Источник каталога профиля: локальный сервис или удалённый агент.
   final ModelCatalogSource source;
 
+  /// Источник состояния моделей; null — провайдер не поддерживает runtime.
+  final ModelRuntimeSource? runtime;
+
   /// Закреплённые модели показываются в диалоге первыми.
   final List<String> pinned;
 
@@ -58,6 +63,7 @@ class ModelSettingField extends StatelessWidget {
     final picked = await showModelPickerDialog(
       context,
       catalog: source,
+      runtime: runtime,
       pinned: pinned,
       currentId: modelId,
       requireTools: requireTools,
@@ -95,15 +101,18 @@ class ModelSettingField extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final model = catalog.modelOf(modelId);
-    final unavailable = catalog.statusOf(modelId) == ModelStatus.unavailable;
+    final status = catalog.statusOf(modelId);
     // Сведения о tool calling: из списка, а если списка ещё нет — из сохранённых деталей выбранной модели.
     final supportsTools =
         model?.supportsTools ?? catalog.saved[modelId]?.supportsTools;
     final noTools =
         requireTools && modelId.isNotEmpty && supportsTools == false;
-    final warning = unavailable
-        ? l10n.settingsModelUnavailable
-        : (noTools ? l10n.settingsNoToolsWarning : null);
+    final warning = switch (status) {
+      ModelStatus.unavailable => l10n.settingsModelUnavailable,
+      ModelStatus.providerUnavailable => l10n.settingsModelProviderUnavailable,
+      ModelStatus.providerDisabled => l10n.settingsModelProviderDisabled,
+      _ => noTools ? l10n.settingsNoToolsWarning : null,
+    };
     final capability = model?.reasoning ?? catalog.saved[modelId]?.reasoning;
     final options = reasoningOptions(capability);
     final selected = options.contains(reasoning)

@@ -7,6 +7,8 @@ import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
+import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 
 /// Статус выбранной модели относительно последнего успешного списка провайдеров.
 enum ModelStatus {
@@ -16,6 +18,12 @@ enum ModelStatus {
 
   /// Список загружен, а модели в нём нет.
   unavailable,
+
+  /// Модель в списке есть, но провайдер не отвечает.
+  providerUnavailable,
+
+  /// Провайдер выключен в настройках.
+  providerDisabled,
 }
 
 /// Состояние каталога: модели в памяти, выбранные модели из БД, провайдеры и их статусы.
@@ -120,10 +128,38 @@ class ModelCatalogState extends Equatable {
 
   ModelStatus statusOf(String? id) {
     if (id == null || id.isEmpty || !loaded) return ModelStatus.unknown;
+    final descriptor = descriptorOf(id);
+    final status = descriptor == null ? null : providerStatuses[descriptor.id];
+    if (status != null) {
+      if (!status.enabled) return ModelStatus.providerDisabled;
+      // checkedAt == null — провайдера ещё не проверяли; старый список не
+      // считаем доказательством недоступности.
+      if (status.checkedAt != null && !status.available) {
+        return ModelStatus.providerUnavailable;
+      }
+    }
     return modelOf(id) == null
         ? ModelStatus.unavailable
         : ModelStatus.available;
   }
+
+  /// Провайдер модели выключен или не отвечает. Модели такого провайдера
+  /// нельзя выбирать, а текущую модель нельзя выдавать за рабочую.
+  bool providerUnavailableFor(String id) {
+    final status = statusOf(id);
+    return status == ModelStatus.providerUnavailable ||
+        status == ModelStatus.providerDisabled;
+  }
+
+  /// Провайдеры, у которых есть модели в каталоге, но они недоступны.
+  List<LlmProviderDescriptor> get unavailableProviders => [
+    for (final descriptor in providers)
+      if (modelCountOf(descriptor.id) > 0)
+        if (providerStatuses[descriptor.id] case final status?)
+          if (!status.enabled ||
+              (status.checkedAt != null && !status.available))
+            descriptor,
+  ];
 
   /// Принимает ли модель файл: по каталогу, иначе по сохранённым деталям (см. [acceptsFileType]).
   bool acceptsFile(String id, String mimeType) => acceptsFileType(
@@ -184,7 +220,7 @@ abstract interface class ModelCatalogSource {
 /// только выбранные модели ([remember]).
 @lazySingleton
 class ModelCatalogService implements ModelCatalogSource {
-  ModelCatalogService(this._repository, this._llm);
+  ModelCatalogService(this._repository, this._llm, [this._runtime]);
 
   static final _log = Logger('ModelCatalog');
 
@@ -202,6 +238,11 @@ class ModelCatalogService implements ModelCatalogSource {
 
   final SavedModelRepository _repository;
   final LlmProvider _llm;
+
+  /// Необязательный источник runtime: его ошибки сразу переводят провайдера
+  /// в offline, не дожидаясь следующего обновления каталога.
+  final ModelRuntimeService? _runtime;
+  StreamSubscription<ModelRuntimeState>? _runtimeSub;
   final _changes = StreamController<ModelCatalogState>.broadcast();
   ModelCatalogState _state = const ModelCatalogState();
   Future<void>? _refreshing;
@@ -232,6 +273,7 @@ class ModelCatalogService implements ModelCatalogSource {
   Future<void> start() async {
     await loadSaved();
     await loadProviderConfigs();
+    _runtimeSub ??= _runtime?.watchRuntime().listen(_applyRuntimeStatuses);
     _started = true;
     _periodic ??= Timer.periodic(_refreshEvery, (_) => _quietRefresh());
     _quietRefresh();
@@ -448,6 +490,42 @@ class ModelCatalogService implements ModelCatalogSource {
 
   Future<void> _autoRefresh() async {
     if (await hasEnabledProvider) await refresh();
+  }
+
+  /// Runtime уже знает, что сервер потерян или снова отвечает. Переносим это
+  /// в статус провайдера сразу, иначе модели умершего сервера ещё долго
+  /// выглядели бы доступными до следующего обновления каталога.
+  void _applyRuntimeStatuses(ModelRuntimeState runtime) {
+    final next = {..._state.providerStatuses};
+    var changed = false;
+    var recovered = false;
+    final now = DateTime.now();
+    for (final provider in runtime.providers.values) {
+      final current = next[provider.providerId];
+      if (current == null) continue;
+      final reachable = provider.error == null;
+      if (reachable) {
+        if (current.available && current.error == null) continue;
+        recovered = recovered || !current.available;
+        next[current.id] = current.copyWith(
+          available: true,
+          clearError: true,
+          checkedAt: now,
+        );
+        changed = true;
+      } else {
+        if (!current.available && current.error == provider.error) continue;
+        next[current.id] = current.copyWith(
+          available: false,
+          error: provider.error,
+          checkedAt: now,
+        );
+        changed = true;
+      }
+    }
+    if (changed) _emit(_state.copyWith(providerStatuses: next));
+    // Провайдер поднялся: список моделей мог измениться, пока его не было.
+    if (recovered) _quietRefresh();
   }
 
   void _emit(ModelCatalogState next) {

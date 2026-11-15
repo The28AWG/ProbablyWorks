@@ -30,6 +30,7 @@ import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
@@ -936,6 +937,40 @@ void main() {
       expect(json['pinnedModels'], ['openai/gpt-4o']);
       expect(json['steps'], containsPair('thoughts', 'all'));
       expect((json['catalog'] as Map)['models'], hasLength(1));
+    });
+
+    test('exposes model runtime and routes load/unload', () async {
+      final (status, body) = await _request(
+        client,
+        settingsBase,
+        'GET',
+        '/api/v1/models/runtime',
+        token: _token,
+      );
+      expect(status, HttpStatus.ok);
+      expect(jsonDecode(body), containsPair('providers', isEmpty));
+
+      final (loadStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/runtime/load',
+        token: _token,
+        body: {'model': 'llamacpp:qwen'},
+      );
+      expect(loadStatus, HttpStatus.noContent);
+      expect(settings.runtime.loads, ['llamacpp:qwen']);
+
+      final (unloadStatus, _) = await _request(
+        client,
+        settingsBase,
+        'POST',
+        '/api/v1/models/runtime/unload',
+        token: _token,
+        body: {'model': 'llamacpp:qwen'},
+      );
+      expect(unloadStatus, HttpStatus.noContent);
+      expect(settings.runtime.unloads, ['llamacpp:qwen']);
     });
 
     test('reads and writes provider settings', () async {
@@ -1937,6 +1972,11 @@ final class _FakeSettings implements AgentSettingsApi {
   var llamaCppApiKey = false;
   var llamaCppChecked = 0;
 
+  final runtime = _FakeRuntime();
+
+  @override
+  ModelRuntimeSource get modelRuntime => runtime;
+
   LlmProviderStatus get _openRouter => LlmProviderStatus(
     id: openRouterProviderId,
     apiKeySet: savedKey != null,
@@ -2084,6 +2124,27 @@ final class _FakeSettings implements AgentSettingsApi {
   Future<void> setProviderEnabled(String providerId, bool enabled) async {
     if (providerId == llamaCppProviderId) llamaCppEnabled = enabled;
   }
+}
+
+final class _FakeRuntime implements ModelRuntimeSource {
+  final loads = <String>[];
+  final unloads = <String>[];
+
+  @override
+  ModelRuntimeState get runtime => const ModelRuntimeState();
+
+  @override
+  Stream<ModelRuntimeState> watchRuntime() =>
+      Stream.value(const ModelRuntimeState());
+
+  @override
+  Future<void> refreshRuntime() => Future<void>.value();
+
+  @override
+  Future<void> loadModel(String modelId) async => loads.add(modelId);
+
+  @override
+  Future<void> unloadModel(String modelId) async => unloads.add(modelId);
 }
 
 final class _FakeProjects implements ProjectsApi {

@@ -8,6 +8,8 @@ import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/llm_provider_registry.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
+import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
 /// Локальные настройки агента.
@@ -18,12 +20,17 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
     this._catalog,
     this._registry,
     this._providers,
+    this._runtime,
   );
 
   final SettingsRepository _settings;
   final ModelCatalogService _catalog;
   final LlmProviderRegistry _registry;
   final LlmProviderSettingsStore _providers;
+  final ModelRuntimeService _runtime;
+
+  @override
+  ModelRuntimeSource get modelRuntime => _runtime;
 
   @override
   Future<AgentSettingsSnapshot> load() async {
@@ -117,6 +124,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
     final descriptor = _descriptorOf(providerId);
     await _providers.saveBaseUrl(descriptor, baseUrl);
     await _catalog.loadProviderConfigs();
+    await _runtime.restartProvider(providerId);
   }
 
   @override
@@ -135,6 +143,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
       throw LlmFailure(status?.error ?? 'The API key was rejected');
     }
     await _catalog.loadProviderConfigs();
+    await _runtime.restartProvider(providerId);
     return status ?? await _providers.readStatus(descriptor);
   }
 
@@ -143,6 +152,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
     final descriptor = _descriptorOf(providerId);
     await _providers.deleteApiKey(descriptor);
     await _catalog.loadProviderConfigs();
+    await _runtime.restartProvider(providerId);
   }
 
   @override
@@ -150,6 +160,7 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
     final descriptor = _descriptorOf(providerId);
     await _providers.setEnabled(descriptor, enabled);
     await _catalog.loadProviderConfigs();
+    await _runtime.restartProvider(providerId);
   }
 
   LlmProviderDescriptor _descriptorOf(String providerId) {

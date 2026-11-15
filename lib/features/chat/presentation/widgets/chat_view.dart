@@ -22,6 +22,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
 import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
+import 'package:probably_works/features/models/presentation/widgets/model_runtime_builder.dart';
 import 'package:probably_works/features/models/presentation/widgets/reasoning_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
@@ -380,7 +381,7 @@ class _ChatBodyState extends State<ChatBody> {
                     ],
                   ),
                 ),
-                ChatAttentionDock(state: state),
+                ChatAttentionDock(state: state, runtime: bloc.modelRuntime),
                 if (!empty) composer,
               ],
             ),
@@ -812,6 +813,7 @@ class _ChatBodyState extends State<ChatBody> {
     final picked = await showModelPickerDialog(
       context,
       catalog: bloc.modelCatalog,
+      runtime: bloc.modelRuntime,
       pinned: state.pinnedModels,
       currentId: state.effectiveModelId,
       onTogglePin: (id) => bloc.add(ChatModelPinToggled(id)),
@@ -910,29 +912,35 @@ class _ChatSettings extends StatelessWidget {
     final reasoningLabelText = reasoning == null
         ? null
         : reasoningLabel(l10n, ReasoningPreference.fromEffort(reasoning));
-    return ChatMetaBar(
-      hosts: state.hosts,
-      hostId: chat.hostId,
-      onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
-      workspace: chat.workspace,
-      onPickWorkspace: onPickWorkspace,
-      modelLabel: _modelLabel(state.effectiveModelId, state.catalog),
-      modelUnavailable: state.modelUnavailable,
-      // Спиннер только пока название модели неизвестно: сохранённое показываем сразу.
-      modelLoading:
-          state.catalog.initialLoading &&
-          !state.catalog.knowsName(state.effectiveModelId),
-      modelPending: state.modelPending,
-      reasoningLabel: reasoningLabelText,
-      reasoningActive: reasoning != null && reasoning != ReasoningEffort.none,
-      onPickModel: onPickModel,
-      contextFraction: fraction,
-      onOpenContext: onOpenContext,
-      running: state.isRunning,
-      projectName: state.project?.name,
-      onOpenProject: state.project == null
-          ? null
-          : () => openProject(context, state.project!.id),
+    return ModelRuntimeBuilder(
+      source: bloc.modelRuntime,
+      builder: (context, runtime) => ChatMetaBar(
+        hosts: state.hosts,
+        hostId: chat.hostId,
+        onHostSelected: (id) => bloc.add(ChatHostChanged(id)),
+        workspace: chat.workspace,
+        onPickWorkspace: onPickWorkspace,
+        modelLabel: _modelLabel(state.effectiveModelId, state.catalog),
+        modelUnavailable: state.modelUnavailable,
+        modelProviderUnavailable: state.modelProviderUnavailable,
+        modelProviderDisabled: state.modelProviderDisabled,
+        // Спиннер только пока название модели неизвестно: сохранённое показываем сразу.
+        modelLoading:
+            state.catalog.initialLoading &&
+            !state.catalog.knowsName(state.effectiveModelId),
+        modelPending: state.modelPending,
+        modelRuntime: runtime.modelOf(state.effectiveModelId),
+        reasoningLabel: reasoningLabelText,
+        reasoningActive: reasoning != null && reasoning != ReasoningEffort.none,
+        onPickModel: onPickModel,
+        contextFraction: fraction,
+        onOpenContext: onOpenContext,
+        running: state.isRunning,
+        projectName: state.project?.name,
+        onOpenProject: state.project == null
+            ? null
+            : () => openProject(context, state.project!.id),
+      ),
     );
   }
 }

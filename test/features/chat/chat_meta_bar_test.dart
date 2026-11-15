@@ -8,6 +8,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/providers/ai/model_runtime.dart';
 
 final _hosts = [
   Host(
@@ -57,6 +58,7 @@ class _TestChatMetaBar extends StatelessWidget {
     this.modelUnavailable = false,
     this.modelLoading = false,
     this.modelPending = false,
+    this.modelRuntime,
     this.reasoningLabel,
     this.reasoningActive = false,
   });
@@ -71,6 +73,7 @@ class _TestChatMetaBar extends StatelessWidget {
   final bool modelUnavailable;
   final bool modelLoading;
   final bool modelPending;
+  final ModelRuntime? modelRuntime;
   final String? reasoningLabel;
   final bool reasoningActive;
 
@@ -93,6 +96,7 @@ class _TestChatMetaBar extends StatelessWidget {
     modelUnavailable: modelUnavailable,
     modelLoading: modelLoading,
     modelPending: modelPending,
+    modelRuntime: modelRuntime,
     reasoningLabel: reasoningLabel,
     reasoningActive: reasoningActive,
     onPickModel: _noop,
@@ -420,6 +424,42 @@ void main() {
       findsOneWidget,
     );
   });
+
+  _desktopWidgetTest(
+    'loading model tints the chip and shows progress in the tooltip',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestHost(
+          _TestChatMetaBar(
+            modelRuntime: ModelRuntime(
+              modelId: 'llamacpp:qwen',
+              phase: ModelRuntimePhase.loading,
+              progress: const ModelLoadProgress(
+                fraction: 0.45,
+                stage: ModelLoadStage.weights,
+              ),
+              startedAt: DateTime.utc(2026, 11, 15),
+            ),
+          ),
+          AppTheme.light,
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byTooltip(
+          'Model: Claude Sonnet\nLoading into memory: 45% · Weights',
+        ),
+        findsOneWidget,
+      );
+      final progress = tester.widget<CircularProgressIndicator>(
+        find.descendant(
+          of: find.byType(ChatMetaBar),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+      );
+      expect(progress.value, 0.45);
+    },
+  );
 
   _desktopWidgetTest(
     'narrow row collapses chips to icons and keeps every chip inside its width',
