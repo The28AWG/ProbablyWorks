@@ -543,11 +543,13 @@ class SettingsCubit extends Cubit<SettingsState> {
   Future<void> saveAttachLimits({
     required int perMessage,
     required int maxBytes,
+    required int inlineChars,
   }) async {
     final current = _parseLimits(state.limitsJson) ?? const AppLimits();
     final limits = current.copyWith(
       attachmentsPerMessage: perMessage,
       attachmentMaxBytes: maxBytes,
+      attachmentInlineChars: inlineChars,
     );
     await _agentSettings.saveLimits(limits);
     emit(

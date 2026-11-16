@@ -12,12 +12,14 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
 import 'package:pw_agent/agent/policy/sensitive_paths.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
+import 'package:pw_agent/agent/tools/attachment_lookup.dart';
 import 'package:pw_agent/agent/tools/self_tool_catalog.dart';
 import 'package:pw_agent/agent/tools/self_tool_handler.dart';
 import 'package:pw_agent/agent/tools/state_tool_handler.dart';
 import 'package:pw_agent/agent/tools/tool_args.dart';
 import 'package:pw_agent/agent/tools/tool_catalog.dart';
 import 'package:pw_agent/agent/tools/tool_effect.dart';
+import 'package:pw_agent/agent/tools/tool_output_reader.dart';
 import 'package:pw_agent/agent/tools/tool_registry.dart';
 import 'package:pw_agent/agent/tools/tool_source.dart';
 import 'package:pw_agent/agent/tools/tool_types.dart';
@@ -30,11 +32,9 @@ import 'package:pw_agent/core/data/project_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/ansi_text.dart';
-import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/core/util/line_diff.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/core/util/shell_quote.dart';
-import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/core/util/unified_diff.dart';
 import 'package:pw_agent/core/util/workspace_path.dart';
 import 'package:pw_agent/host/host_capture.dart';
@@ -168,15 +168,15 @@ class ToolExecutor {
     ToolNames.listRuns: (ctx, _, _) => _listRuns(ctx),
     ToolNames.readRunOutput: (ctx, _, args) => _readRunOutput(ctx, args),
     ToolNames.stopRun: _stopRun,
-    ToolNames.setGoal: _stateTools.call,
-    ToolNames.updatePlan: _stateTools.call,
-    ToolNames.pinFact: _stateTools.call,
-    ToolNames.unpinFact: _stateTools.call,
-    ToolNames.listStateRevisions: _stateTools.call,
-    ToolNames.getStateRevision: _stateTools.call,
-    ToolNames.chatHistorySearch: _stateTools.call,
-    ToolNames.listSkills: _stateTools.call,
-    ToolNames.loadSkill: _stateTools.call,
+    ToolNames.setGoal: _stateTool,
+    ToolNames.updatePlan: _stateTool,
+    ToolNames.pinFact: _stateTool,
+    ToolNames.unpinFact: _stateTool,
+    ToolNames.listStateRevisions: _stateTool,
+    ToolNames.getStateRevision: _stateTool,
+    ToolNames.chatHistorySearch: _stateTool,
+    ToolNames.listSkills: _stateTool,
+    ToolNames.loadSkill: _stateTool,
     ToolNames.hostList: _selfTool,
     ToolNames.hostAdd: _selfTool,
     ToolNames.hostUpdate: _selfTool,
@@ -268,6 +268,69 @@ class ToolExecutor {
     }
   }
 
+  /// Ответ инструмента состояния. Тело результата (например, полный текст
+  /// skill) проходит тот же предел, что и вывод команды: иначе один вызов мог бы
+  /// занять всё окно модели, а сжатие истории такой результат не сокращает.
+  Future<ToolResult> _stateTool(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final result = await _stateTools.call(ctx, call, args);
+    return _limitedResult(ctx, call, args, result);
+  }
+
+  /// Единый предел одного результата инструмента.
+  ///
+  /// Короткий ответ уходит как есть: служебная шапка нужна только урезанному
+  /// тексту. Длинный получает запуск с полным текстом и подсказку дочитать
+  /// через `read_run_output` — так полный результат не теряется.
+  /// [runId] — уже существующий запуск (внешний инструмент); null — запуска
+  /// ещё нет, и он создаётся только когда текст действительно урезан.
+  Future<ToolResult> _limitedResult(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+    ToolResult result, {
+    String? runId,
+  }) async {
+    final plain = plainTerminalText(result.text);
+    final max = ctx.limits.toolOutputForModelChars;
+    if (plain.characters.length <= max) return result;
+    var id = runId;
+    if (id == null) {
+      id = ToolExecutor._uuid.v4();
+      await _saveRun(
+        _newRun(
+          ctx,
+          id,
+          call,
+          args,
+          ToolRunStatus.done,
+          finishedAt: DateTime.now(),
+        ).copyWith(
+          resultError: result.isError,
+          outputText: plain,
+          resultPreview: previewToolText(plain),
+        ),
+      );
+    }
+    return ToolResult(
+      clampToolText(
+        text: plain,
+        maxChars: max,
+        header: [
+          'run_id: $id',
+          'tool: ${call.name}',
+          if (result.isError) 'result: error',
+        ],
+        target: 'read_run_output run_id=$id',
+      ),
+      isError: result.isError,
+      finish: result.finish,
+    );
+  }
+
   /// Внешний инструмент: тот же policy → approve → ToolRun, что и у встроенных.
   ///
   /// Источник не получает управление, пока политика не разрешила вызов. Ход
@@ -322,7 +385,7 @@ class ToolExecutor {
         ),
       );
       await _markExternalMutation(ctx, finished, source);
-      return result;
+      return await _limitedResult(ctx, call, args, result, runId: finished.id);
     } on Object catch (error) {
       final finished = await _complete(
         run,

@@ -485,30 +485,27 @@ extension _ToolExecutorHelpers on ToolExecutor {
 
   /// Текст результата для модели. Хранится и показывается только хвост:
   /// старые строки вытесняются, как в терминале, поэтому модель всегда видит
-  /// предсказуемый конец вывода, а не случайную голову.
-  String _modelText(ExecOutcome outcome, AppLimits limits, String runId) {
-    final plain = plainTerminalText(outcome.outputText);
-    final total = plain.characters.length;
-    final body = TextClip.tail(plain, maxChars: limits.toolOutputForModelChars);
-    final shown = body.characters.length;
-    final header = [
-      'run_id: $runId',
-      'status: ${outcome.status.name}',
-      // Для модели код выхода и ошибка инструмента остаются явным сигналом:
-      // status done сам по себе не говорит, что результат успешный.
-      if (outcome.resultError) 'result: error',
-      if (outcome.exitCode != null) 'exit_code: ${outcome.exitCode}',
-      if (outcome.message != null && outcome.message!.isNotEmpty)
-        'message: ${outcome.message}',
-      if (outcome.outputTruncated)
-        'retention: tail only (earlier output dropped)',
-      'output: $total chars',
-      if (shown < total) 'showing: last $shown chars',
-      if (shown < total)
-        'read more: read_run_output run_id=$runId (mode=tail, chunk or grep)',
-    ].join('\n');
-    return body.isEmpty ? header : '$header\n$body';
-  }
+  /// предсказуемый конец вывода, а не случайную голову. Предел один для всех
+  /// инструментов: короткий результат уходит как есть, длинный — с подсказкой
+  /// дочитать полный текст, см. [clampToolText].
+  String _modelText(ExecOutcome outcome, AppLimits limits, String runId) =>
+      clampToolText(
+        text: plainTerminalText(outcome.outputText),
+        maxChars: limits.toolOutputForModelChars,
+        header: [
+          'run_id: $runId',
+          'status: ${outcome.status.name}',
+          // Для модели код выхода и ошибка инструмента остаются явным сигналом:
+          // status done сам по себе не говорит, что результат успешный.
+          if (outcome.resultError) 'result: error',
+          if (outcome.exitCode != null) 'exit_code: ${outcome.exitCode}',
+          if (outcome.message != null && outcome.message!.isNotEmpty)
+            'message: ${outcome.message}',
+          if (outcome.outputTruncated)
+            'retention: tail only (earlier output dropped)',
+        ],
+        target: 'read_run_output run_id=$runId',
+      );
 
   /// Необязательное целое. Дробные значения и значения ниже [min] — ошибка аргумента, а не молчаливая подмена.
   int _intArg(
@@ -517,16 +514,5 @@ extension _ToolExecutorHelpers on ToolExecutor {
     required int min,
     int? max,
     required int fallback,
-  }) {
-    final value = args[key];
-    if (value == null) return fallback;
-    if (value is! num || value != value.toInt()) {
-      throw ArgumentError.value(value, key, 'integer expected');
-    }
-    final number = value.toInt();
-    if (number < min) {
-      throw ArgumentError.value(value, key, 'must be at least $min');
-    }
-    return max == null ? number : math.min(number, max);
-  }
+  }) => toolIntArg(args, key, min: min, max: max, fallback: fallback);
 }

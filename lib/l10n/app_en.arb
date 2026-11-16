@@ -1421,9 +1421,9 @@
   "@settingsAttachLimits": {
     "description": "Settings section title: how many files and how many bytes can be attached to a message."
   },
-  "settingsAttachLimitsHint": "How many files one message can carry and the largest file that goes into the model context.",
+  "settingsAttachLimitsHint": "How many files one message can carry, the largest file, and how much attachment text goes into the model context.",
   "@settingsAttachLimitsHint": {
-    "description": "Hint under the attachment limits title: what the two numbers control."
+    "description": "Hint under the attachment limits title: what the three numbers control."
   },
   "settingsAttachUnitFiles": "files",
   "@settingsAttachUnitFiles": {
@@ -1432,6 +1432,10 @@
   "settingsAttachUnitBytes": "bytes",
   "@settingsAttachUnitBytes": {
     "description": "Unit suffix shown inside the field: size in bytes."
+  },
+  "settingsAttachUnitChars": "chars",
+  "@settingsAttachUnitChars": {
+    "description": "Unit suffix shown inside the field: how much attachment text goes into the model context."
   },
   "settingsModelUnavailable": "This model is no longer available in OpenRouter: choose another one.",
   "@settingsModelUnavailable": {

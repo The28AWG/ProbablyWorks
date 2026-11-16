@@ -17,6 +17,51 @@ extension _ChatSessionTurn on ChatSession {
     await _finishTurn(() => _loop(turn));
   }
 
+  /// Повтор запроса после принудительного сжатия.
+  ///
+  /// Второй отказ по окну сжимать снова не за чем: либо сокращать было нечего,
+  /// либо один результат или вложение занимает почти всё окно. В этом случае
+  /// модель и пользователь получают понятную причину вместо текста провайдера.
+  Future<StepResult> _retryAfterCompaction(
+    _Prepared before,
+    _Prepared after,
+    CancelToken turn,
+    AppLimits limits,
+  ) async {
+    try {
+      return await _streamWithRetry(after.request, turn, limits);
+    } on LlmFailure catch (retry) {
+      if (!retry.contextLengthExceeded || turn.isCancelled) {
+        Error.throwWithStackTrace(retry, StackTrace.current);
+      }
+      _log.warning('context overflow after compaction: ${retry.message}');
+      Error.throwWithStackTrace(
+        LlmFailure(
+          _contextOverflowMessage(before, after),
+          contextLengthExceeded: true,
+        ),
+        StackTrace.current,
+      );
+    }
+  }
+
+  /// Объяснение вместо текста провайдера, когда запрос не влезает в окно модели
+  /// даже после сжатия истории.
+  ///
+  /// Пользователю важно понять, что дело не в сети и не в модели: сокращать
+  /// нужно сам запрос. Модель видит ту же причину и следующий шаг.
+  static String _contextOverflowMessage(_Prepared before, _Prepared after) {
+    final estimated = ContextCompactor.estimate(after.request.messages);
+    final compacted =
+        after.chat.compactedUntilSeq > before.chat.compactedUntilSeq;
+    final history = compacted
+        ? 'History was compacted, but what is left is still too large.'
+        : 'There is nothing left to compact.';
+    return 'the request does not fit the model window: about $estimated tokens '
+        'against a limit of ${after.limit}. $history Shorten the message, '
+        'remove or split a large attachment, or read the file in parts.';
+  }
+
   /// Общая оболочка хода: событие старта, ошибка, финал и уведомление.
   /// И обычный ход, и продолжение после карточки заканчиваются здесь.
   Future<void> _finishTurn(Future<TurnEnd> Function() body) async {
@@ -320,8 +365,9 @@ extension _ChatSessionTurn on ChatSession {
         if (!failure.contextLengthExceeded || turn.isCancelled) rethrow;
         _emit(AgentTextDelta(chatId, '', reset: true));
         _emit(AgentReasoningDelta(chatId, '', reset: true));
+        final before = prepared;
         prepared = await _prepare(limits, forceCompact: true);
-        step = await _streamWithRetry(prepared.request, turn, limits);
+        step = await _retryAfterCompaction(before, prepared, turn, limits);
       }
       for (final id in prepared.inlineIds) {
         _inlineFiles.remove(id);

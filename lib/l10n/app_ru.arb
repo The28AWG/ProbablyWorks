@@ -1421,9 +1421,9 @@
   "@settingsAttachLimits": {
     "description": "Settings section title: how many files and how many bytes can be attached to a message."
   },
-  "settingsAttachLimitsHint": "Сколько файлов можно приложить к одному сообщению и какой максимальный размер файла попадает в контекст модели.",
+  "settingsAttachLimitsHint": "Сколько файлов можно приложить к одному сообщению, какой максимальный размер файла и сколько текста вложения попадает в контекст модели.",
   "@settingsAttachLimitsHint": {
-    "description": "Пояснение под заголовком лимитов вложений: что задают два числа."
+    "description": "Пояснение под заголовком лимитов вложений: что задают три числа."
   },
   "settingsAttachUnitFiles": "файлов",
   "@settingsAttachUnitFiles": {
@@ -1432,6 +1432,10 @@
   "settingsAttachUnitBytes": "байт",
   "@settingsAttachUnitBytes": {
     "description": "Суффикс внутри поля: размер в байтах."
+  },
+  "settingsAttachUnitChars": "символов",
+  "@settingsAttachUnitChars": {
+    "description": "Суффикс внутри поля: сколько текста вложения попадает в контекст модели."
   },
   "settingsModelUnavailable": "Модель больше недоступна в OpenRouter: выберите другую.",
   "@settingsModelUnavailable": {

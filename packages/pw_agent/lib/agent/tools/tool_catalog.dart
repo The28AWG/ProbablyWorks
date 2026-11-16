@@ -381,16 +381,32 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.readRunOutput,
       description:
-          'Read the retained output of a tool run. Only the tail is kept, like terminal '
-          'scrollback: output older than the retention limit is gone. Modes: tail (default) '
-          'shows the most recent output; chunk reads a window at an exact character offset; '
-          'grep searches lines and returns matches with context, line numbers and offsets. '
-          'Use grep to find an error without reading a whole long log. Offsets are relative '
-          'to the retained text. While a run is active only its live tail is available.',
+          'Read long saved text in parts. Two sources: run_id reads the retained output '
+          'of a tool run; attachment reads the text of a file attached to a message of '
+          'this chat (optionally with message_id). Pass exactly one of them. '
+          'Only the tail of a run output is kept, like terminal scrollback: output older '
+          'than the retention limit is gone. Modes: tail (default) shows the most recent '
+          'text; chunk reads a window at an exact character offset; grep searches lines '
+          'and returns matches with context, line numbers and offsets. Use grep to find '
+          'an error without reading a whole long log. Offsets are relative to the retained '
+          'text. While a run is active only its live tail is available. A binary '
+          'attachment has no text: it is sent to the model as a content part.',
       parameters: {
         'type': 'object',
         'properties': {
-          'run_id': {'type': 'string'},
+          'run_id': {
+            'type': 'string',
+            'description': 'Tool run id from list_runs or from the header of a tool result',
+          },
+          'attachment': {
+            'type': 'string',
+            'description': 'Name of a file attached to a message of this chat',
+          },
+          'message_id': {
+            'type': 'string',
+            'description':
+                'Message id, when several attachments share the same name',
+          },
           'mode': {
             'type': 'string',
             'enum': ['tail', 'chunk', 'grep'],
@@ -435,7 +451,7 @@ abstract final class ToolCatalog {
             'description': 'Skip this many matches for paging (default 0)',
           },
         },
-        'required': ['run_id'],
+        'required': <String>[],
       },
     ),
     const LlmToolSpec(

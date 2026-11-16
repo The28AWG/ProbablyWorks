@@ -16,6 +16,7 @@ import 'package:probably_works/features/models/presentation/widgets/model_picker
 import 'package:probably_works/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
+import 'package:probably_works/features/settings/presentation/widgets/attachment_limit_fields.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/local_models_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
@@ -93,6 +94,7 @@ class _SettingsViewState extends State<_SettingsView> {
   final _limits = TextEditingController();
   final _attachPerMessage = TextEditingController();
   final _attachMaxBytes = TextEditingController();
+  final _attachInlineChars = TextEditingController();
   String? _attachError;
   bool _initialized = false;
   var _group = _Group.account;
@@ -136,6 +138,7 @@ class _SettingsViewState extends State<_SettingsView> {
     _limits.dispose();
     _attachPerMessage.dispose();
     _attachMaxBytes.dispose();
+    _attachInlineChars.dispose();
     super.dispose();
   }
 
@@ -170,15 +173,22 @@ class _SettingsViewState extends State<_SettingsView> {
   void _saveAttachLimits(SettingsCubit cubit, AppLocalizations l10n) {
     final perMessage = int.tryParse(_attachPerMessage.text.trim());
     final maxBytes = int.tryParse(_attachMaxBytes.text.trim());
+    final inlineChars = int.tryParse(_attachInlineChars.text.trim());
     if (perMessage == null ||
         perMessage <= 0 ||
         maxBytes == null ||
-        maxBytes <= 0) {
+        maxBytes <= 0 ||
+        inlineChars == null ||
+        inlineChars <= 0) {
       setState(() => _attachError = l10n.settingsAttachInvalid);
       return;
     }
     setState(() => _attachError = null);
-    cubit.saveAttachLimits(perMessage: perMessage, maxBytes: maxBytes);
+    cubit.saveAttachLimits(
+      perMessage: perMessage,
+      maxBytes: maxBytes,
+      inlineChars: inlineChars,
+    );
   }
 
   /// Закрепления в настройках: тот же диалог, что в композере, с кнопками закрепления.
@@ -224,6 +234,7 @@ class _SettingsViewState extends State<_SettingsView> {
           final limits = AppLimits.parse(state.limitsJson);
           _attachPerMessage.text = '${limits.attachmentsPerMessage}';
           _attachMaxBytes.text = '${limits.attachmentMaxBytes}';
+          _attachInlineChars.text = '${limits.attachmentInlineChars}';
           _initialized = true;
         }
         final cubit = context.read<SettingsCubit>();
@@ -897,26 +908,11 @@ class _SettingsViewState extends State<_SettingsView> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: AppTextField(
-                      controller: _attachPerMessage,
-                      suffixText: l10n.settingsAttachUnitFiles,
-                      error: _attachError,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: AppTextField(
-                      controller: _attachMaxBytes,
-                      suffixText: l10n.settingsAttachUnitBytes,
-                      error: _attachError,
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ],
+              child: AttachmentLimitFields(
+                perMessage: _attachPerMessage,
+                maxBytes: _attachMaxBytes,
+                inlineChars: _attachInlineChars,
+                error: _attachError,
               ),
             ),
             const Divider(height: AppSpacing.xl),

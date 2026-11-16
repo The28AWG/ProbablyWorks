@@ -15,6 +15,7 @@ class AppLimits {
     this.logOutputDbBytes = 1024 * 1024,
     this.attachmentMaxBytes = 256 * 1024,
     this.attachmentsPerMessage = 8,
+    this.attachmentInlineChars = 4000,
     this.maxAgentSteps = 500,
     this.economicalMaxAgentSteps = 40,
     this.maxTurnTokens = 0,
@@ -114,6 +115,8 @@ class AppLimits {
       attachmentMaxBytes: intOf('attachmentMaxBytes') ?? d.attachmentMaxBytes,
       attachmentsPerMessage:
           intOf('attachmentsPerMessage') ?? d.attachmentsPerMessage,
+      attachmentInlineChars:
+          intOf('attachmentInlineChars') ?? d.attachmentInlineChars,
       maxAgentSteps: nonNegativeIntOf('maxAgentSteps') ?? d.maxAgentSteps,
       economicalMaxAgentSteps:
           intOf('economicalMaxAgentSteps') ?? d.economicalMaxAgentSteps,
@@ -162,6 +165,11 @@ class AppLimits {
   final int attachmentMaxBytes;
   final int attachmentsPerMessage;
 
+  /// Сколько символов текстового вложения входит в контекст как превью.
+  /// Остальное модель дочитывает через `read_run_output attachment=…`, иначе одно
+  /// вложение могло бы занять всё окно: сжатие истории его не сокращает.
+  final int attachmentInlineChars;
+
   /// Аварийный потолок шагов за ход. Ноль — без ограничения: работа
   /// ограничивается бюджетами хода и политикой провайдера.
   final int maxAgentSteps;
@@ -205,6 +213,7 @@ class AppLimits {
     int? logOutputDbBytes,
     int? attachmentMaxBytes,
     int? attachmentsPerMessage,
+    int? attachmentInlineChars,
     int? maxAgentSteps,
     int? economicalMaxAgentSteps,
     int? maxTurnTokens,
@@ -232,6 +241,7 @@ class AppLimits {
     logOutputDbBytes: logOutputDbBytes ?? this.logOutputDbBytes,
     attachmentMaxBytes: attachmentMaxBytes ?? this.attachmentMaxBytes,
     attachmentsPerMessage: attachmentsPerMessage ?? this.attachmentsPerMessage,
+    attachmentInlineChars: attachmentInlineChars ?? this.attachmentInlineChars,
     maxAgentSteps: maxAgentSteps ?? this.maxAgentSteps,
     economicalMaxAgentSteps:
         economicalMaxAgentSteps ?? this.economicalMaxAgentSteps,
@@ -262,6 +272,7 @@ class AppLimits {
     'logOutputDbBytes': logOutputDbBytes,
     'attachmentMaxBytes': attachmentMaxBytes,
     'attachmentsPerMessage': attachmentsPerMessage,
+    'attachmentInlineChars': attachmentInlineChars,
     'maxAgentSteps': maxAgentSteps,
     'economicalMaxAgentSteps': economicalMaxAgentSteps,
     'maxTurnTokens': maxTurnTokens,

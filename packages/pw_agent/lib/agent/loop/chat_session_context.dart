@@ -66,6 +66,9 @@ extension _ChatSessionContext on ChatSession {
         : await _hub.projectStore.memory(project.id);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
+    // Окно модели нужно сборке контекста: по нему ужимается превью вложений.
+    // Сжатие чат не меняет, поэтому значение снимается до него.
+    final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
     ContextInput inputFor(
       Chat current, {
       Map<String, List<LlmFilePart>> files = const {},
@@ -76,6 +79,8 @@ extension _ChatSessionContext on ChatSession {
       state: state,
       workspace: snapshot,
       recentWindow: limits.recentWindowMessages,
+      limits: limits,
+      contextLimit: limit,
       hostStub: hostStub,
       backgroundNotes: notes,
       inlineFiles: files,
@@ -120,7 +125,6 @@ extension _ChatSessionContext on ChatSession {
     if (activeSubagents.isNotEmpty) {
       llmMessages.add(LlmMessage.system(_subagentContext(activeSubagents)));
     }
-    final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
     // Первый запрос подключает включённые MCP-серверы и плагины.
     await _hub.mcp.ensureReady();
     await _hub.plugins.ensureReady();
