@@ -52,6 +52,17 @@ void main() {
         AppLimits.defaults.foregroundExecTimeout,
       );
       expect(parsed.maxAgentSteps, AppLimits.defaults.maxAgentSteps);
+      expect(
+        parsed.economicalMaxAgentSteps,
+        AppLimits.defaults.economicalMaxAgentSteps,
+      );
+      expect(parsed.maxTurnTokens, AppLimits.defaults.maxTurnTokens);
+      expect(parsed.maxTurnCostUsd, AppLimits.defaults.maxTurnCostUsd);
+      expect(parsed.turnMaxWallClock, AppLimits.defaults.turnMaxWallClock);
+      expect(
+        parsed.progressRepeatLimit,
+        AppLimits.defaults.progressRepeatLimit,
+      );
       expect(parsed.logOutputDbBytes, AppLimits.defaults.logOutputDbBytes);
     });
 
@@ -61,6 +72,59 @@ void main() {
       );
       expect(parsed.maxAgentSteps, 40);
       expect(parsed.foregroundExecTimeout, const Duration(seconds: 90));
+    });
+
+    test('zero disables the step ceiling but not the economical one', () {
+      final parsed = AppLimits.parse(
+        '{"maxAgentSteps": 0, "economicalMaxAgentSteps": 12}',
+      );
+      expect(parsed.maxAgentSteps, 0);
+      expect(parsed.economicalMaxAgentSteps, 12);
+      expect(
+        () => AppLimits.parse('{"economicalMaxAgentSteps": 0}'),
+        throwsFormatException,
+      );
+    });
+
+    test('turn budgets survive JSON and zero means disabled', () {
+      final parsed = AppLimits.parse(
+        '{"maxTurnTokens": 1200, "maxTurnCostUsd": 1.5, '
+        '"turnMaxWallClockSeconds": 900}',
+      );
+      expect(parsed.maxTurnTokens, 1200);
+      expect(parsed.maxTurnCostUsd, 1.5);
+      expect(parsed.turnMaxWallClock, const Duration(minutes: 15));
+      expect(
+        AppLimits.parse(parsed.toJson()).turnMaxWallClock,
+        parsed.turnMaxWallClock,
+      );
+
+      final disabled = AppLimits.parse(
+        '{"maxTurnTokens": 0, "maxTurnCostUsd": 0, '
+        '"turnMaxWallClockSeconds": 0}',
+      );
+      expect(disabled.maxTurnTokens, 0);
+      expect(disabled.maxTurnCostUsd, 0);
+      expect(disabled.turnMaxWallClock, Duration.zero);
+    });
+
+    test('negative budgets are rejected', () {
+      expect(
+        () => AppLimits.parse('{"maxTurnTokens": -1}'),
+        throwsFormatException,
+      );
+      expect(
+        () => AppLimits.parse('{"maxTurnCostUsd": -0.1}'),
+        throwsFormatException,
+      );
+      expect(
+        () => AppLimits.parse('{"turnMaxWallClockSeconds": -1}'),
+        throwsFormatException,
+      );
+      expect(
+        () => AppLimits.parse('{"progressRepeatLimit": 0}'),
+        throwsFormatException,
+      );
     });
 
     test('context ratios and reserve survive JSON', () {

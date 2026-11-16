@@ -56,6 +56,10 @@ extension _ChatSessionTurn on ChatSession {
         unawaited(_notify(AgentNoticeKind.turnFailed));
       case TurnEnd.stepLimit:
         unawaited(_notify(AgentNoticeKind.stepLimitReached));
+      case TurnEnd.budget:
+        unawaited(_notify(AgentNoticeKind.turnBudgetReached));
+      case TurnEnd.stalled:
+        unawaited(_notify(AgentNoticeKind.progressStalled));
       case TurnEnd.stopped:
     }
   }
@@ -297,6 +301,8 @@ extension _ChatSessionTurn on ChatSession {
   Future<TurnEnd> _loop(CancelToken turn) async {
     _modelOverride = null;
     final limits = await _hub.limits();
+    final budget = TurnBudget(limits: limits);
+    final progress = TurnProgressGuard(repeatLimit: limits.progressRepeatLimit);
     var steps = 0;
     var lengthContinues = 0;
     while (true) {
@@ -332,12 +338,14 @@ extension _ChatSessionTurn on ChatSession {
                   ToolCallRef(id: c.id, name: c.name, arguments: c.arguments),
               ],
             );
-      if (step.usage != null) {
-        await _recordUsage(
-          prepared.chat,
-          step.model ?? prepared.model,
-          step.usage!,
-          prepared.limit,
+      final usage = step.usage;
+      if (usage != null) {
+        final model = step.model ?? prepared.model;
+        await _recordUsage(prepared.chat, model, usage, prepared.limit);
+        budget.add(
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          costUsd: _costOf(model, usage),
         );
       }
       if (step.model != null && step.model != prepared.model) {
@@ -346,7 +354,14 @@ extension _ChatSessionTurn on ChatSession {
       if (step.stopped || turn.isCancelled) return TurnEnd.stopped;
       if (step.interruptedBySendNow) continue;
       if (step.toolCalls.isEmpty) {
-        if (_queue.isNotEmpty) continue;
+        if (_queue.isNotEmpty) {
+          final budgetReason = budget.exceededAt(DateTime.now());
+          if (budgetReason != null) {
+            _log.info('turn budget reached: $budgetReason');
+            return TurnEnd.budget;
+          }
+          continue;
+        }
         if (_isLengthFinish(step.finishReason)) {
           // Ответ упёрся в лимит вывода. Не выдаём его за полный: просим
           // продолжить, но не бесконечно. Событие остаётся в ленте и контексте.
@@ -366,13 +381,21 @@ extension _ChatSessionTurn on ChatSession {
 
       steps++;
       final messageId = assistant?.id ?? '';
-      if (steps > limits.maxAgentSteps) {
-        await _answerRemaining(
-          step.toolCalls,
-          0,
-          'not executed: step limit reached, the user must continue the task',
-        );
+      final model = step.model ?? prepared.model;
+      final cap = effectiveStepCap(
+        limits: limits,
+        provider: providerDescriptorOf(model, _hub.llm.providers),
+      );
+      if (cap != null && steps > cap) {
+        _log.info('step cap reached: $steps > $cap for $model');
+        await _answerRemaining(step.toolCalls, 0, ChatSession._notExecutedText);
         return TurnEnd.stepLimit;
+      }
+      final budgetReason = budget.exceededAt(DateTime.now());
+      if (budgetReason != null) {
+        _log.info('turn budget reached: $budgetReason');
+        await _answerRemaining(step.toolCalls, 0, ChatSession._notExecutedText);
+        return TurnEnd.budget;
       }
 
       final toolCtx = ToolContext(
@@ -386,10 +409,36 @@ extension _ChatSessionTurn on ChatSession {
         onBackgroundDone: _onBackgroundDone,
         project: prepared.project,
       );
-      final scheduled = await _scheduleCalls(step.toolCalls, toolCtx, turn);
+      var progressStop = false;
+      var progressWarn = false;
+      final scheduled = await _scheduleCalls(
+        step.toolCalls,
+        toolCtx,
+        turn,
+        onCommitted: (call, result) {
+          final verdict = progress.record(
+            tool: call.name,
+            arguments: call.arguments,
+            result: result.text,
+            isError: result.isError,
+          );
+          if (verdict == ProgressVerdict.stop) {
+            progressStop = true;
+          } else if (verdict == ProgressVerdict.warn) {
+            progressWarn = true;
+          }
+        },
+      );
       if (scheduled != null) {
         if (scheduled == TurnEnd.completed) await _notifyActiveSubagents();
         return scheduled;
+      }
+      if (progressStop) {
+        _log.warning('no progress: repeated ${progress.lastAction}');
+        return TurnEnd.stalled;
+      }
+      if (progressWarn) {
+        await _append(MessageRole.event, text: ChatSession._stallWarningText);
       }
     }
   }
@@ -413,6 +462,7 @@ extension _ChatSessionTurn on ChatSession {
     CancelToken turn, {
     Set<String> alreadyAnswered = const {},
     Map<String, Future<ToolResult> Function()> resumed = const {},
+    void Function(LlmToolCall call, ToolResult result)? onCommitted,
   }) async {
     final workspace = commandWorkspace(ctx.host, ctx.chat.workspace);
     final end = await ToolScheduler.run(
@@ -426,7 +476,10 @@ extension _ChatSessionTurn on ChatSession {
       alreadyAnswered: alreadyAnswered,
       resumed: resumed,
       execute: (call) => _hub.tools.execute(call, ctx),
-      commit: (call, result) => _appendTool(call.id, result),
+      commit: (call, result) async {
+        await _appendTool(call.id, result);
+        onCommitted?.call(call, result);
+      },
     );
     return switch (end) {
       ToolScheduleEnd.done => null,

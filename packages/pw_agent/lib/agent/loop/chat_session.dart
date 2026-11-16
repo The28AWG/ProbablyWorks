@@ -12,7 +12,10 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/chat_title.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/agent/loop/step_cap.dart';
 import 'package:pw_agent/agent/loop/tool_scheduler.dart';
+import 'package:pw_agent/agent/loop/turn_budget.dart';
+import 'package:pw_agent/agent/loop/turn_progress_guard.dart';
 import 'package:pw_agent/agent/policy/command_classifier.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
 import 'package:pw_agent/agent/subagent/subagent_manager.dart';
@@ -98,6 +101,22 @@ class ChatSession {
       'the previous answer was cut by the model output limit; continue it';
   static const _lengthFinalText =
       'model output limit reached; the answer may be incomplete';
+
+  /// Текст невыполненного вызова при любом лимите хода.
+  ///
+  /// Модель не должна знать, почему ход остановлен: ей важно только то,
+  /// что вызов не выполнен и продолжение остаётся за пользователем.
+  /// Причина (шаги, бюджет, экономный провайдер) живёт в логах и интерфейсе.
+  static const _notExecutedText =
+      'not executed: step limit reached, the user must continue the task';
+
+  /// Подсказка модели, когда ProgressGuard впервые заметил повтор.
+  ///
+  /// Это не причина остановки и не политика провайдера: модели сообщается
+  /// только наблюдаемый факт — последние действия не меняют результат.
+  static const _stallWarningText =
+      'the last tool calls repeated the same action with the same result; '
+      'change the approach or finish the task';
 
   bool _running = false;
   CancelToken? _turnCancel;
@@ -424,7 +443,10 @@ class ChatSession {
     );
   }
 
-  /// Продолжить после достижения лимита шагов.
+  /// Продолжить после лимита шагов или бюджета хода.
+  ///
+  /// Оба случая завершают ход одинаково, поэтому кнопка одна: новый ход
+  /// получает свежий счётчик шагов и свежий бюджет.
   Future<void> continueAfterStepLimit() async {
     if (_running) return;
     _running = true;

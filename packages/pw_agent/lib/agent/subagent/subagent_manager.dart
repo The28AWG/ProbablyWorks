@@ -244,7 +244,10 @@ final class SubagentManager {
     final status = switch (end) {
       TurnEnd.completed => SubagentStatus.completed,
       TurnEnd.stopped => SubagentStatus.stopped,
-      TurnEnd.failed || TurnEnd.stepLimit => SubagentStatus.failed,
+      TurnEnd.failed ||
+      TurnEnd.stepLimit ||
+      TurnEnd.budget ||
+      TurnEnd.stalled => SubagentStatus.failed,
     };
     final text = error ?? await _lastAssistantText(run.id);
     final result = SubagentResult(

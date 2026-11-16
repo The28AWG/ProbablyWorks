@@ -339,6 +339,14 @@
   "@stepLimitReached": {
     "description": "Notice shown when a turn stops because of the step limit."
   },
+  "turnBudgetReached": "The agent reached the turn budget.",
+  "@turnBudgetReached": {
+    "description": "Notice shown when a turn stops because its token, cost, or time budget is exhausted."
+  },
+  "progressStalled": "The agent stopped making progress: it keeps repeating the same actions.",
+  "@progressStalled": {
+    "description": "Notice shown when ProgressGuard stops a turn because repeated tool calls return the same result."
+  },
   "stepLimitContinue": "Continue",
   "@stepLimitContinue": {
     "description": "Button that resumes the agent after the step limit."
@@ -2772,6 +2780,22 @@
   "notifyStepLimitBody": "The agent paused. Continue the task in the chat.",
   "@notifyStepLimitBody": {
     "description": "System notification body when the agent paused at the step limit and needs the user to continue."
+  },
+  "notifyBudgetTitle": "Turn budget reached",
+  "@notifyBudgetTitle": {
+    "description": "System notification title (action part) when the agent exhausts the turn token, cost, or time budget."
+  },
+  "notifyBudgetBody": "The turn budget is exhausted. Continue the task in the chat.",
+  "@notifyBudgetBody": {
+    "description": "System notification body when the agent paused at the turn budget and needs the user to continue."
+  },
+  "notifyStalledTitle": "No progress",
+  "@notifyStalledTitle": {
+    "description": "System notification title (action part) when ProgressGuard stops a turn because the agent repeats the same actions."
+  },
+  "notifyStalledBody": "The agent repeats the same actions. Open the chat to change the task.",
+  "@notifyStalledBody": {
+    "description": "System notification body when the agent repeats the same actions and needs a new direction."
   },
   "notifyBackgroundTitle": "Background command finished",
   "@notifyBackgroundTitle": {

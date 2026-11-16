@@ -813,6 +813,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           state.copyWith(
             isRunning: true,
             stepLimitReached: false,
+            budgetReached: false,
+            stalledReached: false,
             clearFailure: true,
             streamText: '',
             streamReasoning: '',
@@ -825,6 +827,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             streamText: '',
             streamReasoning: '',
             stepLimitReached: end == TurnEnd.stepLimit,
+            budgetReached: end == TurnEnd.budget,
+            stalledReached: end == TurnEnd.stalled,
             queue: _queueTexts(),
           ),
         );

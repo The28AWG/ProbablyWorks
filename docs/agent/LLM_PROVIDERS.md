@@ -10,6 +10,26 @@
 файлы, параметры и очередь живут в `LocalModelsService` и не зависят от
 включённости провайдера. Подробности — в [LOCAL_MODELS.md](LOCAL_MODELS.md).
 
+## Политика шагов
+
+Дескриптор провайдера объявляет `stepPolicy`:
+
+- `ProviderStepPolicy.standard` — цена вызова предсказуема, шаги
+  ограничивают бюджеты хода (`maxTurnTokens`, `maxTurnCostUsd`,
+  `turnMaxWallClock`) и общий аварийный потолок `maxAgentSteps`;
+- `ProviderStepPolicy.economical` — накладные расходы вызова не измеряются
+  (локальная модель, медленный сервер, скрытые затраты). Для такого
+  провайдера всегда действует конечный `economicalMaxAgentSteps`, даже если
+  общий потолок выключен (`maxAgentSteps: 0`).
+
+`localModels` и `stepPolicy` не связаны: первый — свойство интерфейса,
+второй — политика исполнения. Новый локальный провайдер помечается
+`economical`, облачный — обычно остаётся `standard`.
+
+Модель не узнаёт причину остановки: в ленту пишется тот же нейтральный
+результат невыполненного вызова, что и при обычном лимите шагов. Причина
+живёт в логах и интерфейсе.
+
 Ключевые файлы:
 
 - `packages/pw_agent/lib/providers/ai/llm_port.dart` — порт `LlmProvider`,
@@ -26,6 +46,10 @@
 - `packages/pw_agent/lib/providers/ai/model_runtime.dart` и
   `model_runtime_service.dart` — необязательное состояние загрузки моделей
   (см. [MODEL_RUNTIME.md](MODEL_RUNTIME.md));
+- `packages/pw_agent/lib/agent/loop/step_cap.dart` — эффективный потолок
+  шагов с учётом политики провайдера;
+- `packages/pw_agent/lib/agent/loop/turn_budget.dart` — бюджеты хода по
+  токенам, стоимости и времени;
 - `packages/pw_agent/lib/agent/api/agent_settings_api.dart` —
   `LlmProviderSettingsApi` и снимок настроек;
 - `packages/pw_client/lib/src/remote_agent_api.dart` — HTTP-клиент
@@ -50,6 +74,7 @@ const ollamaDescriptor = LlmProviderDescriptor(
   modelPrefix: 'ollama:',
   defaultBaseUrl: 'http://localhost:11434',
   supportsBaseUrl: true,
+  stepPolicy: ProviderStepPolicy.economical,
 );
 
 class OllamaLlmProvider implements LlmProvider {

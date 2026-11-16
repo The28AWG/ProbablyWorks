@@ -1,6 +1,20 @@
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 
+/// Как провайдер относится к количеству шагов агента.
+///
+/// Шаг — плохой универсальный лимит: у облачных провайдеров цена вызова
+/// считается в токенах, а у локальных расходы (обработка растущего промпта,
+/// CPU/GPU, задержка) не измеряются. Для таких провайдеров конечный лимит
+/// шагов остаётся единственным доступным предохранителем.
+enum ProviderStepPolicy {
+  /// Стоимость вызова предсказуема: шаги ограничивают бюджеты хода.
+  standard,
+
+  /// Накладные расходы вызова не измеряются: нужен конечный лимит шагов.
+  economical,
+}
+
 /// Статическое описание LLM-провайдера.
 ///
 /// Дескриптор — единственное место, где провайдер сообщает о себе всё,
@@ -20,6 +34,7 @@ class LlmProviderDescriptor extends Equatable {
     this.supportsEnabledToggle = true,
     this.supportsKeyInfo = false,
     this.localModels = false,
+    this.stepPolicy = ProviderStepPolicy.standard,
     this.apiKeyExample,
   });
 
@@ -58,6 +73,10 @@ class LlmProviderDescriptor extends Equatable {
   /// адреса и ключа, а карточка подсказывает установить файл, когда моделей нет.
   final bool localModels;
 
+  /// Политика шагов. Не связана с [localModels]: локальность — свойство
+  /// интерфейса, а экономия — политика исполнения.
+  final ProviderStepPolicy stepPolicy;
+
   /// Пример формата ключа для подсказки в поле ввода. Null — общая подсказка.
   final String? apiKeyExample;
 
@@ -87,6 +106,7 @@ class LlmProviderDescriptor extends Equatable {
     supportsEnabledToggle,
     supportsKeyInfo,
     localModels,
+    stepPolicy,
     apiKeyExample,
   ];
 }

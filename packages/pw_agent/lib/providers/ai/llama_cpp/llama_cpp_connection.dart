@@ -35,6 +35,7 @@ const llamaCppDescriptor = LlmProviderDescriptor(
   modelPrefix: llamaCppModelPrefix,
   defaultBaseUrl: llamaCppDefaultBaseUrl,
   supportsBaseUrl: true,
+  stepPolicy: ProviderStepPolicy.economical,
 );
 
 /// Ошибка llama.cpp → типизированная [LlmFailure].

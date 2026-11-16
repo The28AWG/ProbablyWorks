@@ -21,4 +21,5 @@ const llamadartDescriptor = LlmProviderDescriptor(
   supportsApiKey: false,
   supportsBaseUrl: false,
   localModels: true,
+  stepPolicy: ProviderStepPolicy.economical,
 );

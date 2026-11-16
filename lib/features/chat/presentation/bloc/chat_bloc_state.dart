@@ -25,6 +25,8 @@ class ChatState extends Equatable {
     this.live = const {},
     this.isRunning = false,
     this.stepLimitReached = false,
+    this.budgetReached = false,
+    this.stalledReached = false,
     this.failure,
     this.failureModelMissing = false,
     this.promptTokens,
@@ -138,6 +140,12 @@ class ChatState extends Equatable {
   final Map<String, String> live;
   final bool isRunning;
   final bool stepLimitReached;
+
+  /// Ход остановлен из-за бюджета (токены, стоимость или время).
+  final bool budgetReached;
+
+  /// Ход остановлен: агент повторял действия без нового результата.
+  final bool stalledReached;
   final String? failure;
 
   /// Последняя ошибка — модель не найдена на сервере (см. [failureIsModelMissing]).
@@ -202,6 +210,8 @@ class ChatState extends Equatable {
     Map<String, String>? live,
     bool? isRunning,
     bool? stepLimitReached,
+    bool? budgetReached,
+    bool? stalledReached,
     String? failure,
     bool? failureModelMissing,
     bool clearFailure = false,
@@ -241,6 +251,8 @@ class ChatState extends Equatable {
     live: live ?? this.live,
     isRunning: isRunning ?? this.isRunning,
     stepLimitReached: stepLimitReached ?? this.stepLimitReached,
+    budgetReached: budgetReached ?? this.budgetReached,
+    stalledReached: stalledReached ?? this.stalledReached,
     failure: clearFailure ? null : (failure ?? this.failure),
     failureModelMissing: failureModelMissing ?? this.failureModelMissing,
     promptTokens: promptTokens ?? this.promptTokens,
@@ -284,6 +296,8 @@ class ChatState extends Equatable {
     live,
     isRunning,
     stepLimitReached,
+    budgetReached,
+    stalledReached,
     failure,
     failureModelMissing,
     promptTokens,

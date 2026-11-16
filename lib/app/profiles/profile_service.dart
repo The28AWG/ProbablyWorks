@@ -347,6 +347,10 @@ class ProfileService {
           AgentNoticeKind.turnFinished,
         AgentTurnFinished(end: TurnEnd.stepLimit) =>
           AgentNoticeKind.stepLimitReached,
+        AgentTurnFinished(end: TurnEnd.budget) =>
+          AgentNoticeKind.turnBudgetReached,
+        AgentTurnFinished(end: TurnEnd.stalled) =>
+          AgentNoticeKind.progressStalled,
         AgentTurnFinished(end: TurnEnd.failed) => AgentNoticeKind.turnFailed,
         _ => null,
       };

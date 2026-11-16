@@ -15,7 +15,12 @@ class AppLimits {
     this.logOutputDbBytes = 1024 * 1024,
     this.attachmentMaxBytes = 256 * 1024,
     this.attachmentsPerMessage = 8,
-    this.maxAgentSteps = 25,
+    this.maxAgentSteps = 500,
+    this.economicalMaxAgentSteps = 40,
+    this.maxTurnTokens = 0,
+    this.maxTurnCostUsd = 0,
+    this.turnMaxWallClock = Duration.zero,
+    this.progressRepeatLimit = 3,
     this.streamWatchdog = const Duration(seconds: 60),
     this.killGrace = const Duration(seconds: 5),
     this.sshIdleClose = const Duration(minutes: 5),
@@ -51,8 +56,24 @@ class AppLimits {
       return value.toInt();
     }
 
+    /// Необязательное неотрицательное число: ноль отключает бюджет.
+    double? nonNegativeDoubleOf(String key) {
+      final value = decoded[key];
+      if (value == null) return null;
+      if (value is! num || value < 0) {
+        throw FormatException('$key must be a non-negative number');
+      }
+      return value.toDouble();
+    }
+
     Duration? secondsOf(String key) {
       final value = intOf(key);
+      return value == null ? null : Duration(seconds: value);
+    }
+
+    /// Как [secondsOf], но ноль допустим: он отключает ограничение.
+    Duration? nonNegativeSecondsOf(String key) {
+      final value = nonNegativeIntOf(key);
       return value == null ? null : Duration(seconds: value);
     }
 
@@ -93,7 +114,15 @@ class AppLimits {
       attachmentMaxBytes: intOf('attachmentMaxBytes') ?? d.attachmentMaxBytes,
       attachmentsPerMessage:
           intOf('attachmentsPerMessage') ?? d.attachmentsPerMessage,
-      maxAgentSteps: intOf('maxAgentSteps') ?? d.maxAgentSteps,
+      maxAgentSteps: nonNegativeIntOf('maxAgentSteps') ?? d.maxAgentSteps,
+      economicalMaxAgentSteps:
+          intOf('economicalMaxAgentSteps') ?? d.economicalMaxAgentSteps,
+      maxTurnTokens: nonNegativeIntOf('maxTurnTokens') ?? d.maxTurnTokens,
+      maxTurnCostUsd: nonNegativeDoubleOf('maxTurnCostUsd') ?? d.maxTurnCostUsd,
+      turnMaxWallClock:
+          nonNegativeSecondsOf('turnMaxWallClockSeconds') ?? d.turnMaxWallClock,
+      progressRepeatLimit:
+          intOf('progressRepeatLimit') ?? d.progressRepeatLimit,
       streamWatchdog: secondsOf('streamWatchdogSeconds') ?? d.streamWatchdog,
       killGrace: secondsOf('killGraceSeconds') ?? d.killGrace,
       softContextRatio: softContextRatio,
@@ -132,7 +161,30 @@ class AppLimits {
   final int logOutputDbBytes;
   final int attachmentMaxBytes;
   final int attachmentsPerMessage;
+
+  /// Аварийный потолок шагов за ход. Ноль — без ограничения: работа
+  /// ограничивается бюджетами хода и политикой провайдера.
   final int maxAgentSteps;
+
+  /// Потолок шагов для провайдеров, у которых накладные расходы вызова
+  /// не измеряются. Всегда конечный: для таких провайдеров шаг — единственный
+  /// доступный прокси стоимости.
+  final int economicalMaxAgentSteps;
+
+  /// Суммарные prompt+completion токены за ход. Ноль — без ограничения.
+  final int maxTurnTokens;
+
+  /// Оценка стоимости хода в USD. Ноль — без ограничения.
+  final double maxTurnCostUsd;
+
+  /// Максимальная длительность хода. Ноль — без ограничения.
+  final Duration turnMaxWallClock;
+
+  /// Сколько раз подряд можно повторить одно и то же действие с тем же
+  /// результатом, прежде чем ProgressGuard предупредит модель. Следующее
+  /// повторение останавливает ход.
+  final int progressRepeatLimit;
+
   final Duration streamWatchdog;
   final Duration killGrace;
   final Duration sshIdleClose;
@@ -154,6 +206,11 @@ class AppLimits {
     int? attachmentMaxBytes,
     int? attachmentsPerMessage,
     int? maxAgentSteps,
+    int? economicalMaxAgentSteps,
+    int? maxTurnTokens,
+    double? maxTurnCostUsd,
+    Duration? turnMaxWallClock,
+    int? progressRepeatLimit,
     Duration? streamWatchdog,
     Duration? killGrace,
     Duration? sshIdleClose,
@@ -176,6 +233,12 @@ class AppLimits {
     attachmentMaxBytes: attachmentMaxBytes ?? this.attachmentMaxBytes,
     attachmentsPerMessage: attachmentsPerMessage ?? this.attachmentsPerMessage,
     maxAgentSteps: maxAgentSteps ?? this.maxAgentSteps,
+    economicalMaxAgentSteps:
+        economicalMaxAgentSteps ?? this.economicalMaxAgentSteps,
+    maxTurnTokens: maxTurnTokens ?? this.maxTurnTokens,
+    maxTurnCostUsd: maxTurnCostUsd ?? this.maxTurnCostUsd,
+    turnMaxWallClock: turnMaxWallClock ?? this.turnMaxWallClock,
+    progressRepeatLimit: progressRepeatLimit ?? this.progressRepeatLimit,
     streamWatchdog: streamWatchdog ?? this.streamWatchdog,
     killGrace: killGrace ?? this.killGrace,
     sshIdleClose: sshIdleClose ?? this.sshIdleClose,
@@ -200,6 +263,11 @@ class AppLimits {
     'attachmentMaxBytes': attachmentMaxBytes,
     'attachmentsPerMessage': attachmentsPerMessage,
     'maxAgentSteps': maxAgentSteps,
+    'economicalMaxAgentSteps': economicalMaxAgentSteps,
+    'maxTurnTokens': maxTurnTokens,
+    'maxTurnCostUsd': maxTurnCostUsd,
+    'turnMaxWallClockSeconds': turnMaxWallClock.inSeconds,
+    'progressRepeatLimit': progressRepeatLimit,
     'streamWatchdogSeconds': streamWatchdog.inSeconds,
     'killGraceSeconds': killGrace.inSeconds,
     'softContextRatio': softContextRatio,

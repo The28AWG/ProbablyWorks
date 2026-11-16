@@ -67,12 +67,25 @@ import '../../test_support/fake_appearance.dart';
 import '../../test_support/fake_url_opener.dart';
 
 /// Скриптованный LLM: каждый вызов stream() отдаёт очередной сценарий ответа.
-class _FakeLlm extends LlmProviderBase {
-  _FakeLlm() : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
+class _FakeLlm implements LlmProvider {
+  ProviderStepPolicy stepPolicy = ProviderStepPolicy.standard;
 
   final List<List<LlmEvent>> script = [];
   final List<LlmRequest> requests = [];
   final List<LlmRequest> titleRequests = [];
+
+  @override
+  List<LlmProviderDescriptor> get providers => [
+    LlmProviderDescriptor(id: 'test', label: 'Test', stepPolicy: stepPolicy),
+  ];
+
+  @override
+  Future<List<LlmProviderStatus>> configStatuses() async => const [
+    LlmProviderStatus(id: 'test'),
+  ];
+
+  @override
+  Future<List<LlmProviderStatus>> statuses() => configStatuses();
 
   /// Ответ модели на запрос заголовка (отдельно от сценария хода).
   String titleReply = '';
@@ -131,6 +144,15 @@ class _SilentNotifier implements AppNotifier {
 
 LlmToolCall _call(String id, String name, String args) =>
     LlmToolCall(id: id, name: name, arguments: args);
+
+/// Один шаг модели: вызов команды на локальном хосте.
+List<LlmEvent> _toolStep(String id, String command) => [
+  LlmCompleted(
+    toolCalls: [
+      _call(id, ToolNames.runCommand, jsonEncode({'command': command})),
+    ],
+  ),
+];
 
 void main() {
   late AppDatabase db;
@@ -273,6 +295,16 @@ void main() {
     await finished;
   }
 
+  /// Отправляет текст и возвращает причину завершения хода.
+  Future<TurnEnd> runTurnEnd(ChatSession session, String text) async {
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    await session.submit(text);
+    return (await finished as AgentTurnFinished).end;
+  }
+
+  Future<void> setLimits(Map<String, Object> values) =>
+      hub.settings.write(SettingsRepository.keyLimits, jsonEncode(values));
+
   test('daily spending limit blocks a new step', () async {
     final chatId = await createChat();
     await hub.settings.saveDailyBudget(chatId, 0.5);
@@ -292,6 +324,157 @@ void main() {
     await runTurn(session, 'hello');
 
     expect(failures.single.message, contains('daily spending limit'));
+  });
+
+  test('the global step ceiling stops a turn', () async {
+    await setLimits({'maxAgentSteps': 2});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.script.addAll([
+      _toolStep('c1', 'echo one'),
+      _toolStep('c2', 'echo two'),
+      _toolStep('c3', 'echo three'),
+    ]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.stepLimit);
+    final tools = (await hub.chats.messages(chatId))
+        .where((message) => message.role == MessageRole.tool)
+        .toList();
+    expect(tools, hasLength(3));
+    expect(tools.last.text, contains('step limit'));
+    expect(llm.requests, hasLength(3));
+  });
+
+  test('an economical provider has its own finite ceiling', () async {
+    llm.stepPolicy = ProviderStepPolicy.economical;
+    await setLimits({'maxAgentSteps': 0, 'economicalMaxAgentSteps': 2});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.script.addAll([
+      _toolStep('c1', 'echo one'),
+      _toolStep('c2', 'echo two'),
+      _toolStep('c3', 'echo three'),
+    ]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.stepLimit);
+    final tools = (await hub.chats.messages(chatId))
+        .where((message) => message.role == MessageRole.tool)
+        .toList();
+    expect(tools, hasLength(3));
+    expect(tools.last.text, contains('step limit'));
+  });
+
+  test('a standard provider runs past the old 25-step limit', () async {
+    await setLimits({'maxAgentSteps': 0});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    for (var i = 1; i <= 30; i++) {
+      llm.script.add(_toolStep('c$i', 'echo $i'));
+    }
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.completed);
+    final tools = (await hub.chats.messages(chatId))
+        .where((message) => message.role == MessageRole.tool)
+        .toList();
+    expect(tools, hasLength(30));
+    expect(
+      tools.where((message) => message.text.contains('not executed')),
+      isEmpty,
+    );
+  });
+
+  test('turn token budget stops before the next tool call', () async {
+    await setLimits({'maxTurnTokens': 50});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.script.add([
+      LlmCompleted(
+        toolCalls: [
+          _call(
+            'c1',
+            ToolNames.runCommand,
+            jsonEncode({'command': 'echo one'}),
+          ),
+        ],
+        usage: const LlmUsage(promptTokens: 40, completionTokens: 20),
+      ),
+    ]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.budget);
+    final tools = (await hub.chats.messages(chatId))
+        .where((message) => message.role == MessageRole.tool)
+        .toList();
+    expect(tools.single.text, contains('step limit'));
+    expect(llm.requests, hasLength(1));
+  });
+
+  test('turn cost budget uses catalog prices', () async {
+    llm.models = const [
+      LlmModelInfo(
+        id: 'fake/model',
+        name: 'Fake',
+        supportsTools: true,
+        promptPrice: '0.0001',
+        completionPrice: '0.0001',
+      ),
+    ];
+    await hub.models.refresh();
+    await setLimits({'maxTurnCostUsd': 0.0001});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    llm.script.add([
+      LlmCompleted(
+        toolCalls: [
+          _call(
+            'c1',
+            ToolNames.runCommand,
+            jsonEncode({'command': 'echo one'}),
+          ),
+        ],
+        usage: const LlmUsage(promptTokens: 10, completionTokens: 10),
+      ),
+    ]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.budget);
+    expect(llm.requests, hasLength(1));
+  });
+
+  test('ProgressGuard warns and stops on repeated identical results', () async {
+    final file = File('${tmp.path}/progress.txt')
+      ..writeAsStringSync('same content\n');
+    await setLimits({'progressRepeatLimit': 3});
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    for (var i = 1; i <= 4; i++) {
+      llm.script.add([
+        LlmCompleted(
+          toolCalls: [
+            _call('c$i', ToolNames.readFile, jsonEncode({'path': file.path})),
+          ],
+        ),
+      ]);
+    }
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.stalled);
+    final messages = await hub.chats.messages(chatId);
+    final events = messages.where(
+      (message) => message.role == MessageRole.event,
+    );
+    expect(
+      events.any(
+        (message) => message.text.contains('repeated the same action'),
+      ),
+      isTrue,
+    );
+    final tools = messages
+        .where((message) => message.role == MessageRole.tool)
+        .toList();
+    expect(tools, hasLength(4));
+    expect(
+      tools.where((message) => message.text.contains('not executed')),
+      isEmpty,
+    );
   });
 
   test('model not found switches to the fallback model', () async {

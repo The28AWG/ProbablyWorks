@@ -144,6 +144,34 @@ class _DockBody extends StatelessWidget {
             ),
           ),
         ),
+      if (state.budgetReached)
+        _DockItem(
+          'turn-budget',
+          AppBanner(
+            message: l10n.turnBudgetReached,
+            icon: Icons.hourglass_bottom,
+            tone: AppTone.warning,
+            action: FilledButton(
+              onPressed: () =>
+                  context.read<ChatBloc>().add(const ChatContinued()),
+              child: Text(l10n.stepLimitContinue),
+            ),
+          ),
+        ),
+      if (state.stalledReached)
+        _DockItem(
+          'progress-stalled',
+          AppBanner(
+            message: l10n.progressStalled,
+            icon: Icons.repeat,
+            tone: AppTone.warning,
+            action: FilledButton(
+              onPressed: () =>
+                  context.read<ChatBloc>().add(const ChatContinued()),
+              child: Text(l10n.stepLimitContinue),
+            ),
+          ),
+        ),
       if (state.approvals.length > 1)
         _DockItem(
           'approvals-bulk',

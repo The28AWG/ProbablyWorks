@@ -24,6 +24,8 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
     AgentNoticeKind.turnFinished => l10n.notifyFinishedTitle,
     AgentNoticeKind.turnFailed => l10n.notifyFailedTitle,
     AgentNoticeKind.stepLimitReached => l10n.notifyStepLimitTitle,
+    AgentNoticeKind.turnBudgetReached => l10n.notifyBudgetTitle,
+    AgentNoticeKind.progressStalled => l10n.notifyStalledTitle,
     AgentNoticeKind.backgroundFinished => l10n.notifyBackgroundTitle,
   };
   final body = switch (kind) {
@@ -32,6 +34,8 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
     AgentNoticeKind.turnFinished => l10n.notifyFinishedBody,
     AgentNoticeKind.turnFailed => l10n.notifyFailedBody,
     AgentNoticeKind.stepLimitReached => l10n.notifyStepLimitBody,
+    AgentNoticeKind.turnBudgetReached => l10n.notifyBudgetBody,
+    AgentNoticeKind.progressStalled => l10n.notifyStalledBody,
     AgentNoticeKind.backgroundFinished => l10n.notifyBackgroundBody(
       detail ?? '',
     ),
