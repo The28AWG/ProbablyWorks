@@ -633,14 +633,22 @@ void main() {
       task: 'child task',
       context: 'parent context',
     );
-    final result = await hub.subagents.wait(run.id);
+    final result = await hub.subagents.wait(run.id, chatId: chatId);
 
     expect(result.text, contains('child result'));
     expect(run.title, 'Child');
     final childMessages = await hub.chats.messages(run.id);
     expect(childMessages.first.text, contains('parent context'));
-    expect(hub.subagents.readReport(run.id), contains('child result'));
-    final chunk = hub.subagents.readReport(run.id, offset: 0, limit: 5);
+    expect(
+      hub.subagents.readReport(run.id, chatId: chatId),
+      contains('child result'),
+    );
+    final chunk = hub.subagents.readReport(
+      run.id,
+      chatId: chatId,
+      offset: 0,
+      limit: 5,
+    );
     expect(chunk, contains('more: offset=5'));
     final child = await hub.chats.chat(run.id);
     expect(child?.kind, ChatKind.subagent);
@@ -677,7 +685,7 @@ void main() {
         task: 'task',
         modelStrategy: strategy,
       );
-      await hub.subagents.wait(run.id);
+      await hub.subagents.wait(run.id, chatId: chatId);
       return (await hub.chats.chat(run.id))!.model!;
     }
 
@@ -688,6 +696,82 @@ void main() {
     await hub.settings.write(SettingsRepository.keySubagentModel, '');
     expect(await runModel('default'), 'fake/model');
   });
+
+  test(
+    'subagent reports are visible to the root and the parent only',
+    () async {
+      final chatId = await createChat();
+      llm.models = const [
+        LlmModelInfo(id: 'fake/model', name: 'Fake', supportsTools: true),
+      ];
+      await hub.models.refresh();
+      final parent = (await hub.chats.chat(chatId))!;
+
+      llm.script.add([
+        const LlmTextDelta('child result'),
+        const LlmCompleted(),
+      ]);
+      final child = await hub.subagents.start(
+        parent: parent,
+        title: 'Child',
+        task: 'child task',
+      );
+      await hub.subagents.wait(child.id, chatId: chatId);
+
+      final childChat = (await hub.chats.chat(child.id))!;
+      llm.script.add([
+        const LlmTextDelta('grandchild result'),
+        const LlmCompleted(),
+      ]);
+      final grandchild = await hub.subagents.start(
+        parent: childChat,
+        title: 'Grandchild',
+        task: 'grandchild task',
+      );
+      await hub.subagents.wait(grandchild.id, chatId: child.id);
+
+      // Корень видит любую глубину, прямой родитель — своего ребёнка.
+      expect(
+        hub.subagents.readReport(grandchild.id, chatId: chatId),
+        contains('grandchild result'),
+      );
+      expect(
+        hub.subagents.readReport(grandchild.id, chatId: child.id),
+        contains('grandchild result'),
+      );
+
+      await createChatWithId('chat-2');
+      expect(hub.subagents.runFor(grandchild.id, 'chat-2'), isNull);
+      expect(
+        () => hub.subagents.readReport(grandchild.id, chatId: 'chat-2'),
+        throwsStateError,
+      );
+      await expectLater(
+        hub.subagents.wait(grandchild.id, chatId: 'chat-2'),
+        throwsStateError,
+      );
+
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'read',
+                ToolNames.readSubagentReport,
+                jsonEncode({'runId': grandchild.id}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+      await runTurn(hub.session('chat-2'), 'read a foreign subagent');
+
+      final tool = (await hub.chats.messages('chat-2'))
+          .firstWhere((message) => message.role == MessageRole.tool);
+      expect(tool.text, contains('not found in this chat'));
+      expect(tool.text, isNot(contains('grandchild result')));
+    },
+  );
 
   test('manual compaction records when and why it happened', () async {
     final chatId = await createChat();
@@ -2095,6 +2179,61 @@ void main() {
     expect(tools[1].text, contains('[line 2] two'));
     expect(tools[1].text, contains('[line 4]   at foo'));
     expect(tools[1].text, contains('match_offset=1'));
+  });
+
+  test('read_run_output and stop_run refuse runs from another chat', () async {
+    final chatId = await createChat();
+    await createChatWithId('chat-2');
+    final now = DateTime.now();
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'foreign',
+        chatId: 'chat-2',
+        messageId: 'assistant-2',
+        toolName: ToolNames.runCommand,
+        argsJson: '{}',
+        command: 'deploy',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText: 'foreign secret output',
+      ),
+    );
+    llm.script
+      ..add([
+        LlmCompleted(toolCalls: [_call('list', ToolNames.listRuns, '{}')]),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'read',
+              ToolNames.readRunOutput,
+              jsonEncode({'run_id': 'foreign'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call('stop', ToolNames.stopRun, jsonEncode({'run_id': 'foreign'})),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'try a foreign run');
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(tools, hasLength(3));
+    expect(tools.first.text, 'no tool runs in this chat');
+    expect(tools[1].text, contains('run not found in this chat'));
+    expect(tools[1].text, isNot(contains('foreign secret output')));
+    expect(tools[2].text, contains('run not found in this chat'));
   });
 
   Future<void> seedWaiting({

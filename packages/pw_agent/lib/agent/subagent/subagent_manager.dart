@@ -69,7 +69,18 @@ final class SubagentManager {
   final _runs = <String, SubagentRun>{};
   final _subscriptions = <String, StreamSubscription<AgentEvent>>{};
 
-  SubagentRun? run(String id) => _runs[id];
+  /// Виден ли запуск из [chatId]. Корневой чат читает субагентов любой
+  /// глубины: события вложенных запусков приходят именно ему. Остальные
+  /// чаты видят только своих прямых детей.
+  static bool isVisibleTo(SubagentRun run, String chatId) =>
+      run.parentChatId == chatId || run.rootChatId == chatId;
+
+  /// Запуск по id, если он доступен из [chatId]. Иначе null — в том числе для
+  /// чужого чата: наружу не должно утекать даже существование запуска.
+  SubagentRun? runFor(String id, String chatId) {
+    final run = _runs[id];
+    return run != null && isVisibleTo(run, chatId) ? run : null;
+  }
 
   /// Поднимает незавершённых и недоставленных субагентов после перезапуска.
   Future<void> restore() async {
@@ -171,9 +182,10 @@ final class SubagentManager {
     return run;
   }
 
-  /// Ждёт завершения субагента и помечает результат как полученный через инструмент.
-  Future<SubagentResult> wait(String runId) async {
-    final run = _runs[runId];
+  /// Ждёт завершения субагента и помечает результат как полученный через
+  /// инструмент. [chatId] — чат, который ждёт: корень дерева или прямой родитель.
+  Future<SubagentResult> wait(String runId, {required String chatId}) async {
+    final run = runFor(runId, chatId);
     if (run == null) throw StateError('unknown subagent: $runId');
     run.awaited = true;
     final result = await run.completer.future;
@@ -311,9 +323,15 @@ final class SubagentManager {
   }
 
   /// Читает отчёт субагента страницами. Полный отчёт не возвращается сразу:
-  /// он может занимать всё окно контекста.
-  String readReport(String runId, {int offset = 0, int limit = 20000}) {
-    final run = _runs[runId];
+  /// он может занимать всё окно контекста. [chatId] ограничивает доступ:
+  /// корень дерева видит любую глубину, родитель — только своих детей.
+  String readReport(
+    String runId, {
+    required String chatId,
+    int offset = 0,
+    int limit = 20000,
+  }) {
+    final run = runFor(runId, chatId);
     if (run == null) throw StateError('unknown subagent: $runId');
     final result = run.result;
     if (result == null) {

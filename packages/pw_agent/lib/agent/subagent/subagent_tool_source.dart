@@ -114,7 +114,9 @@ final class WaitSubagentToolSource extends ToolSource {
       name: ToolNames.waitSubagent,
       description:
           'Wait for a background subagent to finish and return its final result. '
-          'If it is already finished, returns the result immediately.',
+          'If it is already finished, returns the result immediately. Only subagents '
+          'of this chat tree are available: the root chat sees any depth, a parent '
+          'sees its direct children.',
       parameters: {
         'type': 'object',
         'properties': {
@@ -130,7 +132,8 @@ final class WaitSubagentToolSource extends ToolSource {
       name: ToolNames.readSubagentReport,
       description:
           'Read the final report of a subagent. Long reports are returned in chunks; '
-          'if the footer says there is more, call again with the returned offset.',
+          'if the footer says there is more, call again with the returned offset. '
+          'Only subagents of this chat tree are available.',
       parameters: {
         'type': 'object',
         'properties': {
@@ -159,6 +162,14 @@ final class WaitSubagentToolSource extends ToolSource {
     if (runId is! String || runId.isEmpty) {
       return const ToolResult('runId is required', isError: true);
     }
+    // Отчёт доступен только своему дереву: корню — любая глубина, родителю —
+    // прямой ребёнок. Чужой id отвечает так же, как несуществующий.
+    if (_manager.runFor(runId, context.chat.id) == null) {
+      return ToolResult(
+        'subagent not found in this chat: $runId',
+        isError: true,
+      );
+    }
     if (call.name == ToolNames.readSubagentReport) {
       final offset = arguments['offset'] is num
           ? (arguments['offset'] as num).toInt()
@@ -167,10 +178,15 @@ final class WaitSubagentToolSource extends ToolSource {
           ? (arguments['limit'] as num).toInt().clamp(1, 60000)
           : 20000;
       return ToolResult(
-        _manager.readReport(runId, offset: offset, limit: limit),
+        _manager.readReport(
+          runId,
+          chatId: context.chat.id,
+          offset: offset,
+          limit: limit,
+        ),
       );
     }
-    final result = await _manager.wait(runId);
+    final result = await _manager.wait(runId, chatId: context.chat.id);
     return ToolResult(
       'subagent ${result.status.name}\n'
       'report_chars: ${result.text.characters.length}\n'
