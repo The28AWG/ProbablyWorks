@@ -2009,7 +2009,7 @@ void main() {
             _call(
               'read',
               ToolNames.readRunOutput,
-              jsonEncode({'run_id': 'seed', 'limit': 5}),
+              jsonEncode({'run_id': 'seed', 'mode': 'chunk', 'limit': 5}),
             ),
           ],
         ),
@@ -2026,6 +2026,75 @@ void main() {
     expect(tools[1].text, contains('total: 10 chars'));
     expect(tools[1].text, contains('offset=5'));
     expect(tools[1].text, contains('abcde'));
+  });
+
+  test('read_run_output defaults to the tail and greps with context', () async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'log',
+        chatId: chatId,
+        messageId: 'assistant',
+        toolName: ToolNames.runCommand,
+        argsJson: '{}',
+        command: 'deploy',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText:
+            'one\ntwo\nERROR: boom\n  at foo\nthree\nfour\nfive\n'
+            'ERROR: again\nsix\n',
+        outputTruncated: true,
+      ),
+    );
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'tail',
+              ToolNames.readRunOutput,
+              jsonEncode({'run_id': 'log', 'limit': 12}),
+            ),
+          ],
+        ),
+      ])
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'grep',
+              ToolNames.readRunOutput,
+              jsonEncode({
+                'run_id': 'log',
+                'mode': 'grep',
+                'pattern': 'ERROR',
+                'context': 1,
+                'max_matches': 1,
+              }),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await runTurn(hub.session(chatId), 'inspect the log');
+
+    final tools = [
+      for (final message in await hub.chats.messages(chatId))
+        if (message.role == MessageRole.tool) message,
+    ];
+    expect(tools.first.text, contains('retention: tail only'));
+    expect(tools.first.text, contains('start_offset: 50'));
+    expect(tools.first.text, contains('again\nsix\n'));
+    expect(tools.first.text, contains('mode=chunk offset=38'));
+
+    expect(tools[1].text, contains('matches: 2'));
+    expect(tools[1].text, contains('[line 3, offset 8] ERROR: boom'));
+    expect(tools[1].text, contains('[line 2] two'));
+    expect(tools[1].text, contains('[line 4]   at foo'));
+    expect(tools[1].text, contains('match_offset=1'));
   });
 
   Future<void> seedWaiting({

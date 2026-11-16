@@ -1,19 +1,29 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:characters/characters.dart';
 import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/security/file_permissions.dart';
+import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 
 /// Файлы логов запусков — временный буфер на время выполнения.
-/// После финала содержимое переносится в SQLite (`output_text`) и файл удаляется.
+/// После финала в SQLite (`output_text`) переносится только хвост вывода, файл
+/// удаляется: полный лог не хранится, как и в терминале, где старые строки
+/// вытесняются новыми.
 class ExecLogStore {
   ExecLogStore(this.rootDir);
 
   /// Корень данных приложения; логи лежат в `<root>/chats/<chatId>/runs/<toolCallId>.log`.
   final Directory rootDir;
 
+  /// Сколько последних символов живого вывода держится в памяти для модели.
+  /// Это только подсказка «что уже происходит»: полный хвост появится в БД
+  /// после финала, а держать больше не нужно — контекст модели ограничен.
+  static const _liveTailChars = 64 * 1024;
+
   final Map<String, IOSink> _sinks = {};
+  final Map<String, StringBuffer> _liveTails = {};
 
   Directory runsDir(String chatId) =>
       Directory(p.join(rootDir.path, 'chats', chatId, 'runs'));
@@ -23,6 +33,7 @@ class ExecLogStore {
 
   /// Открывает файл лога перед стартом команды.
   Future<String> open(String chatId, String toolCallId) async {
+    _liveTails.remove(toolCallId);
     final path = logPath(chatId, toolCallId);
     final dir = Directory(p.dirname(path));
     final createdDir = !dir.existsSync();
@@ -36,12 +47,27 @@ class ExecLogStore {
     return path;
   }
 
-  /// Дописывает чанк (с редакцией секретов). Сброс на диск — раз в запись.
+  /// Дописывает чанк (с редакцией секретов). Файл пишется через буферизованный
+  /// [IOSink]; читать идущий запуск нужно из [liveTail], а не с диска.
   void append(String toolCallId, String text) {
     final sink = _sinks[toolCallId];
     if (sink == null) return;
     sink.write(Redactor.redact(text));
+    final live = _liveTails.putIfAbsent(toolCallId, StringBuffer.new)
+      ..write(text);
+    if (live.length > _liveTailChars * 2) {
+      final tail = charSuffix(live.toString(), _liveTailChars);
+      live
+        ..clear()
+        ..write(tail);
+    }
   }
+
+  /// Последние символы вывода идущего запуска. null — запуск ещё ничего не писал.
+  String? liveTail(String toolCallId) => _liveTails[toolCallId]?.toString();
+
+  /// Освобождает живой хвост: после финала вывод читается из БД.
+  void dropLiveTail(String toolCallId) => _liveTails.remove(toolCallId);
 
   Future<void> closeSink(String toolCallId) async {
     final sink = _sinks.remove(toolCallId);
@@ -49,8 +75,9 @@ class ExecLogStore {
     await sink?.close();
   }
 
-  /// Переносит лог в `output_text` и удаляет файл. Память ограничена [maxBytes]:
-  /// большой файл не читается целиком, берутся только голова и хвост (через seek).
+  /// Переносит лог в `output_text` и удаляет файл. Хранится только конец:
+  /// старые строки вытесняются, как в терминале. Память ограничена [maxBytes]:
+  /// большой файл не читается целиком, берётся хвост (через seek).
   /// Возвращает текст и флаг усечения.
   Future<({String text, bool truncated})> compactToDb(
     String path, {
@@ -67,19 +94,19 @@ class ExecLogStore {
         text = utf8.decode(await raf.read(size), allowMalformed: true);
         truncated = false;
       } else {
-        final head = (maxBytes * 0.6).floor();
-        final tail = maxBytes - head;
-        await raf.setPosition(0);
-        final headText = utf8.decode(
-          await raf.read(head),
+        await raf.setPosition(size - maxBytes);
+        final tail = utf8.decode(
+          await raf.read(maxBytes),
           allowMalformed: true,
         );
-        await raf.setPosition(size - tail);
-        final tailText = utf8.decode(
-          await raf.read(tail),
-          allowMalformed: true,
-        );
-        text = '$headText\n…[truncated ${size - maxBytes} bytes]…\n$tailText';
+        // Срез проходит по байтам и может попасть в середину строки или
+        // многобайтового символа. Отбрасываем неполную первую строку, чтобы
+        // хвост начинался с целой: так же ведёт себя терминал.
+        final chars = tail.characters;
+        final firstBreak = chars.takeWhile((char) => char != '\n').length;
+        text = firstBreak + 1 < chars.length
+            ? charRange(tail, firstBreak + 1, chars.length)
+            : tail;
         truncated = true;
       }
     } finally {

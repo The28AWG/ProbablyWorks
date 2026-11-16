@@ -26,10 +26,22 @@ extension _ChatSessionRuntime on ChatSession {
         ? ''
         : ', exit code ${outcome.exitCode}';
     final result = outcome.resultError ? ', result error' : '';
+    final retained = outcome.outputTruncated
+        ? ' (tail kept; earlier output dropped)'
+        : '';
+    // Событие — это уведомление, а не результат: полный вывод лежит в буфере
+    // запуска, и модель сама решает, читать его кусками или искать по строкам.
     final text =
-        'Background command ${run.id} finished with status ${outcome.status.name}$result$exit.\n'
-        'Command: ${run.command ?? run.toolName}\n'
-        '${TextClip.headTail(outcome.outputText, maxChars: 2000)}';
+        'Background command ${run.id} finished with status '
+        '${outcome.status.name}$result$exit.\n'
+        'Command: ${Redactor.redact(run.command ?? run.toolName)}\n'
+        'Output: ${outcome.outputText.characters.length} chars retained'
+        '$retained.\n'
+        'Retained output: read_run_output run_id=${run.id} '
+        '(mode=tail default, mode=chunk with offset/limit, '
+        'mode=grep with pattern).\n'
+        'Tail:\n'
+        '${TextClip.tail(outcome.outputText, maxChars: 2000)}';
     unawaited(
       _notify(
         AgentNoticeKind.backgroundFinished,

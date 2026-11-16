@@ -381,21 +381,58 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.readRunOutput,
       description:
-          'Read stored output of a tool run. Omit offset for the first chunk; '
-          'if the footer says there is more, call again with the returned offset. '
-          'Running commands have no stored output yet.',
+          'Read the retained output of a tool run. Only the tail is kept, like terminal '
+          'scrollback: output older than the retention limit is gone. Modes: tail (default) '
+          'shows the most recent output; chunk reads a window at an exact character offset; '
+          'grep searches lines and returns matches with context, line numbers and offsets. '
+          'Use grep to find an error without reading a whole long log. Offsets are relative '
+          'to the retained text. While a run is active only its live tail is available.',
       parameters: {
         'type': 'object',
         'properties': {
           'run_id': {'type': 'string'},
+          'mode': {
+            'type': 'string',
+            'enum': ['tail', 'chunk', 'grep'],
+            'description':
+                'Default: tail. chunk reads from offset, grep searches lines.',
+          },
           'offset': {
             'type': 'integer',
-            'description': 'Character offset to start from (default 0)',
+            'description':
+                'Character offset to start from for mode=chunk (default 0)',
           },
           'limit': {
             'type': 'integer',
             'description':
-                'Maximum characters to return (default 20000, max 60000)',
+                'Maximum characters to return (default 8000, max 60000)',
+          },
+          'pattern': {
+            'type': 'string',
+            'description': 'Search pattern for mode=grep',
+          },
+          'regex': {
+            'type': 'boolean',
+            'description':
+                'Treat pattern as a regular expression (default true); '
+                'false searches literal text',
+          },
+          'ignore_case': {
+            'type': 'boolean',
+            'description': 'Case-insensitive search (default false)',
+          },
+          'context': {
+            'type': 'integer',
+            'description': 'Lines of context around each match (default 2)',
+          },
+          'max_matches': {
+            'type': 'integer',
+            'description':
+                'Maximum matching lines to show (default 30, max 200)',
+          },
+          'match_offset': {
+            'type': 'integer',
+            'description': 'Skip this many matches for paging (default 0)',
           },
         },
         'required': ['run_id'],

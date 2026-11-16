@@ -79,6 +79,42 @@ final class _HangingRuntime implements HostRuntime {
   }) => Future.error(const HostFailure('no terminal'));
 }
 
+/// Host, которому можно отдать вывод вручную: проверяет живой хвост запуска.
+final class _LiveRuntime implements HostRuntime {
+  final controller = StreamController<ExecEvent>();
+
+  @override
+  HostOs get os => HostOs.posix;
+
+  @override
+  bool get hasTerminal => false;
+
+  @override
+  Stream<ExecEvent> perform(HostOp op, {String? cwd, Uint8List? stdin}) =>
+      const Stream<ExecEvent>.empty();
+
+  @override
+  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
+      controller.stream;
+
+  void emit(String text) {
+    controller.add(ExecStdout(Uint8List.fromList(text.codeUnits)));
+  }
+
+  Future<void> finish() async {
+    controller.add(const ExecDone(exitCode: 0));
+    await controller.close();
+  }
+
+  @override
+  Future<HostTerminal> openTerminal(
+    String command, {
+    String? cwd,
+    int columns = defaultTerminalColumns,
+    int rows = defaultTerminalRows,
+  }) => Future.error(const HostFailure('no terminal'));
+}
+
 void main() {
   late Directory root;
   late CommandExecutor commands;
@@ -148,5 +184,24 @@ void main() {
 
     expect(outcome.status, ToolRunStatus.interrupted);
     expect(runtime.canceled, isTrue);
+  });
+
+  test('live tail exposes output while the run is active', () async {
+    final runtime = _LiveRuntime();
+    final handle = await start(runtime);
+    runtime.emit('first line\nsecond');
+
+    // Декодер и подписка обрабатывают чанк асинхронно: ждём, пока он дойдёт.
+    for (var i = 0; i < 100 && commands.liveTail('run') == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+    expect(commands.liveTail('run'), 'first line\nsecond');
+
+    await runtime.finish();
+    final outcome = await handle.finished.timeout(const Duration(seconds: 2));
+
+    expect(outcome.outputText, 'first line\nsecond');
+    // После финала хвост освобождается: дальнейшее чтение идёт из БД.
+    expect(commands.liveTail('run'), isNull);
   });
 }

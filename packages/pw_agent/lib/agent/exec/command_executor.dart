@@ -14,7 +14,7 @@ import 'package:pw_agent/host/host_op.dart';
 import 'package:pw_agent/host/host_runtime.dart';
 import 'package:pw_agent/host/host_terminal.dart';
 
-/// Итог запуска команды. Текст уже ограничен лимитом БД (голова+хвост).
+/// Итог запуска команды. Текст уже ограничен лимитом БД (сохранён хвост).
 class ExecOutcome {
   const ExecOutcome({
     required this.status,
@@ -133,6 +133,7 @@ class CommandExecutor {
         logPath,
         maxBytes: limits.logOutputDbBytes,
       );
+      _logs.dropLiveTail(toolCallId);
       _registry.unregister(toolCallId);
       release();
       if (!started.isCompleted) started.complete(null);
@@ -203,6 +204,10 @@ class CommandExecutor {
     await _registry.stop(exec, force: force);
     return true;
   }
+
+  /// Последние символы живого вывода запуска. Нужно `read_run_output`, чтобы
+  /// модель могла посмотреть на идущий процесс, не дожидаясь финала.
+  String? liveTail(String runId) => _logs.liveTail(runId);
 
   /// Открывает PTY и отдаёт его события. Ошибка открытия становится итогом запуска, а не исключением.
   Future<Stream<ExecEvent>> _terminalEvents(

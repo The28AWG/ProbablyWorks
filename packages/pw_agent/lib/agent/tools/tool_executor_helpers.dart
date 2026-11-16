@@ -483,7 +483,14 @@ extension _ToolExecutorHelpers on ToolExecutor {
     return buffer.toString();
   }
 
+  /// Текст результата для модели. Хранится и показывается только хвост:
+  /// старые строки вытесняются, как в терминале, поэтому модель всегда видит
+  /// предсказуемый конец вывода, а не случайную голову.
   String _modelText(ExecOutcome outcome, AppLimits limits, String runId) {
+    final plain = plainTerminalText(outcome.outputText);
+    final total = plain.characters.length;
+    final body = TextClip.tail(plain, maxChars: limits.toolOutputForModelChars);
+    final shown = body.characters.length;
     final header = [
       'run_id: $runId',
       'status: ${outcome.status.name}',
@@ -493,12 +500,13 @@ extension _ToolExecutorHelpers on ToolExecutor {
       if (outcome.exitCode != null) 'exit_code: ${outcome.exitCode}',
       if (outcome.message != null && outcome.message!.isNotEmpty)
         'message: ${outcome.message}',
-      if (outcome.outputTruncated) 'output: truncated (head and tail kept)',
+      if (outcome.outputTruncated)
+        'retention: tail only (earlier output dropped)',
+      'output: $total chars',
+      if (shown < total) 'showing: last $shown chars',
+      if (shown < total)
+        'read more: read_run_output run_id=$runId (mode=tail, chunk or grep)',
     ].join('\n');
-    final body = TextClip.headTail(
-      plainTerminalText(outcome.outputText),
-      maxChars: limits.toolOutputForModelChars,
-    );
     return body.isEmpty ? header : '$header\n$body';
   }
 

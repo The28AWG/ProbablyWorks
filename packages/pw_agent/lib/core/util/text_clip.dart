@@ -1,8 +1,14 @@
 import 'package:pw_agent/core/util/char_substring.dart';
 
-/// Обрезка длинного текста: голова и хвост сохраняются, середина заменяется маркером.
+/// Обрезка длинного текста: голова и хвост сохраняются, середина заменяется
+/// маркером; [tail] оставляет только конец, как терминальный scrollback.
 abstract final class TextClip {
   const TextClip._();
+
+  /// Возвращает последние [maxChars] символов [text] без маркера: так вывод
+  /// команды вытесняет старые строки, сохраняя только хвост.
+  static String tail(String text, {required int maxChars}) =>
+      charSuffix(text, maxChars);
 
   /// Возвращает [text] не длиннее примерно [maxChars] символов.
   static String headTail(String text, {required int maxChars}) {

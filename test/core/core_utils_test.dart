@@ -84,6 +84,12 @@ void main() {
     test('returns short text as is', () {
       expect(TextClip.headTail('short', maxChars: 50), 'short');
     });
+
+    test('tail keeps only the end without a marker', () {
+      final text = 'a' * 100 + 'z' * 100;
+      expect(TextClip.tail(text, maxChars: 50), 'z' * 50);
+      expect(TextClip.tail('short', maxChars: 50), 'short');
+    });
   });
 
   group('LineDiff', () {
