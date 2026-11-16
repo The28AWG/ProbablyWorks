@@ -18,6 +18,7 @@ import 'package:pw_agent/host/host_terminal.dart';
 class ExecOutcome {
   const ExecOutcome({
     required this.status,
+    this.resultError = false,
     this.exitCode,
     this.pid,
     this.outputText = '',
@@ -27,6 +28,10 @@ class ExecOutcome {
   });
 
   final ToolRunStatus status;
+
+  /// Инструмент завершился, но вернул ошибку: для команды это ненулевой код.
+  final bool resultError;
+
   final int? exitCode;
   final int? pid;
   final String outputText;
@@ -235,6 +240,7 @@ class CommandExecutor {
     required ({String text, bool truncated}) compacted,
   }) {
     final ToolRunStatus status;
+    var resultError = false;
     String? message;
     if (error != null) {
       status = ToolRunStatus.failed;
@@ -252,14 +258,16 @@ class CommandExecutor {
       status = ToolRunStatus.timedOut;
     } else if (stopRequested) {
       status = ToolRunStatus.interrupted;
-    } else if (done.exitCode == 0) {
-      status = ToolRunStatus.done;
     } else {
-      status = ToolRunStatus.failed;
+      // Команда отработала: нулевой код — успешный результат, ненулевой —
+      // ошибка инструмента, которую агент получает как обычный результат.
+      status = ToolRunStatus.done;
+      resultError = done.exitCode != 0;
       message = done.message;
     }
     return ExecOutcome(
       status: status,
+      resultError: resultError,
       exitCode: done?.exitCode,
       pid: pid,
       outputText: compacted.text,

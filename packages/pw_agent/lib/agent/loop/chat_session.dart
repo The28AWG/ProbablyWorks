@@ -405,10 +405,11 @@ class ChatSession {
     }
   }
 
-  /// Текст уже закончившегося запуска. Ошибка — всё, кроме обычного done:
-  /// прерванный процесс модель должна увидеть как сбой, а не как успех.
+  /// Текст уже закончившегося запуска. Ошибка — всё, кроме обычного done
+  /// без ошибки результата: прерванный процесс или неудачный ответ инструмента
+  /// модель должна увидеть как сбой, а не как успех.
   ToolResult _recoveredResult(ToolRun run) {
-    final failed = run.status != ToolRunStatus.done;
+    final failed = run.status != ToolRunStatus.done || run.resultError;
     final preview = run.resultPreview;
     if (preview != null && preview.isNotEmpty) {
       return ToolResult(preview, isError: failed);

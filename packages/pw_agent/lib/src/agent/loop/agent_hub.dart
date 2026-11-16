@@ -321,6 +321,7 @@ class AgentHub {
           status: run.status,
           startedAt: run.startedAt,
           finishedAt: run.finishedAt,
+          resultError: run.resultError,
           exitCode: run.exitCode,
           timedOut: run.timedOut,
           outputText: run.outputText,

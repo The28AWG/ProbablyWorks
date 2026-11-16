@@ -17,6 +17,36 @@ import 'package:pw_agent/host/host_terminal.dart';
 
 /// Host без процесса и PTY, как виртуальный: поток команды висит, пока его
 /// не отменит подписка.
+/// Host, который сразу сообщает код выхода: проверяет границу между
+/// завершённым вызовом и ошибкой результата.
+final class _ExitRuntime implements HostRuntime {
+  const _ExitRuntime(this.exitCode);
+
+  final int exitCode;
+
+  @override
+  HostOs get os => HostOs.posix;
+
+  @override
+  bool get hasTerminal => false;
+
+  @override
+  Stream<ExecEvent> perform(HostOp op, {String? cwd, Uint8List? stdin}) =>
+      const Stream<ExecEvent>.empty();
+
+  @override
+  Stream<ExecEvent> run(String command, {String? cwd, Uint8List? stdin}) =>
+      Stream.value(ExecDone(exitCode: exitCode));
+
+  @override
+  Future<HostTerminal> openTerminal(
+    String command, {
+    String? cwd,
+    int columns = defaultTerminalColumns,
+    int rows = defaultTerminalRows,
+  }) => Future.error(const HostFailure('no terminal'));
+}
+
 final class _HangingRuntime implements HostRuntime {
   var canceled = false;
 
@@ -64,7 +94,7 @@ void main() {
 
   tearDown(() => root.deleteSync(recursive: true));
 
-  Future<ExecHandle> start(_HangingRuntime runtime, {Duration? timeout}) =>
+  Future<ExecHandle> start(HostRuntime runtime, {Duration? timeout}) =>
       commands.start(
         chatId: 'chat',
         hostId: 'virtual',
@@ -75,6 +105,26 @@ void main() {
         background: false,
         timeout: timeout,
       );
+
+  test('a zero exit code completes the call without a result error', () async {
+    final handle = await start(const _ExitRuntime(0));
+
+    final outcome = await handle.finished.timeout(const Duration(seconds: 2));
+
+    expect(outcome.status, ToolRunStatus.done);
+    expect(outcome.resultError, isFalse);
+    expect(outcome.exitCode, 0);
+  });
+
+  test('a non-zero exit code is a result error, not a call failure', () async {
+    final handle = await start(const _ExitRuntime(3));
+
+    final outcome = await handle.finished.timeout(const Duration(seconds: 2));
+
+    expect(outcome.status, ToolRunStatus.done);
+    expect(outcome.resultError, isTrue);
+    expect(outcome.exitCode, 3);
+  });
 
   test('timeout cancels a Host without pid and PTY', () async {
     final runtime = _HangingRuntime();

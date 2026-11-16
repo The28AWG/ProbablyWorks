@@ -17,6 +17,7 @@ extension _ToolExecutorRun on ToolExecutor {
         [
           run.id,
           run.status.name,
+          run.resultError ? 'error' : 'ok',
           run.toolName,
           run.background ? 'background' : 'foreground',
           output == null
@@ -48,6 +49,7 @@ extension _ToolExecutorRun on ToolExecutor {
     final header = [
       'run_id: ${run.id}',
       'status: ${run.status.name}',
+      if (run.resultError) 'result: error',
       'tool: ${run.toolName}',
       if (run.command != null) 'command: ${Redactor.redact(run.command!)}',
       if (run.outputTruncated) 'output: truncated in storage',
@@ -117,10 +119,11 @@ extension _ToolExecutorRun on ToolExecutor {
         runId,
         call,
         args,
-        stopped ? ToolRunStatus.done : ToolRunStatus.failed,
+        ToolRunStatus.done,
         command: 'stop run $id',
         finishedAt: DateTime.now(),
       ).copyWith(
+        resultError: !stopped,
         resultPreview: stopped ? 'stop requested' : 'run is not active',
       ),
     );

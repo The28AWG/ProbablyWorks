@@ -351,7 +351,7 @@ void main() {
     expect(find.text('command r2'), findsOneWidget);
   });
 
-  testWidgets('step ledger keeps failed steps visible without expanding', (
+  testWidgets('step ledger keeps call failures visible without expanding', (
     tester,
   ) async {
     final start = DateTime(2026);

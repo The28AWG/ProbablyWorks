@@ -31,21 +31,27 @@ extension _ToolExecutorExec on ToolExecutor {
     );
     await _saveRun(run);
 
-    final handle = await _commands.start(
-      chatId: ctx.chat.id,
-      hostId: ctx.host.id,
-      toolCallId: runId,
-      runtime: ctx.runtime,
-      command: execCommand ?? command,
-      displayCommand: command,
-      cwd: cwd,
-      limits: ctx.limits,
-      background: background,
-      inTerminal: inTerminal,
-      stdin: stdin,
-      timeout: timeout,
-      op: op,
-    );
+    final ExecHandle handle;
+    try {
+      handle = await _commands.start(
+        chatId: ctx.chat.id,
+        hostId: ctx.host.id,
+        toolCallId: runId,
+        runtime: ctx.runtime,
+        command: execCommand ?? command,
+        displayCommand: command,
+        cwd: cwd,
+        limits: ctx.limits,
+        background: background,
+        inTerminal: inTerminal,
+        stdin: stdin,
+        timeout: timeout,
+        op: op,
+      );
+    } on Object catch (error) {
+      // Не удалось даже начать запуск: это сбой вызова, а не результат инструмента.
+      return _failRun(run, '${call.name} failed to start: $error');
+    }
     run = run.copyWith(logPath: handle.logPath);
     await _saveRun(run);
 
@@ -87,13 +93,14 @@ extension _ToolExecutorExec on ToolExecutor {
     final finished = await _complete(run, outcome);
     await _recordShellIfNeeded(ctx, call, args, finished, command: command);
     if (finished.status == ToolRunStatus.done &&
+        !finished.resultError &&
         op is WriteFileOp &&
         isEphemeralHostWriteBackup(op.backupPath)) {
       await _discardEphemeralWriteBackup(ctx, op.backupPath);
     }
     return ToolResult(
       _modelText(outcome, ctx.limits, finished.id),
-      isError: outcome.status != ToolRunStatus.done,
+      isError: outcome.resultError || outcome.status != ToolRunStatus.done,
     );
   }
 
@@ -129,7 +136,8 @@ extension _ToolExecutorExec on ToolExecutor {
     required String command,
   }) async {
     if (call.name != ToolNames.runCommand) return;
-    if (run.status != ToolRunStatus.done) return;
+    // Ненулевой код — ошибка результата, а не успешно выполненная команда.
+    if (run.status != ToolRunStatus.done || run.resultError) return;
     final turnId = ctx.turnUserMessageId;
     if (turnId == null) return;
     final raw = args['command'];
@@ -146,6 +154,7 @@ extension _ToolExecutorExec on ToolExecutor {
   Future<ToolRun> _complete(ToolRun run, ExecOutcome outcome) async {
     final done = run.copyWith(
       status: outcome.status,
+      resultError: outcome.resultError,
       exitCode: outcome.exitCode,
       timedOut: outcome.status == ToolRunStatus.timedOut,
       pid: outcome.pid,

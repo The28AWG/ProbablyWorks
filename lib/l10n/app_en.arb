@@ -291,13 +291,13 @@
   "@runStatusBackground": {
     "description": "Tool run status: the command runs in the background."
   },
-  "runStatusDone": "Done",
+  "runStatusDone": "Completed",
   "@runStatusDone": {
-    "description": "Tool run status: finished successfully."
+    "description": "Tool run status: the call completed. The result may be successful or an error; success is not shown separately."
   },
-  "runStatusFailed": "Failed",
+  "runStatusFailed": "Call failed",
   "@runStatusFailed": {
-    "description": "Tool run status: finished with a non-zero exit code or an error."
+    "description": "Tool run status: the tool could not be started or brought to a result. A tool result error is not included."
   },
   "runStatusTimedOut": "Timed out",
   "@runStatusTimedOut": {
@@ -2638,9 +2638,9 @@
       }
     }
   },
-  "stepsGroupFailed": "Errors: {count}",
+  "stepsGroupFailed": "Call failures: {count}",
   "@stepsGroupFailed": {
-    "description": "Header part showing how many steps in a group failed.",
+    "description": "Header part showing how many tool calls in a group could not be started or brought to a result. Tool result errors are not included.",
     "placeholders": {
       "count": {
         "type": "int"
@@ -2779,7 +2779,7 @@
   },
   "notifyBackgroundBody": "Status: {status}. The result has been passed to the agent.",
   "@notifyBackgroundBody": {
-    "description": "System notification body when a background command finishes. The status is the technical ToolRunStatus name and is not translated.",
+    "description": "System notification body when a background command finishes. The status is a technical string: the ToolRunStatus name and, for a result error, a result error marker. It is not translated.",
     "placeholders": {
       "status": {
         "type": "String",

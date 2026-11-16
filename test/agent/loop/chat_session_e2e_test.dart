@@ -1402,6 +1402,33 @@ void main() {
     },
   );
 
+  test(
+    'non-zero command result is a result error, not a call failure',
+    () async {
+      final chatId = await createVirtualChat();
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [_call('c1', 'run_command', '{"command":"exit 3"}')],
+          ),
+        ])
+        ..add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+      await runTurn(hub.session(chatId), 'fail with a code');
+
+      final tool = (await hub.chats.messages(chatId))
+          .firstWhere((m) => m.role == MessageRole.tool);
+      expect(tool.text, contains('status: done'));
+      expect(tool.text, contains('result: error'));
+      expect(tool.text, contains('exit_code: 3'));
+
+      final run = (await hub.chats.toolRunsForChat(chatId)).single;
+      expect(run.status, ToolRunStatus.done);
+      expect(run.resultError, isTrue);
+      expect(run.exitCode, 3);
+    },
+  );
+
   test('virtual host run_command receives stdin', () async {
     final chatId = await createVirtualChat();
     llm.script

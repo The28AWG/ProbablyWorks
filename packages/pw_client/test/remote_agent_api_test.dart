@@ -91,7 +91,8 @@ void main() {
     expect(chats.single.title, 'Test chat');
     expect(hosts.single.id, 'local');
     expect(messages.single.text, 'hello');
-    expect(runs, isEmpty);
+    expect(runs.single.status, ToolRunStatus.done);
+    expect(runs.single.resultError, isTrue);
   });
 
   test('load() warms the synchronous settings cache', () async {
@@ -732,7 +733,22 @@ final class _FakeAgent implements AgentApi {
     if (chatId != 'c1') {
       throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
     }
-    return const [];
+    final start = DateTime.utc(2026, 11, 11);
+    return [
+      ToolRun(
+        id: 'r1',
+        chatId: chatId,
+        messageId: 'm1',
+        toolName: 'run_command',
+        argsJson: '{"command":"false"}',
+        command: 'false',
+        status: ToolRunStatus.done,
+        resultError: true,
+        exitCode: 1,
+        startedAt: start,
+        finishedAt: start.add(const Duration(seconds: 1)),
+      ),
+    ];
   }
 
   @override

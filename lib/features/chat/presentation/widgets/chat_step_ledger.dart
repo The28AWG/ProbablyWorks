@@ -54,8 +54,10 @@ final class RunStep extends LedgerStep {
 ///
 /// Один шаг выводится просто строкой: заголовок группы без него лишний шаг до текста. Несколько шагов
 /// сворачиваются в группу с итогом в одну строку. Группа раскрывается сама, пока есть активные шаги
-/// или шаги, требующие внимания (ожидание, ошибка). Ошибки никогда не прячутся в свёрнутом виде.
-/// Раскрытие, переход между одиночным шагом и группой и смена статуса идут плавно.
+/// или шаги, требующие внимания (ожидание, таймаут, отказ, сбой вызова). Ошибка результата инструмента —
+/// обычный результат для агента, поэтому она не раскрывает группу и не считается сбоем. Сбои вызова
+/// никогда не прячутся в свёрнутом виде. Раскрытие, переход между одиночным шагом и группой и смена
+/// статуса идут плавно.
 class ChatStepLedger extends StatefulWidget {
   const ChatStepLedger({
     required this.steps,
@@ -117,7 +119,7 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     final grouped = steps.length > 1;
 
     var active = 0;
-    var failed = 0;
+    var callFailures = 0;
     var attention = false;
     var done = 0;
     for (final step in steps) {
@@ -132,7 +134,7 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
           if (run.isActive || run.status == ToolRunStatus.backgroundRunning) {
             active++;
           }
-          if (_isFailure(run)) failed++;
+          if (_isCallFailure(run)) callFailures++;
           if (_needsAttention(run)) attention = true;
           if (run.status == ToolRunStatus.done) done++;
       }
@@ -143,15 +145,16 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
         revealAll ||
         (widget.expandWhileActive && active > 0) ||
         attention ||
-        failed > 0;
+        callFailures > 0;
     final expanded = !grouped || (_userExpanded ?? autoExpand);
-    final tone = failed > 0
+    // У завершённой группы нет «успешного» тона: завершение — обычное состояние.
+    final tone = callFailures > 0
         ? AppTone.danger
         : active > 0
         ? AppTone.progress
         : attention
         ? AppTone.waiting
-        : AppTone.success;
+        : AppTone.neutral;
     final title = active > 0
         ? l10n.stepsGroupActive(done, steps.length)
         : l10n.stepsGroupDone(steps.length);
@@ -189,8 +192,8 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
         showHeader: grouped,
         onToggle: grouped ? () => _toggleGroupExpanded(expanded) : null,
         header: (palette) => _GroupHeading(
-          title: failed > 0
-              ? '$title · ${l10n.stepsGroupFailed(failed)}'
+          title: callFailures > 0
+              ? '$title · ${l10n.stepsGroupFailed(callFailures)}'
               : title,
           titleColor: palette.text,
           duration: duration == null
@@ -214,23 +217,27 @@ class _ChatStepLedgerState extends State<ChatStepLedger>
     AppTone.danger => Icons.error_outline,
     AppTone.progress => Icons.more_horiz,
     AppTone.waiting => Icons.hourglass_empty,
-    _ => Icons.check_circle_outline,
+    _ => Icons.terminal,
   };
 
-  static bool _isFailure(ToolRun run) => switch (run.status) {
+  /// Сбой именно вызова. Ошибка результата инструмента сюда не входит:
+  /// агент получает её как обычный результат и обрабатывает.
+  static bool _isCallFailure(ToolRun run) => switch (run.status) {
     ToolRunStatus.failed ||
-    ToolRunStatus.timedOut ||
     ToolRunStatus.connectionLost ||
     ToolRunStatus.spawnFailed => true,
     _ => false,
   };
 
+  /// Шаг, на который пользователю стоит обратить внимание, но это не сбой:
+  /// ожидание, отказ, остановка или таймаут выполнения.
   static bool _needsAttention(ToolRun run) => switch (run.status) {
     ToolRunStatus.waitingApproval ||
     ToolRunStatus.waitingUser ||
     ToolRunStatus.denied ||
-    ToolRunStatus.interrupted => true,
-    _ => _isFailure(run),
+    ToolRunStatus.interrupted ||
+    ToolRunStatus.timedOut => true,
+    _ => _isCallFailure(run),
   };
 
   /// Общее время группы команд: от первого запуска до последнего завершения (или до текущего момента).

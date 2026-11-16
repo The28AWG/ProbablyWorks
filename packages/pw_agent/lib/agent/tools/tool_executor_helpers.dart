@@ -98,10 +98,27 @@ extension _ToolExecutorHelpers on ToolExecutor {
     return _rejected(summary, reason: reason);
   }
 
+  /// Сбой вызова: инструмент не удалось запустить или довести до результата.
+  /// Это ошибка уровня приложения, а не ответ инструмента.
   Future<ToolResult> _failRun(ToolRun run, String text) async {
     await _saveRun(
       run.copyWith(
         status: ToolRunStatus.failed,
+        finishedAt: DateTime.now(),
+        resultPreview: previewToolText(text),
+        clearPendingCard: true,
+      ),
+    );
+    return ToolResult(text, isError: true);
+  }
+
+  /// Инструмент выполнился и вернул ошибку. Для агента это обычный результат,
+  /// в интерфейсе — завершённый шаг без признака сбоя вызова.
+  Future<ToolResult> _failTool(ToolRun run, String text) async {
+    await _saveRun(
+      run.copyWith(
+        status: ToolRunStatus.done,
+        resultError: true,
         finishedAt: DateTime.now(),
         resultPreview: previewToolText(text),
         clearPendingCard: true,
@@ -153,7 +170,7 @@ extension _ToolExecutorHelpers on ToolExecutor {
     final command = toolStringArg(args, 'command');
     final background = args['background'] == true;
     if (background && ctx.host.kind == HostKind.virtual) {
-      return _failRun(
+      return _failTool(
         run,
         'background is not supported on a virtual host: run the command in the foreground',
       );
@@ -232,11 +249,11 @@ extension _ToolExecutorHelpers on ToolExecutor {
     final mtime = await _mtimeOrNull(ctx, path);
     final read = await captureOp(ctx.runtime, ReadRawOp(path));
     if (mtime == null || !read.ok) {
-      return _failRun(run, 'cannot read $path (file missing or unreadable)');
+      return _failTool(run, 'cannot read $path (file missing or unreadable)');
     }
     final before = read.stdout;
     if (before.contains('\uFFFD')) {
-      return _failRun(
+      return _failTool(
         run,
         'cannot edit $path: it is not valid UTF-8 text (or contains U+FFFD), and an edit would corrupt its bytes. The file was not changed.',
       );
@@ -245,10 +262,10 @@ extension _ToolExecutorHelpers on ToolExecutor {
         ? 0
         : oldString.allMatches(before).length;
     if (occurrences == 0) {
-      return _failRun(run, 'old_string not found in $path');
+      return _failTool(run, 'old_string not found in $path');
     }
     if (occurrences > 1 && !replaceAll) {
-      return _failRun(
+      return _failTool(
         run,
         'old_string matches $occurrences times in $path; provide more context or set replace_all',
       );
@@ -470,6 +487,9 @@ extension _ToolExecutorHelpers on ToolExecutor {
     final header = [
       'run_id: $runId',
       'status: ${outcome.status.name}',
+      // Для модели код выхода и ошибка инструмента остаются явным сигналом:
+      // status done сам по себе не говорит, что результат успешный.
+      if (outcome.resultError) 'result: error',
       if (outcome.exitCode != null) 'exit_code: ${outcome.exitCode}',
       if (outcome.message != null && outcome.message!.isNotEmpty)
         'message: ${outcome.message}',

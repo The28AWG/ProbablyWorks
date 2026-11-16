@@ -2352,6 +2352,7 @@ Map<String, Object?> _runJson(ToolRun run) => {
   'command': run.command,
   'background': run.background,
   'status': run.status.name,
+  'resultError': run.resultError,
   'pid': run.pid,
   'exitCode': run.exitCode,
   'timedOut': run.timedOut,

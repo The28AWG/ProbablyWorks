@@ -402,6 +402,12 @@ class ChatMessage {
   });
 }
 
+/// Состояние запуска инструмента, а не его результата.
+///
+/// [done] значит, что вызов состоялся и завершился. Успешным ли был результат,
+/// решает [ToolRun.resultError]. [failed] — сбой самого вызова: инструмент не
+/// удалось запустить или довести до результата из-за ошибки в коде, ограничения
+/// процесса или потерянной связи. Ошибка инструмента сюда не попадает.
 enum ToolRunStatus {
   running,
   waitingApproval,
@@ -431,6 +437,7 @@ class ToolRun {
     this.pid,
     this.exitCode,
     this.timedOut = false,
+    this.resultError = false,
     this.logPath,
     this.outputText,
     this.outputTruncated = false,
@@ -451,6 +458,12 @@ class ToolRun {
   final ToolRunStatus status;
   final int? exitCode;
   final bool timedOut;
+
+  /// Инструмент выполнился, но вернул ошибку: ненулевой код выхода, неверные
+  /// аргументы или ошибка операции. Это нормальный результат, который агент
+  /// обрабатывает; для интерфейса это не сбой вызова.
+  final bool resultError;
+
   final String? logPath;
   final String? outputText;
   final bool outputTruncated;
@@ -482,6 +495,7 @@ class ToolRun {
     int? pid,
     int? exitCode,
     bool? timedOut,
+    bool? resultError,
     String? logPath,
     bool clearLogPath = false,
     String? outputText,
@@ -504,6 +518,7 @@ class ToolRun {
     status: status ?? this.status,
     exitCode: exitCode ?? this.exitCode,
     timedOut: timedOut ?? this.timedOut,
+    resultError: resultError ?? this.resultError,
     logPath: clearLogPath ? null : (logPath ?? this.logPath),
     outputText: outputText ?? this.outputText,
     outputTruncated: outputTruncated ?? this.outputTruncated,

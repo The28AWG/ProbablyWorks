@@ -150,6 +150,24 @@ AppDatabase _openAtVersion(
   ),
 );
 
+/// База v21 с двумя старыми сбоями: у команды ненулевой код выхода,
+/// у вызова кода нет. Миграция должна различить результат и сбой вызова.
+AppDatabase _openToolRunsV21() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_toolRunsBeforeV9)
+        ..execute(
+          'INSERT INTO tool_runs (id, chat_id, message_id, tool_name, '
+          'args_json, status, exit_code, started_at) VALUES '
+          "('command', 'c', 'm', 'run_command', '{}', 'failed', 2, 0), "
+          "('dispatch', 'c', 'm', 'run_command', '{}', 'failed', NULL, 1)",
+        )
+        ..execute('PRAGMA user_version = 21');
+    },
+  ),
+);
+
 /// База v18 с чатом и сохранённой моделью: проверяет миграцию reasoning.
 AppDatabase _openReasoningV18() => AppDatabase(
   NativeDatabase.memory(
@@ -675,5 +693,25 @@ void main() {
         )
         .getSingle();
     expect(explicit.read<int?>('archived_at'), null);
+  });
+
+  test('v21 → v22 separates result errors from call failures', () async {
+    final db = _openToolRunsV21();
+    addTearDown(db.close);
+
+    final rows = await db
+        .customSelect(
+          'SELECT id, status, result_error FROM tool_runs ORDER BY id',
+        )
+        .get();
+    final byId = {for (final row in rows) row.read<String>('id'): row};
+
+    final command = byId['command']!;
+    expect(command.read<String>('status'), 'done');
+    expect(command.read<bool>('result_error'), isTrue);
+
+    final dispatch = byId['dispatch']!;
+    expect(dispatch.read<String>('status'), 'failed');
+    expect(dispatch.read<bool>('result_error'), isFalse);
   });
 }

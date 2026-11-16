@@ -25,12 +25,18 @@ extension _ChatSessionRuntime on ChatSession {
     final exit = outcome.exitCode == null
         ? ''
         : ', exit code ${outcome.exitCode}';
+    final result = outcome.resultError ? ', result error' : '';
     final text =
-        'Background command ${run.id} finished with status ${outcome.status.name}$exit.\n'
+        'Background command ${run.id} finished with status ${outcome.status.name}$result$exit.\n'
         'Command: ${run.command ?? run.toolName}\n'
         '${TextClip.headTail(outcome.outputText, maxChars: 2000)}';
     unawaited(
-      _notify(AgentNoticeKind.backgroundFinished, detail: outcome.status.name),
+      _notify(
+        AgentNoticeKind.backgroundFinished,
+        detail: outcome.resultError
+            ? '${outcome.status.name}, result error'
+            : outcome.status.name,
+      ),
     );
     unawaited(_deliverEvent(text));
   }

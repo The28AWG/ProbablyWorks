@@ -1761,6 +1761,7 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
   command: json['command'] as String?,
   background: json['background'] == true,
   status: ToolRunStatus.values.byName(_string(json, 'status')),
+  resultError: json['resultError'] == true,
   pid: json['pid'] as int?,
   exitCode: json['exitCode'] as int?,
   timedOut: json['timedOut'] == true,

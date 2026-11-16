@@ -117,7 +117,7 @@ class _StepRowState extends State<_StepRow>
     final readFile = _readFileOf(output);
     final change = _fileChangeOf(run);
     final note = plainTerminalText(output).trim();
-    final failed = _ChatStepLedgerState._isFailure(run);
+    final callFailed = _ChatStepLedgerState._isCallFailure(run);
     final active =
         run.isActive || run.status == ToolRunStatus.backgroundRunning;
     final visual = _visualOf(run, l10n);
@@ -265,7 +265,7 @@ class _StepRowState extends State<_StepRow>
         readFile: readFile,
         output: output,
         note: note,
-        failed: failed,
+        callFailed: callFailed,
         run: run,
         active: active,
         terminal: terminal,
@@ -301,8 +301,8 @@ class _StepRowState extends State<_StepRow>
       label: l10n.runStatusWaitingUser,
     ),
     ToolRunStatus.done => (
-      tone: AppTone.success,
-      icon: Icons.check_circle_outline,
+      tone: AppTone.neutral,
+      icon: Icons.terminal,
       label: l10n.runStatusDone,
     ),
     ToolRunStatus.denied => (
@@ -347,7 +347,7 @@ class _StepOutput extends StatelessWidget {
     required this.readFile,
     required this.output,
     required this.note,
-    required this.failed,
+    required this.callFailed,
     required this.run,
     required this.active,
     required this.terminal,
@@ -362,7 +362,7 @@ class _StepOutput extends StatelessWidget {
   final ReadFileOutput? readFile;
   final String output;
   final String note;
-  final bool failed;
+  final bool callFailed;
   final ToolRun run;
   final bool active;
   final HostTerminal? terminal;
@@ -403,7 +403,7 @@ class _StepOutput extends StatelessWidget {
           Text(
             note,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: failed
+              color: callFailed
                   ? toneColors(context, AppTone.danger).foreground
                   : palette.muted,
             ),

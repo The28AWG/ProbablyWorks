@@ -143,7 +143,7 @@ final class _PluginHost implements PluginHost {
     return PluginCommandResult(
       output: outcome.outputText,
       exitCode: outcome.exitCode,
-      isError: outcome.status != ToolRunStatus.done,
+      isError: outcome.resultError || outcome.status != ToolRunStatus.done,
     );
   }
 

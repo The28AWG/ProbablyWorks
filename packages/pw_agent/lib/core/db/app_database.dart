@@ -34,7 +34,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 21;
+  static const currentSchemaVersion = 22;
 
   static const _uuid = Uuid();
 
@@ -155,6 +155,17 @@ class AppDatabase extends _$AppDatabase {
       // Версия 21: активные скачивания локальных моделей. Нужны, чтобы
       // продолжить загрузку после перезапуска процесса.
       if (from < 21) await m.createTable(localModelDownloads);
+      // Версия 22: результат инструмента отделён от состояния вызова.
+      // Старый failed с ненулевым кодом — это результат команды, а не сбой
+      // вызова: переносим такие строки в done + result_error.
+      if (from < 22 && await _hasTable('tool_runs')) {
+        await m.addColumn(toolRuns, toolRuns.resultError);
+        await customStatement(
+          "UPDATE tool_runs SET status = 'done', result_error = 1 "
+          "WHERE status = 'failed' AND exit_code IS NOT NULL "
+          'AND exit_code != 0',
+        );
+      }
     },
   );
 

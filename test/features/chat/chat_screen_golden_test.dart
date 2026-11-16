@@ -59,6 +59,7 @@ ToolRun _run(
   String id,
   String command,
   ToolRunStatus status, {
+  bool resultError = false,
   int seconds = 4,
   String? output,
 }) {
@@ -71,10 +72,11 @@ ToolRun _run(
     argsJson: '{}',
     command: command,
     status: status,
+    resultError: resultError,
     startedAt: start,
     finishedAt: start.add(Duration(seconds: seconds)),
     outputText: output,
-    exitCode: status == ToolRunStatus.failed ? 1 : 0,
+    exitCode: resultError ? 1 : 0,
   );
 }
 
@@ -128,7 +130,8 @@ ChatState _conversation() => ChatState(
     _run(
       'r3',
       'flutter test test/core',
-      ToolRunStatus.failed,
+      ToolRunStatus.done,
+      resultError: true,
       seconds: 12,
       output: 'Expected: <3>\n  Actual: <2>\nFAILED: test/core/util/short_time_test.dart',
     ),

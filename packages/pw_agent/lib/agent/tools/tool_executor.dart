@@ -316,7 +316,8 @@ class ToolExecutor {
       final finished = await _complete(
         run,
         ExecOutcome(
-          status: result.isError ? ToolRunStatus.failed : ToolRunStatus.done,
+          status: ToolRunStatus.done,
+          resultError: result.isError,
           outputText: result.text,
         ),
       );
@@ -414,7 +415,7 @@ class ToolExecutor {
     try {
       return await _executeApproved(ctx, call, args, run);
     } on ArgumentError catch (error) {
-      return _failRun(run, 'invalid arguments: ${error.message}');
+      return _failTool(run, 'invalid arguments: ${error.message}');
     }
   }
 }

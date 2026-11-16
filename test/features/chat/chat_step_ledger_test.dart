@@ -25,7 +25,12 @@ class _TestApp extends StatelessWidget {
   );
 }
 
-ToolRun _run(String id, ToolRunStatus status, {String? output}) {
+ToolRun _run(
+  String id,
+  ToolRunStatus status, {
+  bool resultError = false,
+  String? output,
+}) {
   final start = DateTime(2026, 1, 1, 12);
   return ToolRun(
     id: id,
@@ -35,6 +40,7 @@ ToolRun _run(String id, ToolRunStatus status, {String? output}) {
     argsJson: '{}',
     command: 'flutter test',
     status: status,
+    resultError: resultError,
     startedAt: start,
     finishedAt: status == ToolRunStatus.running
         ? null
@@ -50,6 +56,7 @@ ToolRun _fileRun({
   String? output,
   String id = 'file',
   ToolRunStatus status = ToolRunStatus.done,
+  bool resultError = false,
 }) {
   final start = DateTime(2026, 1, 1, 12);
   return ToolRun(
@@ -60,6 +67,7 @@ ToolRun _fileRun({
     argsJson: args,
     command: command,
     status: status,
+    resultError: resultError,
     startedAt: start,
     finishedAt: start.add(const Duration(seconds: 1)),
     outputText: output,
@@ -215,6 +223,100 @@ void main() {
 
     expect(find.text('3 steps'), findsOneWidget);
     expect(find.text('Сначала посмотрю файлы'), findsNothing);
+  });
+
+  testWidgets('a result error does not count as a call failure', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(_run('r1', ToolRunStatus.done)),
+              RunStep(
+                _run(
+                  'r2',
+                  ToolRunStatus.done,
+                  resultError: true,
+                  output: 'old_string not found',
+                ),
+              ),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatStepLedger)),
+    );
+
+    expect(find.text(l10n.stepsGroupDone(2)), findsOneWidget);
+    expect(find.textContaining('Call failures'), findsNothing);
+    expect(find.text('flutter test'), findsNothing);
+  });
+
+  testWidgets('a call failure is counted and expands the group', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(_run('r1', ToolRunStatus.done)),
+              RunStep(_run('r2', ToolRunStatus.failed)),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatStepLedger)),
+    );
+
+    expect(find.textContaining(l10n.stepsGroupFailed(1)), findsOneWidget);
+    expect(find.text('flutter test'), findsNWidgets(2));
+  });
+
+  testWidgets('a timeout expands the group as an attention state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        SizedBox(
+          width: 600,
+          child: ChatStepLedger(
+            steps: [
+              RunStep(_run('r1', ToolRunStatus.done)),
+              RunStep(_run('r2', ToolRunStatus.timedOut)),
+            ],
+            live: const {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ChatStepLedger)),
+    );
+
+    expect(find.text('flutter test'), findsNWidgets(2));
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is Tooltip &&
+            w.richMessage?.toPlainText() == l10n.runStatusTimedOut,
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Call failures'), findsNothing);
   });
 
   testWidgets('a streaming thought starts collapsed and counts as running', (
@@ -653,7 +755,7 @@ void main() {
     },
   );
 
-  testWidgets('a failed write still shows the new file and the host error', (
+  testWidgets('a write result error still shows the new file and the text', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -667,7 +769,7 @@ void main() {
                   tool: 'write_file',
                   args: '{"content":"alpha"}',
                   command: 'write /work/a.txt',
-                  status: ToolRunStatus.failed,
+                  resultError: true,
                   output: 'file changed after it was read; nothing was written',
                 ),
               ),

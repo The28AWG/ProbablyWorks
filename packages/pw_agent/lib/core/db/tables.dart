@@ -204,6 +204,11 @@ class ToolRuns extends Table {
   BoolColumn get background => boolean().withDefault(const Constant(false))();
   IntColumn get pid => integer().nullable()();
   TextColumn get status => text()();
+
+  /// Инструмент выполнился, но вернул ошибку. Отдельно от статуса вызова:
+  /// такой результат агент обрабатывает как обычный и UI не считает сбоем.
+  BoolColumn get resultError => boolean().withDefault(const Constant(false))();
+
   IntColumn get exitCode => integer().nullable()();
   BoolColumn get timedOut => boolean().withDefault(const Constant(false))();
   TextColumn get logPath => text().nullable()();
