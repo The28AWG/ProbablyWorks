@@ -74,7 +74,7 @@ void main() {
       expect(isFreeModel(_model('meta/llama', prompt: null)), isFalse);
     });
 
-    test('provider filter matches the id prefix', () {
+    test('provider filter matches the provider label', () {
       final result = applyModelQuery(
         models,
         const ModelListQuery(provider: 'openai'),
@@ -82,7 +82,25 @@ void main() {
       expect(_ids(result), ['openai/gpt-4o']);
     });
 
-    test('search matches name and id, case-insensitively', () {
+    test('hasFilters ignores the sort and the whitespace-only search', () {
+      expect(const ModelListQuery().hasFilters, isTrue);
+      expect(
+        const ModelListQuery(toolsOnly: false, search: '  ').hasFilters,
+        isFalse,
+      );
+      expect(
+        const ModelListQuery(
+          toolsOnly: false,
+          search: 'gpt',
+          sort: ModelSort.price,
+        ).hasFilters,
+        isTrue,
+      );
+    });
+  });
+
+  group('search', () {
+    test('matches name and id, case-insensitively', () {
       expect(
         _ids(
           applyModelQuery(models, const ModelListQuery(search: '  GEMINI ')),
@@ -94,19 +112,56 @@ void main() {
         ['meta/llama'],
       );
     });
+
+    test('ranks the exact name above provider matches', () {
+      final result = applyModelQuery(
+        models,
+        const ModelListQuery(search: 'llama'),
+      );
+      expect(result.first.id, 'meta/llama');
+    });
+
+    test('ignores punctuation inside the query', () {
+      final result = applyModelQuery(
+        models,
+        const ModelListQuery(search: 'gpt4o'),
+      );
+      expect(_ids(result), ['openai/gpt-4o']);
+    });
+
+    test('tolerates a typo', () {
+      final result = applyModelQuery(
+        models,
+        const ModelListQuery(search: 'gemin'),
+      );
+      expect(_ids(result), ['google/gemini-free']);
+    });
+
+    test('every term must match', () {
+      final result = applyModelQuery(
+        models,
+        const ModelListQuery(search: 'gpt llama'),
+      );
+      expect(result, isEmpty);
+    });
+
+    test('sort breaks ties between equal scores', () {
+      final result = applyModelQuery([
+        _model('a/one', name: 'Same', context: 1000),
+        _model('b/two', name: 'Same', context: 2000),
+      ], const ModelListQuery(search: 'same', sort: ModelSort.context));
+      expect(_ids(result), ['b/two', 'a/one']);
+    });
   });
 
   group('sort', () {
-    test('by name ignores case', () {
-      final result = applyModelQuery(
-        models,
-        const ModelListQuery(sort: ModelSort.name),
-      );
-      expect(_ids(result), [
-        'google/gemini-free',
-        'openai/gpt-4o',
-        'meta/llama',
-      ]);
+    test('by name ignores case and compares numbers by value', () {
+      final result = applyModelQuery([
+        _model('a/gpt-10', name: 'GPT-10'),
+        _model('b/gpt-4', name: 'GPT-4'),
+        _model('c/alpha', name: 'alpha'),
+      ], const ModelListQuery(sort: ModelSort.name));
+      expect(_ids(result), ['c/alpha', 'b/gpt-4', 'a/gpt-10']);
     });
 
     test('by context puts the largest first and unknown last', () {
@@ -146,17 +201,64 @@ void main() {
       ]);
     });
 
-    test('provider sort keeps the catalog order', () {
-      final result = applyModelQuery(
-        models,
-        const ModelListQuery(sort: ModelSort.provider),
-      );
-      expect(_ids(result), _ids(models.where((m) => m.supportsTools).toList()));
+    test('by provider groups alphabetically and names inside a group', () {
+      final result = applyModelQuery([
+        _model('openai/zeta', name: 'Zeta'),
+        _model('openai/alpha', name: 'Alpha'),
+        _model('meta/llama', name: 'Llama'),
+        _model('google/gemini', name: 'Gemini'),
+      ], const ModelListQuery(sort: ModelSort.provider));
+      expect(_ids(result), [
+        'google/gemini',
+        'meta/llama',
+        'openai/alpha',
+        'openai/zeta',
+      ]);
     });
   });
 
   test('providersOf lists providers, sorted', () {
     expect(providersOf(models), ['anthropic', 'google', 'meta', 'openai']);
+  });
+
+  test('providerCountsOf counts models per provider', () {
+    expect(providerCountsOf(models), {
+      'openai': 1,
+      'google': 1,
+      'anthropic': 1,
+      'meta': 1,
+    });
+  });
+
+  group('matchProvider', () {
+    const providers = ['llama.cpp', 'llamadart', 'openai'];
+
+    test('an exact label wins', () {
+      expect(matchProvider('openai', providers).label, 'openai');
+      expect(matchProvider('LLAMA.CPP', providers).label, 'llama.cpp');
+    });
+
+    test('a unique prefix resolves', () {
+      expect(matchProvider('open', providers).label, 'openai');
+      expect(matchProvider('llama.c', providers).label, 'llama.cpp');
+      expect(matchProvider('llamad', providers).label, 'llamadart');
+    });
+
+    test('a prefix shared by two providers is ambiguous', () {
+      final match = matchProvider('llama', providers);
+      expect(match.label, isNull);
+      expect(match, isA<ProviderMatchAmbiguous>());
+      expect((match as ProviderMatchAmbiguous).candidates, [
+        'llama.cpp',
+        'llamadart',
+      ]);
+    });
+
+    test('an unknown value is not found', () {
+      final match = matchProvider('nope', providers);
+      expect(match.label, isNull);
+      expect(match, isA<ProviderMatchNotFound>());
+    });
   });
 
   test('a provider without a prefix keeps upstream grouping', () {

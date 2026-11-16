@@ -1001,25 +1001,21 @@
   "@modelPinnedSection": {
     "description": "Section header in the model picker for models pinned by the user."
   },
-  "modelSearchHint": "Поиск по имени или id",
+  "modelSearchHint": "Имя, id или @фильтр",
   "@modelSearchHint": {
     "description": "Placeholder of the search field in the model picker."
   },
   "modelFilterToolsOnly": "Только с tool calling",
   "@modelFilterToolsOnly": {
-    "description": "Switch in the model picker: hide models without tool calling support."
+    "description": "Title of the @tools filter suggestion in the model picker."
   },
   "modelFilterFree": "Только бесплатные",
   "@modelFilterFree": {
-    "description": "Switch in the model picker: show only models with zero price."
+    "description": "Title of the @free filter suggestion in the model picker."
   },
   "modelFilterProvider": "Провайдер",
   "@modelFilterProvider": {
-    "description": "Dropdown label in the model picker: filter by provider."
-  },
-  "modelFilterAllProviders": "Все провайдеры",
-  "@modelFilterAllProviders": {
-    "description": "Option of the provider filter: no provider filter applied."
+    "description": "Title of the @provider filter suggestion in the model picker."
   },
   "modelSortLabel": "Сортировка",
   "@modelSortLabel": {
@@ -1047,11 +1043,11 @@
   },
   "modelCurrentUnavailable": "Текущая модель недоступна",
   "@modelCurrentUnavailable": {
-    "description": "Section header in the model picker for the selected model that is no longer in OpenRouter."
+    "description": "Section header in the model picker for the selected model that is no longer listed."
   },
   "modelUnavailableBadge": "недоступна",
   "@modelUnavailableBadge": {
-    "description": "Badge after the name of a model that OpenRouter no longer lists. Shown after a '!' marker."
+    "description": "Badge of a model that the provider no longer lists."
   },
   "modelsNeverSynced": "Список моделей ещё не загружен. Нажмите «Обновить».",
   "@modelsNeverSynced": {
@@ -1070,9 +1066,75 @@
   "@modelPickerEmpty": {
     "description": "Empty state of the model picker when the filter hides everything."
   },
-  "modelNoTools": "без tool calling",
-  "@modelNoTools": {
-    "description": "Marker for a model that does not support tool calling; the agent cannot use it."
+  "modelPickerTitle": "Выбор модели",
+  "@modelPickerTitle": {
+    "description": "Title of the model picker dialog."
+  },
+  "modelPickerClearSearch": "Очистить поиск",
+  "@modelPickerClearSearch": {
+    "description": "Tooltip of the clear button in the model search field."
+  },
+  "modelPickerEmptyHint": "Измените запрос или снимите фильтры.",
+  "@modelPickerEmptyHint": {
+    "description": "Explanation of the empty search result in the model picker."
+  },
+  "modelPickerResetFilters": "Сбросить фильтры",
+  "@modelPickerResetFilters": {
+    "description": "Action that clears the model search and filters."
+  },
+  "modelPickerFilterHint": "@провайдер:имя · @бесплатные",
+  "@modelPickerFilterHint": {
+    "description": "Hint under the model search field: which @filters are available."
+  },
+  "modelPickerFilterHintTools": "Только с инструментами · @провайдер:имя · @бесплатные",
+  "@modelPickerFilterHintTools": {
+    "description": "Hint under the model search field when the agent requires tool calling."
+  },
+  "modelPickerProviderUnknown": "Провайдер не найден: {value}",
+  "@modelPickerProviderUnknown": {
+    "description": "Warning: the @provider filter value matches no provider.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPickerProviderAmbiguous": "{value} подходит к нескольким провайдерам: {providers}",
+  "@modelPickerProviderAmbiguous": {
+    "description": "Warning: the @provider filter value matches several providers.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "providers": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPickerProviderCount": "{count, plural, =0{Нет моделей} one{{count} модель} few{{count} модели} many{{count} моделей} other{{count} модели}}",
+  "@modelPickerProviderCount": {
+    "description": "Number of models of a provider in the @provider suggestions.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "modelPickerResultCount": "Найдено {shown} из {total}",
+  "@modelPickerResultCount": {
+    "description": "Footer of the model picker: how many models match the filters.",
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "modelCurrentTooltip": "Текущая модель",
+  "@modelCurrentTooltip": {
+    "description": "Tooltip of the check icon that marks the model selected in the chat."
   },
   "modelPinManageHint": "Нажмите модель, чтобы закрепить или открепить её. Закреплённые показываются первыми в выборе модели в чате.",
   "@modelPinManageHint": {
@@ -1098,6 +1160,18 @@
   "modelMetaPrice": "вход {input} / выход {output} за 1M",
   "@modelMetaPrice": {
     "description": "Model metadata: price per one million input and output tokens.",
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "modelMetaPriceShort": "{input} / {output}",
+  "@modelMetaPriceShort": {
+    "description": "Model metadata badge: input and output price per 1M tokens, without labels.",
     "placeholders": {
       "input": {
         "type": "String"

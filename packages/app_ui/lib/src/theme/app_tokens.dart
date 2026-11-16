@@ -78,6 +78,10 @@ abstract final class AppLayout {
   /// Ширина диалогов с формами.
   static const double dialogWidth = 480;
 
+  /// Ширина диалога выбора модели: строки с бейджами (id, контекст, цена)
+  /// не помещаются в [dialogWidth].
+  static const double modelPickerWidth = 620;
+
   /// Ширина текстового блока пустого состояния.
   static const double emptyStateWidth = 320;
 
@@ -87,4 +91,8 @@ abstract final class AppLayout {
   /// Максимальная ширина значения в чипе строки настроек на узкой области. На широкой берутся
   /// значения из `ChatMetaBar` (модель 180, папка 140).
   static const double chipNarrowMaxWidth = 120;
+
+  /// Ширина компактного селекта значения (`AppSelect`): сортировка в диалоге
+  /// выбора модели, уровень размышлений в настройках.
+  static const double selectWidth = 200;
 }

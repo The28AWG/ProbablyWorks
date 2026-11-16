@@ -1001,25 +1001,21 @@
   "@modelPinnedSection": {
     "description": "Section header in the model picker for models pinned by the user."
   },
-  "modelSearchHint": "Search by name or id",
+  "modelSearchHint": "Model name, id or @filter",
   "@modelSearchHint": {
     "description": "Placeholder of the search field in the model picker."
   },
   "modelFilterToolsOnly": "Only models with tool calling",
   "@modelFilterToolsOnly": {
-    "description": "Switch in the model picker: hide models without tool calling support."
+    "description": "Title of the @tools filter suggestion in the model picker."
   },
   "modelFilterFree": "Free only",
   "@modelFilterFree": {
-    "description": "Switch in the model picker: show only models with zero price."
+    "description": "Title of the @free filter suggestion in the model picker."
   },
   "modelFilterProvider": "Provider",
   "@modelFilterProvider": {
-    "description": "Dropdown label in the model picker: filter by provider."
-  },
-  "modelFilterAllProviders": "All providers",
-  "@modelFilterAllProviders": {
-    "description": "Option of the provider filter: no provider filter applied."
+    "description": "Title of the @provider filter suggestion in the model picker."
   },
   "modelSortLabel": "Sort",
   "@modelSortLabel": {
@@ -1047,11 +1043,11 @@
   },
   "modelCurrentUnavailable": "Current model is unavailable",
   "@modelCurrentUnavailable": {
-    "description": "Section header in the model picker for the selected model that is no longer in OpenRouter."
+    "description": "Section header in the model picker for the selected model that is no longer listed."
   },
   "modelUnavailableBadge": "unavailable",
   "@modelUnavailableBadge": {
-    "description": "Badge after the name of a model that OpenRouter no longer lists. Shown after a '!' marker."
+    "description": "Badge of a model that the provider no longer lists."
   },
   "modelsNeverSynced": "Model list not loaded yet. Press refresh.",
   "@modelsNeverSynced": {
@@ -1070,9 +1066,75 @@
   "@modelPickerEmpty": {
     "description": "Empty state of the model picker when the filter hides everything."
   },
-  "modelNoTools": "no tool calling",
-  "@modelNoTools": {
-    "description": "Marker for a model that does not support tool calling; the agent cannot use it."
+  "modelPickerTitle": "Choose model",
+  "@modelPickerTitle": {
+    "description": "Title of the model picker dialog."
+  },
+  "modelPickerClearSearch": "Clear search",
+  "@modelPickerClearSearch": {
+    "description": "Tooltip of the clear button in the model search field."
+  },
+  "modelPickerEmptyHint": "Change the query or remove filters.",
+  "@modelPickerEmptyHint": {
+    "description": "Explanation of the empty search result in the model picker."
+  },
+  "modelPickerResetFilters": "Reset filters",
+  "@modelPickerResetFilters": {
+    "description": "Action that clears the model search and filters."
+  },
+  "modelPickerFilterHint": "@provider:name · @free",
+  "@modelPickerFilterHint": {
+    "description": "Hint under the model search field: which @filters are available."
+  },
+  "modelPickerFilterHintTools": "Only models with tool calling · @provider:name · @free",
+  "@modelPickerFilterHintTools": {
+    "description": "Hint under the model search field when the agent requires tool calling."
+  },
+  "modelPickerProviderUnknown": "No provider matches {value}",
+  "@modelPickerProviderUnknown": {
+    "description": "Warning: the @provider filter value matches no provider.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPickerProviderAmbiguous": "{value} matches several providers: {providers}",
+  "@modelPickerProviderAmbiguous": {
+    "description": "Warning: the @provider filter value matches several providers.",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "providers": {
+        "type": "String"
+      }
+    }
+  },
+  "modelPickerProviderCount": "{count, plural, =0{No models} one{{count} model} other{{count} models}}",
+  "@modelPickerProviderCount": {
+    "description": "Number of models of a provider in the @provider suggestions.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "modelPickerResultCount": "{shown} of {total}",
+  "@modelPickerResultCount": {
+    "description": "Footer of the model picker: how many models match the filters.",
+    "placeholders": {
+      "shown": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "modelCurrentTooltip": "Current model",
+  "@modelCurrentTooltip": {
+    "description": "Tooltip of the check icon that marks the model selected in the chat."
   },
   "modelPinManageHint": "Tap a model to pin or unpin it. Pinned models are listed first in the chat model picker.",
   "@modelPinManageHint": {
@@ -1098,6 +1160,18 @@
   "modelMetaPrice": "in {input} / out {output} per 1M",
   "@modelMetaPrice": {
     "description": "Model metadata: price per one million input and output tokens.",
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
+  "modelMetaPriceShort": "{input} / {output}",
+  "@modelMetaPriceShort": {
+    "description": "Model metadata badge: input and output price per 1M tokens, without labels.",
     "placeholders": {
       "input": {
         "type": "String"

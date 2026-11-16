@@ -217,69 +217,22 @@ class ModelSettingField extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              _ReasoningDropdown(
-                key: ValueKey('$modelId:${selected.name}:${options.length}'),
-                selected: selected,
-                options: options,
-                onSelected: (value) => _selectReasoning(value, selected),
+              AppSelect<ReasoningPreference>(
+                value: selected,
+                entries: [
+                  for (final option in options)
+                    AppSelectEntry(
+                      value: option,
+                      label: reasoningLabel(l10n, option),
+                    ),
+                ],
+                width: AppLayout.selectWidth,
+                onChanged: (value) => _selectReasoning(value, selected),
               ),
             ],
           ),
         ],
       ],
     );
-  }
-}
-
-/// Выпадающий список уровня рассуждений.
-///
-/// Без label и hint: подпись уже стоит слева. Поле не получает фокус, поэтому
-/// в него нельзя печатать; меню открывается только нажатием.
-class _ReasoningDropdown extends StatefulWidget {
-  const _ReasoningDropdown({
-    required this.selected,
-    required this.options,
-    required this.onSelected,
-    super.key,
-  });
-
-  final ReasoningPreference selected;
-  final List<ReasoningPreference> options;
-  final ValueChanged<ReasoningPreference> onSelected;
-
-  @override
-  State<_ReasoningDropdown> createState() => _ReasoningDropdownState();
-}
-
-class _ReasoningDropdownState extends State<_ReasoningDropdown> {
-  /// Фокус запрещён: иначе DropdownMenu превращается в редактируемое поле.
-  late final FocusNode _focus = FocusNode(canRequestFocus: false);
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return DropdownMenu<ReasoningPreference>(
-      width: 200,
-      initialSelection: widget.selected,
-      focusNode: _focus,
-      requestFocusOnTap: false,
-      enableFilter: false,
-      dropdownMenuEntries: [
-        for (final option in widget.options)
-          DropdownMenuEntry(value: option, label: reasoningLabel(l10n, option)),
-      ],
-      onSelected: _onSelected,
-    );
-  }
-
-  void _onSelected(ReasoningPreference? value) {
-    if (value == null || value == widget.selected) return;
-    widget.onSelected(value);
   }
 }

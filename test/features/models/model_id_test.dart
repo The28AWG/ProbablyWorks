@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:probably_works/features/models/presentation/model_format.dart';
+import 'package:probably_works/features/models/domain/model_id.dart';
 import 'package:pw_agent/providers/ai/llama_cpp/llama_cpp_connection.dart';
 
 void main() {

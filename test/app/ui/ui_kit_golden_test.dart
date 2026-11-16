@@ -35,6 +35,26 @@ class _KitGallery extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
+        const Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            MetaChip(label: 'openai/gpt-4o', mono: true),
+            MetaChip(
+              icon: Icons.data_usage,
+              label: '128k',
+              tooltip: 'Context window 128k',
+            ),
+            MetaChip(
+              icon: Icons.savings_outlined,
+              label: r'$2.50 / $10.00',
+              tooltip: r'In $2.50 / out $10.00 per 1M',
+            ),
+            MetaChip(icon: Icons.psychology, tooltip: 'Reasoning'),
+            MetaChip(label: 'unavailable', tone: AppTone.warning),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
         const ActionCard(
           title: 'Approve command?',
           icon: Icons.lock_clock_outlined,
@@ -62,6 +82,22 @@ class _KitGallery extends StatelessWidget {
           onChanged: _ignoreChoice,
         ),
         const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            const Text('Sort'),
+            const SizedBox(width: AppSpacing.sm),
+            AppSelect<String>(
+              value: 'provider',
+              entries: const [
+                AppSelectEntry(value: 'provider', label: 'By provider'),
+                AppSelectEntry(value: 'price', label: 'By price'),
+              ],
+              width: AppLayout.selectWidth,
+              onChanged: _ignoreSelect,
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
         const AppMarkdown(data: _markdownSample),
       ],
     ),
@@ -84,6 +120,10 @@ const _choiceOptions = [
 ];
 
 void _ignoreChoice(String _) {
+  return;
+}
+
+void _ignoreSelect(String _) {
   return;
 }
 
@@ -111,7 +151,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets('kit gallery golden ${brightness.name}', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(560, 1200));
+      await tester.binding.setSurfaceSize(const Size(560, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(

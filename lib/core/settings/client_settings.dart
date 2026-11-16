@@ -11,6 +11,9 @@ abstract final class ClientSettingsKeys {
   static const localAgentProfileId = 'localAgentProfileId';
   static const keybindings = 'keybindings';
 
+  /// Порядок моделей в диалоге выбора: значение `ModelSort.name`.
+  static const modelSort = 'modelSort';
+
   /// Одноразовый перенос секретов GUI в keyring локального демона.
   static const daemonSecretsMigrated = 'daemonSecretsMigrated';
 }

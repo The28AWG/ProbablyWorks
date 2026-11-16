@@ -44,6 +44,8 @@ import 'package:probably_works/app/ui/ui.dart';
 | `Stepper` или набор точек | `OnboardingStepper` | Шаги онбординга: сегменты и счётчик. |
 | `Container` с `BoxDecoration` и штрихом | `DashedBorder` | Зона перетаскивания файлов и пустые слоты. |
 | `SegmentedButton`, `RadioListTile` в списке для выбора одного варианта с пояснением | `AppChoiceGroup` | Настройки: тема, журнал шагов, политика, система хоста. Варианты карточками с радио-индикатором, делят ширину и переносятся. Без пояснений `SegmentedButton` допустим. |
+| `DropdownMenu` без подписи рядом с текстовой подписью | `AppSelect` | Компактный выбор значения в строке: сортировка моделей, уровень размышлений. Без плавающей подписи и фильтра внутри меню. В формах остаётся `DropdownMenu` с `expandedInsets` |
+| `Container` с подписью метаданных в строке списка | `MetaChip` | id модели, контекст, цена, возможности: данные, а не статус (без точки). Для статусов — `StatusChip` |
 
 Стандартные виджеты, которые не заменены, допустимы: `ListView`, `ListTile`, `IconButton`,
 `FilledButton`, `TextButton`, `OutlinedButton`, `SegmentedButton`, `FilterChip`,
@@ -101,6 +103,25 @@ AppCard(
 ```
 
 ### Ввод
+
+**`AppSelect<T>`**: компактный селект для строки: значение, стрелка и меню. Подпись ставит владелец
+рядом текстом, плавающей подписи и фильтра внутри меню нет — контрол читается как значение
+настройки, а не как поле ввода. Ширина `null` растягивает на доступное место. Значение приходит
+снаружи и синхронизируется с меню; выбор доступен с клавиатуры (`Tab`, `Enter`, стрелки).
+Без `onChanged` контрол заблокирован. `tooltip` нужен там, где подпись рядом не помещается
+(сортировка в узком диалоге выбора модели).
+
+```dart
+AppSelect<ModelSort>(
+  value: sort,
+  entries: [
+    for (final sort in ModelSort.values)
+      AppSelectEntry(value: sort, label: _sortLabel(sort, l10n)),
+  ],
+  width: AppLayout.selectWidth,
+  onChanged: _changeSort,
+)
+```
 
 **`AppTextField`**: поле с меткой, подсказкой, ошибкой и моноширинным режимом.
 
@@ -203,6 +224,22 @@ AppEmptyState(
 ```
 
 ### Статусы и агент
+
+**`MetaChip`**: подпись метаданных строки (id модели, контекст, цена). Без точки состояния:
+это данные, а не статус. `mono` включает моноширинный шрифт, `tone` задаёт смысловой цвет.
+`icon` заменяет поясняющее слово: окно контекста — `Icons.data_usage` (как заполнение контекста
+в `ChatMetaBar`), цена — `Icons.savings_outlined` (как бюджет в окне контекста), размышления —
+`Icons.psychology` (как чип модели с включённым уровнем). Без `label` чип занимает только значок;
+тогда `tooltip` обязателен: он объясняет значение при наведении и читается с экрана.
+
+```dart
+MetaChip(
+  icon: Icons.data_usage,
+  label: '128k',
+  tooltip: l10n.modelMetaContext('128k'),
+)
+MetaChip(label: modelIdForDisplay(model.id, providers: providers), mono: true)
+```
 
 **`StatusChip`** и **`StatusDot`**:
 
@@ -404,11 +441,11 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `WorkspaceSidebar` | `lib/features/workspace/presentation/widgets/workspace_sidebar.dart` | Боковая панель: новый чат, `ChatListPanel`, навигация «Хосты» и «Настройки» внизу. Выбранный чат и активный раздел приходят из маршрутов. Сворачивается кнопкой |
 | `WorkspaceRail` | `lib/features/workspace/presentation/widgets/workspace_sidebar.dart` | Свёрнутая панель: развернуть, новый чат, хосты, настройки (только иконки). Активный раздел выделен |
 | `WorkspaceLeadingButton` | `lib/features/workspace/presentation/widgets/workspace_shell.dart` | Кнопка слева в шапке страницы на узком экране: меню (`WorkspaceMenuButton`), а поверх оболочки — «назад». В остальных раскладках страницы передают `null` |
-| `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск, фильтр «с инструментами», закреплённые модели, группы по провайдеру, клавиатура. `onTogglePin` задан — есть кнопки закрепления (композер, настройки закреплённых); `null` — кнопок нет (выбор модели по умолчанию и заголовков). `requireTools: false` — модель без tool calling выбирается. `managePins: true` (настройки закреплённых) — нажатие на строку закрепляет или открепляет модель, диалог остаётся открытым и ничего не возвращает; Enter делает то же для подсвеченной строки. Модели с reasoning получают бейдж; после выбора модель может открыть `ReasoningDialog` |
+| `ModelPickerDialog` | `lib/features/models/presentation/widgets/model_picker_dialog.dart` | Выбор модели: поиск и фильтры в одном поле (`@provider:`, `@free`, `@tools`) с подсказками, сортировка через `AppSelect` (запоминается в `ClientSettings`), закреплённые модели, группы по провайдеру, клавиатура. Свободный текст ищет по имени, id и провайдеру с учётом опечаток; группы по провайдеру показываются только без поиска. Состояния: загрузка, каталог не загружен, ошибка с повтором, пустой результат со сбросом фильтров; недоступные провайдеры и неверный `@provider:` — баннерами. `onTogglePin` задан — есть кнопки закрепления (композер, настройки закреплённых); `null` — кнопок нет (выбор модели по умолчанию и заголовков). `requireTools: false` — модель без tool calling выбирается, `true` — скрывается и показана подсказка «только с инструментами». `managePins: true` (настройки закреплённых) — нажатие на строку закрепляет или открепляет модель, диалог остаётся открытым и ничего не возвращает; Enter делает то же для подсвеченной строки. Модели с reasoning получают бейдж; после выбора модель может открыть `ReasoningDialog` |
 | `ModelRuntimeBuilder` | `lib/features/models/presentation/widgets/model_runtime_builder.dart` | Точечная подписка на `ModelRuntimeSource`: перестраивает только переданный builder, а не ленту чата. Используется чипом модели и доком внимания, потому что прогресс загрузки приходит несколько раз в секунду |
 | `ReasoningDialog` | `lib/features/models/presentation/widgets/reasoning_dialog.dart` | Второе окно после выбора модели: `AppChoiceGroup` с уровнями `Default` (для чата), `Auto`, `Off` (если разрешено) и поддерживаемыми уровнями. `Save` возвращает выбор, закрытие — null (оставить прежний уровень). Для mandatory-моделей `Off` скрыт; для неизвестной capability показывается общий набор |
 | `HostFormDialog` | `lib/features/hosts/presentation/widgets/host_form_dialog.dart` | Диалог «Хост» (SSH-хост и «Этот компьютер»): строки `SettingsFormRow` в секциях `AppSection`, подписей над полями нет, у каждого поля есть подсказка. Способ входа и система на сервере — `AppChoiceGroup` с пояснениями; система — отдельная секция с крупными значками над заголовками. Ширина содержимого до `AppLayout.formMaxWidth`. Локальный хост редактирует только окружение. Сохранение через колбэк `onSave`, открывается `showHostFormDialog` |
-| `ModelSettingField` | `lib/features/settings/presentation/widgets/model_setting_field.dart` | Поле модели в настройках: название, id и предупреждение о статусе (недоступна, нет tool calling). Нажатие открывает `ModelPickerDialog` без кнопок закрепления и, при необходимости, `ReasoningDialog`. Под карточкой — `DropdownMenu` уровня размышлений; для заголовков чата он скрыт, для модели без reasoning показано «не поддерживается» |
+| `ModelSettingField` | `lib/features/settings/presentation/widgets/model_setting_field.dart` | Поле модели в настройках: название, id и предупреждение о статусе (недоступна, нет tool calling). Нажатие открывает `ModelPickerDialog` без кнопок закрепления и, при необходимости, `ReasoningDialog`. Под карточкой — `AppSelect` уровня размышлений; для заголовков чата он скрыт, для модели без reasoning показано «не поддерживается» |
 | `ApiKeyInfoCard` | `lib/features/settings/presentation/widgets/api_key_info_card.dart` | Сведения о ключе из сервиса: метка, расходы, лимит и остаток, сброс лимита, срок, тариф. Загрузка, ошибка с «повторить» и пустое состояние внутри карточки |
 | `ApiKeySection` | `lib/features/settings/presentation/widgets/api_key_section.dart` | Блок «API-ключ» на вкладке «Аккаунт» — одна строка `SettingsFormRow`: поле и иконки в одну линию. Сохранённый ключ — то же поле в режиме «только чтение» с маской `•••• abc` и иконками «Проверить», «Заменить», «Удалить» (с подтверждением). Без ключа или при замене — поле ввода с иконками «Отмена» (если ключ уже есть) и «Сохранить». Высота строки одинакова в обоих состояниях: пояснение однострочное. Черновик ключа живёт в виджете, не в состоянии экрана |
 | `SettingsFormRow` | `lib/features/settings/presentation/widgets/settings_form_row.dart` | Строка формы: слева название и необязательное пояснение (`description`), справа поле. `trailing` — иконки действий в той же линии, что и поле (ключ API); `action` — кнопка под полем, прижатая справа (например «Сохранить» у многострочных полей). Ниже `AppLayout.formMaxWidth` колонки складываются. Заменяет «заголовок над полем с подписью». Используется в настройках и в диалоге хоста |
@@ -419,6 +456,8 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | --- | --- | --- |
 | `dayBucket(DateTime, {now})` | `lib/core/util/short_time.dart` | Группа: `today`, `yesterday`, `earlier` |
 | `formatShortTime(DateTime, {now})` | `lib/core/util/short_time.dart` | `HH:mm` для сегодня, иначе `dd.MM` |
+| `normalizeSearchText`, `scoreSearchText` | `lib/core/util/search_text.dart` | Нормализация и оценка совпадения для поиска: палитра команд и выбор модели. Термины, опечатки, префиксы |
+| `AtQuery` | `lib/core/util/at_query.dart` | Разбор `@`-токенов строки поиска: границы, кавычки, имя и значение. Общий для палитры и выбора модели |
 
 ## 7. Добавление нового компонента
 
