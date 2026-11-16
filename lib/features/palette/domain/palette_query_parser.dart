@@ -1,6 +1,6 @@
+import 'package:probably_works/core/util/at_query.dart';
 import 'package:probably_works/features/palette/domain/palette_command.dart';
 import 'package:pw_agent/agent/domain/search.dart';
-import 'package:pw_agent/core/util/char_substring.dart';
 
 /// Контекст, который нужен фильтрам `@current` и `@scope`.
 class PaletteParseContext {
@@ -48,51 +48,40 @@ abstract final class PaletteQueryParser {
     var currentChat = false;
     var explicitChat = false;
 
-    var index = 0;
-    while (index < raw.length) {
-      final char = raw[index];
-      final atTokenStart =
-          char == '@' && (index == 0 || _isSpace(raw[index - 1]));
-      if (!atTokenStart) {
-        text.write(char);
-        index++;
-        continue;
-      }
-
-      final end = _tokenEnd(raw, index);
-      final token = charRange(raw, index, end);
-      index = end;
-      final split = token.indexOf(':');
-      final name = (split < 0 ? charFrom(token, 1) : charRange(token, 1, split))
-          .toLowerCase();
-      final canonical = _aliases[name];
+    // Токены разбираются общей утилитой, а всё, что между ними, остаётся текстом.
+    var cursor = 0;
+    for (final token in AtQuery.tokens(raw)) {
+      text.write(AtQuery.textOf(raw, cursor, token.start));
+      cursor = token.end;
+      final canonical = _aliases[token.name];
       if (canonical == null) {
-        _appendText(text, token);
+        _appendText(text, token.raw);
         continue;
       }
-      final value = split < 0
-          ? ''
-          : _unquote(charFrom(token, split + 1).trim());
+      final value = token.value;
 
       switch (canonical) {
         case 'command':
           if (value.isNotEmpty) {
-            _appendText(text, token);
+            _appendText(text, token.raw);
             break;
           }
           commandsOnly = true;
           filters.add(
-            PaletteFilter(kind: PaletteFilterKind.command, raw: token),
+            PaletteFilter(kind: PaletteFilterKind.command, raw: token.raw),
           );
         case 'project':
           if (value.isEmpty) {
             if (context.currentProjectId == null) {
-              _appendText(text, token);
+              _appendText(text, token.raw);
               break;
             }
             projectId = context.currentProjectId;
             filters.add(
-              PaletteFilter(kind: PaletteFilterKind.currentProject, raw: token),
+              PaletteFilter(
+                kind: PaletteFilterKind.currentProject,
+                raw: token.raw,
+              ),
             );
             break;
           }
@@ -101,41 +90,44 @@ abstract final class PaletteQueryParser {
           filters.add(
             PaletteFilter(
               kind: PaletteFilterKind.project,
-              raw: token,
+              raw: token.raw,
               value: value,
             ),
           );
         case 'current':
           if (value.isNotEmpty || context.currentChatId == null) {
-            _appendText(text, token);
+            _appendText(text, token.raw);
             break;
           }
           if (explicitChat) break;
           currentChat = true;
           chatId = context.currentChatId;
           filters.add(
-            PaletteFilter(kind: PaletteFilterKind.current, raw: token),
+            PaletteFilter(kind: PaletteFilterKind.current, raw: token.raw),
           );
         case 'current-project':
           if (value.isNotEmpty || context.currentProjectId == null) {
-            _appendText(text, token);
+            _appendText(text, token.raw);
             break;
           }
           projectId = context.currentProjectId;
           filters.add(
-            PaletteFilter(kind: PaletteFilterKind.currentProject, raw: token),
+            PaletteFilter(
+              kind: PaletteFilterKind.currentProject,
+              raw: token.raw,
+            ),
           );
         case 'chat':
           if (value.isEmpty) {
             if (context.currentChatId == null) {
-              _appendText(text, token);
+              _appendText(text, token.raw);
               break;
             }
             if (explicitChat) break;
             currentChat = true;
             chatId = context.currentChatId;
             filters.add(
-              PaletteFilter(kind: PaletteFilterKind.current, raw: token),
+              PaletteFilter(kind: PaletteFilterKind.current, raw: token.raw),
             );
             break;
           }
@@ -146,20 +138,20 @@ abstract final class PaletteQueryParser {
           filters.add(
             PaletteFilter(
               kind: PaletteFilterKind.chat,
-              raw: token,
+              raw: token.raw,
               value: value,
             ),
           );
         case 'scope':
           final parsed = SearchScope.values.asNameMap()[value];
           if (parsed == null) {
-            _appendText(text, token);
+            _appendText(text, token.raw);
             break;
           }
           if (parsed == SearchScope.chat) {
             if (!explicitChat) {
               if (context.currentChatId == null) {
-                _appendText(text, token);
+                _appendText(text, token.raw);
                 break;
               }
               currentChat = true;
@@ -167,7 +159,7 @@ abstract final class PaletteQueryParser {
             }
           } else if (parsed == SearchScope.project) {
             if (context.currentProjectId == null) {
-              _appendText(text, token);
+              _appendText(text, token.raw);
               break;
             }
             projectId = context.currentProjectId;
@@ -176,12 +168,13 @@ abstract final class PaletteQueryParser {
           filters.add(
             PaletteFilter(
               kind: PaletteFilterKind.scope,
-              raw: token,
+              raw: token.raw,
               value: value,
             ),
           );
       }
     }
+    text.write(AtQuery.textOf(raw, cursor, raw.length));
 
     return PaletteQuery(
       text: text.toString().replaceAll(RegExp(r'\s+'), ' ').trim(),
@@ -228,37 +221,4 @@ abstract final class PaletteQueryParser {
     if (projectId != null || projectName != null) return SearchScope.project;
     return scope;
   }
-
-  /// Конец @-токена. Кавычки защищают пробелы; `\"` не закрывает кавычку.
-  static int _tokenEnd(String raw, int start) {
-    var quoted = false;
-    var escaped = false;
-    for (var i = start + 1; i < raw.length; i++) {
-      final char = raw[i];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char == r'\') {
-        escaped = true;
-        continue;
-      }
-      if (char == '"') {
-        quoted = !quoted;
-        continue;
-      }
-      if (!quoted && _isSpace(char)) return i;
-    }
-    return raw.length;
-  }
-
-  static String _unquote(String value) {
-    if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
-      return value;
-    }
-    final body = charRange(value, 1, value.length - 1);
-    return body.replaceAll(r'\"', '"');
-  }
-
-  static bool _isSpace(String char) => char.trim().isEmpty;
 }

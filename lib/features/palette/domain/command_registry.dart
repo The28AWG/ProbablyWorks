@@ -1,4 +1,4 @@
-import 'package:probably_works/features/palette/domain/command_search.dart';
+import 'package:probably_works/core/util/search_text.dart';
 import 'package:probably_works/features/palette/domain/palette_command.dart';
 
 /// Команда, найденная поиском, с оценкой и путём в дереве.

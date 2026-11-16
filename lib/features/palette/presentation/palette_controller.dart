@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/core/util/at_query.dart';
+import 'package:probably_works/core/util/search_text.dart';
 import 'package:probably_works/features/palette/domain/command_registry.dart';
-import 'package:probably_works/features/palette/domain/command_search.dart';
 import 'package:probably_works/features/palette/domain/palette_command.dart';
 import 'package:probably_works/features/palette/domain/palette_query_parser.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -285,14 +286,14 @@ class PaletteController extends ChangeNotifier {
     var start = -1;
     for (var i = caret - 1; i >= 0; i--) {
       final char = raw[i];
-      if (char == '@' && (i == 0 || _isSpace(raw[i - 1]))) {
+      if (char == '@' && (i == 0 || AtQuery.isSpace(raw[i - 1]))) {
         start = i;
         break;
       }
-      if (_isSpace(char)) break;
+      if (AtQuery.isSpace(char)) break;
     }
     if (start < 0) return null;
-    final end = _tokenEnd(raw, start);
+    final end = AtQuery.tokenEnd(raw, start);
     if (caret != end) return null;
     final token = charRange(raw, start, end);
     final body = charFrom(token, 1);
@@ -321,7 +322,7 @@ class PaletteController extends ChangeNotifier {
       if (prefix.length >= 2 && prefix.endsWith('"')) return null;
       prefix = charFrom(prefix, 1);
     }
-    if (end < raw.length && _isSpace(raw[end])) return null;
+    if (end < raw.length && AtQuery.isSpace(raw[end])) return null;
     return _AutocompleteToken(
       start: start,
       end: end,
@@ -452,30 +453,6 @@ class PaletteController extends ChangeNotifier {
       if (aliases.any((alias) => alias.startsWith(value))) return true;
     }
     return false;
-  }
-
-  static bool _isSpace(String char) => char.trim().isEmpty;
-
-  static int _tokenEnd(String raw, int start) {
-    var quoted = false;
-    var escaped = false;
-    for (var i = start + 1; i < raw.length; i++) {
-      final char = raw[i];
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char == r'\') {
-        escaped = true;
-        continue;
-      }
-      if (char == '"') {
-        quoted = !quoted;
-        continue;
-      }
-      if (!quoted && _isSpace(char)) return i;
-    }
-    return raw.length;
   }
 
   static String _normalize(String value) => normalizeSearchText(value);
