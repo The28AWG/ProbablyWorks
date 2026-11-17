@@ -40,14 +40,23 @@ Future<void> main(List<String> arguments) async {
     errors.add('${mainExecutable.path}: отсутствует исполняемый файл GUI');
   }
 
-  final versionFiles = _findByName(gui, 'version.json');
-  if (versionFiles.isEmpty) {
-    errors.add('${gui.path}: отсутствует version.json');
+  // version.json есть только на части платформ. Свой build-info.json
+  // пишет prepare_daemon; на macOS/iOS версию дополнительно сверяем по
+  // Info.plist, который создаёт Xcode.
+  final versionFiles = [
+    ..._findByName(gui, 'version.json'),
+    if (platform != 'ios') ..._findByName(gui, 'build-info.json'),
+  ];
+  if (platform != 'ios' && _findByName(gui, 'build-info.json').isEmpty) {
+    errors.add('${gui.path}: отсутствует build-info.json');
+  }
+  if (versionFiles.isEmpty && platform != 'ios') {
+    errors.add('${gui.path}: нет файла с версией сборки');
   } else {
     for (final file in versionFiles) {
       final value = _readVersionFile(file);
       if (value == null) {
-        errors.add('${file.path}: не удалось разобрать version.json');
+        errors.add('${file.path}: не удалось разобрать версию');
         continue;
       }
       if (value.$1 != expected.$1 || value.$2 != expected.$2) {
@@ -59,8 +68,28 @@ Future<void> main(List<String> arguments) async {
     }
   }
 
+  if (platform == 'macos' || platform == 'ios') {
+    final plist = File(
+      platform == 'macos'
+          ? p.join(gui.path, 'Contents', 'Info.plist')
+          : p.join(gui.path, 'Info.plist'),
+    );
+    if (!plist.existsSync()) {
+      errors.add('${plist.path}: отсутствует Info.plist');
+    } else {
+      final version = _plistValue(plist, 'CFBundleShortVersionString');
+      final build = _plistValue(plist, 'CFBundleVersion');
+      if (version != expected.$1 || build != expected.$2) {
+        errors.add(
+          '${plist.path}: версия ${version ?? '?'}+${build ?? '?'}, '
+          'ожидалась ${expected.$1}+${expected.$2}',
+        );
+      }
+    }
+  }
+
   _requireFile(gui, 'LICENSE', errors, skip: platform == 'ios');
-  _requireFile(gui, 'NOTICES', errors, skip: false);
+  _requireNotice(gui, errors);
   _requireFile(gui, 'Inter-Regular.ttf', errors, skip: false);
   _requireFile(gui, 'os_linux.svg', errors, skip: false);
 
@@ -165,6 +194,39 @@ void _requireFile(
   if (_findByName(root, name).isEmpty) {
     errors.add('${root.path}: отсутствует $name');
   }
+}
+
+/// Flutter сжимает NOTICES в NOTICES.Z на не-web платформах, поэтому
+/// принимаем оба варианта: конкретное имя зависит от версии toolchain.
+void _requireNotice(Directory root, List<String> errors) {
+  if (_findByName(root, 'NOTICES').isNotEmpty ||
+      _findByName(root, 'NOTICES.Z').isNotEmpty) {
+    return;
+  }
+  errors.add('${root.path}: отсутствует NOTICES или NOTICES.Z');
+}
+
+String? _plistValue(File file, String key) {
+  try {
+    final text = file.readAsStringSync();
+    final match = RegExp(
+      '<key>${RegExp.escape(key)}</key>\\s*<string>([^<]*)</string>',
+    ).firstMatch(text);
+    if (match != null) return match.group(1);
+  } on Object {
+    // Ниже пробуем plutil: plist может быть бинарным.
+  }
+  if (!Platform.isMacOS) return null;
+  final result = Process.runSync('plutil', [
+    '-extract',
+    key,
+    'raw',
+    '-o',
+    '-',
+    file.path,
+  ]);
+  if (result.exitCode != 0) return null;
+  return '${result.stdout}'.trim();
 }
 
 List<File> _findByName(Directory root, String name) {

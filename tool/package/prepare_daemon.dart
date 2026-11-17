@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -73,6 +74,7 @@ Future<void> main() async {
     }
     _copyBundle(bundle, destination);
     _copyLicense(projectRoot, buildDirectory, platform);
+    _writeBuildInfo(projectRoot, buildDirectory, platform);
     if (Platform.isMacOS) await _signMacos(buildDirectory);
     stdout.writeln('Daemon bundled at ${destination.path}');
   } on Object catch (error, stackTrace) {
@@ -153,6 +155,48 @@ void _copyLicense(
     license.copySync(p.join(buildDirectory.path, 'LICENSE'));
     return;
   }
+  final resources = Directory(
+    p.join(_singleApp(buildDirectory).path, 'Contents', 'Resources'),
+  )..createSync(recursive: true);
+  license.copySync(p.join(resources.path, 'LICENSE'));
+}
+
+/// Пишет версию сборки рядом с GUI.
+///
+/// `version.json` есть не на всех платформах, а `check_bundle` должен
+/// сравнивать bundle с `pubspec.yaml` везде. На macOS файл кладётся в
+/// `Contents/Resources` до подписи.
+void _writeBuildInfo(
+  Directory projectRoot,
+  Directory buildDirectory,
+  String platform,
+) {
+  final pubspec = File(p.join(projectRoot.path, 'pubspec.yaml'));
+  final match = RegExp(
+    r'^version:\s*(\S+)',
+    multiLine: true,
+  ).firstMatch(pubspec.readAsStringSync());
+  if (match == null) {
+    throw StateError('${pubspec.path}: version is missing');
+  }
+  final parts = match.group(1)!.split('+');
+  final contents = jsonEncode({
+    'version': parts.first,
+    'build_number': parts.length > 1 ? parts[1] : '0',
+    'platform': platform,
+  });
+  if (platform == 'macos') {
+    final resources = Directory(
+      p.join(_singleApp(buildDirectory).path, 'Contents', 'Resources'),
+    )..createSync(recursive: true);
+    File(p.join(resources.path, 'build-info.json')).writeAsStringSync(contents);
+    return;
+  }
+  File(p.join(buildDirectory.path, 'build-info.json'))
+      .writeAsStringSync(contents);
+}
+
+Directory _singleApp(Directory buildDirectory) {
   final apps = buildDirectory
       .listSync()
       .whereType<Directory>()
@@ -163,9 +207,7 @@ void _copyLicense(
       'Expected one .app in ${buildDirectory.path}, found ${apps.length}',
     );
   }
-  final resources = Directory(p.join(apps.single.path, 'Contents', 'Resources'))
-    ..createSync(recursive: true);
-  license.copySync(p.join(resources.path, 'LICENSE'));
+  return apps.single;
 }
 
 /// Переподписывает `.app`: добавленный после Xcode бинарник ломает подпись.
