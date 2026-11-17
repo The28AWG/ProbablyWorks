@@ -220,7 +220,9 @@ docker rm -f pw-sshd
 PW_DAEMON_TEST=1 flutter test test/app/profiles/local_daemon_integration_test.dart
 ```
 
-Без `PW_DAEMON_TEST=1` тест пропускается в обычном прогоне.
+Без `PW_DAEMON_TEST=1` тест пропускается в обычном прогоне. Первый `dart run`
+компилирует весь граф пакетов, поэтому в CI тест идёт дольше остальных; его
+собственный лимит — 4 минуты, а не стандартные 30 секунд.
 
 Дифференциальные тесты `virtual_host` и `virtual_git` сравнивают поведение с
 настоящими bash и git. Они выключены в обычном `dart test` и включаются через

@@ -10,10 +10,23 @@ import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/config/local_daemon_info.dart';
 import 'package:pw_agent/core/security/system_secret_store.dart';
 
+/// Сколько ждём запуск демона.
+///
+/// Первый `dart run` компилирует весь граф пакетов, и на холодном раннере CI
+/// это занимает больше минуты.
+const _startupTimeout = Duration(minutes: 2);
+
+/// Лимит самого теста.
+///
+/// Стандартные 30 секунд `package:test` меньше холодного старта демона в CI,
+/// поэтому лимит покрывает [_startupTimeout], HTTP-проверки и остановку.
+const _testTimeout = Duration(minutes: 4);
+
 /// Запускает настоящий демон и проверяет discovery, API и остановку.
 ///
 /// Тест выключен по умолчанию: он поднимает отдельный процесс и нужен в CI
 /// или при ручной проверке. Включается через `PW_DAEMON_TEST=1`.
+@Timeout(_testTimeout)
 void main() {
   test('starts a real daemon, discovers it and stops cleanly', () async {
     final temp = Directory.systemTemp.createTempSync('pw_daemon_integration');
@@ -40,6 +53,16 @@ void main() {
       process.stderr.transform(utf8.decoder).listen(stderrBuffer.write),
     ];
     var stopped = false;
+    var exited = false;
+    int? exitCode;
+    // Код выхода нужен в сообщении об ошибке: иначе падение демона при старте
+    // выглядит как обычное «не дождались daemon.json».
+    Future<void> watchExit() async {
+      exitCode = await process.exitCode;
+      exited = true;
+    }
+
+    unawaited(watchExit());
 
     Future<void> stop() async {
       if (stopped) return;
@@ -69,8 +92,15 @@ void main() {
     });
 
     try {
-      final info = await _waitForDaemon(temp);
-      expect(info, isNotNull, reason: _logs(stdoutBuffer, stderrBuffer));
+      final info = await _waitForDaemon(temp, () => exited);
+      expect(
+        info,
+        isNotNull,
+        reason: [
+          if (exitCode != null) 'демон завершился с кодом $exitCode',
+          _logs(stdoutBuffer, stderrBuffer),
+        ].join('\n'),
+      );
       final daemonInfo = info!;
       expect(daemonInfo.pid, process.pid);
       expect(daemonInfo.port, greaterThan(0));
@@ -117,10 +147,16 @@ String? get _skipReason {
 }
 
 /// Ждёт `daemon.json`, но не доверяет только файлу: discovery проверяет health.
-Future<LocalDaemonInfo?> _waitForDaemon(Directory temp) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 60));
+///
+/// [hasExited] позволяет выйти раньше, если процесс завершился: полный
+/// [_startupTimeout] в этом случае бессмыслен, а логи уже собраны.
+Future<LocalDaemonInfo?> _waitForDaemon(
+  Directory temp,
+  bool Function() hasExited,
+) async {
+  final deadline = DateTime.now().add(_startupTimeout);
   final paths = AppPaths.forSupport(temp);
-  while (DateTime.now().isBefore(deadline)) {
+  while (DateTime.now().isBefore(deadline) && !hasExited()) {
     final raw = paths.daemonInfo.existsSync()
         ? paths.daemonInfo.readAsStringSync()
         : null;
