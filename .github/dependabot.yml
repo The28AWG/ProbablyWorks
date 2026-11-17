@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # Корневой pubspec — workspace: lock-файл один на все пакеты.
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build"
+      include: "scope"
