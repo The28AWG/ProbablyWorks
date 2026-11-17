@@ -93,7 +93,7 @@
   (`user-sonatype-mcp`: `getLatestComponentVersion`, `getRecommendedComponentVersions`, `getComponentVersion`).
 - Добавляйте зависимости в `pubspec.yaml` в алфавитном порядке (`sort_pub_dependencies`), затем выполните `flutter pub get`
   и коммитьте `pubspec.lock` вместе с `pubspec.yaml`.
-- Git-зависимость `openrouter` зафиксирована на тег. Не переводите её на ветку.
+- Git-зависимость `openrouter` зафиксирована на тег или commit. Не переводите её на ветку.
 - Android-сборка использует Gradle (`android/`, `gradlew`). Сборочные артефакты в `build/` не правьте.
 
 ## Коммиты
