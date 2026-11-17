@@ -10,6 +10,7 @@ import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/app/ui/ui.dart';
+import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/models/presentation/model_format.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
@@ -305,6 +306,7 @@ class _SettingsViewState extends State<_SettingsView> {
               _Group.plugins: _pluginSections(pluginApi, agentApi),
               _Group.mcp: _mcpSections(mcpApi),
               _Group.advanced: _advancedSections(
+                context,
                 state,
                 cubit,
                 l10n,
@@ -886,59 +888,83 @@ class _SettingsViewState extends State<_SettingsView> {
   List<Widget> _mcpSections(McpApi api) => [McpSettingsSection(api: api)];
 
   List<Widget> _advancedSections(
+    BuildContext context,
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n, {
     required bool offline,
-  }) => [
-    const KeybindingsSection(),
-    if (!offline)
+  }) {
+    final clientInfo = getIt<ClientInfo>();
+    return [
+      const KeybindingsSection(),
+      if (!offline)
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SettingsFormRow(
+                title: l10n.settingsAttachLimits,
+                description: l10n.settingsAttachLimitsHint,
+                action: FilledButton(
+                  onPressed: () => _saveAttachLimits(cubit, l10n),
+                  child: Text(
+                    l10n.commonSave,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                child: AttachmentLimitFields(
+                  perMessage: _attachPerMessage,
+                  maxBytes: _attachMaxBytes,
+                  inlineChars: _attachInlineChars,
+                  error: _attachError,
+                ),
+              ),
+              const Divider(height: AppSpacing.xl),
+              SettingsFormRow(
+                title: l10n.settingsLimits,
+                description: l10n.settingsLimitsHelper,
+                action: FilledButton(
+                  onPressed: () => cubit.saveLimits(_limits.text),
+                  child: Text(
+                    l10n.commonSave,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                child: AppTextField(
+                  controller: _limits,
+                  minLines: 6,
+                  maxLines: 16,
+                  mono: true,
+                  error: state.limitsError ? l10n.settingsLimitsInvalid : null,
+                ),
+              ),
+            ],
+          ),
+        ),
       AppCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SettingsFormRow(
-              title: l10n.settingsAttachLimits,
-              description: l10n.settingsAttachLimitsHint,
-              action: FilledButton(
-                onPressed: () => _saveAttachLimits(cubit, l10n),
-                child: Text(
-                  l10n.commonSave,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              child: AttachmentLimitFields(
-                perMessage: _attachPerMessage,
-                maxBytes: _attachMaxBytes,
-                inlineChars: _attachInlineChars,
-                error: _attachError,
-              ),
+        child: SettingsFormRow(
+          title: l10n.settingsLicensesTitle,
+          description: l10n.settingsLicensesHint,
+          action: FilledButton(
+            onPressed: () => showLicensePage(
+              context: context,
+              applicationName: clientInfo.appName,
+              applicationVersion:
+                  '${clientInfo.version}+${clientInfo.buildNumber}',
             ),
-            const Divider(height: AppSpacing.xl),
-            SettingsFormRow(
-              title: l10n.settingsLimits,
-              description: l10n.settingsLimitsHelper,
-              action: FilledButton(
-                onPressed: () => cubit.saveLimits(_limits.text),
-                child: Text(
-                  l10n.commonSave,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              child: AppTextField(
-                controller: _limits,
-                minLines: 6,
-                maxLines: 16,
-                mono: true,
-                error: state.limitsError ? l10n.settingsLimitsInvalid : null,
-              ),
+            child: Text(
+              l10n.settingsLicensesOpen,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-          ],
+          ),
+          child: Text('${clientInfo.version}+${clientInfo.buildNumber}'),
         ),
       ),
-  ];
+    ];
+  }
 
   static IconData _groupIcon(_Group group) => switch (group) {
     _Group.account => Icons.key_outlined,

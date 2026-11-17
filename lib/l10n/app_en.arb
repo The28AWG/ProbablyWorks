@@ -2173,6 +2173,18 @@
   "@agentProfilesLocalHint": {
     "description": "Agent profiles settings."
   },
+  "settingsLicensesTitle": "Licenses",
+  "@settingsLicensesTitle": {
+    "description": "Settings row title that opens the licenses page."
+  },
+  "settingsLicensesHint": "ProbablyWorks and third-party package licenses.",
+  "@settingsLicensesHint": {
+    "description": "Explanation for the licenses row in settings."
+  },
+  "settingsLicensesOpen": "Open",
+  "@settingsLicensesOpen": {
+    "description": "Button that opens the licenses page."
+  },
   "settingsGroupAdvanced": "Advanced",
   "@settingsGroupAdvanced": {
     "description": "Settings group: limits in JSON."

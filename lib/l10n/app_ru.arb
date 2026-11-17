@@ -2173,6 +2173,18 @@
   "@agentProfilesLocalHint": {
     "description": "Agent profiles settings."
   },
+  "settingsLicensesTitle": "Лицензии",
+  "@settingsLicensesTitle": {
+    "description": "Заголовок строки настроек, открывающей страницу лицензий."
+  },
+  "settingsLicensesHint": "Лицензии ProbablyWorks и сторонних пакетов.",
+  "@settingsLicensesHint": {
+    "description": "Пояснение к строке лицензий в настройках."
+  },
+  "settingsLicensesOpen": "Открыть",
+  "@settingsLicensesOpen": {
+    "description": "Кнопка, открывающая страницу лицензий."
+  },
   "settingsGroupAdvanced": "Дополнительно",
   "@settingsGroupAdvanced": {
     "description": "Settings group: limits in JSON."
