@@ -187,7 +187,7 @@ class LlmRequest {
 ### 3.4. Разрешение уровня
 
 Чистая функция в `pw_agent` (например,
-`providers/ai/reasoning_policy.dart`):
+`packages/pw_agent/lib/providers/ai/reasoning.dart`):
 
 ```dart
 ReasoningEffort? resolveReasoning({
@@ -635,7 +635,7 @@ Reasoning   [Auto ▾]
 ### Этап 1. Ядро и провайдеры (2–3 дня)
 
 - `llm_port.dart`: capability, `LlmRequest.reasoning`, `SavedModel.reasoning`.
-- `reasoning_policy.dart`: чистая функция разрешения.
+- `reasoning.dart`: чистая функция разрешения.
 - OpenRouter: маппинг capability и запроса.
 - llama.cpp: маппинг запроса, `supported: null` в каталоге.
 - `ModelCatalogService`: сохранение capability.

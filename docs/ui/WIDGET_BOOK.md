@@ -312,7 +312,7 @@ CommandOutput(
 помещать в `IntrinsicHeight`/`IntrinsicWidth`: он считает строки через `LayoutBuilder`.
 
 **`ReadFileView`**: вид результата инструмента `read_file` (`lib/app/ui/read_file_view.dart`). Получает
-разобранный вывод `parseReadFileOutput` (`lib/host/read_file_output.dart`): строки с номерами, подвал
+разобранный вывод `parseReadFileOutput` (`packages/pw_agent/lib/host/read_file_output.dart`): строки с номерами, подвал
 (конец файла, продолжение, обрезанная строка) или ожидаемую ошибку (бинарный файл, не обычный файл,
 начало за концом). Скрипт awk/PowerShell в виде не показывается. Нераспознанный вывод отдаётся в
 `CommandOutput`, поэтому парсер строгий: он возвращает `null`, а не угадывает. Текст строк проходит
@@ -450,15 +450,15 @@ DashedBorder(color: colors.waiting, radius: AppRadius.lg, child: ...)
 | `HostFormDialog` | `lib/features/hosts/presentation/widgets/host_form_dialog.dart` | Диалог «Хост» (SSH-хост и «Этот компьютер»): строки `SettingsFormRow` в секциях `AppSection`, подписей над полями нет, у каждого поля есть подсказка. Способ входа и система на сервере — `AppChoiceGroup` с пояснениями; система — отдельная секция с крупными значками над заголовками. Ширина содержимого до `AppLayout.formMaxWidth`. Локальный хост редактирует только окружение. Сохранение через колбэк `onSave`, открывается `showHostFormDialog` |
 | `ModelSettingField` | `lib/features/settings/presentation/widgets/model_setting_field.dart` | Поле модели в настройках: название, id и предупреждение о статусе (недоступна, нет tool calling). Нажатие открывает `ModelPickerDialog` без кнопок закрепления и, при необходимости, `ReasoningDialog`. Под карточкой — `AppSelect` уровня размышлений; для заголовков чата он скрыт, для модели без reasoning показано «не поддерживается» |
 | `ApiKeyInfoCard` | `lib/features/settings/presentation/widgets/api_key_info_card.dart` | Сведения о ключе из сервиса: метка, расходы, лимит и остаток, сброс лимита, срок, тариф. Загрузка, ошибка с «повторить» и пустое состояние внутри карточки |
-| `ApiKeySection` | `lib/features/settings/presentation/widgets/api_key_section.dart` | Блок «API-ключ» на вкладке «Аккаунт» — одна строка `SettingsFormRow`: поле и иконки в одну линию. Сохранённый ключ — то же поле в режиме «только чтение» с маской `•••• abc` и иконками «Проверить», «Заменить», «Удалить» (с подтверждением). Без ключа или при замене — поле ввода с иконками «Отмена» (если ключ уже есть) и «Сохранить». Высота строки одинакова в обоих состояниях: пояснение однострочное. Черновик ключа живёт в виджете, не в состоянии экрана |
+| `ProviderSection` | `lib/features/settings/presentation/widgets/provider_section.dart` | Блок провайдера на вкладке «Аккаунт»: строка `SettingsFormRow` с ключом API, поле ввода или маска `•••• abc`, проверка, замена и удаление с подтверждением. Черновик ключа живёт в виджете, не в состоянии экрана |
 | `SettingsFormRow` | `lib/features/settings/presentation/widgets/settings_form_row.dart` | Строка формы: слева название и необязательное пояснение (`description`), справа поле. `trailing` — иконки действий в той же линии, что и поле (ключ API); `action` — кнопка под полем, прижатая справа (например «Сохранить» у многострочных полей). Ниже `AppLayout.formMaxWidth` колонки складываются. Заменяет «заголовок над полем с подписью». Используется в настройках и в диалоге хоста |
 
 ## 6. Утилиты
 
 | Функция | Файл | Назначение |
 | --- | --- | --- |
-| `dayBucket(DateTime, {now})` | `lib/core/util/short_time.dart` | Группа: `today`, `yesterday`, `earlier` |
-| `formatShortTime(DateTime, {now})` | `lib/core/util/short_time.dart` | `HH:mm` для сегодня, иначе `dd.MM` |
+| `dayBucket(DateTime, {now})` | `packages/pw_agent/lib/core/util/short_time.dart` | Группа: `today`, `yesterday`, `earlier` |
+| `formatShortTime(DateTime, {now})` | `packages/pw_agent/lib/core/util/short_time.dart` | `HH:mm` для сегодня, иначе `dd.MM` |
 | `normalizeSearchText`, `scoreSearchText` | `lib/core/util/search_text.dart` | Нормализация и оценка совпадения для поиска: палитра команд и выбор модели. Термины, опечатки, префиксы |
 | `AtQuery` | `lib/core/util/at_query.dart` | Разбор `@`-токенов строки поиска: границы, кавычки, имя и значение. Общий для палитры и выбора модели |
 

@@ -56,15 +56,17 @@
   `require_trailing_commas`, `prefer_single_quotes`, `directives_ordering`, `sort_pub_dependencies`.
 - Используйте короткий синтаксис Dart там, где читаемость не страдает: initializing formals (`this.x`),
   dot shorthands (`.new`, `.empty`), `??=`, `?.`, `=>` для однострочных функций, collection `if`/`for`, switch-выражения.
-- Не используйте `print`. Логируйте через `AppLog` (`lib/core/logging/app_log.dart`) и не записывайте секреты:
+- Не используйте `print`. Логируйте через `AppLog` (`packages/pw_agent/lib/core/logging/app_log.dart`) и не записывайте секреты:
   строки проходят через `Redactor`.
 - Не редактируйте сгенерированные файлы (`*.g.dart`, `*.freezed.dart`, `*.config.dart`, `*.gr.dart`,
   `lib/l10n/generated/`). Меняйте источник и перегенерируйте.
 - Архитектура: feature-first и clean architecture. UI-состояние — BLoC/Cubit, зависимости — `get_it` + `injectable`.
-  Новый код размещайте в существующих слоях: `agent/`, `host/`, `core/`, `providers/`, `features/`, `app/`.
+  Новый код размещайте в существующих слоях: `packages/pw_agent/lib/agent/`,
+  `packages/pw_agent/lib/host/`, `packages/pw_agent/lib/core/`,
+  `packages/pw_agent/lib/providers/`, `lib/features/`, `lib/app/`.
   Ядро виртуального хоста — пакет `packages/virtual_host`. Новый апплет стандартного набора кладётся туда.
   Git — отдельный пакет `packages/virtual_git`: он зависит от `virtual_host` и в стандартный набор не входит.
-  Адаптер к Host, базе и политике остаётся в `lib/host/virtual/`.
+  Адаптер к Host, базе и политике остаётся в `packages/pw_agent/lib/host/virtual/`.
 
 ## Локализация
 
@@ -86,7 +88,8 @@
 ## Безопасность и данные
 
 - Ключи OpenRouter, пароли и passphrase SSH хранятся только в `SecretStore` (защищённое хранилище ОС), не в SQLite и не в файлах.
-- Не добавляйте в код, тесты и логи реальные ключи и пароли. Для тестов используйте `lib/core/security/` (хранилище в памяти).
+- Не добавляйте в код, тесты и логи реальные ключи и пароли. Для тестов используйте
+  `packages/pw_agent/lib/core/security/` (хранилище в памяти).
 - Не ослабляйте политику исполнения: эскалация прав (`sudo`, `su`, `doas`) запрещена на уровне политики, а не настройки.
 - Схему БД меняйте через `schemaVersion` и миграцию в `app_database.dart`, а миграцию покрывайте тестом в `test/core/db_migration_test.dart`.
   Существующие миграции не переписываются.
