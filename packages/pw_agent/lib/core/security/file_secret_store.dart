@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -24,6 +25,10 @@ final class FileSecretStore implements SecretStore {
   final File _file;
   final Map<String, String> environment;
 
+  /// Очередь операций записи: два одновременных `write` иначе прочитают один
+  /// и тот же JSON и второй потеряет ключ первого.
+  Future<void> _writeQueue = Future<void>.value();
+
   @override
   SecretStoreKind get kind => SecretStoreKind.headlessFile;
 
@@ -35,17 +40,33 @@ final class FileSecretStore implements SecretStore {
   }
 
   @override
-  Future<void> write(String key, String value) async {
+  Future<void> write(String key, String value) => _serialized(() async {
     final values = await _load();
     values[key] = value;
     await _save(values);
-  }
+  });
 
   @override
-  Future<void> delete(String key) async {
+  Future<void> delete(String key) => _serialized(() async {
     final values = await _load();
     if (values.remove(key) == null) return;
     await _save(values);
+  });
+
+  /// Выполняет операцию после предыдущей, не пропуская ошибку вызывающему.
+  ///
+  /// Очередь продолжает работу даже после сбоя: иначе одна неудачная запись
+  /// заблокировала бы сохранение остальных секретов до перезапуска.
+  Future<void> _serialized(Future<void> Function() action) async {
+    final completer = Completer<void>();
+    final previous = _writeQueue;
+    _writeQueue = completer.future;
+    try {
+      await previous;
+      await action();
+    } finally {
+      if (!completer.isCompleted) completer.complete();
+    }
   }
 
   String? _environmentValue(String key) =>
