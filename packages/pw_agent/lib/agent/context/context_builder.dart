@@ -31,6 +31,7 @@ class ContextInput {
     this.hostStub,
     this.backgroundNotes = const [],
     this.inlineFiles = const {},
+    this.tools = const [],
     this.projectMemory,
   });
 
@@ -42,9 +43,11 @@ class ContextInput {
   final SessionStateRevision state;
   final WorkspaceSnapshot workspace;
 
-  /// Сколько последних сообщений оставляет сжатие. Сам [ContextBuilder] отдаёт
-  /// модели всю историю после `compactedUntilSeq`: иначе короткие сообщения
-  /// терялись бы без сводки, хотя место в окне ещё есть.
+  /// Минимальное число последних сообщений, которое оставляет сжатие. Сам
+  /// [ContextBuilder] отдаёт модели всю историю после `compactedUntilSeq`:
+  /// иначе короткие сообщения терялись бы без сводки, хотя место в окне ещё
+  /// есть. Автоматическое сжатие может оставить больше сообщений, если хвост
+  /// помещается в половину свободного бюджета окна.
   final int recentWindow;
 
   /// Лимиты, от которых зависит сборка: потолок превью вложения и пороги окна.
@@ -67,6 +70,10 @@ class ContextInput {
   /// Бинарные файлы, которые пока не ушли модели: id сообщения → файлы.
   /// Заполняется на первый запрос хода; после успешного ответа модели очищается.
   final Map<String, List<LlmFilePart>> inlineFiles;
+
+  /// Схемы инструментов, которые уйдут в этом запросе. Нужны оценке токенов:
+  /// они занимают окно наравне с сообщениями и не сокращаются сжатием.
+  final List<LlmToolSpec> tools;
 }
 
 /// Собирает system-промпт и историю для модели. Не делает I/O.
@@ -138,7 +145,7 @@ class ContextBuilder {
     final threshold = _softTokenBudget(input);
     while (threshold != null &&
         preview > 0 &&
-        estimateTokens(messages) > threshold) {
+        estimateTokens(messages, tools: input.tools) > threshold) {
       preview = preview ~/ 2;
       messages = assemble(preview);
     }
@@ -185,20 +192,35 @@ class ContextBuilder {
     return [...own, ...results];
   }
 
-  /// Грубая оценка токенов: ~4 символа на токен. Достаточно для порогов сжатия.
-  static int estimateTokens(List<LlmMessage> messages) {
-    var chars = 0;
+  /// Грубая оценка токенов: ~4 байта UTF-8 на токен. Достаточно для порогов сжатия.
+  ///
+  /// Считаются и схемы инструментов: они уходят в каждом запросе и занимают
+  /// окно, хотя сжатие их не сокращает. Байты, а не символы: для русского и
+  /// CJK текст в UTF-8 длиннее, поэтому оценка консервативнее и не пропускает
+  /// порог сжатия так, как это делал старый `chars / 4`.
+  static int estimateTokens(
+    List<LlmMessage> messages, {
+    List<LlmToolSpec> tools = const [],
+  }) {
+    var bytes = 0;
+    int bytesOf(String text) => utf8.encode(text).length;
     for (final m in messages) {
-      chars += m.content.length;
+      bytes += bytesOf(m.content);
       for (final call in m.toolCalls) {
-        chars += call.name.length + call.arguments.length;
+        bytes += bytesOf(call.name) + bytesOf(call.arguments);
       }
       // Файлы оцениваем по размеру байтов: консервативно, чтобы не пропустить порог сжатия.
       for (final file in m.files) {
-        chars += file.bytes.length;
+        bytes += file.bytes.length;
       }
     }
-    return (chars / 4).ceil() + messages.length * 4;
+    for (final tool in tools) {
+      bytes +=
+          bytesOf(tool.name) +
+          bytesOf(tool.description) +
+          bytesOf(jsonEncode(tool.parameters));
+    }
+    return (bytes / 4).ceil() + messages.length * 4;
   }
 
   List<LlmMessage> _toLlm(

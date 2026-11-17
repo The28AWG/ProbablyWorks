@@ -30,6 +30,7 @@ class ChatState extends Equatable {
     this.failure,
     this.failureModelMissing = false,
     this.promptTokens,
+    this.promptTokensEstimated = false,
     this.contextLimit,
     this.contextBreakdown,
     this.dailyCostUsd = 0,
@@ -153,7 +154,13 @@ class ChatState extends Equatable {
 
   /// Ошибка есть и она из-за модели: док показывает предупреждение о модели вместо сырого текста.
   bool get failureIsModelMissing => failure != null && failureModelMissing;
+
+  /// Последний размер контекста: точное значение от провайдера или оценка.
   final int? promptTokens;
+
+  /// [promptTokens] — оценка, а не точное значение провайдера. Показывается
+  /// с «≈» в диалоге; после первого точного usage оценка не используется.
+  final bool promptTokensEstimated;
   final int? contextLimit;
   final ContextBreakdown? contextBreakdown;
   final double dailyCostUsd;
@@ -216,6 +223,7 @@ class ChatState extends Equatable {
     bool? failureModelMissing,
     bool clearFailure = false,
     int? promptTokens,
+    bool? promptTokensEstimated,
     int? contextLimit,
     ContextBreakdown? contextBreakdown,
     double? dailyCostUsd,
@@ -256,6 +264,7 @@ class ChatState extends Equatable {
     failure: clearFailure ? null : (failure ?? this.failure),
     failureModelMissing: failureModelMissing ?? this.failureModelMissing,
     promptTokens: promptTokens ?? this.promptTokens,
+    promptTokensEstimated: promptTokensEstimated ?? this.promptTokensEstimated,
     contextLimit: contextLimit ?? this.contextLimit,
     contextBreakdown: contextBreakdown ?? this.contextBreakdown,
     dailyCostUsd: dailyCostUsd ?? this.dailyCostUsd,
@@ -301,6 +310,7 @@ class ChatState extends Equatable {
     failure,
     failureModelMissing,
     promptTokens,
+    promptTokensEstimated,
     contextLimit,
     contextBreakdown,
     dailyCostUsd,

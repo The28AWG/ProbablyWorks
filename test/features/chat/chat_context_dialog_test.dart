@@ -11,6 +11,7 @@ import 'package:pw_agent/core/domain/chat_usage.dart';
 Future<void> _open(
   WidgetTester tester, {
   int? used,
+  bool usedEstimated = false,
   bool running = false,
   ContextBreakdown? breakdown,
   double? lastRequestCostUsd,
@@ -35,6 +36,7 @@ Future<void> _open(
                 context: context,
                 builder: (_) => ChatContextDialog(
                   used: used,
+                  usedEstimated: usedEstimated,
                   limit: 128000,
                   running: running,
                   breakdown: breakdown,
@@ -68,6 +70,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(compacted, 1);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('an estimate is marked before exact usage arrives', (
+    tester,
+  ) async {
+    await _open(
+      tester,
+      used: 96000,
+      usedEstimated: true,
+      onCompact: () {
+        return;
+      },
+    );
+    expect(find.text('Context ≈96 000 / 128 000 tokens'), findsOneWidget);
   });
 
   testWidgets('no data yet: compaction is unavailable', (tester) async {

@@ -86,6 +86,7 @@ final class AgentUsageUpdated extends AgentEvent {
     super.chatId,
     this.promptTokens,
     this.limit, {
+    this.estimated = false,
     this.breakdown,
     this.dailyCostUsd,
     this.dailyBudgetUsd,
@@ -93,6 +94,10 @@ final class AgentUsageUpdated extends AgentEvent {
 
   final int promptTokens;
   final int limit;
+
+  /// Значение — оценка до первого точного usage от провайдера. Если провайдер
+  /// уже присылал точное значение в этом ходе, оценка не отправляется вовсе.
+  final bool estimated;
   final ContextBreakdown? breakdown;
   final double? dailyCostUsd;
   final double? dailyBudgetUsd;

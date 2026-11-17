@@ -3,7 +3,7 @@ part of 'chat_session.dart';
 extension _ChatSessionContext on ChatSession {
   Future<_Prepared> _prepare(
     AppLimits limits, {
-    bool forceCompact = false,
+    CompactionReason? forceReason,
   }) async {
     var chat = await _hub.chats.chat(chatId);
     if (chat == null) throw const LlmFailure('chat not found');
@@ -66,9 +66,30 @@ extension _ChatSessionContext on ChatSession {
         : await _hub.projectStore.memory(project.id);
     final hostStub = await _loadHostStub(host, runtime);
     final notes = _backgroundNotes();
-    // Окно модели нужно сборке контекста: по нему ужимается превью вложений.
-    // Сжатие чат не меняет, поэтому значение снимается до него.
-    final limit = chat.contextLength ?? ContextCompactor.defaultContextLength;
+    // Лимит проверяем до сжатия и до подключения MCP: оно тоже тратит токены,
+    // а превышение должно остановить ход, а не оплатить ещё одну сводку.
+    var daily = await _hub.settings.readDailyUsage(chatId);
+    final budget = await _hub.settings.readDailyBudget(chatId);
+    if (budget != null && daily.costUsd >= budget) {
+      throw LlmFailure(
+        'daily spending limit reached: '
+        '\$${daily.costUsd.toStringAsFixed(4)} of '
+        '\$${budget.toStringAsFixed(2)} today',
+      );
+    }
+    // MCP и плагины подключаются до сборки: их схемы инструментов входят в
+    // запрос, а значит и в оценку бюджета. Иначе сжатие срабатывало бы позже
+    // фактического заполнения окна.
+    await _hub.mcp.ensureReady();
+    await _hub.plugins.ensureReady();
+    final tools = _hub.tools.specs;
+    // Окно берём у фактически используемой модели, а не только из поля чата:
+    // чат с моделью по умолчанию своего окна не хранит.
+    final limit =
+        _hub.models.state.modelOf(model)?.contextLength ??
+        _hub.models.state.saved[model]?.contextLength ??
+        chat.contextLength ??
+        ContextCompactor.defaultContextLength;
     ContextInput inputFor(
       Chat current, {
       Map<String, List<LlmFilePart>> files = const {},
@@ -84,61 +105,62 @@ extension _ChatSessionContext on ChatSession {
       hostStub: hostStub,
       backgroundNotes: notes,
       inlineFiles: files,
+      tools: tools,
       projectMemory: projectMemory,
     );
-    // Лимит проверяем до сжатия: оно тоже тратит токены, а превышение должно
-    // остановить ход, а не оплатить ещё одну сводку.
-    final daily = await _hub.settings.readDailyUsage(chatId);
-    final budget = await _hub.settings.readDailyBudget(chatId);
-    if (budget != null && daily.costUsd >= budget) {
-      throw LlmFailure(
-        'daily spending limit reached: '
-        '\$${daily.costUsd.toStringAsFixed(4)} of '
-        '\$${budget.toStringAsFixed(2)} today',
-      );
-    }
-    final cutoffBefore = chat.compactedUntilSeq;
-    chat = await _hub.compactor.compactIfNeeded(
-      inputFor(chat),
+    // Вложения текущего запроса входят в бюджет: решение о сжатии должно
+    // видеть тот же запрос, который уйдёт провайдеру.
+    final inline = Map.of(_inlineFiles);
+    final compaction = await _hub.compactor.compactIfNeeded(
+      inputFor(chat, files: inline),
       summaryModel: model,
       summaryReasoning: resolveUtilityReasoning(_reasoningCapabilityOf(model)),
-      force: forceCompact,
+      forceReason: forceReason,
       limits: limits,
     );
-    // Метаданные пишем только при реальном сдвиге границы: compactor возвращает
-    // тот же чат, если сжимать было нечего.
-    if (chat.compactedUntilSeq != cutoffBefore) {
+    chat = compaction.chat;
+    if (compaction.reason case final reason?) {
+      // Сжатие уменьшило контекст: последнее точное значение устарело,
+      // следующий запрос снова начнёт с оценки.
+      _exactUsageModels.remove(model);
       await _hub.settings.saveCompactionInfo(
         chatId,
         ChatCompactionInfo(
           at: DateTime.now(),
-          reason: forceCompact ? 'forced' : 'threshold',
+          reason: reason.name,
           cutoffSeq: chat.compactedUntilSeq,
           summaryChars: chat.compactionSummary?.length ?? 0,
         ),
       );
     }
-    final inline = Map.of(_inlineFiles);
+    if (compaction.usage case final usage?) {
+      // Сводка — такой же расход, как ответ модели, но не последний размер
+      // контекста: в чипе и в lastPromptTokens она не участвует.
+      await _recordUtilityUsage(model, usage);
+      daily = await _hub.settings.readDailyUsage(chatId);
+    }
     _checkFilesAccepted(model, inline);
     final llmMessages = [..._hub.builder.build(inputFor(chat, files: inline))];
     final activeSubagents = _hub.subagents.activeFor(chatId);
     if (activeSubagents.isNotEmpty) {
       llmMessages.add(LlmMessage.system(_subagentContext(activeSubagents)));
     }
-    // Первый запрос подключает включённые MCP-серверы и плагины.
-    await _hub.mcp.ensureReady();
-    await _hub.plugins.ensureReady();
-    final tools = _hub.tools.specs;
-    _emit(
-      AgentUsageUpdated(
-        chatId,
-        ContextCompactor.estimate(llmMessages),
-        limit,
-        breakdown: ContextBreakdown.of(llmMessages, tools: tools),
-        dailyCostUsd: daily.costUsd,
-        dailyBudgetUsd: budget,
-      ),
-    );
+    // Если провайдер уже присылал точный usage в этом ходе, оценка не нужна:
+    // она только давала бы скачки в чипе. Пока точного значения нет — это
+    // единственный доступный источник.
+    if (!_exactUsageModels.contains(model)) {
+      _emit(
+        AgentUsageUpdated(
+          chatId,
+          ContextCompactor.estimate(llmMessages, tools: tools),
+          limit,
+          estimated: true,
+          breakdown: ContextBreakdown.of(llmMessages, tools: tools),
+          dailyCostUsd: daily.costUsd,
+          dailyBudgetUsd: budget,
+        ),
+      );
+    }
 
     final policy = bound.policy;
     return _Prepared(

@@ -68,4 +68,14 @@ void main() {
     expect(breakdown.requestBytes, 2148);
     expect(breakdown.requestKilobytes, closeTo(2148 / 1024, 1e-9));
   });
+
+  test('token estimate uses bytes for non-ASCII text', () {
+    // «привет» — 6 символов и 12 байт UTF-8: оценка по байтам даёт 3 токена,
+    // по символам было бы 2.
+    final breakdown = ContextBreakdown.of([const LlmMessage.user('привет')]);
+
+    expect(breakdown.historyChars, 6);
+    expect(breakdown.historyBytes, 12);
+    expect(breakdown.historyTokens, 3);
+  });
 }

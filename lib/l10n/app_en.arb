@@ -365,7 +365,21 @@
   },
   "contextUsage": "Context {used} / {limit} tokens",
   "@contextUsage": {
-    "description": "Context meter label showing estimated prompt tokens against the model window.",
+    "description": "Context meter label showing prompt tokens against the model window.",
+    "placeholders": {
+      "used": {
+        "type": "String",
+        "example": "12 400"
+      },
+      "limit": {
+        "type": "String",
+        "example": "128 000"
+      }
+    }
+  },
+  "contextUsageEstimated": "Context ≈{used} / {limit} tokens",
+  "@contextUsageEstimated": {
+    "description": "Context meter label before the provider reports exact token usage.",
     "placeholders": {
       "used": {
         "type": "String",
@@ -2676,13 +2690,17 @@
       }
     }
   },
-  "contextCompactionForced": "manually or after a model change",
+  "contextCompactionForced": "manually",
   "@contextCompactionForced": {
-    "description": "Compaction reason: explicit request or smaller model window."
+    "description": "Compaction reason: the user pressed the compact button."
   },
   "contextCompactionThreshold": "automatically by the context threshold",
   "@contextCompactionThreshold": {
     "description": "Compaction reason: automatic trigger when context grows."
+  },
+  "contextCompactionOverflow": "because the model window overflowed",
+  "@contextCompactionOverflow": {
+    "description": "Compaction reason: the provider rejected the request as too large."
   },
   "chatWelcomeTitle": "What should we work on?",
   "@chatWelcomeTitle": {

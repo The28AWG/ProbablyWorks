@@ -51,7 +51,10 @@ extension _ChatSessionTurn on ChatSession {
   /// Пользователю важно понять, что дело не в сети и не в модели: сокращать
   /// нужно сам запрос. Модель видит ту же причину и следующий шаг.
   static String _contextOverflowMessage(_Prepared before, _Prepared after) {
-    final estimated = ContextCompactor.estimate(after.request.messages);
+    final estimated = ContextCompactor.estimate(
+      after.request.messages,
+      tools: after.request.tools,
+    );
     final compacted =
         after.chat.compactedUntilSeq > before.chat.compactedUntilSeq;
     final history = compacted
@@ -345,6 +348,9 @@ extension _ChatSessionTurn on ChatSession {
 
   Future<TurnEnd> _loop(CancelToken turn) async {
     _modelOverride = null;
+    // Новый ход — новые запросы: первый из них снова покажет оценку, пока
+    // провайдер не пришлёт точный usage.
+    _exactUsageModels.clear();
     final limits = await _hub.limits();
     final budget = TurnBudget(limits: limits);
     final progress = TurnProgressGuard(repeatLimit: limits.progressRepeatLimit);
@@ -366,7 +372,10 @@ extension _ChatSessionTurn on ChatSession {
         _emit(AgentTextDelta(chatId, '', reset: true));
         _emit(AgentReasoningDelta(chatId, '', reset: true));
         final before = prepared;
-        prepared = await _prepare(limits, forceCompact: true);
+        prepared = await _prepare(
+          limits,
+          forceReason: CompactionReason.overflow,
+        );
         step = await _retryAfterCompaction(before, prepared, turn, limits);
       }
       for (final id in prepared.inlineIds) {
@@ -387,7 +396,16 @@ extension _ChatSessionTurn on ChatSession {
       final usage = step.usage;
       if (usage != null) {
         final model = step.model ?? prepared.model;
-        await _recordUsage(prepared.chat, model, usage, prepared.limit);
+        await _recordUsage(
+          prepared.chat,
+          model,
+          usage,
+          prepared.limit,
+          breakdown: ContextBreakdown.of(
+            prepared.request.messages,
+            tools: prepared.request.tools,
+          ),
+        );
         budget.add(
           promptTokens: usage.promptTokens,
           completionTokens: usage.completionTokens,

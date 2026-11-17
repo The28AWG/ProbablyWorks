@@ -126,6 +126,14 @@ class ChatSession {
   /// Модель, на которую ход переключился из-за fallback. Сбрасывается на новом ходе.
   String? _modelOverride;
 
+  /// Модели, для которых в этом ходе провайдер уже вернул точный usage.
+  ///
+  /// Для них оценка контекста больше не показывается: иначе чип прыгал бы
+  /// между оценкой и точным значением на каждом шаге. Оценка остаётся
+  /// единственным источником, если провайдер usage не присылает.
+  /// Сбрасывается на новом ходе и при сжатии истории.
+  final Set<String> _exactUsageModels = {};
+
   late final StreamSubscription _changesetSub;
 
   /// Повторный вход в открытие чата ждёт ту же регистрацию карточек, а не вторую.
@@ -222,7 +230,10 @@ class ChatSession {
   Future<void> compactNow({bool force = false}) async {
     if (_running) throw StateError('cannot compact while the agent is running');
     try {
-      await _prepare(await _hub.limits(), forceCompact: force);
+      await _prepare(
+        await _hub.limits(),
+        forceReason: force ? CompactionReason.manual : null,
+      );
     } on AppFailure catch (failure) {
       _emit(AgentFailureRaised(chatId, failure));
     }

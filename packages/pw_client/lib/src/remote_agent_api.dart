@@ -1427,6 +1427,7 @@ class RemoteAgentApi
             _string(json, 'chatId'),
             _int(json, 'promptTokens'),
             _int(json, 'limit'),
+            estimated: json['estimated'] == true,
             dailyCostUsd: _double(json['dailyCostUsd']),
             dailyBudgetUsd: _double(json['dailyBudgetUsd']),
           ),

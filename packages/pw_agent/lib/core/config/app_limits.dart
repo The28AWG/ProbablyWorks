@@ -199,6 +199,10 @@ class AppLimits {
   final double softContextRatio;
   final double hardContextRatio;
   final int contextReserveTokens;
+
+  /// Минимальное число последних сообщений, которое остаётся после сжатия.
+  /// Автоматическое сжатие может оставить больше, если хвост помещается в
+  /// половину свободного бюджета окна.
   final int recentWindowMessages;
 
   AppLimits copyWith({

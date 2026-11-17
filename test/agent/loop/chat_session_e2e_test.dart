@@ -409,6 +409,109 @@ void main() {
     expect(llm.requests, hasLength(1));
   });
 
+  test(
+    'exact usage suppresses the estimate for the rest of the turn',
+    () async {
+      final chatId = await createChat();
+      final session = hub.session(chatId);
+      final usage = <AgentUsageUpdated>[];
+      final sub = session.events
+          .where((event) => event is AgentUsageUpdated)
+          .cast<AgentUsageUpdated>()
+          .listen(usage.add);
+      addTearDown(sub.cancel);
+      llm.script.add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'c1',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'echo one'}),
+            ),
+          ],
+          usage: const LlmUsage(promptTokens: 100, completionTokens: 5),
+        ),
+      ]);
+      llm.script.add([
+        const LlmTextDelta('done'),
+        const LlmCompleted(
+          usage: LlmUsage(promptTokens: 120, completionTokens: 5),
+        ),
+      ]);
+
+      expect(await runTurnEnd(session, 'hello'), TurnEnd.completed);
+
+      // Оценка была только до первого точного значения. Дальше провайдер уже
+      // известен, и оценка не подменяет его число.
+      expect(usage.where((event) => event.estimated), hasLength(1));
+      final exact = usage.where((event) => !event.estimated).toList();
+      expect(exact, hasLength(2));
+      expect(exact.last.promptTokens, 120);
+    },
+  );
+
+  test('without exact usage every step keeps the estimate', () async {
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    final usage = <AgentUsageUpdated>[];
+    final sub = session.events
+        .where((event) => event is AgentUsageUpdated)
+        .cast<AgentUsageUpdated>()
+        .listen(usage.add);
+    addTearDown(sub.cancel);
+    llm.script.add([
+      LlmCompleted(
+        toolCalls: [
+          _call(
+            'c1',
+            ToolNames.runCommand,
+            jsonEncode({'command': 'echo one'}),
+          ),
+        ],
+      ),
+    ]);
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.completed);
+
+    // Провайдер не прислал usage: оценка — единственный источник размера.
+    expect(usage.where((event) => event.estimated), hasLength(2));
+    expect(usage.where((event) => !event.estimated), isEmpty);
+  });
+
+  test('the context window comes from the model catalog', () async {
+    llm.models = const [
+      LlmModelInfo(
+        id: 'fake/model',
+        name: 'Fake',
+        supportsTools: true,
+        contextLength: 1000000,
+      ),
+    ];
+    await hub.models.refresh();
+    final chatId = await createChat();
+    final session = hub.session(chatId);
+    final usage = <AgentUsageUpdated>[];
+    final sub = session.events
+        .where((event) => event is AgentUsageUpdated)
+        .cast<AgentUsageUpdated>()
+        .listen(usage.add);
+    addTearDown(sub.cancel);
+    llm.script.add([
+      const LlmTextDelta('done'),
+      const LlmCompleted(
+        usage: LlmUsage(promptTokens: 120, completionTokens: 5),
+      ),
+    ]);
+
+    expect(await runTurnEnd(session, 'hello'), TurnEnd.completed);
+
+    // В чате окно не записано: оно должно прийти из каталога модели, а не
+    // подмениться значением по умолчанию 128k.
+    expect(usage, isNotEmpty);
+    expect(usage.every((event) => event.limit == 1000000), isTrue);
+  });
+
   test('turn cost budget uses catalog prices', () async {
     llm.models = const [
       LlmModelInfo(
@@ -797,7 +900,7 @@ void main() {
     expect(updated.compactedUntilSeq, greaterThan(0));
     final info = await hub.settings.readCompactionInfo(chatId);
     expect(info, isNotNull);
-    expect(info!.reason, 'forced');
+    expect(info!.reason, 'manual');
     expect(info.cutoffSeq, updated.compactedUntilSeq);
     expect(info.summaryChars, updated.compactionSummary?.length);
   });

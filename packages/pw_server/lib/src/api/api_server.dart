@@ -2457,6 +2457,7 @@ bool _matchesChat(Object event, String? chatId) {
       'chatId': value.chatId,
       'promptTokens': value.promptTokens,
       'limit': value.limit,
+      'estimated': value.estimated,
       'dailyCostUsd': value.dailyCostUsd,
       'dailyBudgetUsd': value.dailyBudgetUsd,
     },

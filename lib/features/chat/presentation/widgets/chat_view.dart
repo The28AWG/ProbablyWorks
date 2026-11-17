@@ -28,6 +28,7 @@ import 'package:probably_works/features/workspace/presentation/navigation/worksp
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/attachments/attachment_loader.dart';
+import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
@@ -35,9 +36,6 @@ import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
-
-/// Окно контекста, когда модель не сообщила свой лимит.
-const _defaultContextLimit = 128000;
 
 /// Один чат: шапка, лента, док внимания и композер с настройками.
 /// Используется и в компактном маршруте, и в оболочке.
@@ -794,7 +792,8 @@ class _ChatBodyState extends State<ChatBody> {
       child: BlocBuilder<ChatBloc, ChatState>(
         builder: (dialogContext, state) => ChatContextDialog(
           used: state.promptTokens,
-          limit: state.contextLimit ?? _defaultContextLimit,
+          usedEstimated: state.promptTokensEstimated,
+          limit: state.contextLimit ?? ContextCompactor.defaultContextLength,
           running: state.isRunning,
           breakdown: state.contextBreakdown,
           lastRequestCostUsd: state.lastRequestCostUsd,
@@ -907,7 +906,8 @@ class _ChatSettings extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final fraction = state.promptTokens == null
         ? null
-        : state.promptTokens! / (state.contextLimit ?? _defaultContextLimit);
+        : state.promptTokens! /
+              (state.contextLimit ?? ContextCompactor.defaultContextLength);
     final reasoning = state.effectiveReasoningEffort;
     final reasoningLabelText = reasoning == null
         ? null

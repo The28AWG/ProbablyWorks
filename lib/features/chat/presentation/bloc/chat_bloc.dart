@@ -89,7 +89,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_PinnedChanged>(_onPinnedChanged);
     on<_DefaultModelChanged>(_onDefaultModelChanged);
     on<_CatalogChanged>(
-      (event, emit) => emit(state.copyWith(catalog: event.catalog)),
+      (event, emit) => emit(
+        state.copyWith(
+          catalog: event.catalog,
+          contextLimit:
+              _contextLimitOf(
+                state.chat,
+                event.catalog,
+                state.defaultModelId,
+              ) ??
+              state.contextLimit,
+        ),
+      ),
     );
     on<_HostsChanged>(
       (event, emit) => emit(state.copyWith(hosts: event.hosts)),
@@ -160,7 +171,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         stepsDisplay: state.stepsDisplay,
         defaultModelId: state.defaultModelId,
         defaultReasoning: state.defaultReasoning,
-        contextLimit: state.contextLimit,
+        // Лимит предыдущего чата к новому не относится: его посчитает
+        // _onOpened по загруженному чату и каталогу.
+        contextLimit: _contextLimitOf(
+          event.seedChat,
+          state.catalog,
+          state.defaultModelId,
+        ),
         draftId: state.draftId,
         isRunning: _session?.isRunning ?? false,
         queue: _queueTexts(),
@@ -211,6 +228,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       chat: chat,
       hosts: hosts,
       catalog: hub.models.state,
+      // Последний точный размер контекста из БД: чип виден сразу после
+      // открытия чата, не дожидаясь нового запроса.
+      promptTokens: chat.lastPromptTokens,
+      contextLimit: _contextLimitOf(
+        chat,
+        hub.models.state,
+        hub.settings.cached(SettingsRepository.keyDefaultModel),
+      ),
       defaultReasoning: hub.settings.cachedReasoning(
         SettingsRepository.keyDefaultReasoning,
       ),
@@ -353,6 +378,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Карточки этого чата — из базы, не при старте приложения.
     // Если ход уже продолжен после старта, здесь только показываем карточки.
     await _session?.restoreUnanswered();
+    // Последний точный usage из БД важнее оценки, которая могла остаться в
+    // состоянии от предыдущего кадра.
+    final restoredTokens = snapshot.chat?.lastPromptTokens;
     // Один emit на открытие: каждый промежуточный emit перестраивает весь экран чата на UI-потоке.
     final loaded = state.copyWith(
       hosts: shared.hosts,
@@ -369,7 +397,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       approvals: _hub.broker.pendingApprovals(event.chatId),
       questions: _hub.broker.pendingQuestions(event.chatId),
       editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
-      contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
+      // Последний точный usage и окно модели доступны до первого запроса:
+      // чип не пропадает после перезапуска и не берёт лимит чужого чата.
+      promptTokens: restoredTokens ?? state.promptTokens,
+      promptTokensEstimated:
+          restoredTokens == null && state.promptTokensEstimated,
+      contextLimit:
+          _contextLimitOf(
+            snapshot.chat,
+            _hub.models.state,
+            shared.defaultModel,
+          ) ??
+          state.contextLimit,
       dailyCostUsd: usage.usage.costUsd,
       dailyBudgetUsd: usage.budget,
       clearDailyBudget: usage.budget == null,
@@ -421,6 +460,24 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ),
   );
 
+  /// Окно контекста для чипа и диалога до первого события usage.
+  ///
+  /// Источники по убыванию свежести: живой каталог, сохранённые детали модели,
+  /// поле чата. Чат с моделью по умолчанию своего окна не хранит, поэтому без
+  /// каталога он выглядел бы как 128k даже для модели на миллион токенов.
+  static int? _contextLimitOf(
+    Chat? chat,
+    ModelCatalogState catalog,
+    String? defaultModelId,
+  ) {
+    final own = chat?.model;
+    final model = own != null && own.isNotEmpty ? own : defaultModelId;
+    if (model == null || model.isEmpty) return chat?.contextLength;
+    return catalog.modelOf(model)?.contextLength ??
+        catalog.saved[model]?.contextLength ??
+        chat?.contextLength;
+  }
+
   /// Состояние нового чата из настроек и хостов в памяти: без чтений БД и сети. Черновик в блоке пока
   /// не записан: чат появится в БД с первым сообщением (см. [ChatApi.draftChat]).
   static ChatState _newChatState(
@@ -432,16 +489,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final hostId = _defaultHostId(hosts);
     final host = hosts.where((h) => h.id == hostId).firstOrNull;
     final chat = hub.draftChat(hostId: hostId, host: host);
+    final defaultModelId = settings.cached(SettingsRepository.keyDefaultModel);
     return ChatState(
       hosts: hosts,
       limits: settings.cachedLimits(),
       catalog: hub.models.state,
       pinnedModels: settings.cachedPinnedModels(),
       stepsDisplay: settings.cachedStepsDisplay(),
-      defaultModelId: settings.cached(SettingsRepository.keyDefaultModel),
+      defaultModelId: defaultModelId,
       defaultReasoning: settings.cachedReasoning(
         SettingsRepository.keyDefaultReasoning,
       ),
+      contextLimit: _contextLimitOf(chat, hub.models.state, defaultModelId),
       draftId: draftId,
       chatId: chat.id,
       chat: chat,
@@ -867,6 +926,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(state.copyWith(trustNeeded: true));
       case AgentUsageUpdated(
         :final promptTokens,
+        :final estimated,
         :final limit,
         :final breakdown,
         :final dailyCostUsd,
@@ -875,6 +935,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         emit(
           state.copyWith(
             promptTokens: promptTokens,
+            promptTokensEstimated: estimated,
             contextLimit: limit,
             contextBreakdown: breakdown,
             dailyCostUsd: dailyCostUsd,
@@ -928,7 +989,19 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final reasoning = await _hub.settings.readReasoning(
       SettingsRepository.keyDefaultReasoning,
     );
-    emit(state.copyWith(defaultModelId: model, defaultReasoning: reasoning));
+    // Чат без своей модели следует за моделью по умолчанию: вместе с ней
+    // меняется и окно контекста.
+    final own = state.chat?.model;
+    final followsDefault = own == null || own.isEmpty;
+    emit(
+      state.copyWith(
+        defaultModelId: model,
+        defaultReasoning: reasoning,
+        contextLimit: followsDefault
+            ? _contextLimitOf(state.chat, state.catalog, model)
+            : state.contextLimit,
+      ),
+    );
   }
 
   Future<void> _onRefresh(_Refresh event, Emitter<ChatState> emit) async {
@@ -975,7 +1048,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         questions: _hub.broker.pendingQuestions(chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
-        contextLimit: snapshot.chat?.contextLength ?? state.contextLimit,
+        contextLimit:
+            _contextLimitOf(
+              snapshot.chat,
+              state.catalog,
+              state.defaultModelId,
+            ) ??
+            state.contextLimit,
         dailyCostUsd: usage.usage.costUsd,
         dailyBudgetUsd: usage.budget,
         clearDailyBudget: usage.budget == null,

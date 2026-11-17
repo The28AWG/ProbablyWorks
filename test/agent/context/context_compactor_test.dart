@@ -18,13 +18,17 @@ class _ScriptedLlm extends LlmProviderBase {
     : super(const LlmProviderDescriptor(id: 'test', label: 'Test'));
 
   final List<String> replies = [];
+  final List<LlmUsage> usages = [];
   final List<LlmRequest> requests = [];
 
   @override
   Stream<LlmEvent> stream(LlmRequest request) {
     requests.add(request);
     final text = replies.isEmpty ? '' : replies.removeAt(0);
-    return Stream.fromIterable([LlmTextDelta(text), const LlmCompleted()]);
+    return Stream.fromIterable([
+      LlmTextDelta(text),
+      LlmCompleted(usage: usages.isEmpty ? null : usages.removeAt(0)),
+    ]);
   }
 
   @override
@@ -68,21 +72,27 @@ void main() {
     text: 'text $seq',
   );
 
-  ContextInput input(List<ChatMessage> messages, {required int recentWindow}) =>
-      ContextInput(
-        chat: chat,
-        host: Host(
-          id: 'local',
-          name: 'Local',
-          kind: HostKind.local,
-          createdAt: now,
-          updatedAt: now,
-        ),
-        messages: messages,
-        state: SessionStateRevision(id: 'r1', chatId: 'c1', createdAt: now),
-        workspace: WorkspaceSnapshot.empty,
-        recentWindow: recentWindow,
-      );
+  ContextInput input(
+    List<ChatMessage> messages, {
+    required int recentWindow,
+    int? contextLimit,
+    List<LlmToolSpec> tools = const [],
+  }) => ContextInput(
+    chat: chat,
+    host: Host(
+      id: 'local',
+      name: 'Local',
+      kind: HostKind.local,
+      createdAt: now,
+      updatedAt: now,
+    ),
+    messages: messages,
+    state: SessionStateRevision(id: 'r1', chatId: 'c1', createdAt: now),
+    workspace: WorkspaceSnapshot.empty,
+    recentWindow: recentWindow,
+    contextLimit: contextLimit,
+    tools: tools,
+  );
 
   test('below the soft budget nothing is compacted', () async {
     final messages = [
@@ -96,7 +106,8 @@ void main() {
       summaryModel: 'fake/model',
     );
 
-    expect(identical(result, chat), isTrue);
+    expect(identical(result.chat, chat), isTrue);
+    expect(result.compacted, isFalse);
     expect(llm.requests, isEmpty);
   });
 
@@ -152,12 +163,13 @@ void main() {
     final result = await compactor.compactIfNeeded(
       input(messages, recentWindow: 2),
       summaryModel: 'fake/model',
-      force: true,
+      forceReason: CompactionReason.manual,
     );
 
-    expect(result.compactionSummary, 'SAFE');
+    expect(result.chat.compactionSummary, 'SAFE');
     // Оставляем assistant и оба его результата: вызов и ответы не разрываются.
-    expect(result.compactedUntilSeq, 1);
+    expect(result.chat.compactedUntilSeq, 1);
+    expect(result.reason, CompactionReason.manual);
   });
 
   test('manual compaction ignores the budget and stores a summary', () async {
@@ -167,26 +179,30 @@ void main() {
         message(seq, seq.isOdd ? MessageRole.user : MessageRole.assistant),
     ];
 
+    llm.usages.add(const LlmUsage(promptTokens: 123, completionTokens: 7));
     final result = await compactor.compactIfNeeded(
       input(messages, recentWindow: 4),
       summaryModel: 'fake/model',
-      force: true,
+      forceReason: CompactionReason.manual,
     );
 
-    expect(result.compactionSummary, 'SUMMARY');
-    expect(result.compactedUntilSeq, lessThan(12));
+    expect(result.chat.compactionSummary, 'SUMMARY');
+    expect(result.chat.compactedUntilSeq, lessThan(12));
+    expect(result.reason, CompactionReason.manual);
+    // Расход сводки возвращается наружу: он не должен теряться в учёте.
+    expect(result.usage?.promptTokens, 123);
+    expect(result.usage?.completionTokens, 7);
     expect(llm.requests, hasLength(1));
     expect((await chats.chat('c1'))!.compactionSummary, 'SUMMARY');
   });
 
-  test('step growth compacts even under the budget', () async {
+  test('many tool results below the budget do not compact', () async {
     llm.replies.add('STEPS');
-    // Окно 50 сообщений, из них 50 результатов инструментов: больше порога роста.
+    // Больше сорока результатов инструментов, но токенов мало: сжатие — про
+    // окно, а не про количество сообщений. Раньше здесь срабатывал порог роста.
     final messages = [
-      message(1, MessageRole.user),
-      for (var seq = 2; seq <= 4; seq++) message(seq, MessageRole.tool),
-      message(5, MessageRole.user),
-      for (var seq = 6; seq <= 60; seq++) message(seq, MessageRole.tool),
+      for (var seq = 1; seq <= 60; seq++)
+        message(seq, seq.isOdd ? MessageRole.user : MessageRole.tool),
     ];
 
     final result = await compactor.compactIfNeeded(
@@ -194,8 +210,94 @@ void main() {
       summaryModel: 'fake/model',
     );
 
-    expect(result.compactionSummary, 'STEPS');
-    expect(result.compactedUntilSeq, 4);
+    expect(result.compacted, isFalse);
+    expect(llm.requests, isEmpty);
+  });
+
+  test('tool schemas count toward the compaction budget', () async {
+    llm.replies.add('TOOLS');
+    // Сообщения сами по себе укладываются в мягкий порог (12 000 * 0.7 =
+    // 8 400), а вместе со схемами инструментов — нет.
+    final messages = [
+      for (var seq = 1; seq <= 20; seq++)
+        ChatMessage(
+          id: 'm$seq',
+          chatId: 'c1',
+          seq: seq,
+          role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+          createdAt: now,
+          text: 'x' * 1000,
+        ),
+    ];
+    final schema = LlmToolSpec(
+      name: 'read_file',
+      description: 'x' * 20000,
+      parameters: const {'type': 'object'},
+    );
+
+    final result = await compactor.compactIfNeeded(
+      input(messages, recentWindow: 10, contextLimit: 20000, tools: [schema]),
+      summaryModel: 'fake/model',
+    );
+
+    expect(result.compacted, isTrue);
+    expect(result.reason, CompactionReason.soft);
+  });
+
+  test(
+    'the automatic cutoff keeps a token tail, not just N messages',
+    () async {
+      llm.replies.add('TAIL');
+      final messages = [
+        for (var seq = 1; seq <= 80; seq++)
+          ChatMessage(
+            id: 'm$seq',
+            chatId: 'c1',
+            seq: seq,
+            role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+            createdAt: now,
+            text: 'x' * 1000,
+          ),
+      ];
+
+      final result = await compactor.compactIfNeeded(
+        input(messages, recentWindow: 10, contextLimit: 30000),
+        summaryModel: 'fake/model',
+      );
+
+      expect(result.compacted, isTrue);
+      final retained = messages
+          .where((message) => message.seq > result.chat.compactedUntilSeq)
+          .length;
+      // Хвост ограничен половиной свободного бюджета, а не десятью
+      // сообщениями: для большого окна это позволяет сохранить больше истории.
+      expect(retained, greaterThan(10));
+      expect(retained, lessThan(messages.length));
+    },
+  );
+
+  test('the resolved model window wins over the chat field', () async {
+    llm.replies.add('WINDOW');
+    final messages = [
+      for (var seq = 1; seq <= 36; seq++)
+        ChatMessage(
+          id: 'm$seq',
+          chatId: 'c1',
+          seq: seq,
+          role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+          createdAt: now,
+          text: 'x' * 1000,
+        ),
+    ];
+
+    // В чате окно не записано, но сессия уже разрешила его из каталога.
+    final result = await compactor.compactIfNeeded(
+      input(messages, recentWindow: 10, contextLimit: 20000),
+      summaryModel: 'fake/model',
+    );
+
+    expect(result.compacted, isTrue);
+    expect(result.reason, CompactionReason.soft);
   });
 
   test(
@@ -209,10 +311,11 @@ void main() {
       final result = await compactor.compactIfNeeded(
         input(messages, recentWindow: 5),
         summaryModel: 'fake/model',
-        force: true,
+        forceReason: CompactionReason.manual,
       );
 
-      expect(identical(result, chat), isTrue);
+      expect(identical(result.chat, chat), isTrue);
+      expect(result.compacted, isFalse);
       expect(llm.requests, isEmpty);
     },
   );

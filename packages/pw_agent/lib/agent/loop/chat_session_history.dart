@@ -103,8 +103,9 @@ extension _ChatSessionHistory on ChatSession {
     Chat chat,
     String model,
     LlmUsage usage,
-    int limit,
-  ) async {
+    int limit, {
+    ContextBreakdown? breakdown,
+  }) async {
     final cost = _costOf(model, usage);
     final daily = await _hub.settings.addDailyUsage(
       chatId,
@@ -120,14 +121,31 @@ extension _ChatSessionHistory on ChatSession {
         lastCompletionTokens: usage.completionTokens,
       ),
     );
+    // Точное значение получено: до конца хода оценка для этой модели больше
+    // не показывается. Следующий ход снова начнёт с оценки, потому что
+    // контекст к тому моменту изменится.
+    _exactUsageModels.add(model);
     _emit(
       AgentUsageUpdated(
         chatId,
         usage.promptTokens,
         limit,
+        breakdown: breakdown,
         dailyCostUsd: daily.costUsd,
         dailyBudgetUsd: budget,
       ),
+    );
+  }
+
+  /// Расход служебного запроса (сводки истории). В отличие от [_recordUsage]
+  /// не меняет последний размер контекста: сводка не является запросом хода,
+  /// и показывать её токены в чипе нельзя.
+  Future<void> _recordUtilityUsage(String model, LlmUsage usage) async {
+    await _hub.settings.addDailyUsage(
+      chatId,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      costUsd: _costOf(model, usage) ?? 0,
     );
   }
 

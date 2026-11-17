@@ -13,6 +13,7 @@ class ChatContextDialog extends StatelessWidget {
     required this.limit,
     required this.running,
     required this.onCompact,
+    this.usedEstimated = false,
     this.breakdown,
     this.lastRequestCostUsd,
     this.dailyCostUsd = 0,
@@ -24,6 +25,9 @@ class ChatContextDialog extends StatelessWidget {
 
   /// Заполнено токенов по последнему ответу модели или `null`, пока данных нет.
   final int? used;
+
+  /// [used] — оценка: провайдер ещё не присылал точное значение в этом ходе.
+  final bool usedEstimated;
   final int limit;
   final bool running;
   final VoidCallback onCompact;
@@ -67,10 +71,15 @@ class ChatContextDialog extends StatelessWidget {
                 Text(l10n.contextNoData, style: theme.textTheme.bodyMedium)
               else
                 ContextUsageBar(
-                  label: l10n.contextUsage(
-                    _groupDigits(used),
-                    _groupDigits(limit),
-                  ),
+                  label: usedEstimated
+                      ? l10n.contextUsageEstimated(
+                          _groupDigits(used),
+                          _groupDigits(limit),
+                        )
+                      : l10n.contextUsage(
+                          _groupDigits(used),
+                          _groupDigits(limit),
+                        ),
                   fraction: limit <= 0
                       ? 0
                       : (used / limit).clamp(0, 1).toDouble(),
@@ -216,10 +225,14 @@ class ChatContextDialog extends StatelessWidget {
     Navigator.of(context).pop();
   }
 
+  /// Старые записи хранят `forced` и `threshold`; новые — имена
+  /// `CompactionReason`. Неизвестное значение не ломает диалог.
   static String _compactionReason(AppLocalizations l10n, String reason) =>
-      reason == 'forced'
-      ? l10n.contextCompactionForced
-      : l10n.contextCompactionThreshold;
+      switch (reason) {
+        'manual' || 'forced' => l10n.contextCompactionForced,
+        'overflow' => l10n.contextCompactionOverflow,
+        _ => l10n.contextCompactionThreshold,
+      };
 
   /// Локальные дата и время без зависимости от intl: `2026-11-11 14:05`.
   static String _dateTime(DateTime value) {

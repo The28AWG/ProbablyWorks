@@ -365,7 +365,21 @@
   },
   "contextUsage": "Контекст {used} / {limit} токенов",
   "@contextUsage": {
-    "description": "Индикатор контекста: оценка токенов промпта относительно окна модели.",
+    "description": "Индикатор контекста: токены промпта относительно окна модели.",
+    "placeholders": {
+      "used": {
+        "type": "String",
+        "example": "12 400"
+      },
+      "limit": {
+        "type": "String",
+        "example": "128 000"
+      }
+    }
+  },
+  "contextUsageEstimated": "Контекст ≈{used} / {limit} токенов",
+  "@contextUsageEstimated": {
+    "description": "Индикатор контекста до первого точного usage от провайдера.",
     "placeholders": {
       "used": {
         "type": "String",
@@ -2676,13 +2690,17 @@
       }
     }
   },
-  "contextCompactionForced": "вручную или после смены модели",
+  "contextCompactionForced": "вручную",
   "@contextCompactionForced": {
-    "description": "Причина сжатия: явный запрос или меньшее окно модели."
+    "description": "Причина сжатия: пользователь нажал кнопку сжатия."
   },
   "contextCompactionThreshold": "автоматически по порогу контекста",
   "@contextCompactionThreshold": {
     "description": "Причина сжатия: автоматический триггер при росте контекста."
+  },
+  "contextCompactionOverflow": "из-за переполнения окна модели",
+  "@contextCompactionOverflow": {
+    "description": "Причина сжатия: провайдер отклонил запрос как слишком большой."
   },
   "chatWelcomeTitle": "С чего начнём?",
   "@chatWelcomeTitle": {
