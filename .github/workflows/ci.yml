@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -54,19 +55,11 @@ jobs:
       - name: Test app
         run: flutter test
 
-      - name: Analyze and test packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          for pkg in pw_agent pw_client pw_server virtual_host virtual_git; do
-            echo "::group::$pkg"
-            (
-              cd "packages/$pkg"
-              dart analyze
-              dart test
-            )
-            echo "::endgroup::"
-          done
+      - name: Analyze and test all packages
+        run: tool/ci/test_packages.sh
+
+      - name: Build web client
+        run: flutter build web -t lib/main_web.dart --release
 
       - name: Integration test real daemon
         env:
