@@ -50,10 +50,6 @@
       }
     }
   },
-  "navChats": "Chats",
-  "@navChats": {
-    "description": "Navigation item that opens the chat list."
-  },
   "navHosts": "Hosts",
   "@navHosts": {
     "description": "Navigation item that opens host management."
@@ -85,10 +81,6 @@
   "onboardingContinue": "Continue",
   "@onboardingContinue": {
     "description": "Button that saves the API key and opens the application."
-  },
-  "chatsTitle": "Chats",
-  "@chatsTitle": {
-    "description": "Header of the chat list panel."
   },
   "chatsEmpty": "No chats yet. Create one to start.",
   "@chatsEmpty": {
@@ -130,10 +122,6 @@
   "chatHostLabel": "Host",
   "@chatHostLabel": {
     "description": "Label of the host selector for a chat."
-  },
-  "chatPolicyLabel": "Policy",
-  "@chatPolicyLabel": {
-    "description": "Label of the policy mode selector for a chat."
   },
   "policyAsk": "Ask",
   "@policyAsk": {
@@ -202,10 +190,6 @@
       }
     }
   },
-  "messageEdit": "Edit",
-  "@messageEdit": {
-    "description": "Menu action that edits a user message and re-runs from it."
-  },
   "messageEditHint": "Editing restarts the turn",
   "@messageEditHint": {
     "description": "Placeholder in the inline editor that replaces a user message. Sending rewrites history from that message."
@@ -221,14 +205,6 @@
   "messageCollapse": "Collapse",
   "@messageCollapse": {
     "description": "Collapses a long user message back to its preview."
-  },
-  "messageDeleteAfter": "Delete from here",
-  "@messageDeleteAfter": {
-    "description": "Menu action that removes this message and everything after it."
-  },
-  "messageDeleteAfterConfirm": "Remove this message and all later messages?",
-  "@messageDeleteAfterConfirm": {
-    "description": "Confirmation before deleting messages after a point."
   },
   "approvalTitle": "Approval required",
   "@approvalTitle": {
@@ -542,26 +518,6 @@
   "hostTest": "Test connection",
   "@hostTest": {
     "description": "Button that checks SSH connectivity and runs a harmless command."
-  },
-  "hostTestOk": "Connected: {info}",
-  "@hostTestOk": {
-    "description": "Result of a successful connection test.",
-    "placeholders": {
-      "info": {
-        "type": "String",
-        "example": "Linux 6.8"
-      }
-    }
-  },
-  "hostTestFailed": "Connection failed: {message}",
-  "@hostTestFailed": {
-    "description": "Result of a failed connection test.",
-    "placeholders": {
-      "message": {
-        "type": "String",
-        "example": "timeout"
-      }
-    }
   },
   "hostDeleteConfirm": "Delete this host? Chats that use it will stop working until a new host is set.",
   "@hostDeleteConfirm": {
@@ -931,14 +887,6 @@
   "@compactHistory": {
     "description": "Button in the context meter: compress the older part of the chat history now."
   },
-  "chatBadgeRunning": "Running",
-  "@chatBadgeRunning": {
-    "description": "Tooltip for the spinner badge: the agent is working in this chat."
-  },
-  "chatBadgeWaiting": "Waiting for you",
-  "@chatBadgeWaiting": {
-    "description": "Tooltip for the badge: the agent waits for an approval or an answer in this chat."
-  },
   "hostNotesLabel": "Notes",
   "@hostNotesLabel": {
     "description": "Label of the free-text notes field of a host (for example, 'prod API box')."
@@ -1301,22 +1249,6 @@
   "@reasoningNotSupported": {
     "description": "Shown when the selected model cannot use reasoning."
   },
-  "reasoningAlwaysOn": "Reasoning is always on for this model.",
-  "@reasoningAlwaysOn": {
-    "description": "Shown when the model does not allow disabling reasoning."
-  },
-  "reasoningAdjustedForModel": "Requested {requested}, using {actual} for this model.",
-  "@reasoningAdjustedForModel": {
-    "description": "Shown when the selected reasoning level is not supported and was lowered.",
-    "placeholders": {
-      "requested": {
-        "type": "String"
-      },
-      "actual": {
-        "type": "String"
-      }
-    }
-  },
   "reasoningModelChipTooltip": "Model: {model} · Reasoning: {level}",
   "@reasoningModelChipTooltip": {
     "description": "Tooltip of the model chip when reasoning is active.",
@@ -1461,15 +1393,6 @@
         "type": "int"
       },
       "total": {
-        "type": "int"
-      }
-    }
-  },
-  "runPid": "pid {pid}",
-  "@runPid": {
-    "description": "Tool card header: process id of the command.",
-    "placeholders": {
-      "pid": {
         "type": "int"
       }
     }
@@ -1691,14 +1614,6 @@
   "commonMore": "More",
   "@commonMore": {
     "description": "Generic tooltip of the overflow menu button."
-  },
-  "runShowOutput": "Show output",
-  "@runShowOutput": {
-    "description": "Tooltip of the tool step button that expands the command output."
-  },
-  "runHideOutput": "Hide output",
-  "@runHideOutput": {
-    "description": "Tooltip of the tool step button that collapses the command output."
   },
   "onboardingStepCounter": "Step {current} of {total}",
   "@onboardingStepCounter": {
@@ -1948,10 +1863,6 @@
   },
   "agentProfilesTitle": "Agents",
   "@agentProfilesTitle": {
-    "description": "Agent profiles UI."
-  },
-  "agentProfilesManage": "Manage connections…",
-  "@agentProfilesManage": {
     "description": "Agent profiles UI."
   },
   "settingsGroupSafetyHint": "Default policy, command risk levels, and commands that are always denied.",
@@ -2719,10 +2630,6 @@
   "@messageCopied": {
     "description": "Snackbar after copying a message to the clipboard."
   },
-  "chatScrollToLatest": "Jump to latest",
-  "@chatScrollToLatest": {
-    "description": "Button that returns the chat to the newest message."
-  },
   "compactionMarker": "Earlier messages were compacted into a summary",
   "@compactionMarker": {
     "description": "Marker in the transcript above the messages that were summarized."
@@ -3276,8 +3183,6 @@
   "@paletteCommandRefreshModels": {"description": "Command palette action: refresh the model catalog."},
   "paletteNoResults": "Nothing found",
   "@paletteNoResults": {"description": "Empty state of the command palette search."},
-  "paletteSearchError": "Search failed",
-  "@paletteSearchError": {"description": "Server chat search failed; commands are still available."},
   "paletteLoading": "Searching…",
   "@paletteLoading": {"description": "Chat search is running."},
   "paletteFilterCommand": "Commands",

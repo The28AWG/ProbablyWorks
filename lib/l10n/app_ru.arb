@@ -50,10 +50,6 @@
       }
     }
   },
-  "navChats": "Чаты",
-  "@navChats": {
-    "description": "Пункт навигации, открывающий список чатов."
-  },
   "navHosts": "Хосты",
   "@navHosts": {
     "description": "Пункт навигации, открывающий управление хостами."
@@ -85,10 +81,6 @@
   "onboardingContinue": "Продолжить",
   "@onboardingContinue": {
     "description": "Кнопка сохранения API-ключа и открытия приложения."
-  },
-  "chatsTitle": "Чаты",
-  "@chatsTitle": {
-    "description": "Заголовок панели списка чатов."
   },
   "chatsEmpty": "Чатов пока нет. Создайте первый, чтобы начать.",
   "@chatsEmpty": {
@@ -130,10 +122,6 @@
   "chatHostLabel": "Хост",
   "@chatHostLabel": {
     "description": "Подпись выбора хоста для чата."
-  },
-  "chatPolicyLabel": "Политика",
-  "@chatPolicyLabel": {
-    "description": "Подпись выбора режима политики для чата."
   },
   "policyAsk": "Спрашивать",
   "@policyAsk": {
@@ -202,10 +190,6 @@
       }
     }
   },
-  "messageEdit": "Изменить",
-  "@messageEdit": {
-    "description": "Действие меню: изменить сообщение пользователя и запустить ход заново."
-  },
   "messageEditHint": "Правка запустит ход заново",
   "@messageEditHint": {
     "description": "Подсказка в поле правки сообщения. Отправка переписывает историю с этого сообщения."
@@ -221,14 +205,6 @@
   "messageCollapse": "Свернуть",
   "@messageCollapse": {
     "description": "Collapses a long user message back to its preview."
-  },
-  "messageDeleteAfter": "Удалить отсюда",
-  "@messageDeleteAfter": {
-    "description": "Действие меню: удалить это сообщение и всё после него."
-  },
-  "messageDeleteAfterConfirm": "Удалить это сообщение и все последующие?",
-  "@messageDeleteAfterConfirm": {
-    "description": "Подтверждение удаления сообщений начиная с выбранного."
   },
   "approvalTitle": "Нужно подтверждение",
   "@approvalTitle": {
@@ -542,26 +518,6 @@
   "hostTest": "Проверить подключение",
   "@hostTest": {
     "description": "Кнопка проверки SSH-подключения безопасной командой."
-  },
-  "hostTestOk": "Подключено: {info}",
-  "@hostTestOk": {
-    "description": "Результат успешной проверки подключения.",
-    "placeholders": {
-      "info": {
-        "type": "String",
-        "example": "Linux 6.8"
-      }
-    }
-  },
-  "hostTestFailed": "Не удалось подключиться: {message}",
-  "@hostTestFailed": {
-    "description": "Результат неудачной проверки подключения.",
-    "placeholders": {
-      "message": {
-        "type": "String",
-        "example": "таймаут"
-      }
-    }
   },
   "hostDeleteConfirm": "Удалить этот хост? Чаты, которые его используют, перестанут работать, пока не будет выбран другой хост.",
   "@hostDeleteConfirm": {
@@ -931,14 +887,6 @@
   "@compactHistory": {
     "description": "Button in the context meter: compress the older part of the chat history now."
   },
-  "chatBadgeRunning": "Выполняется",
-  "@chatBadgeRunning": {
-    "description": "Tooltip for the spinner badge: the agent is working in this chat."
-  },
-  "chatBadgeWaiting": "Ждёт подтверждения",
-  "@chatBadgeWaiting": {
-    "description": "Tooltip for the badge: the agent waits for an approval or an answer in this chat."
-  },
   "hostNotesLabel": "Заметки",
   "@hostNotesLabel": {
     "description": "Label of the free-text notes field of a host (for example, 'prod API box')."
@@ -1301,22 +1249,6 @@
   "@reasoningNotSupported": {
     "description": "Shown when the selected model cannot use reasoning."
   },
-  "reasoningAlwaysOn": "У этой модели размышления всегда включены.",
-  "@reasoningAlwaysOn": {
-    "description": "Shown when the model does not allow disabling reasoning."
-  },
-  "reasoningAdjustedForModel": "Запрошен {requested}, для этой модели используется {actual}.",
-  "@reasoningAdjustedForModel": {
-    "description": "Shown when the selected reasoning level is not supported and was lowered.",
-    "placeholders": {
-      "requested": {
-        "type": "String"
-      },
-      "actual": {
-        "type": "String"
-      }
-    }
-  },
   "reasoningModelChipTooltip": "Модель: {model} · Размышления: {level}",
   "@reasoningModelChipTooltip": {
     "description": "Tooltip of the model chip when reasoning is active.",
@@ -1461,15 +1393,6 @@
         "type": "int"
       },
       "total": {
-        "type": "int"
-      }
-    }
-  },
-  "runPid": "pid {pid}",
-  "@runPid": {
-    "description": "Tool card header: process id of the command.",
-    "placeholders": {
-      "pid": {
         "type": "int"
       }
     }
@@ -1691,14 +1614,6 @@
   "commonMore": "Ещё",
   "@commonMore": {
     "description": "Generic tooltip of the overflow menu button."
-  },
-  "runShowOutput": "Показать вывод",
-  "@runShowOutput": {
-    "description": "Tooltip of the tool step button that expands the command output."
-  },
-  "runHideOutput": "Скрыть вывод",
-  "@runHideOutput": {
-    "description": "Tooltip of the tool step button that collapses the command output."
   },
   "onboardingStepCounter": "Шаг {current} из {total}",
   "@onboardingStepCounter": {
@@ -1948,10 +1863,6 @@
   },
   "agentProfilesTitle": "Агенты",
   "@agentProfilesTitle": {
-    "description": "Agent profiles UI."
-  },
-  "agentProfilesManage": "Управление подключениями…",
-  "@agentProfilesManage": {
     "description": "Agent profiles UI."
   },
   "settingsGroupSafetyHint": "Политика по умолчанию, уровни риска команд и команды, которые запрещены всегда.",
@@ -2719,10 +2630,6 @@
   "@messageCopied": {
     "description": "Уведомление после копирования сообщения в буфер обмена."
   },
-  "chatScrollToLatest": "К новым сообщениям",
-  "@chatScrollToLatest": {
-    "description": "Кнопка возврата к последнему сообщению чата."
-  },
   "compactionMarker": "Ранние сообщения сжаты в сводку",
   "@compactionMarker": {
     "description": "Метка в ленте над сообщениями, которые вошли в сводку."
@@ -3276,8 +3183,6 @@
   "@paletteCommandRefreshModels": {"description": "Действие палитры: обновить каталог моделей."},
   "paletteNoResults": "Ничего не найдено",
   "@paletteNoResults": {"description": "Пустое состояние поиска палитры."},
-  "paletteSearchError": "Ошибка поиска",
-  "@paletteSearchError": {"description": "Поиск чатов на сервере завершился ошибкой; команды остаются."},
   "paletteLoading": "Поиск…",
   "@paletteLoading": {"description": "Идёт поиск по чатам."},
   "paletteFilterCommand": "Команды",

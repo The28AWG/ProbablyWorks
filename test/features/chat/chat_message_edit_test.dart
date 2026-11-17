@@ -69,8 +69,8 @@ void main() {
     );
 
     expect(find.byIcon(Icons.delete_outline), findsNothing);
-    expect(find.byTooltip(l10n.messageDeleteAfter), findsNothing);
-    expect(find.byTooltip(l10n.messageEdit), findsNothing);
+    expect(find.byTooltip(l10n.commonDelete), findsNothing);
+    expect(find.byTooltip(l10n.commonEdit), findsNothing);
     expect(find.byTooltip(l10n.commonCopy), findsNothing);
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);

@@ -11,6 +11,20 @@ Set<String> _messageKeys(Map<String, dynamic> arb) => {
     if (!key.startsWith('@')) key,
 };
 
+/// Исходники, где ищутся обращения к строкам. Генерация локализации
+/// исключена: в ней есть геттер для каждого ключа, и проверка теряет смысл.
+String _applicationCode() {
+  final buffer = StringBuffer();
+  for (final root in ['lib', 'packages']) {
+    for (final entity in Directory(root).listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      if (entity.path.contains('/l10n/generated/')) continue;
+      buffer.writeln(entity.readAsStringSync());
+    }
+  }
+  return buffer.toString();
+}
+
 void main() {
   final en = _readArb('lib/l10n/app_en.arb');
   final ru = _readArb('lib/l10n/app_ru.arb');
@@ -53,5 +67,14 @@ void main() {
         );
       }
     }
+  });
+
+  test('every message is used in the application code', () {
+    final code = _applicationCode();
+    final unused = [
+      for (final key in _messageKeys(en))
+        if (!RegExp('\\b${RegExp.escape(key)}\\b').hasMatch(code)) key,
+    ];
+    expect(unused, isEmpty, reason: 'unused l10n keys: ${unused.join(', ')}');
   });
 }
