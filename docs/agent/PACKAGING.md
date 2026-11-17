@@ -193,7 +193,7 @@ dart run tool/package/package_server.dart --platform=linux --arch=x64
 - `probably-works-server-<version>-windows-x64.zip`.
 
 Внутри архива — `probably-works-server/bin/pw_server`, `lib/` с нативными
-библиотеками и README. Запуск:
+библиотеками, README и LICENSE. Запуск:
 
 ```bash
 ./probably-works-server/bin/pw_server --data-dir <path> --port 7787

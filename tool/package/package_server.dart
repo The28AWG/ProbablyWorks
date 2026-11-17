@@ -66,6 +66,8 @@ Future<void> main(List<String> arguments) async {
     _copyDirectory(Directory(p.join(bundle.path, 'lib')), app, 'lib');
     File(p.join(projectRoot.path, 'tool', 'server', 'README.md'))
         .copySync(p.join(app.path, 'README.md'));
+    File(p.join(projectRoot.path, 'LICENSE'))
+        .copySync(p.join(app.path, 'LICENSE'));
 
     final base =
         'probably-works-server-$version-${options.platform}-${options.arch}';
@@ -231,6 +233,8 @@ Future<void> _deb(
     app,
     'lib',
   );
+  File(p.join(projectRoot.path, 'LICENSE'))
+      .copySync(p.join(app.path, 'LICENSE'));
 
   final bin = Directory(p.join(root.path, 'usr', 'bin'))
     ..createSync(recursive: true);
@@ -245,6 +249,8 @@ Future<void> _deb(
   )..createSync(recursive: true);
   File(p.join(projectRoot.path, 'tool', 'server', 'README.md'))
       .copySync(p.join(doc.path, 'README.md'));
+  File(p.join(projectRoot.path, 'LICENSE'))
+      .copySync(p.join(doc.path, 'LICENSE'));
 
   final control = Directory(p.join(root.path, 'DEBIAN'))
     ..createSync(recursive: true);

@@ -72,6 +72,7 @@ Future<void> main() async {
       return;
     }
     _copyBundle(bundle, destination);
+    _copyLicense(projectRoot, buildDirectory, platform);
     if (Platform.isMacOS) await _signMacos(buildDirectory);
     stdout.writeln('Daemon bundled at ${destination.path}');
   } on Object catch (error, stackTrace) {
@@ -133,6 +134,38 @@ void _copyBundle(Directory source, Directory destination) {
       throw StateError('chmod failed: ${chmod.stderr}');
     }
   }
+}
+
+/// Кладёт LICENSE рядом с GUI, чтобы лицензия попала в установочный пакет.
+///
+/// На macOS файл должен лечь внутрь `.app/Contents/Resources` до подписи,
+/// иначе codesign не увидит его в бандле.
+void _copyLicense(
+  Directory projectRoot,
+  Directory buildDirectory,
+  String platform,
+) {
+  final license = File(p.join(projectRoot.path, 'LICENSE'));
+  if (!license.existsSync()) {
+    throw StateError('${license.path} is missing');
+  }
+  if (platform != 'macos') {
+    license.copySync(p.join(buildDirectory.path, 'LICENSE'));
+    return;
+  }
+  final apps = buildDirectory
+      .listSync()
+      .whereType<Directory>()
+      .where((entity) => entity.path.endsWith('.app'))
+      .toList();
+  if (apps.length != 1) {
+    throw StateError(
+      'Expected one .app in ${buildDirectory.path}, found ${apps.length}',
+    );
+  }
+  final resources = Directory(p.join(apps.single.path, 'Contents', 'Resources'))
+    ..createSync(recursive: true);
+  license.copySync(p.join(resources.path, 'LICENSE'));
 }
 
 /// Переподписывает `.app`: добавленный после Xcode бинарник ломает подпись.
