@@ -1136,6 +1136,10 @@
   "@modelCurrentTooltip": {
     "description": "Tooltip of the check icon that marks the model selected in the chat."
   },
+  "modelCopyId": "Скопировать id модели",
+  "@modelCopyId": {
+    "description": "Tooltip of the button that copies the full model id."
+  },
   "modelPinManageHint": "Нажмите модель, чтобы закрепить или открепить её. Закреплённые показываются первыми в выборе модели в чате.",
   "@modelPinManageHint": {
     "description": "Подсказка в диалоге закреплений моделей в настройках: нажатие закрепляет или открепляет модель."

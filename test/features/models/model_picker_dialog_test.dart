@@ -1,4 +1,5 @@
 import 'package:app_ui/app_ui.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -77,6 +78,7 @@ class _Host extends StatelessWidget {
     this.requireTools = true,
     this.managePins = false,
     this.sortStore,
+    this.platform,
     List<String>? pins,
   }) : pins = pins ?? [];
 
@@ -97,13 +99,18 @@ class _Host extends StatelessWidget {
   /// Хранилище сортировки. Null — порядок живёт только в диалоге.
   final ModelPickerSortStore? sortStore;
 
+  /// Платформа темы: на десктопе кнопка копирования появляется по наведению.
+  final TargetPlatform? platform;
+
   void _toggle(String id) {
     if (!pins.remove(id)) pins.add(id);
   }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    theme: AppTheme.light,
+    theme: platform == null
+        ? AppTheme.light
+        : AppTheme.light.copyWith(platform: platform),
     locale: const Locale('en'),
     localizationsDelegates: appLocalizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
@@ -200,8 +207,9 @@ void main() {
     );
     final l10n = AppLocalizations.of(tester.element(find.byType(Dialog)));
 
-    // id скрыт, его заменяет подсказка названия.
+    // id не показывается в строке: он копируется кнопкой.
     expect(find.text('openai/gpt-4o'), findsNothing);
+    expect(find.byIcon(Icons.copy_outlined), findsOneWidget);
     // Подсказка фильтров уходит в значок рядом с заголовком.
     expect(find.text(l10n.modelPickerFilterHintTools), findsNothing);
     expect(find.byTooltip(l10n.modelPickerFilterHintTools), findsOneWidget);
@@ -218,9 +226,89 @@ void main() {
     );
     final l10n = AppLocalizations.of(tester.element(find.byType(Dialog)));
 
-    expect(find.text('openai/gpt-4o'), findsOneWidget);
+    expect(find.text('openai/gpt-4o'), findsNothing);
+    expect(find.byIcon(Icons.copy_outlined), findsOneWidget);
     expect(find.text(l10n.modelPickerFilterHintTools), findsOneWidget);
     expect(find.text(l10n.modelSortLabel), findsOneWidget);
+  });
+
+  testWidgets('on desktop the copy button appears on row hover', (
+    tester,
+  ) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    await _openPicker(
+      tester,
+      _Host(
+        catalog: catalog,
+        currentId: null,
+        onPicked: _ignorePick,
+        platform: TargetPlatform.linux,
+      ),
+    );
+    final opacity = find
+        .ancestor(
+          of: find.byIcon(Icons.copy_outlined),
+          matching: find.byType(AnimatedOpacity),
+        )
+        .first;
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0);
+
+    final row = find
+        .ancestor(of: find.text('GPT-4o'), matching: find.byType(InkWell))
+        .first;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(row));
+    await tester.pump();
+
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+  });
+
+  testWidgets('the full id lives in the copy button tooltip', (tester) async {
+    final catalog = await _catalog(listed: const [gpt]);
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await _openPicker(
+      tester,
+      _Host(catalog: catalog, currentId: null, onPicked: _ignorePick),
+    );
+    final l10n = AppLocalizations.of(tester.element(find.byType(Dialog)));
+
+    expect(find.text('openai/gpt-4o'), findsNothing);
+    final tooltip = tester.widget<Tooltip>(
+      find
+          .ancestor(
+            of: find.byIcon(Icons.copy_outlined),
+            matching: find.byType(Tooltip),
+          )
+          .first,
+    );
+    expect(
+      tooltip.richMessage?.toPlainText(),
+      '${l10n.modelCopyId}\nopenai/gpt-4o',
+    );
+
+    await tester.tap(find.byIcon(Icons.copy_outlined));
+    await tester.pump();
+    expect(copied, 'openai/gpt-4o');
+    // CopyButton две секунды показывает галочку: даём таймеру истечь.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
   });
 
   testWidgets(

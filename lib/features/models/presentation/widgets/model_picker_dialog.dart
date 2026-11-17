@@ -1266,7 +1266,7 @@ class _HeaderDelegate extends SliverPersistentHeaderDelegate {
       oldDelegate.border != border;
 }
 
-class _ModelTile extends StatelessWidget {
+class _ModelTile extends StatefulWidget {
   const _ModelTile({
     required this.model,
     required this.l10n,
@@ -1310,19 +1310,51 @@ class _ModelTile extends StatelessWidget {
   final VoidCallback onSelect;
 
   @override
+  State<_ModelTile> createState() => _ModelTileState();
+}
+
+class _ModelTileState extends State<_ModelTile> {
+  /// Курсор над строкой: кнопка копирования id показывается на десктопе.
+  var _hovered = false;
+
+  /// Фокус на кнопке копирования: она тоже должна быть видна при обходе Tab.
+  var _copyFocused = false;
+
+  late final FocusNode _copyFocus = FocusNode(debugLabel: 'modelIdCopy')
+    ..addListener(_onCopyFocusChanged);
+
+  void _onCopyFocusChanged() {
+    final focused = _copyFocus.hasFocus;
+    if (focused == _copyFocused) return;
+    setState(() => _copyFocused = focused);
+  }
+
+  void _onHoverEnter(PointerEnterEvent _) => setState(() => _hovered = true);
+
+  void _onHoverExit(PointerExitEvent _) => setState(() => _hovered = false);
+
+  @override
+  void dispose() {
+    _copyFocus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final muted = scheme.onSurfaceVariant;
-    final phase = runtime?.phase;
+    final phase = widget.runtime?.phase;
     final loading =
         phase == ModelRuntimePhase.loading ||
         phase == ModelRuntimePhase.unloading;
-    final canLoad = capabilities?.canLoad == true && onLoadRuntime != null;
+    final canLoad =
+        widget.capabilities?.canLoad == true && widget.onLoadRuntime != null;
     final canUnload =
-        capabilities?.canUnload == true && onUnloadRuntime != null;
+        widget.capabilities?.canUnload == true &&
+        widget.onUnloadRuntime != null;
     final Widget? runtimeAction;
-    if (runtimeBusy || loading) {
+    if (widget.runtimeBusy || loading) {
       runtimeAction = SizedBox.square(
         dimension: AppSpacing.xxl + AppSpacing.sm,
         child: Padding(
@@ -1330,7 +1362,7 @@ class _ModelTile extends StatelessWidget {
           child: CircularProgressIndicator(
             strokeWidth: 2,
             value: phase == ModelRuntimePhase.loading
-                ? runtime?.progress?.fraction
+                ? widget.runtime?.progress?.fraction
                 : null,
           ),
         ),
@@ -1339,9 +1371,9 @@ class _ModelTile extends StatelessWidget {
         (phase == ModelRuntimePhase.loaded ||
             phase == ModelRuntimePhase.sleeping)) {
       runtimeAction = IconButton(
-        tooltip: l10n.modelRuntimeUnload,
+        tooltip: widget.l10n.modelRuntimeUnload,
         icon: const Icon(Icons.power_settings_new, size: 20),
-        onPressed: onUnloadRuntime,
+        onPressed: widget.onUnloadRuntime,
       );
     } else if (canLoad &&
         (phase == ModelRuntimePhase.unloaded ||
@@ -1350,176 +1382,224 @@ class _ModelTile extends StatelessWidget {
             phase == ModelRuntimePhase.unknown ||
             phase == ModelRuntimePhase.sleeping)) {
       runtimeAction = IconButton(
-        tooltip: l10n.modelRuntimeLoad,
+        tooltip: widget.l10n.modelRuntimeLoad,
         icon: const Icon(Icons.play_circle_outline, size: 20),
-        onPressed: onLoadRuntime,
+        onPressed: widget.onLoadRuntime,
       );
     } else {
       runtimeAction = null;
     }
     // ignore: avoid-returning-widgets, бейдж собирается из состояния строки и не переиспользуется
-    final runtimeBadge = _runtimeBadge(l10n);
-    final nameColor = unavailable ? muted : (current ? scheme.primary : null);
-    return Material(
-      color: highlighted ? scheme.surfaceContainerHighest : Colors.transparent,
-      child: InkWell(
-        // Список ведётся стрелками и Enter из поля поиска: строки не должны
-        // разрывать обход Tab между полем и кнопками строки.
-        canRequestFocus: false,
-        onTap: unavailable ? null : onSelect,
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: compact ? AppSpacing.md : AppSpacing.lg,
-            right: AppSpacing.xs,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        // ignore: avoid-returning-widgets, подсказка зависит от режима строки и не переиспользуется
-                        Flexible(child: _name(theme, nameColor)),
-                        if (current) ...[
+    final runtimeBadge = _runtimeBadge(widget.l10n);
+    final nameColor = widget.unavailable
+        ? muted
+        : (widget.current ? scheme.primary : null);
+    // На десктопе копирование id появляется при наведении на строку или фокусе
+    // с клавиатуры; на телефоне hover нет, поэтому кнопка видна всегда.
+    final isDesktop = switch (theme.platform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => false,
+      _ => true,
+    };
+    final showCopy = !isDesktop || _hovered || _copyFocused;
+    return MouseRegion(
+      onEnter: _onHoverEnter,
+      onExit: _onHoverExit,
+      child: Material(
+        color: widget.highlighted
+            ? scheme.surfaceContainerHighest
+            : Colors.transparent,
+        child: InkWell(
+          // Список ведётся стрелками и Enter из поля поиска: строки не должны
+          // разрывать обход Tab между полем и кнопками строки.
+          canRequestFocus: false,
+          onTap: widget.unavailable ? null : widget.onSelect,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: widget.compact ? AppSpacing.md : AppSpacing.lg,
+              right: AppSpacing.xs,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              widget.model.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                color: nameColor,
+                              ),
+                            ),
+                          ),
+                          if (widget.current) ...[
+                            const SizedBox(width: AppSpacing.xs),
+                            Tooltip(
+                              message: widget.l10n.modelCurrentTooltip,
+                              child: Icon(
+                                Icons.check_circle,
+                                size: 16,
+                                color: scheme.primary,
+                              ),
+                            ),
+                          ],
+                          // Кнопка копирования занимает место и без наведения:
+                          // держим её после галочки, чтобы не было пустоты
+                          // между названием и отметкой выбранной модели.
                           const SizedBox(width: AppSpacing.xs),
-                          Tooltip(
-                            message: l10n.modelCurrentTooltip,
-                            child: Icon(
-                              Icons.check_circle,
-                              size: 16,
-                              color: scheme.primary,
+                          AnimatedOpacity(
+                            duration: AppDurations.fast,
+                            opacity: showCopy ? 1 : 0,
+                            child: IgnorePointer(
+                              ignoring: !showCopy,
+                              // ignore: avoid-returning-widgets, кнопка зависит от строки и не переиспользуется
+                              child: _copyIdButton(context),
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    // Подпись занимает не больше двух строк: высота строки фиксирована,
-                    // лишние бейджи обрезаются, а не ломают прокрутку. Высота не
-                    // резервируется заранее, иначе строка с одной подписью выглядела бы
-                    // прижатой к верху.
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 48),
-                      child: ClipRect(
-                        child: Wrap(
-                          spacing: AppSpacing.xs,
-                          runSpacing: AppSpacing.xs,
-                          clipBehavior: Clip.hardEdge,
-                          children: [
-                            // В узком окне id не помещается и вытесняет контекст
-                            // с ценой: он остаётся в подсказке названия.
-                            if (!compact)
-                              MetaChip(
-                                label: modelIdForDisplay(
-                                  model.id,
-                                  providers: providers,
-                                ),
-                                mono: true,
-                              ),
-                            // Значок окна контекста тот же, что у заполнения
-                            // контекста в строке настроек чата (ChatMetaBar).
-                            if (model.contextLength != null)
-                              MetaChip(
-                                icon: Icons.data_usage,
-                                label: _modelPickerCompact(
-                                  model.contextLength!,
-                                ),
-                                tooltip: l10n.modelMetaContext(
-                                  _modelPickerCompact(model.contextLength!),
-                                ),
-                              ),
-                            // Значок денег взят из окна контекста.
-                            // Цена за 1M токенов остаётся в подсказке.
-                            if (model.promptPrice != null &&
-                                model.completionPrice != null)
-                              MetaChip(
-                                icon: Icons.savings_outlined,
-                                label: l10n.modelMetaPriceShort(
-                                  _modelPickerPerMillion(model.promptPrice!),
-                                  _modelPickerPerMillion(
-                                    model.completionPrice!,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      // Подпись занимает не больше двух строк: высота строки фиксирована,
+                      // лишние бейджи обрезаются, а не ломают прокрутку. Высота не
+                      // резервируется заранее, иначе строка с одной подписью выглядела бы
+                      // прижатой к верху.
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 48),
+                        child: ClipRect(
+                          child: Wrap(
+                            spacing: AppSpacing.xs,
+                            runSpacing: AppSpacing.xs,
+                            clipBehavior: Clip.hardEdge,
+                            children: [
+                              // Значок окна контекста тот же, что у заполнения
+                              // контекста в строке настроек чата (ChatMetaBar).
+                              if (widget.model.contextLength != null)
+                                MetaChip(
+                                  icon: Icons.data_usage,
+                                  label: _modelPickerCompact(
+                                    widget.model.contextLength!,
+                                  ),
+                                  tooltip: widget.l10n.modelMetaContext(
+                                    _modelPickerCompact(
+                                      widget.model.contextLength!,
+                                    ),
                                   ),
                                 ),
-                                tooltip: l10n.modelMetaPrice(
-                                  _modelPickerPerMillion(model.promptPrice!),
-                                  _modelPickerPerMillion(
-                                    model.completionPrice!,
+                              // Значок денег взят из окна контекста.
+                              // Цена за 1M токенов остаётся в подсказке.
+                              if (widget.model.promptPrice != null &&
+                                  widget.model.completionPrice != null)
+                                MetaChip(
+                                  icon: Icons.savings_outlined,
+                                  label: widget.l10n.modelMetaPriceShort(
+                                    _modelPickerPerMillion(
+                                      widget.model.promptPrice!,
+                                    ),
+                                    _modelPickerPerMillion(
+                                      widget.model.completionPrice!,
+                                    ),
+                                  ),
+                                  tooltip: widget.l10n.modelMetaPrice(
+                                    _modelPickerPerMillion(
+                                      widget.model.promptPrice!,
+                                    ),
+                                    _modelPickerPerMillion(
+                                      widget.model.completionPrice!,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            // Размышления — тот же значок, что у чипа модели
-                            // с включённым уровнем в ChatMetaBar.
-                            if (model.reasoning?.supported == true)
-                              MetaChip(
-                                icon: Icons.psychology,
-                                tooltip: model.reasoning?.mandatory ?? false
-                                    ? l10n.reasoningAlwaysBadge
-                                    : l10n.reasoningModelBadge,
-                              ),
-                            ?runtimeBadge,
-                            if (unavailable)
-                              StatusChip(
-                                label: l10n.modelUnavailableBadge,
-                                tone: AppTone.warning,
-                                icon: Icons.block,
-                              ),
-                          ],
+                              // Размышления — тот же значок, что у чипа модели
+                              // с включённым уровнем в ChatMetaBar.
+                              if (widget.model.reasoning?.supported == true)
+                                MetaChip(
+                                  icon: Icons.psychology,
+                                  tooltip:
+                                      widget.model.reasoning?.mandatory ?? false
+                                      ? widget.l10n.reasoningAlwaysBadge
+                                      : widget.l10n.reasoningModelBadge,
+                                ),
+                              ?runtimeBadge,
+                              if (widget.unavailable)
+                                StatusChip(
+                                  label: widget.l10n.modelUnavailableBadge,
+                                  tone: AppTone.warning,
+                                  icon: Icons.block,
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (!unavailable &&
-                  (onTogglePin != null || runtimeAction != null))
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ?runtimeAction,
-                    if (onTogglePin != null)
-                      IconButton(
-                        tooltip: pinned ? l10n.modelUnpin : l10n.modelPin,
-                        icon: Icon(pinned ? Icons.star : Icons.star_border),
-                        onPressed: onTogglePin,
-                      ),
-                  ],
-                ),
-            ],
+                if (!widget.unavailable &&
+                    (widget.onTogglePin != null || runtimeAction != null))
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ?runtimeAction,
+                      if (widget.onTogglePin != null)
+                        IconButton(
+                          tooltip: widget.pinned
+                              ? widget.l10n.modelUnpin
+                              : widget.l10n.modelPin,
+                          icon: Icon(
+                            widget.pinned ? Icons.star : Icons.star_border,
+                          ),
+                          onPressed: widget.onTogglePin,
+                        ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Название модели. В узком окне id скрыт, поэтому название несёт подсказку
-  /// с полным id: иначе длинное имя обрезается без возможности узнать модель.
-  Widget _name(ThemeData theme, Color? color) {
-    final text = Text(
-      model.name,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: theme.textTheme.titleSmall?.copyWith(color: color),
-    );
-    if (!compact) return text;
-    return Tooltip(
-      message:
-          '${model.name}\n'
-          '${modelIdForDisplay(model.id, providers: providers)}',
-      child: text,
+  /// Копирует id модели. В подсказке — название действия и сам id: полный id
+  /// больше нигде в строке не показывается.
+  Widget _copyIdButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final id = modelIdForDisplay(widget.model.id, providers: widget.providers);
+    return CopyButton(
+      size: 20,
+      iconSize: 12,
+      focusNode: _copyFocus,
+      textOf: () => id,
+      color: scheme.onSurfaceVariant,
+      richTooltip: TextSpan(
+        children: [
+          TextSpan(text: '${widget.l10n.modelCopyId}\n'),
+          TextSpan(
+            text: id,
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontFamily: AppTheme.monoFamily,
+              color: scheme.inversePrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   /// Бейдж состояния модели. Для `loaded` он полезен: видно, что занимает
   /// память. Для `unloaded` бейджа нет — это обычное состояние.
   Widget? _runtimeBadge(AppLocalizations l10n) {
-    final phase = runtime?.phase;
-    final percent = runtime?.progress?.fraction == null
+    final phase = widget.runtime?.phase;
+    final percent = widget.runtime?.progress?.fraction == null
         ? null
-        : (runtime!.progress!.fraction! * 100).round();
+        : (widget.runtime!.progress!.fraction! * 100).round();
     return switch (phase) {
       ModelRuntimePhase.loading => StatusChip(
         label: percent == null

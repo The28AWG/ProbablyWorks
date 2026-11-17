@@ -1136,6 +1136,10 @@
   "@modelCurrentTooltip": {
     "description": "Tooltip of the check icon that marks the model selected in the chat."
   },
+  "modelCopyId": "Copy model id",
+  "@modelCopyId": {
+    "description": "Tooltip of the button that copies the full model id."
+  },
   "modelPinManageHint": "Tap a model to pin or unpin it. Pinned models are listed first in the chat model picker.",
   "@modelPinManageHint": {
     "description": "Подсказка в диалоге закреплений моделей в настройках: нажатие закрепляет или открепляет модель."
