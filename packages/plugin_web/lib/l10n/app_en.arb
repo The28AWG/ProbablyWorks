@@ -1,0 +1,196 @@
+{
+  "@@locale": "en",
+  "pluginTitle": "Web: search and page data",
+  "@pluginTitle": {
+    "description": "Plugin title in the plugin list."
+  },
+  "pluginDescription": "Search the web, read pages as text and collect structured records with CSS selectors.",
+  "@pluginDescription": {
+    "description": "Plugin description in the plugin list."
+  },
+  "searchSection": "Search",
+  "@searchSection": {
+    "description": "Search settings section title."
+  },
+  "searchSectionHint": "Search is available only after a provider and API key are configured. Page reading works without search.",
+  "@searchSectionHint": {
+    "description": "Hint above search settings."
+  },
+  "provider": "Provider",
+  "@provider": {
+    "description": "Search provider field label."
+  },
+  "providerBrave": "Brave",
+  "@providerBrave": {
+    "description": "Brave provider option."
+  },
+  "providerBraveHint": "Independent index, needs an API key.",
+  "@providerBraveHint": {
+    "description": "Brave provider hint."
+  },
+  "providerTavily": "Tavily",
+  "@providerTavily": {
+    "description": "Tavily provider option."
+  },
+  "providerTavilyHint": "Search API for agents, needs an API key.",
+  "@providerTavilyHint": {
+    "description": "Tavily provider hint."
+  },
+  "providerSearxng": "SearXNG",
+  "@providerSearxng": {
+    "description": "SearXNG provider option."
+  },
+  "providerSearxngHint": "Self-hosted instance with JSON output, no key.",
+  "@providerSearxngHint": {
+    "description": "SearXNG provider hint."
+  },
+  "endpoint": "Endpoint",
+  "@endpoint": {
+    "description": "Search endpoint field label."
+  },
+  "endpointHint": "Leave empty for the provider default.",
+  "@endpointHint": {
+    "description": "Search endpoint hint."
+  },
+  "apiKey": "API key",
+  "@apiKey": {
+    "description": "API key field label."
+  },
+  "apiKeyHint": "The key is stored in the OS secret store and is never shown again.",
+  "@apiKeyHint": {
+    "description": "API key field hint."
+  },
+  "apiKeySaved": "A key is saved",
+  "@apiKeySaved": {
+    "description": "Shown when a search API key exists."
+  },
+  "apiKeyRemove": "Remove key",
+  "@apiKeyRemove": {
+    "description": "Button that deletes the search API key."
+  },
+  "apiKeyRemoved": "API key removed",
+  "@apiKeyRemoved": {
+    "description": "Snackbar after removing the key."
+  },
+  "maxResults": "Results by default",
+  "@maxResults": {
+    "description": "Default number of search results."
+  },
+  "safeSearch": "Safe search",
+  "@safeSearch": {
+    "description": "Safe search switch label."
+  },
+  "language": "Search language",
+  "@language": {
+    "description": "Search language field label."
+  },
+  "languageHint": "Optional language code, for example en or ru.",
+  "@languageHint": {
+    "description": "Search language hint."
+  },
+  "pagesSection": "Pages",
+  "@pagesSection": {
+    "description": "Page fetching settings section title."
+  },
+  "pagesSectionHint": "Limits protect the model context and the network. A page is stored as cleaned text, not as raw HTML.",
+  "@pagesSectionHint": {
+    "description": "Hint above page settings."
+  },
+  "maxChars": "Characters per reply",
+  "@maxChars": {
+    "description": "Maximum characters returned by web_open."
+  },
+  "maxBytes": "Maximum page size, bytes",
+  "@maxBytes": {
+    "description": "Maximum downloaded page size."
+  },
+  "timeoutSeconds": "Timeout, seconds",
+  "@timeoutSeconds": {
+    "description": "Request timeout field."
+  },
+  "userAgent": "User-Agent",
+  "@userAgent": {
+    "description": "HTTP User-Agent field."
+  },
+  "userAgentHint": "A honest User-Agent helps sites identify the client.",
+  "@userAgentHint": {
+    "description": "User-Agent hint."
+  },
+  "respectRobots": "Respect robots.txt",
+  "@respectRobots": {
+    "description": "robots.txt switch label."
+  },
+  "cacheTtl": "Page cache, minutes",
+  "@cacheTtl": {
+    "description": "Page cache TTL field."
+  },
+  "cacheNote": "Pages live in memory with an LRU limit and expire by TTL. Restarting the app clears the cache.",
+  "@cacheNote": {
+    "description": "Note about the in-memory page cache."
+  },
+  "domainsSection": "Domains",
+  "@domainsSection": {
+    "description": "Domain policy section title."
+  },
+  "domainsSectionHint": "One domain per line. A denied domain always wins. An empty allow list means all domains.",
+  "@domainsSectionHint": {
+    "description": "Hint above domain lists."
+  },
+  "allowedDomains": "Allowed domains",
+  "@allowedDomains": {
+    "description": "Allowed domains field label."
+  },
+  "allowedDomainsHint": "example.com\ndocs.example.com",
+  "@allowedDomainsHint": {
+    "description": "Allowed domains hint."
+  },
+  "deniedDomains": "Denied domains",
+  "@deniedDomains": {
+    "description": "Denied domains field label."
+  },
+  "deniedDomainsHint": "ads.example.com",
+  "@deniedDomainsHint": {
+    "description": "Denied domains hint."
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save button."
+  },
+  "saved": "Web plugin settings saved",
+  "@saved": {
+    "description": "Snackbar after saving settings."
+  },
+  "saveFailed": "Could not save settings: {error}",
+  "@saveFailed": {
+    "description": "Snackbar when settings cannot be saved.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "loading": "Loading settings…",
+  "@loading": {
+    "description": "Loading state."
+  },
+  "errorTitle": "Could not load settings",
+  "@errorTitle": {
+    "description": "Settings loading error title."
+  },
+  "invalidNumber": "Enter a number within the allowed range.",
+  "@invalidNumber": {
+    "description": "Validation error for numeric fields."
+  },
+  "invalidEndpoint": "Enter an http:// or https:// URL.",
+  "@invalidEndpoint": {
+    "description": "Validation error for the endpoint."
+  },
+  "invalidEndpointRequired": "A SearXNG endpoint is required.",
+  "@invalidEndpointRequired": {
+    "description": "Validation error when SearXNG has no endpoint."
+  },
+  "searchNotConfigured": "Search is not configured. Page reading is still available.",
+  "@searchNotConfigured": {
+    "description": "Status shown when search has no provider or key."
+  }
+}

@@ -1,0 +1,19 @@
+name: plugin_web_core
+description: "Ядро плагина веб-поиска и сбора данных со страниц без Flutter."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  characters: ^1.4.0
+  html: ^0.15.7
+  plugin_api:
+    path: ../plugin_api
+  uuid: ^4.5.3
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  test: ^1.31.1

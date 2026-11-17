@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dart';
 import 'package:plugin_declarative_http_core/declarative_http_plugin.dart';
+import 'package:plugin_web_core/plugin_web_core.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
@@ -81,9 +82,10 @@ Future<int> runDaemon(List<String> args) async {
     ..registerSingleton<AppearancePort>(const NoopAppearance())
     ..registerSingleton<ExternalUrlOpener>(const ProcessUrlOpener())
     ..registerSingleton<PluginRegistry>(
-      const PluginRegistry([
-        DeclarativeCommandsPlugin(),
-        DeclarativeHttpPlugin(),
+      PluginRegistry([
+        const DeclarativeCommandsPlugin(),
+        const DeclarativeHttpPlugin(),
+        WebPlugin(),
       ]),
     )
     // Демон всегда использует Dart-менеджер: платформенных загрузчиков здесь нет.

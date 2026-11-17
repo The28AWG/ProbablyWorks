@@ -12,6 +12,12 @@ final class _Settings implements PluginSettings {
 
   @override
   Future<void> save(Map<String, Object?> value) async => this.value = value;
+
+  @override
+  Future<bool> hasSecret(String name) async => false;
+
+  @override
+  Future<void> writeSecret(String name, String? value) => Future<void>.value();
 }
 
 final class _Host implements PluginHost {
@@ -44,6 +50,10 @@ final class _Host implements PluginHost {
     Map<String, String> headers = const {},
     Object? body,
     Duration? timeout,
+    bool followRedirects = true,
+    bool allowLoopback = true,
+    bool allowPrivateNetwork = true,
+    int? maxBytes,
   }) => throw UnsupportedError('HTTP is not used in this test');
 }
 

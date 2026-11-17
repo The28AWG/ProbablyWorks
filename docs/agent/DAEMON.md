@@ -114,6 +114,8 @@ GET    /api/v1/plugins/{id}/missing-dependencies
 GET    /api/v1/plugins/{id}/dependents
 GET    /api/v1/plugins/{id}/settings
 PUT    /api/v1/plugins/{id}/settings          {"value": {...}}
+GET    /api/v1/plugins/{id}/secrets/{name}    -> {"exists": true}
+PUT    /api/v1/plugins/{id}/secrets/{name}    {"value": "..." | null}
 POST   /api/v1/plugins/refresh
 
 GET    /api/v1/mcp

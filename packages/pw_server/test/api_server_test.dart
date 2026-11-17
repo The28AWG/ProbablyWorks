@@ -1854,6 +1854,12 @@ final class _FakePluginSettings implements plugins.PluginSettings {
   Future<void> save(Map<String, Object?> value) async {
     _api.savedSettings = value;
   }
+
+  @override
+  Future<bool> hasSecret(String name) async => false;
+
+  @override
+  Future<void> writeSecret(String name, String? value) => Future<void>.value();
 }
 
 final class _FakePush implements PushApi {

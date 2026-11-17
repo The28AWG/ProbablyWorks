@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:plugin_declarative_commands/l10n/generated/declarative_commands_localizations.dart';
 import 'package:plugin_declarative_http/l10n/generated/declarative_http_localizations.dart';
+import 'package:plugin_web/l10n/generated/web_localizations.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Делегаты для [MaterialApp] из `material_ui`.
@@ -14,6 +15,7 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   AppLocalizations.delegate,
   DeclarativeCommandsLocalizations.delegate,
   DeclarativeHttpLocalizations.delegate,
+  WebLocalizations.delegate,
   ...GlobalMaterialLocalizations.delegates,
   flutter_l10n.GlobalMaterialLocalizations.delegate,
 ];

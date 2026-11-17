@@ -111,10 +111,19 @@ class PluginService {
 final class _KvPluginSettings implements PluginSettings {
   _KvPluginSettings(this._service, this._pluginId);
 
+  static final _secretName = RegExp(r'^[A-Za-z0-9._-]+$');
+
   final PluginService _service;
   final String _pluginId;
 
   String get _key => '${PluginService._settingsPrefix}$_pluginId';
+
+  String _secretKey(String name) {
+    if (!_secretName.hasMatch(name)) {
+      throw ArgumentError.value(name, 'name', 'invalid secret name');
+    }
+    return 'plugin.$_pluginId.secret.$name';
+  }
 
   @override
   Future<Map<String, Object?>> read() async {
@@ -131,6 +140,23 @@ final class _KvPluginSettings implements PluginSettings {
   @override
   Future<void> save(Map<String, Object?> value) async {
     await _service._settings.write(_key, jsonEncode(value));
+    await _service.refresh();
+  }
+
+  @override
+  Future<bool> hasSecret(String name) async =>
+      await _service._secrets.read(_secretKey(name)) != null;
+
+  @override
+  Future<void> writeSecret(String name, String? value) async {
+    final key = _secretKey(name);
+    if (value == null || value.isEmpty) {
+      await _service._secrets.delete(key);
+    } else {
+      await _service._secrets.write(key, value);
+    }
+    // Наличие ключа влияет на набор инструментов: без refresh search не
+    // появится до следующего открытия настроек.
     await _service.refresh();
   }
 }

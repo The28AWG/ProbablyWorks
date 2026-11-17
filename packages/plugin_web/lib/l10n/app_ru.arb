@@ -1,0 +1,196 @@
+{
+  "@@locale": "ru",
+  "pluginTitle": "Веб: поиск и сбор данных",
+  "@pluginTitle": {
+    "description": "Название плагина в списке."
+  },
+  "pluginDescription": "Поиск в интернете, чтение страниц как текста и сбор структурированных записей по CSS-селекторам.",
+  "@pluginDescription": {
+    "description": "Описание плагина в списке."
+  },
+  "searchSection": "Поиск",
+  "@searchSection": {
+    "description": "Заголовок раздела поиска."
+  },
+  "searchSectionHint": "Поиск появляется после выбора провайдера и сохранения ключа. Чтение страниц работает и без поиска.",
+  "@searchSectionHint": {
+    "description": "Пояснение над настройками поиска."
+  },
+  "provider": "Провайдер",
+  "@provider": {
+    "description": "Подпись поля провайдера."
+  },
+  "providerBrave": "Brave",
+  "@providerBrave": {
+    "description": "Вариант Brave."
+  },
+  "providerBraveHint": "Собственный индекс, нужен ключ API.",
+  "@providerBraveHint": {
+    "description": "Пояснение Brave."
+  },
+  "providerTavily": "Tavily",
+  "@providerTavily": {
+    "description": "Вариант Tavily."
+  },
+  "providerTavilyHint": "Поисковый API для агентов, нужен ключ.",
+  "@providerTavilyHint": {
+    "description": "Пояснение Tavily."
+  },
+  "providerSearxng": "SearXNG",
+  "@providerSearxng": {
+    "description": "Вариант SearXNG."
+  },
+  "providerSearxngHint": "Свой инстанс с JSON-выдачей, ключ не нужен.",
+  "@providerSearxngHint": {
+    "description": "Пояснение SearXNG."
+  },
+  "endpoint": "Адрес",
+  "@endpoint": {
+    "description": "Подпись поля адреса поиска."
+  },
+  "endpointHint": "Пусто — адрес провайдера по умолчанию.",
+  "@endpointHint": {
+    "description": "Пояснение к адресу поиска."
+  },
+  "apiKey": "Ключ API",
+  "@apiKey": {
+    "description": "Подпись поля ключа."
+  },
+  "apiKeyHint": "Ключ хранится в защищённом хранилище ОС и больше не показывается.",
+  "@apiKeyHint": {
+    "description": "Пояснение к ключу."
+  },
+  "apiKeySaved": "Ключ сохранён",
+  "@apiKeySaved": {
+    "description": "Статус, когда ключ поиска уже есть."
+  },
+  "apiKeyRemove": "Удалить ключ",
+  "@apiKeyRemove": {
+    "description": "Кнопка удаления ключа поиска."
+  },
+  "apiKeyRemoved": "Ключ API удалён",
+  "@apiKeyRemoved": {
+    "description": "Уведомление после удаления ключа."
+  },
+  "maxResults": "Результатов по умолчанию",
+  "@maxResults": {
+    "description": "Количество результатов поиска по умолчанию."
+  },
+  "safeSearch": "Безопасный поиск",
+  "@safeSearch": {
+    "description": "Переключатель безопасного поиска."
+  },
+  "language": "Язык поиска",
+  "@language": {
+    "description": "Подпись поля языка поиска."
+  },
+  "languageHint": "Необязательный код языка, например en или ru.",
+  "@languageHint": {
+    "description": "Пояснение к языку поиска."
+  },
+  "pagesSection": "Страницы",
+  "@pagesSection": {
+    "description": "Заголовок раздела загрузки страниц."
+  },
+  "pagesSectionHint": "Лимиты защищают контекст модели и сеть. Страница хранится как очищенный текст, а не как сырой HTML.",
+  "@pagesSectionHint": {
+    "description": "Пояснение над настройками страниц."
+  },
+  "maxChars": "Символов за ответ",
+  "@maxChars": {
+    "description": "Максимум символов, который возвращает web_open."
+  },
+  "maxBytes": "Максимальный размер страницы, байт",
+  "@maxBytes": {
+    "description": "Максимальный размер скачиваемой страницы."
+  },
+  "timeoutSeconds": "Таймаут, секунд",
+  "@timeoutSeconds": {
+    "description": "Подпись таймаута запроса."
+  },
+  "userAgent": "User-Agent",
+  "@userAgent": {
+    "description": "Подпись HTTP User-Agent."
+  },
+  "userAgentHint": "Честный User-Agent помогает сайтам понять, кто к ним пришёл.",
+  "@userAgentHint": {
+    "description": "Пояснение к User-Agent."
+  },
+  "respectRobots": "Учитывать robots.txt",
+  "@respectRobots": {
+    "description": "Переключатель robots.txt."
+  },
+  "cacheTtl": "Кэш страниц, минут",
+  "@cacheTtl": {
+    "description": "Подпись TTL кэша страниц."
+  },
+  "cacheNote": "Страницы живут в памяти с LRU-лимитом и истекают по TTL. Перезапуск приложения очищает кэш.",
+  "@cacheNote": {
+    "description": "Пояснение о кэше страниц в памяти."
+  },
+  "domainsSection": "Домены",
+  "@domainsSection": {
+    "description": "Заголовок раздела доменов."
+  },
+  "domainsSectionHint": "По одному домену на строку. Запрет всегда сильнее разрешения. Пустой список разрешённых означает все домены.",
+  "@domainsSectionHint": {
+    "description": "Пояснение над списками доменов."
+  },
+  "allowedDomains": "Разрешённые домены",
+  "@allowedDomains": {
+    "description": "Подпись списка разрешённых доменов."
+  },
+  "allowedDomainsHint": "example.com\ndocs.example.com",
+  "@allowedDomainsHint": {
+    "description": "Пример разрешённых доменов."
+  },
+  "deniedDomains": "Запрещённые домены",
+  "@deniedDomains": {
+    "description": "Подпись списка запрещённых доменов."
+  },
+  "deniedDomainsHint": "ads.example.com",
+  "@deniedDomainsHint": {
+    "description": "Пример запрещённых доменов."
+  },
+  "save": "Сохранить",
+  "@save": {
+    "description": "Кнопка сохранения."
+  },
+  "saved": "Настройки веб-плагина сохранены",
+  "@saved": {
+    "description": "Уведомление после сохранения."
+  },
+  "saveFailed": "Не удалось сохранить настройки: {error}",
+  "@saveFailed": {
+    "description": "Уведомление об ошибке сохранения.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "loading": "Загружаем настройки…",
+  "@loading": {
+    "description": "Состояние загрузки."
+  },
+  "errorTitle": "Не удалось загрузить настройки",
+  "@errorTitle": {
+    "description": "Заголовок ошибки загрузки."
+  },
+  "invalidNumber": "Введите число в допустимом диапазоне.",
+  "@invalidNumber": {
+    "description": "Ошибка числового поля."
+  },
+  "invalidEndpoint": "Введите адрес http:// или https://.",
+  "@invalidEndpoint": {
+    "description": "Ошибка адреса."
+  },
+  "invalidEndpointRequired": "Для SearXNG нужен адрес инстанса.",
+  "@invalidEndpointRequired": {
+    "description": "Ошибка, когда у SearXNG нет адреса."
+  },
+  "searchNotConfigured": "Поиск не настроен. Чтение страниц всё равно доступно.",
+  "@searchNotConfigured": {
+    "description": "Статус, когда поиск не настроен."
+  }
+}

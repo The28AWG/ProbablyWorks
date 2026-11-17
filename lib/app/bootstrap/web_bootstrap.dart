@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:plugin_api_ui/plugin_api_ui.dart';
+import 'package:plugin_web/plugin_web.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
@@ -55,7 +56,9 @@ Future<void> bootstrapWeb() async {
     ..registerSingleton<ThemeController>(theme)
     ..registerSingleton<KeybindingService>(keybindings)
     ..registerSingleton<CommandPluginRegistry>(const CommandPluginRegistry([]))
-    ..registerSingleton<PluginUiRegistry>(const PluginUiRegistry([]));
+    ..registerSingleton<PluginUiRegistry>(
+      const PluginUiRegistry([WebPluginUi()]),
+    );
 
   await profiles.load();
   await keybindings.load();

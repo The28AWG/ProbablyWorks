@@ -7,6 +7,8 @@ import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dar
 import 'package:plugin_declarative_http/declarative_http_plugin.dart';
 import 'package:plugin_declarative_http_core/declarative_http_plugin.dart'
     as http_core;
+import 'package:plugin_web/plugin_web.dart';
+import 'package:plugin_web_core/plugin_web_core.dart';
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
@@ -50,9 +52,10 @@ abstract class CoreModule {
       KeybindingService(settings);
 
   @singleton
-  PluginRegistry pluginRegistry() => const PluginRegistry([
-    commands_core.DeclarativeCommandsPlugin(),
-    http_core.DeclarativeHttpPlugin(),
+  PluginRegistry pluginRegistry() => PluginRegistry([
+    const commands_core.DeclarativeCommandsPlugin(),
+    const http_core.DeclarativeHttpPlugin(),
+    WebPlugin(),
   ]);
 
   @singleton
@@ -63,5 +66,6 @@ abstract class CoreModule {
   PluginUiRegistry pluginUiRegistry() => const PluginUiRegistry([
     DeclarativeCommandsPluginUi(),
     DeclarativeHttpPluginUi(),
+    WebPluginUi(),
   ]);
 }

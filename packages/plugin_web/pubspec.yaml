@@ -1,0 +1,32 @@
+name: plugin_web
+description: "Представление плагина веб-поиска и сбора данных ProbablyWorks."
+publish_to: none
+version: 0.1.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  app_ui:
+    path: ../app_ui
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.3
+  material_ui: ^1.9.0
+  plugin_api:
+    path: ../plugin_api
+  plugin_api_ui:
+    path: ../plugin_api_ui
+  plugin_web_core:
+    path: ../plugin_web_core
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  generate: true

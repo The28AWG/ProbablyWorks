@@ -1948,6 +1948,23 @@ final class _RemotePluginSettings implements plugins.PluginSettings {
       body: {'value': value},
     );
   }
+
+  @override
+  Future<bool> hasSecret(String name) async {
+    final json = await _api._get(
+      '/plugins/$_pluginId/secrets/${Uri.encodeComponent(name)}',
+    );
+    return json['exists'] == true;
+  }
+
+  @override
+  Future<void> writeSecret(String name, String? value) async {
+    await _api._send(
+      'PUT',
+      '/plugins/$_pluginId/secrets/${Uri.encodeComponent(name)}',
+      body: {'value': value},
+    );
+  }
 }
 
 final class _RemoteChatStore implements ChatStore {

@@ -217,4 +217,10 @@ void main() {
       ]),
     );
   });
+
+  test('plugin and MCP tools are untrusted', () {
+    expect(ContextBuilder.isUntrustedTool('plugin_web_open'), isTrue);
+    expect(ContextBuilder.isUntrustedTool('mcp_chrome_take_snapshot'), isTrue);
+    expect(ContextBuilder.isUntrustedTool(ToolNames.finish), isFalse);
+  });
 }

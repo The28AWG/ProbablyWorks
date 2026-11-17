@@ -382,6 +382,16 @@ final class ApiServer {
             return _pluginDependents(request, id);
           }
         }
+        if (rest.length == 3 && rest[1] == 'secrets') {
+          final id = rest.first;
+          final name = rest[2];
+          if (request.method == 'GET') {
+            return _pluginSecretExists(request, id, name);
+          }
+          if (request.method == 'PUT') {
+            return _savePluginSecret(request, id, name);
+          }
+        }
       case 'security':
         if (rest.length == 1 &&
             rest.first == 'audit' &&
@@ -960,6 +970,35 @@ final class ApiServer {
     await _requirePluginApi()
         .settingsFor(id)
         .save(Map<String, Object?>.from(raw));
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  Future<void> _pluginSecretExists(
+    HttpRequest request,
+    String id,
+    String name,
+  ) async {
+    final exists = await _requirePluginApi().settingsFor(id).hasSecret(name);
+    _json(request.response, HttpStatus.ok, {'exists': exists});
+  }
+
+  Future<void> _savePluginSecret(
+    HttpRequest request,
+    String id,
+    String name,
+  ) async {
+    final body = await _body(request);
+    final value = body['value'];
+    if (value != null && value is! String) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_secret',
+        'value must be a string or null',
+      );
+    }
+    await _requirePluginApi()
+        .settingsFor(id)
+        .writeSecret(name, value as String?);
     _json(request.response, HttpStatus.noContent, {});
   }
 

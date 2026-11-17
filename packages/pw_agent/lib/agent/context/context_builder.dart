@@ -99,6 +99,16 @@ class ContextBuilder {
     ToolNames.hostDiagnose,
   };
 
+  /// Считается ли вывод инструмента недоверенным.
+  ///
+  /// Плагины и MCP — внешний код, поэтому их текст всегда оборачивается как
+  /// данные: веб-страница или ответ чужого сервера не должны становиться
+  /// инструкцией для модели.
+  static bool isUntrustedTool(String name) =>
+      untrustedTools.contains(name) ||
+      name.startsWith('plugin_') ||
+      name.startsWith('mcp_');
+
   List<LlmMessage> build(ContextInput input) {
     final system = _systemPrompt(input);
     final history = input.messages
@@ -261,7 +271,7 @@ class ContextBuilder {
         final redacted = Redactor.redact(message.text);
         final content =
             call != null &&
-                untrustedTools.contains(call.name) &&
+                isUntrustedTool(call.name) &&
                 !_isBuiltinSkillLoad(call)
             ? Untrusted.wrap('tool:${call.name}', redacted)
             : redacted;

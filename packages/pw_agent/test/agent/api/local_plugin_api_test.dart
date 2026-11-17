@@ -71,6 +71,12 @@ final class _NoopSettings implements PluginSettings {
 
   @override
   Future<void> save(Map<String, Object?> value) => Future<void>.value();
+
+  @override
+  Future<bool> hasSecret(String name) async => false;
+
+  @override
+  Future<void> writeSecret(String name, String? value) => Future<void>.value();
 }
 
 final class _FakeHub implements AgentHub {

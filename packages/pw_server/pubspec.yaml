@@ -17,6 +17,8 @@ dependencies:
     path: ../plugin_declarative_commands_core
   plugin_declarative_http_core:
     path: ../plugin_declarative_http_core
+  plugin_web_core:
+    path: ../plugin_web_core
   pw_agent:
     path: ../pw_agent
 

@@ -451,6 +451,11 @@ void main() {
     expect(await settings.read(), {'version': 1});
     await settings.save({'commands': []});
     expect(pluginsApi.savedSettings, {'commands': []});
+    expect(await settings.hasSecret('searchKey'), isFalse);
+    await settings.writeSecret('searchKey', 'secret');
+    expect(await settings.hasSecret('searchKey'), isTrue);
+    await settings.writeSecret('searchKey', null);
+    expect(pluginsApi.secrets, isEmpty);
     await remote.refresh();
     expect(pluginsApi.refreshed, 1);
 
@@ -883,6 +888,7 @@ final class _FakePlugins implements PluginApi {
   var refreshed = 0;
   Set<String>? lastIds;
   Map<String, Object?>? savedSettings;
+  final secrets = <String, String>{};
 
   @override
   Future<PluginSnapshot> pluginSnapshot() async => const PluginSnapshot(
@@ -937,6 +943,19 @@ final class _FakePluginSettings implements plugins.PluginSettings {
   @override
   Future<void> save(Map<String, Object?> value) async {
     _api.savedSettings = value;
+  }
+
+  @override
+  Future<bool> hasSecret(String name) async => _api.secrets.containsKey(name);
+
+  @override
+  Future<void> writeSecret(String name, String? value) {
+    if (value == null) {
+      _api.secrets.remove(name);
+    } else {
+      _api.secrets[name] = value;
+    }
+    return Future<void>.value();
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Встроенный плагин: набор инструментов, который компилируется в приложение.
 ///
 /// Интерфейс не зависит от Flutter: агент и headless-демон используют только
@@ -67,12 +69,22 @@ abstract interface class PluginHost {
 
   /// Выполняет HTTP-запрос после проверки URL и подстановки секретов
   /// приложением. Плагин не получает прямой доступ к сети.
+  ///
+  /// [followRedirects] выключают, если плагин сам проверяет каждый редирект.
+  /// [allowLoopback] и [allowPrivateNetwork] по умолчанию сохраняют прежнее
+  /// поведение; веб-плагин выключает их, чтобы не ходить во внутреннюю сеть.
+  /// [maxBytes] ограничивает тело ответа: лишние байты не читаются, а в
+  /// результате выставляется [PluginHttpResult.truncated].
   Future<PluginHttpResult> httpRequest({
     required String method,
     required String url,
     Map<String, String> headers = const {},
     Object? body,
     Duration? timeout,
+    bool followRedirects = true,
+    bool allowLoopback = true,
+    bool allowPrivateNetwork = true,
+    int? maxBytes,
   });
 }
 
@@ -83,12 +95,31 @@ final class PluginHttpResult {
     required this.body,
     this.headers = const {},
     this.isError = false,
+    this.bodyBytes,
+    this.finalUrl,
+    this.contentType,
+    this.truncated = false,
   });
 
   final int statusCode;
+
+  /// Тело, декодированное по charset из `Content-Type`.
   final String body;
+
   final Map<String, String> headers;
   final bool isError;
+
+  /// Сырые байты: нужны для корректной кодировки страниц без charset.
+  final Uint8List? bodyBytes;
+
+  /// URL после редиректов, если клиент их выполнял.
+  final String? finalUrl;
+
+  /// Значение `Content-Type` из заголовков.
+  final String? contentType;
+
+  /// Тело было обрезано по [PluginHost.httpRequest] `maxBytes`.
+  final bool truncated;
 }
 
 /// Итог команды плагина.
@@ -105,9 +136,18 @@ final class PluginCommandResult {
 }
 
 /// Настройки плагина. Сохранение сразу пересобирает инструменты.
+///
+/// Секреты не входят в JSON настроек: [hasSecret] и [writeSecret] работают с
+/// защищённым хранилищем и не позволяют прочитать значение обратно.
 abstract interface class PluginSettings {
   Future<Map<String, Object?>> read();
   Future<void> save(Map<String, Object?> value);
+
+  /// Есть ли секрет плагина с именем [name].
+  Future<bool> hasSecret(String name);
+
+  /// Записывает секрет или удаляет его, если [value] равен null.
+  Future<void> writeSecret(String name, String? value);
 }
 
 /// Команда, которую плагин добавляет в общую палитру приложения.

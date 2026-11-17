@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
+import 'package:pw_agent/agent/plugins/network_guard.dart';
 import 'package:pw_agent/agent/tools/tool_name.dart';
 import 'package:pw_agent/agent/tools/tool_source.dart';
 import 'package:pw_agent/agent/tools/tool_types.dart';
@@ -154,6 +156,10 @@ final class _PluginHost implements PluginHost {
     Map<String, String> headers = const {},
     Object? body,
     Duration? timeout,
+    bool followRedirects = true,
+    bool allowLoopback = true,
+    bool allowPrivateNetwork = true,
+    int? maxBytes,
   }) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
@@ -164,11 +170,22 @@ final class _PluginHost implements PluginHost {
     if (uri.scheme != 'https' && !(uri.scheme == 'http' && loopback)) {
       throw StateError('only HTTPS or loopback HTTP is allowed');
     }
+    if (loopback && !allowLoopback) {
+      throw StateError('loopback HTTP is not allowed');
+    }
+    if (!allowPrivateNetwork || !allowLoopback) {
+      await ensureNetworkAllowed(
+        uri,
+        allowLoopback: allowLoopback,
+        allowPrivateNetwork: allowPrivateNetwork,
+      );
+    }
     final resolved = await _resolveMap(headers);
     final client = http.Client();
     try {
       final request = http.Request(method.toUpperCase(), uri);
       request.headers.addAll(resolved);
+      request.followRedirects = followRedirects;
       if (body != null) {
         if (body is String) {
           request.body = body;
@@ -182,16 +199,80 @@ final class _PluginHost implements PluginHost {
       }
       final wait = timeout ?? const Duration(seconds: 30);
       final streamed = await client.send(request).timeout(wait);
-      final response = await http.Response.fromStream(streamed).timeout(wait);
+      final bytes = await _readBytes(streamed, maxBytes).timeout(wait);
+      final response = http.Response.bytes(
+        bytes.bytes,
+        streamed.statusCode,
+        headers: streamed.headers,
+        isRedirect: streamed.isRedirect,
+        persistentConnection: streamed.persistentConnection,
+        reasonPhrase: streamed.reasonPhrase,
+        request: streamed.request,
+      );
       return PluginHttpResult(
         statusCode: response.statusCode,
-        body: response.body,
+        body: _decodeBody(bytes.bytes, response.headers),
         headers: response.headers,
         isError: response.statusCode < 200 || response.statusCode >= 300,
+        bodyBytes: bytes.bytes,
+        finalUrl: response.request?.url.toString(),
+        contentType: response.headers['content-type'],
+        truncated: bytes.truncated,
       );
     } finally {
       client.close();
     }
+  }
+
+  /// Читает тело ответа, не превышая [maxBytes].
+  ///
+  /// Как только лимит достигнут, поток прекращает читаться, а результат
+  /// помечается как обрезанный. Поток закрывается в любом случае.
+  static Future<({Uint8List bytes, bool truncated})> _readBytes(
+    http.StreamedResponse response,
+    int? maxBytes,
+  ) async {
+    if (maxBytes == null) {
+      return (
+        bytes: Uint8List.fromList(await response.stream.toBytes()),
+        truncated: false,
+      );
+    }
+    if (maxBytes <= 0) throw ArgumentError.value(maxBytes, 'maxBytes');
+    final builder = BytesBuilder(copy: false);
+    var truncated = false;
+    await for (final chunk in response.stream) {
+      final left = maxBytes - builder.length;
+      if (left <= 0) {
+        truncated = true;
+        break;
+      }
+      if (chunk.length <= left) {
+        builder.add(chunk);
+      } else {
+        builder.add(chunk.sublist(0, left));
+        truncated = true;
+        break;
+      }
+    }
+    return (bytes: builder.takeBytes(), truncated: truncated);
+  }
+
+  /// Декодирует тело по charset из `Content-Type`.
+  ///
+  /// Поведение совпадает с `http.Response.body`: если charset не указан,
+  /// используется latin1. Веб-плагин для страниц берёт `bodyBytes` и решает
+  /// сам, потому что у HTML кодировка может быть в `<meta charset>`.
+  static String _decodeBody(Uint8List bytes, Map<String, String> headers) {
+    final contentType = headers['content-type'] ?? '';
+    final match = RegExp(
+      r'charset\s*=\s*"?([^";]+)"?',
+      caseSensitive: false,
+    ).firstMatch(contentType);
+    final encoding = match == null
+        ? latin1
+        : (Encoding.getByName(match.group(1)!.trim()) ?? latin1);
+    return encoding.decode(bytes);
   }
 
   static final _secretRef = RegExp(r'\$\{secret:([^}]+)\}');

@@ -51,8 +51,11 @@ plugin_api_ui   ← Flutter, зависит от plugin_api
   чистый Dart, доступный клиенту и демону.
 - `packages/plugin_declarative_http_core` — ядро HTTP-инструментов: чистый Dart,
   доступный клиенту и демону.
+- `packages/plugin_web_core` — ядро веб-поиска и сбора данных: чистый Dart,
+  провайдеры поиска, загрузка и очистка страниц, снимки в памяти.
 - `packages/plugin_declarative_commands` и `packages/plugin_declarative_http` —
   Flutter-представления: локализация и экраны настроек.
+- `packages/plugin_web` — представление веб-плагина: настройки и локализация.
 - Основное приложение содержит реестр ядра (`PluginRegistry`), реестр
   представлений (`PluginUiRegistry`), граф зависимостей, флаги включения и
   адаптер `PluginToolSource` к общему `ToolExecutor`.
@@ -193,6 +196,11 @@ PluginApi pluginApiFor(AgentProfile profile) =>
 Настройки плагина хранятся в kv как JSON по ключу `pluginSettings.<id>`.
 `PluginSettings.save` записывает JSON и пересобирает инструменты плагина.
 
+Секреты в этот JSON не входят. `PluginSettings.hasSecret` и
+`writeSecret` работают с `SecretStore` по ключу
+`plugin.<id>.secret.<name>`; значение нельзя прочитать обратно через API.
+Так ключ поискового провайдера не попадает в SQLite и логи.
+
 Экран настроек плагина живёт в его пакете и получает `PluginSettings` от
 приложения. После закрытия экрана приложение ещё раз обновляет источники
 инструментов.
@@ -215,3 +223,10 @@ PluginApi pluginApiFor(AgentProfile profile) =>
 `PluginCommand` по умолчанию считается серверным и скрывается при offline.
 Если команда умеет работать без агента, плагин явно ставит
 `requiresBackend: false`.
+
+## Веб-плагин
+
+Плагин `web` — отдельный пример плагина с сетевыми read-only
+инструментами. Он ищет страницы, читает их как Markdown и собирает записи
+по CSS-селекторам. Устройство, хранение снимков и правила очистки описаны в
+[WEB_PLUGIN.md](WEB_PLUGIN.md).
