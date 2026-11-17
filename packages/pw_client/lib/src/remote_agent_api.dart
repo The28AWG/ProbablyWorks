@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart' as plugins;
@@ -59,7 +60,24 @@ class RemoteAgentApi
     http.Client? client,
     this.clientHeaders = const {},
     this.timeout = const Duration(seconds: 30),
-  }) : _client = client ?? http.Client();
+    this.reconnectBaseDelay = const Duration(seconds: 3),
+    this.reconnectMaxDelay = const Duration(seconds: 60),
+    this.reconnectJitter = 0.2,
+  }) : _client = client ?? http.Client() {
+    assert(
+      reconnectBaseDelay > Duration.zero,
+      'reconnectBaseDelay must be positive',
+    );
+    assert(
+      reconnectMaxDelay >= reconnectBaseDelay,
+      'reconnectMaxDelay must not be shorter than reconnectBaseDelay',
+    );
+    assert(
+      reconnectJitter >= 0 && reconnectJitter <= 1,
+      'reconnectJitter must be between 0 and 1',
+    );
+    _reconnectDelay = reconnectBaseDelay;
+  }
 
   /// Корень сервера, например `http://127.0.0.1:7787`.
   final Uri baseUri;
@@ -69,7 +87,23 @@ class RemoteAgentApi
   final Map<String, String> clientHeaders;
   final Duration timeout;
 
+  /// Начальная и максимальная пауза перед повторным открытием SSE.
+  ///
+  /// Параметры нужны тестам и профилям с медленной сетью: боевые значения
+  /// не должны превращаться в бесконечный поток запросов к недоступному
+  /// серверу.
+  final Duration reconnectBaseDelay;
+  final Duration reconnectMaxDelay;
+
+  /// Доля случайной добавки к паузе, чтобы клиенты не переподключались
+  /// одновременно.
+  final double reconnectJitter;
+
   final http.Client _client;
+  final _random = Random();
+
+  /// Текущая пауза перед следующей попыткой; после успеха сбрасывается.
+  late Duration _reconnectDelay;
 
   final _statusChanges = StreamController<AgentStatus>.broadcast();
   var _status = AgentStatus.connecting;
@@ -1273,6 +1307,12 @@ class RemoteAgentApi
         }
         request.headers['x-request-id'] = _uuid.v4();
         final response = await _client.send(request);
+        if (response.statusCode == 401) {
+          // Неверный токен не станет верным от повторного запроса: останавливаем
+          // цикл, иначе клиент будет долбить сервер каждые несколько секунд.
+          _setStatus(AgentStatus.offline);
+          return;
+        }
         if (response.statusCode != 200) {
           throw AgentApiException(
             response.statusCode,
@@ -1281,6 +1321,7 @@ class RemoteAgentApi
           );
         }
         _setStatus(AgentStatus.online);
+        _reconnectDelay = reconnectBaseDelay;
         if (!_eventsReady.isCompleted) _eventsReady.complete();
         await _consume(response.stream);
       } on Object {
@@ -1288,8 +1329,19 @@ class RemoteAgentApi
         // Ниже пауза и повторное подключение.
       }
       if (_disposed) break;
-      await Future<void>.delayed(const Duration(seconds: 3));
+      await Future<void>.delayed(_nextReconnectDelay());
     }
+  }
+
+  /// Следующая пауза: экспоненциальный рост до [reconnectMaxDelay] плюс
+  /// случайная добавка, чтобы несколько клиентов не били сервер синхронно.
+  Duration _nextReconnectDelay() {
+    final delay = _reconnectDelay;
+    final doubled = delay * 2;
+    _reconnectDelay = doubled > reconnectMaxDelay ? reconnectMaxDelay : doubled;
+    final maxJitterMs = (delay.inMilliseconds * reconnectJitter).round();
+    final jitter = maxJitterMs <= 0 ? 0 : _random.nextInt(maxJitterMs + 1);
+    return delay + Duration(milliseconds: jitter);
   }
 
   Future<void> _consume(Stream<List<int>> stream) async {

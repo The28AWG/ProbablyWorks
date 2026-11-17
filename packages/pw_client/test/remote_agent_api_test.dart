@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
@@ -572,6 +573,62 @@ void main() {
 
     expect(events.single, isA<AgentTurnStarted>());
     expect(approvals.single.id, 'a1');
+  });
+
+  test('stops SSE reconnects after an unauthorized response', () async {
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requests = 0;
+    httpServer.listen((request) {
+      requests++;
+      request.response.statusCode = HttpStatus.unauthorized;
+      request.response.close();
+    });
+    final unauthorized = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: 'bad',
+      reconnectBaseDelay: const Duration(milliseconds: 10),
+      reconnectMaxDelay: const Duration(milliseconds: 40),
+      reconnectJitter: 0,
+    );
+    addTearDown(() async {
+      await unauthorized.dispose();
+      await httpServer.close(force: true);
+    });
+
+    await unauthorized.startEvents();
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+
+    expect(requests, 1);
+    expect(unauthorized.status, AgentStatus.offline);
+  });
+
+  test('grows the SSE reconnect delay between failed attempts', () async {
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final attempts = <DateTime>[];
+    httpServer.listen((request) {
+      attempts.add(DateTime.now());
+      request.response.statusCode = HttpStatus.internalServerError;
+      request.response.close();
+    });
+    final retrying = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: 'token',
+      reconnectBaseDelay: const Duration(milliseconds: 30),
+      reconnectMaxDelay: const Duration(milliseconds: 120),
+      reconnectJitter: 0,
+    );
+    addTearDown(() async {
+      await retrying.dispose();
+      await httpServer.close(force: true);
+    });
+
+    await retrying.startEvents();
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+
+    expect(attempts.length, greaterThanOrEqualTo(3));
+    final firstGap = attempts[1].difference(attempts.first).inMilliseconds;
+    final secondGap = attempts[2].difference(attempts[1]).inMilliseconds;
+    expect(secondGap, greaterThan(firstGap));
   });
 }
 
