@@ -112,12 +112,15 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 
 В репозитории три workflow:
 
-- `.github/workflows/ci.yml` — форматирование, `flutter analyze`, `flutter test`
-  и тесты пакетов на каждый push в `main` и pull request. DCM в CI не
-  запускается из-за лицензии; проверка `dcm analyze` остаётся локальной;
+- `.github/workflows/ci.yml` — форматирование, `flutter analyze`,
+  `flutter test`, тесты всех пакетов и release-сборка web на каждый push в
+  `main` и pull request. DCM в CI не запускается из-за лицензии; для него
+  есть `tool/ci/check_local.sh` и необязательный pre-push hook;
 - `.github/workflows/parity.yml` — проверка git/bash на закреплённых и
   системных версиях;
 - `.github/workflows/release.yml` — сборка релиза по тегу `v<version>`.
+  Перед подготовкой исходников он вызывает CI целиком, поэтому тег не может
+  указывать на коммит без пройденных проверок.
 
 Релиз собирается на четырёх runner'ах:
 
@@ -129,11 +132,13 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 | `macos-15-intel` | DMG, zip | `-x64` |
 | `ubuntu-24.04` (snap) | Snap (`amd64`) | — |
 
-Сначала один job `prepare` делает `flutter pub get`, генерацию l10n/DI,
-`build_runner` и прогоняет `flutter test`. Готовые сгенерированные файлы
-уходят в artifact `generated-sources`; платформенные job'ы скачивают его и
-не повторяют генерацию и тесты. `flutter pub get` в них остаётся: package
-config привязан к ОС и путям runner'а.
+Сначала job `checks` вызывает CI целиком: форматирование, analyze, тесты,
+web-сборку и интеграционные проверки. После него `prepare` делает
+`flutter pub get`, генерацию l10n/DI и `build_runner`. Готовые
+сгенерированные файлы уходят в artifact `generated-sources`;
+платформенные job'ы скачивают его и не повторяют генерацию и тесты.
+`flutter pub get` в них остаётся: package config привязан к ОС и путям
+runner'а.
 
 После успешной сборки workflow скачивает все артефакты, создаёт
 `SHA256SUMS.txt` и публикует GitHub Release с автоматическими release notes.

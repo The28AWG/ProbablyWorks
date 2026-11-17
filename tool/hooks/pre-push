@@ -1,0 +1,8 @@
+#!/bin/sh
+# Быстрая проверка перед push: format, analyze и DCM.
+# Подключается только локально:
+#   git config --local core.hooksPath tool/hooks
+set -eu
+
+root="$(git rev-parse --show-toplevel)"
+exec "$root/tool/ci/check_local.sh" --quick

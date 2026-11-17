@@ -43,6 +43,10 @@
 Каждый проверяют отдельно, из каталога пакета: `dart format lib test`, `dart analyze`,
 `dcm analyze lib test`, `dart test`.
 
+Полная локальная проверка: `tool/ci/check_local.sh`; быстрый режим без тестов —
+`tool/ci/check_local.sh --quick`. Необязательный pre-push hook с DCM включается
+локально командой `git config --local core.hooksPath tool/hooks`; она не коммитится.
+
 Если проверка не проходит из-за вашей правки, исправьте её. Не подавляйте замечания `ignore` без причины
 и не отключайте правила в `analysis_options.yaml` ради прохождения проверки.
 

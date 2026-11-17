@@ -234,8 +234,21 @@ PW_DAEMON_TEST=1 flutter test test/app/profiles/local_daemon_integration_test.da
 Проверка кода:
 
 ```bash
-dart analyze lib test
+./tool/ci/check_local.sh
 ```
+
+Скрипт проверяет форматирование, analyze, DCM, тесты пакетов и `flutter test`.
+Быстрый режим без тестов — `./tool/ci/check_local.sh --quick`; он же
+используется в pre-push hook.
+
+DCM в CI не запускается из-за лицензии. Чтобы проверять его перед push
+автоматически, можно включить общий hook:
+
+```bash
+git config --local core.hooksPath tool/hooks
+```
+
+Команда действует только в текущем клоне, в репозиторий не попадает.
 
 ## UI
 
