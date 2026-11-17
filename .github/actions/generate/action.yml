@@ -1,0 +1,19 @@
+name: Generate sources
+description: Resolve dependencies and generate l10n, DI and routes.
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dependencies
+      shell: bash
+      run: flutter pub get
+    - name: Generate localization
+      shell: bash
+      run: flutter gen-l10n
+    - name: Generate DI and routes
+      shell: bash
+      run: dart run build_runner build --delete-conflicting-outputs
+    - name: Generate agent DI
+      shell: bash
+      working-directory: packages/pw_agent
+      run: dart run build_runner build --delete-conflicting-outputs
