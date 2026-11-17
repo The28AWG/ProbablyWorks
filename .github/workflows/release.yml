@@ -14,8 +14,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    name: CI checks
+    uses: ./.github/workflows/ci.yml
+
   prepare:
     name: Prepare sources
+    needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -40,9 +45,7 @@ jobs:
         working-directory: packages/pw_agent
         run: dart run build_runner build --delete-conflicting-outputs
 
-      - name: Test app
-        run: flutter test
-
+      # Тесты уже выполнены в jobs.checks; здесь нужна только генерация.
       - name: Archive generated sources
         run: |
           tar -czf generated-sources.tar.gz \
