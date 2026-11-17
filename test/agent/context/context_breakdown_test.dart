@@ -43,5 +43,29 @@ void main() {
     expect(breakdown.attachmentBytes, 10);
     expect(breakdown.toolSchemaChars, greaterThan(0));
     expect(breakdown.totalChars, greaterThan(0));
+    // Всё в примере — ASCII, поэтому байты текста совпадают с символами,
+    // а вес запроса превышает их только на вложения.
+    expect(breakdown.textBytes, breakdown.totalTextChars);
+    expect(breakdown.requestBytes, breakdown.totalTextChars + 10);
+  });
+
+  test('counts UTF-8 bytes separately from characters', () {
+    final breakdown = ContextBreakdown.of([const LlmMessage.user('你好 🙂')]);
+
+    // Пять UTF-16 единиц: три иероглифа и суррогатная пара эмодзи.
+    expect(breakdown.historyChars, 5);
+    // Байты: 3 + 3 + 1 (пробел) + 4.
+    expect(breakdown.textBytes, 11);
+    expect(breakdown.requestBytes, 11);
+    expect(breakdown.requestKilobytes, closeTo(11 / 1024, 1e-9));
+  });
+
+  test('falls back to characters when bytes were not measured', () {
+    const breakdown = ContextBreakdown(systemChars: 100, attachmentBytes: 2048);
+
+    // Разбивка собрана вручную: [ContextBreakdown.textBytes] равен нулю, и
+    // допущение «символ = байт» даёт нижнюю оценку вместо нуля.
+    expect(breakdown.requestBytes, 2148);
+    expect(breakdown.requestKilobytes, closeTo(2148 / 1024, 1e-9));
   });
 }

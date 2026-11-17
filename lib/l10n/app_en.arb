@@ -2598,6 +2598,16 @@
   "@contextBreakdownTitle": {
     "description": "Heading of the approximate character breakdown in the context dialog."
   },
+  "contextSentSize": "≈ {size} KB goes to the model",
+  "@contextSentSize": {
+    "description": "Approximate size of the outgoing request: text plus attachments, without transport overhead. Shown in the context dialog.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "12.5"
+      }
+    }
+  },
   "contextSystem": "System prompt",
   "@contextSystem": {
     "description": "Context breakdown row: system prompt."

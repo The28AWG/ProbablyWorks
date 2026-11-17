@@ -2598,6 +2598,16 @@
   "@contextBreakdownTitle": {
     "description": "Заголовок примерной разбивки по символам в диалоге контекста."
   },
+  "contextSentSize": "≈ {size} КБ уходит модели",
+  "@contextSentSize": {
+    "description": "Примерный размер уходящего запроса: текст и вложения без накладных расходов транспорта. Показывается в диалоге контекста.",
+    "placeholders": {
+      "size": {
+        "type": "String",
+        "example": "12,5"
+      }
+    }
+  },
   "contextSystem": "Системный промпт",
   "@contextSystem": {
     "description": "Строка разбивки: системный промпт."

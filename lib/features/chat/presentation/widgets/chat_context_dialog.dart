@@ -107,6 +107,15 @@ class ChatContextDialog extends StatelessWidget {
                   chars: breakdown.toolSchemaChars,
                   tokens: breakdown.toolSchemaTokens,
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  l10n.contextSentSize(
+                    _kilobytes(breakdown.requestKilobytes, l10n.localeName),
+                  ),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ],
               const SizedBox(height: AppSpacing.lg),
               _InfoRow(
@@ -226,6 +235,22 @@ class ChatContextDialog extends StatelessWidget {
     if (value == null) return '—';
     if (value == 0) return '\$0.00';
     return '\$${value.toStringAsFixed(4)}';
+  }
+
+  /// Килобайты с разделителем локали: `1.5` для en, `1,5` для ru.
+  ///
+  /// `intl` не используется, чтобы не смешивать способы форматирования: сумма,
+  /// время и деньги в диалоге тоже собраны руками, а от `intl` нужен один
+  /// десятичный разделитель. Из поддерживаемых локалей запятая есть только
+  /// у `ru`; при добавлении других с десятичной запятой (например, `uk`, `de`)
+  /// ветку ниже придётся расширить, иначе разделитель молча останется точкой.
+  /// Значения меньше 10 КБ показываются с двумя знаками, иначе мелкий запрос
+  /// выглядел бы нулём.
+  static String _kilobytes(double value, String localeName) {
+    final text = value < 10
+        ? value.toStringAsFixed(2)
+        : value.toStringAsFixed(1);
+    return localeName.startsWith('ru') ? text.replaceAll('.', ',') : text;
   }
 
   /// `128000` → `128 000`.

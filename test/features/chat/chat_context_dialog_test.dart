@@ -19,11 +19,12 @@ Future<void> _open(
   ChatCompactionInfo? compaction,
   ValueChanged<double?>? onBudgetChanged,
   required VoidCallback onCompact,
+  Locale locale = const Locale('en'),
 }) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.light,
-      locale: const Locale('en'),
+      locale: locale,
       localizationsDelegates: appLocalizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: Builder(
@@ -122,6 +123,9 @@ void main() {
     expect(find.text('Request breakdown'), findsOneWidget);
     expect(find.text('System prompt'), findsOneWidget);
     expect(find.text('~100'), findsOneWidget);
+    // Разбивка задана вручную, поэтому байты текста не измерены: 1480 символов
+    // без вложений плюс 40 байт вложения — 1520 байт, то есть 1,48 КБ.
+    expect(find.text('≈ 1.48 KB goes to the model'), findsOneWidget);
     expect(find.text('Last request'), findsOneWidget);
     expect(find.text('\$0.0123'), findsOneWidget);
     expect(find.text('Today'), findsOneWidget);
@@ -139,6 +143,41 @@ void main() {
       findsOneWidget,
     );
     expect(compacted, 0);
+  });
+
+  testWidgets('a Russian locale uses a comma in kilobytes', (tester) async {
+    await _open(
+      tester,
+      used: 1200,
+      locale: const Locale('ru'),
+      breakdown: const ContextBreakdown(
+        systemChars: 400,
+        historyChars: 800,
+        toolResultChars: 200,
+        attachmentBytes: 40,
+        toolSchemaChars: 80,
+      ),
+      onCompact: () {
+        return;
+      },
+    );
+
+    expect(find.text('≈ 1,48 КБ уходит модели'), findsOneWidget);
+  });
+
+  testWidgets('a request over ten kilobytes keeps one decimal', (tester) async {
+    await _open(
+      tester,
+      used: 1200,
+      breakdown: const ContextBreakdown(systemChars: 25600),
+      onCompact: () {
+        return;
+      },
+    );
+
+    // 25 600 символов ASCII без вложений — ровно 25 КБ: от 10 КБ точность
+    // снижается до одного знака, чтобы число не разрасталось.
+    expect(find.text('≈ 25.0 KB goes to the model'), findsOneWidget);
   });
 
   testWidgets('close button dismisses the dialog', (tester) async {
