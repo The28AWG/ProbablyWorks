@@ -18,7 +18,6 @@
 | PW-021 | P2 | частично | Проверка на реальных Windows, macOS и iOS |
 | PW-024 | P2 | todo | Лимиты, таймауты и безопасные ошибки HTTP API |
 | PW-025 | P2 | todo | Устойчивый keyring без постоянного отката в файл |
-| PW-026 | P2 | todo | Полнота проверок CI и release |
 | PW-027 | P2 | todo | Синхронизация документации с кодом |
 
 ## P1
@@ -246,35 +245,6 @@ downgrade; пользователь видит только запись в ло
 `packages/pw_agent/lib/core/security/file_secret_store.dart`,
 `packages/pw_agent/lib/core/security/security_audit.dart`,
 `lib/core/security/secret_store_plugin.dart`.
-
-### PW-026. Полнота проверок CI и release
-
-**Статус:** todo. Найдено при аудите вне текущего списка.
-
-**Проблема.** CI запускает тесты только для `pw_agent`, `pw_client`,
-`pw_server`, `virtual_host` и `virtual_git`. Тесты `plugin_web_core`,
-`plugin_declarative_http_core` и `plugin_declarative_commands_core` не
-запускаются, хотя проходят локально. CI не собирает web, хотя web заявлен
-поддерживаемым. Release workflow выполняет только `flutter test` без
-`flutter analyze`, форматирования и тестов пакетов, поэтому тег может указать
-на коммит, не прошедший полный набор проверок. DCM в CI не запускается
-осознанно из-за лицензии, но это не компенсировано локальным hook.
-
-**Что сделать.**
-- Запускать тесты всех пакетов, где есть каталог `test/`.
-- Добавить `flutter build web -t lib/main_web.dart` в CI.
-- В release выполнять analyze, format и тесты пакетов или переиспользовать
-  проверенный job из CI.
-- Добавить pre-push hook или явную локальную проверку DCM, не меняя правило
-  AGENTS.
-
-**Критерии приёмки.**
-- Новый пакет с тестами не остаётся вне CI незамеченным.
-- Поломка web-сборки ловится до merge.
-- Тег не позволяет выпустить код, не прошедший analyze и тесты пакетов.
-
-**Файлы:** `.github/workflows/ci.yml`,
-`.github/workflows/release.yml`, `docs/agent/PACKAGING.md`.
 
 ### PW-027. Синхронизация документации с кодом
 
