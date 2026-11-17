@@ -55,6 +55,48 @@ void main() {
     expect(backend.values, isEmpty);
   });
 
+  test('retries the keyring after a transient failure', () async {
+    final fallback = MemorySecretStore()..values['key'] = 'file';
+    final backend = _FakeKeyring(fail: true);
+    var now = DateTime(2026, 1, 1);
+    final store = SystemSecretStore(
+      fallback: fallback,
+      backend: backend,
+      keyringRetryDelay: const Duration(seconds: 30),
+      now: () => now,
+    );
+
+    expect(await store.read('key'), 'file');
+    expect(store.kind, SecretStoreKind.memory);
+
+    backend
+      ..fail = false
+      ..values['key'] = 'keyring';
+    now = now.add(const Duration(seconds: 31));
+
+    expect(await store.read('key'), 'keyring');
+    expect(store.kind, SecretStoreKind.osKeychain);
+  });
+
+  test('returns to the keyring for writes after recovery', () async {
+    final fallback = MemorySecretStore();
+    final backend = _FakeKeyring(fail: true);
+    final store = SystemSecretStore(
+      fallback: fallback,
+      backend: backend,
+      keyringRetryDelay: Duration.zero,
+    );
+
+    await store.write('key', 'file value');
+    expect(fallback.values['key'], 'file value');
+
+    backend.fail = false;
+    await store.write('key', 'keyring value');
+    expect(backend.values['key'], 'keyring value');
+    expect(fallback.values['key'], isNull);
+    expect(store.kind, SecretStoreKind.osKeychain);
+  });
+
   test('deletes from both the keyring and the file', () async {
     final fallback = MemorySecretStore()..values['key'] = 'file';
     final backend = _FakeKeyring()..values['key'] = 'keyring';
@@ -81,7 +123,7 @@ void main() {
 final class _FakeKeyring implements KeyringBackend {
   _FakeKeyring({this.fail = false});
 
-  final bool fail;
+  bool fail;
   final Map<String, String> values = {};
 
   void _check() {

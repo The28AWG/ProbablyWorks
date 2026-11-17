@@ -19,7 +19,9 @@ final class SystemSecretStore implements SecretStore {
     required this.backend,
     this.environment = const {},
     this.migrate = true,
-  });
+    this.keyringRetryDelay = const Duration(seconds: 30),
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final SecretStore fallback;
   final KeyringBackend backend;
@@ -27,9 +29,22 @@ final class SystemSecretStore implements SecretStore {
 
   /// Переносить ли старые значения из файла в keyring при чтении.
   final bool migrate;
-  bool _usingKeyring = true;
+
+  /// Через сколько снова пробовать keyring после сбоя.
+  ///
+  /// Ноль допустим для тестов: следующая же операция повторит keyring.
+  final Duration keyringRetryDelay;
+  final DateTime Function() _now;
+
+  DateTime? _keyringDownUntil;
 
   static const _keyringTimeout = Duration(seconds: 5);
+
+  /// Пока keyring временно недоступен, честно показываем fallback.
+  bool get _usingKeyring {
+    final until = _keyringDownUntil;
+    return until == null || !_now().isBefore(until);
+  }
 
   @override
   SecretStoreKind get kind =>
@@ -43,10 +58,11 @@ final class SystemSecretStore implements SecretStore {
 
     try {
       final value = await backend.read(key).timeout(_keyringTimeout);
+      _markKeyringOk();
       if (value != null && value.isNotEmpty) return value;
       return await _migrateFromFallback(key);
     } on Object catch (error) {
-      _disableKeyring('read', error);
+      _markKeyringFailure('read', error);
       return fallback.read(key);
     }
   }
@@ -59,11 +75,13 @@ final class SystemSecretStore implements SecretStore {
     }
     try {
       await backend.write(key, value).timeout(_keyringTimeout);
-      await fallback.delete(key);
     } on Object catch (error) {
-      _disableKeyring('write', error);
+      _markKeyringFailure('write', error);
       await fallback.write(key, value);
+      return;
     }
+    _markKeyringOk();
+    await fallback.delete(key);
   }
 
   @override
@@ -71,8 +89,9 @@ final class SystemSecretStore implements SecretStore {
     if (_usingKeyring) {
       try {
         await backend.delete(key).timeout(_keyringTimeout);
+        _markKeyringOk();
       } on Object catch (error) {
-        _disableKeyring('delete', error);
+        _markKeyringFailure('delete', error);
       }
     }
     await fallback.delete(key);
@@ -84,21 +103,33 @@ final class SystemSecretStore implements SecretStore {
     if (!migrate) return legacy;
     try {
       await backend.write(key, legacy).timeout(_keyringTimeout);
-      await fallback.delete(key);
-      AppLog.root.info('migrated secret $key to ${backend.name}');
-      return legacy;
     } on Object catch (error) {
-      _disableKeyring('migration', error);
+      _markKeyringFailure('migration', error);
       return legacy;
     }
+    _markKeyringOk();
+    await fallback.delete(key);
+    AppLog.root.info('migrated secret $key to ${backend.name}');
+    return legacy;
   }
 
-  void _disableKeyring(String operation, Object error) {
-    _usingKeyring = false;
+  /// Запоминает временную недоступность keyring и предупреждает один раз
+  /// за период сбоя. Следующая операция после паузы снова пробует keyring.
+  void _markKeyringFailure(String operation, Object error) {
+    final wasDown = !_usingKeyring;
+    _keyringDownUntil = _now().add(keyringRetryDelay);
+    if (wasDown) return;
     AppLog.root.warning(
-      'OS keyring $operation failed, using file fallback',
+      'OS keyring $operation failed, using file fallback '
+      'for ${keyringRetryDelay.inSeconds}s',
       error,
     );
+  }
+
+  void _markKeyringOk() {
+    if (_keyringDownUntil == null) return;
+    _keyringDownUntil = null;
+    AppLog.root.info('OS keyring is available again');
   }
 }
 
