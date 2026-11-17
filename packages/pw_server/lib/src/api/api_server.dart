@@ -26,12 +26,14 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/security/security_audit.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
+import 'package:pw_server/src/api/api_rate_limiter.dart';
 
 /// Локальный HTTP API поверх агента.
 ///
@@ -54,10 +56,16 @@ final class ApiServer {
     this.pushApi,
     this.accessLog,
     this.allowedOrigins = const {},
+    this.maxConcurrentRequests = 32,
+    this.requestTimeout = const Duration(minutes: 5),
+    ApiRateLimiter? rateLimiter,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
-       _projectsApi = projects;
+       _projectsApi = projects,
+       _rateLimiter = rateLimiter ?? ApiRateLimiter(),
+       assert(maxConcurrentRequests > 0),
+       assert(requestTimeout > Duration.zero);
 
   static const _maxBodyBytes = 8 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
@@ -76,6 +84,16 @@ final class ApiServer {
   final InternetAddress _address;
   final int _port;
   final Set<String> allowedOrigins;
+
+  /// Одновременные запросы ограничены, чтобы зависший backend не копил
+  /// неограниченное число соединений.
+  final int maxConcurrentRequests;
+
+  /// Верхняя граница обработки одного запроса; SSE живёт по своему контракту.
+  final Duration requestTimeout;
+
+  final ApiRateLimiter _rateLimiter;
+  var _activeRequests = 0;
 
   HttpServer? _server;
   final _clients = <HttpResponse>{};
@@ -118,45 +136,89 @@ final class ApiServer {
         audit = false;
         return;
       }
+
+      final remote = request.connectionInfo?.remoteAddress.address ?? 'unknown';
+      final limit = _rateLimiter.consume(remote);
+      if (!limit.allowed) {
+        errorCode = 'rate_limited';
+        _error(
+          response,
+          HttpStatus.tooManyRequests,
+          'rate_limited',
+          'too many requests',
+          requestId: requestId,
+          retryAfter: limit.retryAfter,
+        );
+        return;
+      }
+
       if (request.method == 'GET' && request.uri.path == '/api/v1/health') {
         audit = false;
         _json(response, HttpStatus.ok, {'ok': true, 'version': '1'});
         return;
       }
-      final header = request.headers.value(HttpHeaders.authorizationHeader);
-      if (header != null && header.startsWith('Bearer ')) {
-        token = ApiAccessLog.fingerprint(header.replaceFirst('Bearer ', ''));
-      }
-      if (!_authorized(request)) {
-        auth = header == null ? 'missing' : 'invalid';
-        errorCode = 'unauthorized';
-        response.headers.set(
-          HttpHeaders.wwwAuthenticateHeader,
-          'Bearer realm="probablyworks"',
-        );
+
+      if (_activeRequests >= maxConcurrentRequests) {
+        errorCode = 'server_busy';
         _error(
           response,
-          HttpStatus.unauthorized,
-          'unauthorized',
-          'invalid token',
+          HttpStatus.serviceUnavailable,
+          'server_busy',
+          'server is busy',
           requestId: requestId,
+          retryAfter: const Duration(seconds: 1),
         );
         return;
       }
-      sse = request.method == 'GET' && request.uri.path == '/api/v1/events';
-      if (sse) {
-        _writeAccess(
-          request,
-          requestId: requestId,
-          event: 'api.sse.open',
-          auth: auth,
-          token: token,
-          status: HttpStatus.ok,
-          durationMs: 0,
-        );
+
+      _activeRequests++;
+      try {
+        final header = request.headers.value(HttpHeaders.authorizationHeader);
+        if (header != null && header.startsWith('Bearer ')) {
+          token = ApiAccessLog.fingerprint(header.replaceFirst('Bearer ', ''));
+        }
+        if (!_authorized(request)) {
+          auth = header == null ? 'missing' : 'invalid';
+          errorCode = 'unauthorized';
+          response.headers.set(
+            HttpHeaders.wwwAuthenticateHeader,
+            'Bearer realm="probablyworks"',
+          );
+          _error(
+            response,
+            HttpStatus.unauthorized,
+            'unauthorized',
+            'invalid token',
+            requestId: requestId,
+          );
+          return;
+        }
+        sse = request.method == 'GET' && request.uri.path == '/api/v1/events';
+        if (sse) {
+          _writeAccess(
+            request,
+            requestId: requestId,
+            event: 'api.sse.open',
+            auth: auth,
+            token: token,
+            status: HttpStatus.ok,
+            durationMs: 0,
+          );
+        }
+        await _routeWithTimeout(request, sse: sse);
+        _publishState(request);
+      } finally {
+        _activeRequests--;
       }
-      await _route(request);
-      _publishState(request);
+    } on TimeoutException {
+      errorCode = 'request_timeout';
+      _error(
+        response,
+        HttpStatus.gatewayTimeout,
+        'request_timeout',
+        'request timed out',
+        requestId: requestId,
+      );
     } on AgentApiException catch (error) {
       errorCode = error.code;
       _error(
@@ -175,13 +237,14 @@ final class ApiServer {
         error.message,
         requestId: requestId,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       errorCode = 'internal_error';
+      AppLog.root.warning('API request failed: $error', error, stack);
       _error(
         response,
         HttpStatus.internalServerError,
         'internal_error',
-        '$error',
+        'internal server error',
         requestId: requestId,
       );
     } finally {
@@ -202,6 +265,28 @@ final class ApiServer {
           durationMs: stopwatch.elapsedMilliseconds,
         );
       }
+    }
+  }
+
+  /// Выполняет маршрут под общим таймаутом. SSE не ограничивается: поток
+  /// живёт до отключения клиента.
+  Future<void> _routeWithTimeout(
+    HttpRequest request, {
+    required bool sse,
+  }) async {
+    final route = _route(request);
+    if (sse) return route;
+    try {
+      await route.timeout(requestTimeout);
+    } on TimeoutException {
+      // Маршрут не отменяется силой: после ответа 504 его late-ошибка должна
+      // попасть в лог, а не стать необработанным исключением.
+      unawaited(
+        route.catchError((Object error, StackTrace stack) {
+          AppLog.root.warning('API route failed after timeout', error, stack);
+        }),
+      );
+      rethrow;
     }
   }
 
@@ -2042,7 +2127,14 @@ final class ApiServer {
     String code,
     String message, {
     String? requestId,
+    Duration? retryAfter,
   }) {
+    if (retryAfter != null) {
+      response.headers.set(
+        HttpHeaders.retryAfterHeader,
+        '${retryAfterSeconds(retryAfter)}',
+      );
+    }
     _json(response, status, {
       'error': {'code': code, 'message': message},
       'requestId': ?requestId,

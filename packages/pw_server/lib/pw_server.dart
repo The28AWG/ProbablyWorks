@@ -2,6 +2,7 @@
 library;
 
 export 'src/api/api_access_log.dart';
+export 'src/api/api_rate_limiter.dart';
 export 'src/api/api_server.dart';
 export 'src/api/api_token.dart';
 export 'src/daemon/daemon.dart';

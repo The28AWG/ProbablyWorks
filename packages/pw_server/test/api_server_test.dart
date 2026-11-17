@@ -109,6 +109,138 @@ void main() {
     expect(jsonDecode(body), containsPair('ok', true));
   });
 
+  test('rate limits requests and returns Retry-After', () async {
+    final limitedBackend = _FakeBackend();
+    final limited = ApiServer(
+      limitedBackend,
+      _token,
+      port: 0,
+      rateLimiter: ApiRateLimiter(
+        maxRequests: 2,
+        window: const Duration(minutes: 1),
+      ),
+    );
+    final port = await limited.start();
+    final limitedClient = HttpClient();
+    addTearDown(() async {
+      limitedClient.close(force: true);
+      await limited.stop();
+      await limitedBackend.dispose();
+    });
+    final limitedBase = 'http://127.0.0.1:$port';
+
+    for (var attempt = 0; attempt < 2; attempt++) {
+      expect(
+        (await _request(
+          limitedClient,
+          limitedBase,
+          'GET',
+          '/api/v1/health',
+        )).$1,
+        HttpStatus.ok,
+        reason: 'attempt $attempt must pass before the limit is exhausted',
+      );
+    }
+
+    final request = await limitedClient.getUrl(
+      Uri.parse('$limitedBase/api/v1/health'),
+    );
+    final response = await request.close();
+    await response.drain<void>();
+    expect(response.statusCode, HttpStatus.tooManyRequests);
+    expect(response.headers.value(HttpHeaders.retryAfterHeader), isNotNull);
+  });
+
+  test('rejects requests above the concurrency limit', () async {
+    backend
+      ..chatsStarted = Completer<void>()
+      ..chatsGate = Completer<void>();
+    final limited = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      maxConcurrentRequests: 1,
+      requestTimeout: const Duration(seconds: 10),
+    );
+    final port = await limited.start();
+    final limitedClient = HttpClient();
+    addTearDown(() async {
+      if (!backend.chatsGate!.isCompleted) backend.chatsGate!.complete();
+      limitedClient.close(force: true);
+      await limited.stop();
+    });
+    final limitedBase = 'http://127.0.0.1:$port';
+
+    final first = _request(
+      limitedClient,
+      limitedBase,
+      'GET',
+      '/api/v1/chats',
+      token: _token,
+    );
+    await backend.chatsStarted!.future;
+
+    final (busyStatus, busyBody) = await _request(
+      limitedClient,
+      limitedBase,
+      'GET',
+      '/api/v1/chats',
+      token: _token,
+    );
+    expect(busyStatus, HttpStatus.serviceUnavailable);
+    expect(busyBody, contains('server_busy'));
+
+    backend.chatsGate!.complete();
+    expect((await first).$1, HttpStatus.ok);
+  });
+
+  test('returns 504 when the backend does not finish in time', () async {
+    backend
+      ..chatsStarted = Completer<void>()
+      ..chatsGate = Completer<void>();
+    final limited = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      requestTimeout: const Duration(milliseconds: 50),
+    );
+    final port = await limited.start();
+    final limitedClient = HttpClient();
+    addTearDown(() async {
+      if (!backend.chatsGate!.isCompleted) backend.chatsGate!.complete();
+      limitedClient.close(force: true);
+      await limited.stop();
+    });
+
+    final (status, body) = await _request(
+      limitedClient,
+      'http://127.0.0.1:$port',
+      'GET',
+      '/api/v1/chats',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.gatewayTimeout);
+    expect(body, contains('request_timeout'));
+  });
+
+  test('does not expose internal error details', () async {
+    backend.chatsError = StateError('secret /home/user/.ssh/config');
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.internalServerError);
+    expect(body, contains('internal server error'));
+    expect(body, isNot(contains('/home/user')));
+    expect(body, isNot(contains('ssh')));
+  });
+
   test('reads and revises project memory through the API', () async {
     final (emptyStatus, emptyBody) = await _request(
       client,
@@ -1503,6 +1635,9 @@ final class _FakeBackend implements AgentApi {
   var opened = 0;
   var stopped = 0;
   final searchQueries = <SearchQuery>[];
+  Completer<void>? chatsGate;
+  Completer<void>? chatsStarted;
+  Object? chatsError;
 
   final _chat = Chat(
     id: 'c1',
@@ -1567,7 +1702,16 @@ final class _FakeBackend implements AgentApi {
   ];
 
   @override
-  Future<List<Chat>> chats() async => [_chat];
+  Future<List<Chat>> chats() async {
+    if (chatsStarted != null && !chatsStarted!.isCompleted) {
+      chatsStarted!.complete();
+    }
+    final gate = chatsGate;
+    if (gate != null) await gate.future;
+    final error = chatsError;
+    if (error != null) throw error;
+    return [_chat];
+  }
 
   @override
   Future<List<SearchHit>> search(SearchQuery query) async {
