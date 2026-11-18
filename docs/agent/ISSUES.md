@@ -16,6 +16,7 @@
 | PW-022 | P1 | todo | Полное маскирование секретов в `Redactor` |
 | PW-023 | P1 | todo | Подпись Android и имена приложений |
 | PW-024 | P2 | todo | Временные исключения после обновления Flutter 3.50 |
+| PW-025 | P2 | todo | Убрать dependency_overrides для equatable |
 
 ## P1
 
@@ -217,3 +218,43 @@ release-APK нельзя обновить поверх правильно под
 `lib/app/locale/app_localization_delegates.dart`,
 `packages/app_ui/lib/src/widgets/app_markdown.dart`,
 `test/app/ui/read_file_view_test.dart`.
+
+### PW-025. Убрать dependency_overrides для equatable
+
+**Статус:** todo. Введено вместе с переходом на `equatable 3.0.0`.
+
+**Проблема.** `xterm2 5.4.0` объявляет зависимость `equatable ^2.0.3`, но не
+импортирует её. Чтобы использовать актуальный `equatable 3.0.0`, в корневом
+`pubspec.yaml` добавлен `dependency_overrides: equatable: 3.0.0`. Override
+обходит ограничение пакета: если будущий `xterm2` начнёт использовать
+удалённый в 3.0.0 API, сборка сломается на компиляции.
+
+Ломающие изменения `equatable 3.0.0` проект не затрагивают: `EquatableMixin`
+нигде не используется, `EquatableConfig.stringify` не настраивается, а
+сравнение классов по-прежнему учитывает `runtimeType`. Тесты проходят, но
+override остаётся временным обходом, а не нормой.
+
+**Что сделать.**
+- Следить за релизами `xterm2`: когда он разрешит `equatable ^3.0.0` или
+  удалит неиспользуемую зависимость, убрать `dependency_overrides`.
+- При необходимости предложить пакету удалить неиспользуемый `equatable`.
+- После удаления вернуть обычные ограничения `equatable: ^3.0.0` и проверить
+  `flutter pub get`, `flutter analyze`, DCM и тесты.
+
+**Альтернатива.** Взять `xterm2` за основу собственного форка терминального
+пакета. Оригинальный `xterm` не обновлялся около двух лет, а полный набор
+изменений `xterm2` относительно него не проверен независимо. Свой форк
+позволяет убрать неиспользуемый `equatable`, зафиксировать исходный коммит и
+контролировать состав патчей. Цена — сопровождение пакета: сравнить `xterm2` с
+`xterm`, сохранить историю изменений, перенести тесты терминала и проверить
+форк на всех целевых платформах. Пока форк не готов, действует текущий
+`dependency_overrides`.
+
+**Критерии приёмки.**
+- В `pubspec.yaml` нет `dependency_overrides` для `equatable`.
+- `flutter pub get` разрешает зависимости без override.
+- `dart run tool/ci/check_dependencies.dart` не показывает override.
+- Тесты и сборки проходят.
+
+**Файлы:** `pubspec.yaml`, `pubspec.lock`,
+`packages/pw_agent/pubspec.yaml`, `docs/agent/DEPENDENCIES.md`.

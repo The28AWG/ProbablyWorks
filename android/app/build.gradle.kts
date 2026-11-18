@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.the28awg.probably_works"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_local_notifications 23 требует compileSdk 37, а шаблон Flutter 3.50
+    // ещё использует 36. maxOf не даст откатиться, когда Flutter поднимет значение.
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -51,5 +53,5 @@ flutter {
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

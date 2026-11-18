@@ -8,7 +8,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledg
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/tools/tool_catalog.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm2/xterm.dart';
 
 class _TestApp extends StatelessWidget {
   const _TestApp(this.child);

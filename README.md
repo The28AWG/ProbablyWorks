@@ -304,6 +304,7 @@ git config commit.template .gitmessage
 - [docs/agent/ISSUES.md](docs/agent/ISSUES.md) — backlog: задачи, приоритеты и критерии приёмки.
 - [docs/agent/DAEMON.md](docs/agent/DAEMON.md) — headless-демон, HTTP API и планировщик.
 - [docs/agent/PACKAGING.md](docs/agent/PACKAGING.md) — сборка AppImage, DEB, EXE, DMG и архивов.
+- [docs/agent/DEPENDENCIES.md](docs/agent/DEPENDENCIES.md) — обновление Flutter, Android/Gradle и pub-зависимостей.
 
 ## Безопасность
 

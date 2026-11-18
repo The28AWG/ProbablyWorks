@@ -9,8 +9,8 @@ import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/host/host_terminal.dart';
-import 'package:xterm/src/ui/render.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm2/src/ui/render.dart';
+import 'package:xterm2/xterm.dart';
 
 class _TestHost extends StatelessWidget {
   const _TestHost(this.child);

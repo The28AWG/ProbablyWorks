@@ -98,6 +98,9 @@
 
 - Перед добавлением или обновлением зависимости проверьте версию и уязвимости через Sonatype MCP
   (`user-sonatype-mcp`: `getLatestComponentVersion`, `getRecommendedComponentVersions`, `getComponentVersion`).
+- Порядок обновления Flutter, Android/Gradle и pub-зависимостей описан в
+  [docs/agent/DEPENDENCIES.md](docs/agent/DEPENDENCIES.md). Сверка с шаблоном Flutter —
+  `dart run tool/ci/check_dependencies.dart`.
 - Добавляйте зависимости в `pubspec.yaml` в алфавитном порядке (`sort_pub_dependencies`), затем выполните `flutter pub get`
   и коммитьте `pubspec.lock` вместе с `pubspec.yaml`.
 - Git-зависимость `openrouter` зафиксирована на тег или commit. Не переводите её на ветку.

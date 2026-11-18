@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/util/utf8_chunk_decoder.dart';
 import 'package:pw_agent/host/host_terminal.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm2/xterm.dart';
 
 /// Доступ к тексту терминала снаружи виджета, например для кнопки копирования в заголовке блока.
 /// Пока виджет смонтирован, [text] — то, что видно в терминале (без хвостовых пробелов); иначе пусто.
