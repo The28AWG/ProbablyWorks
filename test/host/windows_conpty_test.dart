@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/host/flutter_pty_launcher.dart';
 import 'package:pw_agent/host/host_environment.dart';
@@ -48,9 +49,11 @@ void main() {
 
     final result = await _run('cd', cwd: dir.path);
 
+    // cmd может показать путь в формате 8.3 (RUNNER~1), поэтому проверяем
+    // уникальное имя временного каталога, а не весь длинный путь.
     expect(
       result.output.toLowerCase(),
-      contains(dir.resolveSymbolicLinksSync().toLowerCase()),
+      contains(p.basename(dir.path).toLowerCase()),
     );
     expect(result.exitCode, 0);
   });
