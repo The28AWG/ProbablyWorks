@@ -1,6 +1,9 @@
 import 'package:app_ui/src/theme/app_colors.dart';
 import 'package:app_ui/src/theme/app_theme.dart';
 import 'package:app_ui/src/theme/app_tokens.dart';
+// markdown_widget ещё собран на package:flutter/material.dart; снять после его
+// перехода на material_ui (PW-024 в docs/agent/ISSUES.md).
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart' as legacy;
 import 'package:markdown/markdown.dart' as md;
 import 'package:markdown_widget/markdown_widget.dart';
@@ -16,7 +19,8 @@ import 'package:material_ui/material_ui.dart';
 /// (ссылка вокруг виджета, картинка) ищет `Material` того же пакета, а `Scaffold`
 /// приложения даёт `Material` из `material_ui` — для чернил это другой тип.
 /// `MaterialUiCompatibilityBridge` переносит тему, прозрачный `Material` — предок
-/// для чернил. Мост временный: его уберут, когда пакет перейдёт на `material_ui`.
+/// для чернил. Мост временный: его уберут, когда пакет перейдёт на `material_ui`
+/// (PW-024 в `docs/agent/ISSUES.md`).
 class AppMarkdown extends StatelessWidget {
   const AppMarkdown({required this.data, super.key});
 

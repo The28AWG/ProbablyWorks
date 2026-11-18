@@ -84,7 +84,7 @@
 
 ## Требования
 
-- Flutter SDK, совместимый с `sdk: ^3.13.7` из `pubspec.yaml`.
+- Flutter SDK 3.50 или новее (Dart `sdk: ^3.14.0` из `pubspec.yaml`).
 - Для сборки под Linux: набор зависимостей Flutter desktop (GTK 3, cmake, ninja и т.д.).
   Команда `flutter doctor` покажет, что не хватает.
 - Для уведомлений на Linux: `notify-send` (пакет `libnotify-bin`).

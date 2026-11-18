@@ -59,6 +59,11 @@ Future<void> _pump(
 }
 
 void main() {
+  // Шрифты грузим до тестов: загрузка внутри testWidgets оставляет в Flutter 3.50
+  // отложенный кадр переразметки после смены системных шрифтов (PW-024 в
+  // docs/agent/ISSUES.md).
+  setUpAll(GoldenFonts.load);
+
   testWidgets('строки показываются с номерами, без служебного заголовка', (
     tester,
   ) async {
@@ -356,7 +361,6 @@ void main() {
   testWidgets('хвост длинной строки виден целиком после прокрутки', (
     tester,
   ) async {
-    await GoldenFonts.load();
     const line =
         'Это тестовый файл, созданный с помощью инструмента write_file.';
     await _pump(
@@ -383,7 +387,6 @@ void main() {
   testWidgets('хвост длинной строки виден и при увеличенном масштабе текста', (
     tester,
   ) async {
-    await GoldenFonts.load();
     const line =
         'Это тестовый файл, созданный с помощью инструмента write_file.';
     await _pump(

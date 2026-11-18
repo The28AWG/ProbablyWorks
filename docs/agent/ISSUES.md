@@ -15,6 +15,7 @@
 | PW-018 | P1 | частично | Семантический поиск по истории и файлам |
 | PW-022 | P1 | todo | Полное маскирование секретов в `Redactor` |
 | PW-023 | P1 | todo | Подпись Android и имена приложений |
+| PW-024 | P2 | todo | Временные исключения после обновления Flutter 3.50 |
 
 ## P1
 
@@ -165,3 +166,54 @@ release-APK нельзя обновить поверх правильно под
 `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`,
 `windows/runner/main.cpp`, `macos/Runner/Configs/AppInfo.xcconfig`,
 `ios/Runner/Info.plist`.
+
+## P2
+
+### PW-024. Временные исключения после обновления Flutter 3.50
+
+**Статус:** todo. Появилось при переходе на Flutter 3.50 / Dart 3.14.
+
+**Проблема.** Чтобы `flutter analyze` проходил без замечаний, при обновлении
+добавлены исключения и `ignore`. Это не целевое состояние, а совместимость с
+зависимостями, которые ещё не перешли на `material_ui`:
+
+- `analysis_options.yaml`: каталоги `**/l10n/generated/**` исключены из
+  анализа. `flutter gen-l10n` в 3.50 всё ещё генерирует импорт
+  `flutter_localizations` и делегаты `GlobalMaterialLocalizations` /
+  `GlobalCupertinoLocalizations`, помеченные deprecated. Править
+  сгенерированные файлы вручную нельзя.
+- `lib/app/locale/app_localization_delegates.dart`: оставлен
+  `flutter_l10n.GlobalMaterialLocalizations.delegate` с `ignore`. Он нужен
+  legacy-виджетам `package:flutter/material.dart`, в частности `SelectionArea`
+  внутри `markdown_widget 2.3.2+8`.
+- `packages/app_ui/lib/src/widgets/app_markdown.dart`: импорт
+  `package:flutter/material.dart` и `MaterialUiCompatibilityBridge` нужны,
+  пока `markdown_widget` собран на старом Material. Импорт помечен `ignore`.
+- `test/app/ui/read_file_view_test.dart`: `GoldenFonts.load()` перенесён в
+  `setUpAll`. В Flutter 3.50 загрузка шрифта внутри `testWidgets` оставляет
+  отложенный кадр переразметки, и проверка инвариантов теста падает с
+  «An animation is still running even after the widget tree was disposed».
+
+**Что сделать.**
+- Следить за релизами `markdown_widget` и Flutter. Когда `markdown_widget`
+  перейдёт на `material_ui`, убрать legacy-импорт,
+  `MaterialUiCompatibilityBridge`, отдельный legacy-делегат и связанные
+  `ignore`.
+- Когда `flutter gen-l10n` начнёт генерировать делегаты из `material_ui` и
+  `cupertino_ui`, удалить исключение `**/l10n/generated/**` и проверить
+  `flutter analyze` без него.
+- После исправления поведения загрузки шрифтов во Flutter вернуть
+  `GoldenFonts.load()` в сами тесты либо оставить `setUpAll`, если он станет
+  общим правилом, и удалить ссылку на эту задачу.
+
+**Критерии приёмки.**
+- В `analysis_options.yaml` нет исключения сгенерированных l10n либо у него
+  другая актуальная причина.
+- В коде нет `ignore: deprecated_member_use` для legacy Material и
+  `MaterialUiCompatibilityBridge`.
+- `flutter analyze`, DCM и `flutter test` проходят без этих исключений.
+
+**Файлы:** `analysis_options.yaml`,
+`lib/app/locale/app_localization_delegates.dart`,
+`packages/app_ui/lib/src/widgets/app_markdown.dart`,
+`test/app/ui/read_file_view_test.dart`.

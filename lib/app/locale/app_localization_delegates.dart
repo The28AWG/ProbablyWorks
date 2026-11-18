@@ -17,5 +17,8 @@ const appLocalizationsDelegates = <LocalizationsDelegate<dynamic>>[
   DeclarativeHttpLocalizations.delegate,
   WebLocalizations.delegate,
   ...GlobalMaterialLocalizations.delegates,
+  // markdown_widget ещё использует SelectionArea из flutter/material; снять
+  // после его перехода на material_ui (PW-024 в docs/agent/ISSUES.md).
+  // ignore: deprecated_member_use
   flutter_l10n.GlobalMaterialLocalizations.delegate,
 ];

@@ -13,6 +13,10 @@ analyzer:
     - "**/*.freezed.dart"
     - "**/*.config.dart"
     - "**/*.gr.dart"
+    # Файлы gen-l10n. Flutter 3.50 всё ещё генерирует импорт
+    # flutter_localizations с устаревшими Global*Localizations.
+    # Снять, когда gen-l10n перейдёт на material_ui: PW-024 в docs/agent/ISSUES.md.
+    - "**/l10n/generated/**"
   errors:
     invalid_annotation_target: ignore
 
