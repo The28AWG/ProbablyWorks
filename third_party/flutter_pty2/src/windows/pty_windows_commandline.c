@@ -34,6 +34,56 @@ static wchar_t *utf8_to_wide(const char *value)
     return converted;
 }
 
+static int ascii_lower(int value)
+{
+    return value >= 'A' && value <= 'Z' ? value - 'A' + 'a' : value;
+}
+
+static int ascii_case_equal(const char *left, const char *right)
+{
+    while (*left != '\0' && *right != '\0') {
+        if (ascii_lower((unsigned char)*left) !=
+            ascii_lower((unsigned char)*right)) {
+            return 0;
+        }
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
+static const char *executable_basename(const char *executable)
+{
+    const char *base = executable;
+    for (const char *cursor = executable; *cursor != '\0'; cursor++) {
+        if (*cursor == '\\' || *cursor == '/') base = cursor + 1;
+    }
+    return base;
+}
+
+static int is_cmd_executable(const char *executable)
+{
+    const char *base = executable_basename(executable);
+    return ascii_case_equal(base, "cmd") ||
+           ascii_case_equal(base, "cmd.exe");
+}
+
+static int is_cmd_switch(const char *argument, char letter)
+{
+    return argument[0] == '/' &&
+           (argument[1] == letter ||
+            argument[1] == (char)(letter - 'a' + 'A')) &&
+           argument[2] == '\0';
+}
+
+static size_t append_raw_argument(wchar_t *command,
+                                  size_t offset,
+                                  const wchar_t *argument)
+{
+    while (*argument != L'\0') command[offset++] = *argument++;
+    return offset;
+}
+
 static size_t append_quoted_argument(wchar_t *command,
                                      size_t offset,
                                      const wchar_t *argument)
@@ -90,6 +140,66 @@ wchar_t *pty_windows_build_command_line(const char *executable,
     }
     wchar_t *command = malloc(command_capacity * sizeof(*command));
     if (command == NULL) return NULL;
+
+    // cmd.exe does not parse its command line like a normal C program. With
+    // /S /C it strips one outer pair of quotes and keeps every inner quote
+    // as-is, so the command must not be escaped with backslashes. We only
+    // take this path for the explicit /S /C form used by the PTY launcher.
+    if (is_cmd_executable(executable)) {
+        int s_index = -1;
+        int command_index = -1;
+        for (int index = 0; index < argument_count; index++) {
+            if (is_cmd_switch(arguments[index], 's')) s_index = index;
+            if (is_cmd_switch(arguments[index], 'c') ||
+                is_cmd_switch(arguments[index], 'k')) {
+                command_index = index;
+            }
+        }
+        if (s_index >= 0 && command_index > s_index &&
+            command_index + 1 < argument_count) {
+            size_t raw_offset = 0;
+            wchar_t *converted = utf8_to_wide(executable);
+            if (converted == NULL) {
+                free(command);
+                return NULL;
+            }
+            raw_offset = append_quoted_argument(command,
+                                                raw_offset,
+                                                converted);
+            free(converted);
+            for (int index = 0; index <= command_index; index++) {
+                converted = utf8_to_wide(arguments[index]);
+                if (converted == NULL) {
+                    free(command);
+                    return NULL;
+                }
+                command[raw_offset++] = L' ';
+                raw_offset = append_raw_argument(command,
+                                                 raw_offset,
+                                                 converted);
+                free(converted);
+            }
+            command[raw_offset++] = L' ';
+            command[raw_offset++] = L'"';
+            for (int index = command_index + 1;
+                 index < argument_count;
+                 index++) {
+                if (index > command_index + 1) command[raw_offset++] = L' ';
+                converted = utf8_to_wide(arguments[index]);
+                if (converted == NULL) {
+                    free(command);
+                    return NULL;
+                }
+                raw_offset = append_raw_argument(command,
+                                                 raw_offset,
+                                                 converted);
+                free(converted);
+            }
+            command[raw_offset++] = L'"';
+            command[raw_offset] = L'\0';
+            return command;
+        }
+    }
 
     size_t offset = 0;
     wchar_t *converted_executable = utf8_to_wide(executable);

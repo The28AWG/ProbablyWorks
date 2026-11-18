@@ -68,7 +68,7 @@ Future<({String output, int? exitCode})> _run(
       : '${ShellAdapter(HostOs.windows).cd(cwd)} && $script';
   final channel = await const FlutterPtyLauncher().start(
     control.shellExecutable,
-    control.shellArgs(control.wrapTerminal(fullScript)),
+    control.terminalShellArgs(control.wrapTerminal(fullScript)),
     environment: localSessionEnvironment(
       machine: Platform.environment,
       host: environment,

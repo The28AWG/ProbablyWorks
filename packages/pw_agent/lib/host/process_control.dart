@@ -91,4 +91,12 @@ class ProcessControl {
 
   List<String> shellArgs(String wrapped) =>
       os == HostOs.windows ? ['/c', wrapped] : ['-c', wrapped];
+
+  /// Аргументы для запуска в PTY.
+  ///
+  /// В Windows `cmd.exe` не разбирает командную строку как обычная C-программа:
+  /// с `/s` он снимает одну внешнюю пару кавычек и сохраняет кавычки внутри
+  /// команды. Без `/s` кавычки вокруг путей и аргументов ломают разбор.
+  List<String> terminalShellArgs(String wrapped) =>
+      os == HostOs.windows ? ['/d', '/s', '/c', wrapped] : shellArgs(wrapped);
 }

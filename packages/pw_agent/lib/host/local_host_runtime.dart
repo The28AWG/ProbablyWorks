@@ -48,7 +48,7 @@ final class LocalHostRuntime extends WrappedExecRuntime {
     }
     return pty.start(
       control.shellExecutable,
-      control.shellArgs(wrappedScript),
+      control.terminalShellArgs(wrappedScript),
       environment: localSessionEnvironment(
         machine: Platform.environment,
         host: environment,

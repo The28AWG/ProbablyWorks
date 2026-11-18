@@ -14,6 +14,10 @@ SDK, поэтому сборка под iOS падает. Наш патч:
 - оставляет `<libproc.h>` и `proc_pidinfo()` только для macOS
   (`#if defined(__APPLE__) && !TARGET_OS_IPHONE`);
 - на iOS использует существующий общий fallback с перебором fd;
+- в `src/windows/pty_windows_commandline.c` добавлен разбор `cmd.exe` с
+  `/s /c`: `cmd` не следует обычному C-экранированию аргументов, поэтому
+  команда собирается в одну внешнюю пару кавычек без backslash-экранирования
+  внутренних кавычек. Это нужно для путей с пробелами и команд с `&`;
 - в `hook/build.dart` для iOS и macOS явно линкует `libutil` (там
   находится `openpty`); в upstream `util` был указан только для Linux,
   хотя CMake-сборка линкует его для всех Unix;

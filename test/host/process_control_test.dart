@@ -43,4 +43,22 @@ void main() {
       expect(ProcessControl.isValidShell(r'$(id)'), isFalse);
     });
   });
+
+  group('ProcessControl terminal args', () {
+    test('Windows uses cmd /d /s /c for PTY', () {
+      expect(ProcessControl(HostOs.windows).terminalShellArgs('echo hi'), [
+        '/d',
+        '/s',
+        '/c',
+        'echo hi',
+      ]);
+    });
+
+    test('posix keeps the regular -c arguments', () {
+      expect(ProcessControl(HostOs.posix).terminalShellArgs('echo hi'), [
+        '-c',
+        'echo hi',
+      ]);
+    });
+  });
 }
