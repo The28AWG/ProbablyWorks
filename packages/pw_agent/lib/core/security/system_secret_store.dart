@@ -7,6 +7,7 @@ import 'package:pw_agent/core/security/keyring_backend.dart';
 import 'package:pw_agent/core/security/macos_keyring_backend.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/security/windows_credential_backend.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 
 /// Секреты в системном keyring с файловым fallback.
 ///
@@ -53,22 +54,35 @@ final class SystemSecretStore implements SecretStore {
   @override
   Future<String?> read(String key) async {
     final fromEnvironment = secretFromEnvironment(key, environment);
-    if (fromEnvironment != null) return fromEnvironment;
-    if (!_usingKeyring) return fallback.read(key);
+    if (fromEnvironment != null) {
+      Redactor.registerSecret(fromEnvironment);
+      return fromEnvironment;
+    }
+    if (!_usingKeyring) {
+      final value = await fallback.read(key);
+      Redactor.registerSecret(value);
+      return value;
+    }
 
     try {
       final value = await backend.read(key).timeout(_keyringTimeout);
       _markKeyringOk();
-      if (value != null && value.isNotEmpty) return value;
+      if (value != null && value.isNotEmpty) {
+        Redactor.registerSecret(value);
+        return value;
+      }
       return await _migrateFromFallback(key);
     } on Object catch (error) {
       _markKeyringFailure('read', error);
-      return fallback.read(key);
+      final value = await fallback.read(key);
+      Redactor.registerSecret(value);
+      return value;
     }
   }
 
   @override
   Future<void> write(String key, String value) async {
+    Redactor.registerSecret(value);
     if (!_usingKeyring) {
       await fallback.write(key, value);
       return;
@@ -99,6 +113,7 @@ final class SystemSecretStore implements SecretStore {
 
   Future<String?> _migrateFromFallback(String key) async {
     final legacy = await fallback.read(key);
+    Redactor.registerSecret(legacy);
     if (legacy == null) return null;
     if (!migrate) return legacy;
     try {

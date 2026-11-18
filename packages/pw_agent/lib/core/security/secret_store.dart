@@ -1,4 +1,5 @@
 import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 
 /// Тип backend'а секретов. Нужен аудиту, чтобы не зависеть от Flutter-классов.
 enum SecretStoreKind { memory, osKeychain, headlessFile, unknown }
@@ -56,10 +57,17 @@ class MemorySecretStore implements SecretStore {
   SecretStoreKind get kind => SecretStoreKind.memory;
 
   @override
-  Future<String?> read(String key) async => values[key];
+  Future<String?> read(String key) async {
+    final value = values[key];
+    Redactor.registerSecret(value);
+    return value;
+  }
 
   @override
-  Future<void> write(String key, String value) async => values[key] = value;
+  Future<void> write(String key, String value) async {
+    Redactor.registerSecret(value);
+    values[key] = value;
+  }
 
   @override
   Future<void> delete(String key) async => values.remove(key);

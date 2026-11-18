@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/security/file_permissions.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 
 /// Файловый fallback для headless-режима.
 ///
@@ -35,12 +36,18 @@ final class FileSecretStore implements SecretStore {
   @override
   Future<String?> read(String key) async {
     final fromEnvironment = _environmentValue(key);
-    if (fromEnvironment != null) return fromEnvironment;
-    return (await _load())[key];
+    if (fromEnvironment != null) {
+      Redactor.registerSecret(fromEnvironment);
+      return fromEnvironment;
+    }
+    final value = (await _load())[key];
+    Redactor.registerSecret(value);
+    return value;
   }
 
   @override
   Future<void> write(String key, String value) => _serialized(() async {
+    Redactor.registerSecret(value);
     final values = await _load();
     values[key] = value;
     await _save(values);
@@ -77,10 +84,16 @@ final class FileSecretStore implements SecretStore {
     try {
       final decoded = jsonDecode(await _file.readAsString());
       if (decoded is! Map) return {};
-      return {
+      final values = {
         for (final entry in decoded.entries)
           if (entry.value is String) '${entry.key}': entry.value as String,
       };
+      // Файл уже прочитан: запоминаем все значения, чтобы даже вывод
+      // `cat secrets.json` не раскрывал ключи в журнале или контексте.
+      for (final value in values.values) {
+        Redactor.registerSecret(value);
+      }
+      return values;
     } on FormatException {
       return {};
     } on FileSystemException {
