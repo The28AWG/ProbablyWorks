@@ -324,6 +324,13 @@ int pty_windows_create_process(const PtySpawnOptions *options,
         }
     }
     startup_info.StartupInfo.cb = sizeof(startup_info);
+    // Without STARTF_USESTDHANDLES Windows may copy the host's redirected
+    // stdio into the child. ConPTY only clears copied console handles, so
+    // when the host runs under flutter test, an IDE or a service, cmd would
+    // write to the host pipe instead of the pseudoconsole. The three handle
+    // fields intentionally stay NULL, which tells Windows not to pass any of
+    // the host's handles.
+    startup_info.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     startup_info.lpAttributeList = attributes;
     if (!CreateProcessW(NULL,
                         command,

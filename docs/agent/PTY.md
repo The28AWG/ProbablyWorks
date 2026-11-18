@@ -121,6 +121,10 @@ workspace и не должен предлагать обновление `flutte
   внешнюю пару кавычек; без этого ломались пути с пробелами и `&`.
   В `ProcessControl.terminalShellArgs` для Windows-PTY поэтому стоят
   `/d /s /c`.
+- `src/windows/pty_windows_spawn.c`: выставлен `STARTF_USESTDHANDLES` с
+  NULL-хендлами. Без этого ребёнок наследует перенаправленные stdio хоста
+  (flutter test, IDE, служба) и пишет мимо ConPTY; это известное поведение
+  Windows, а не ошибка теста.
 - `pubspec.yaml`: зависимости заданы caret-диапазонами от проверенных
   версий, из dev-зависимостей оставлен только `lints`.
 - Из вендоренной копии удалены `example/`, `benchmark/`, `test/` и пустые
@@ -184,7 +188,9 @@ workspace и не должен предлагать обновление `flutte
 Для Windows-PTY используется `cmd /d /s /c`: `/s` снимает одну внешнюю пару
 кавычек, а вендоренный `pty_windows_commandline.c` собирает команду без
 C-экранирования внутренних кавычек. Без этого `cmd` ломается на путях с
-пробелами и командах с `&`.
+пробелами и командах с `&`. В `pty_windows_spawn.c` при этом выставлен
+`STARTF_USESTDHANDLES` с NULL-хендлами, иначе при перенаправленном stdio
+хоста (flutter test, IDE, служба) ребёнок писал бы в pipe хоста, а не в PTY.
 
 Проверка ConPTY идёт на настоящем `windows-latest` в CI: job
 `windows-assembly` выполняет `flutter test test/host/windows_conpty_test.dart`.
