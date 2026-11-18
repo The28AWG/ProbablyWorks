@@ -181,9 +181,9 @@ workspace и не должен предлагать обновление `flutte
 
 `flutter_pty2` использует на Windows ConPTY и не требует master fd, поэтому
 прежнее ограничение `portable_pty` (блокирующее чтение и опрос таймером) на
-него не распространяется. Но локальный терминал на Windows пока **выключен**:
-`LocalHostRuntime.hasTerminal` возвращает `false`, а `spawnPty` отдаёт ошибку.
-Команды идут обычным `Process` без TTY.
+него не распространяется. Локальный терминал на Windows включён:
+`LocalHostRuntime.hasTerminal` возвращает `true`, команды терминала идут через
+`cmd`.
 
 Для Windows-PTY используется `cmd /d /s /c`: `/s` снимает одну внешнюю пару
 кавычек, а вендоренный `pty_windows_commandline.c` собирает команду без
@@ -194,19 +194,13 @@ C-экранирования внутренних кавычек. Без это�
 
 Проверка ConPTY идёт на настоящем `windows-latest` в CI: job
 `windows-assembly` выполняет `flutter test test/host/windows_conpty_test.dart`.
-Тест запускает `FlutterPtyLauncher` напрямую через тот же `cmd /d /s /c`,
-который использует продукт, и проверяет вывод, код выхода, окружение и
-рабочую директорию. POSIX-тесты PTY на Windows пропускаются, потому что используют
-`sh`, `stty` и `read`.
-
-Если тест зелёный, Windows-терминал можно включить отдельной правкой:
-
-1. убрать override `hasTerminal` и ветку с ошибкой в `spawnPty` в
-   `LocalHostRuntime`;
-2. обновить тест `packages/pw_agent/test/host/local_host_runtime_test.dart`.
+Тест идёт через `LocalHostRuntime.openTerminal` и проверяет вывод, код выхода,
+окружение и рабочую директорию. Прогон `44351691588` от 18.11.2026 прошёл
+зелёным. POSIX-тесты PTY на Windows пропускаются, потому что используют `sh`,
+`stty` и `read`.
 
 Если тест падает, сначала разобрать вывод шага `Test Windows ConPTY`; не
-включать терминал вслепую.
+отключать терминал без причины.
 
 ## Когда форк можно удалить
 

@@ -5,18 +5,14 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pw_agent/core/domain/host.dart';
-import 'package:pw_agent/host/flutter_pty_launcher.dart';
-import 'package:pw_agent/host/host_environment.dart';
 import 'package:pw_agent/host/host_terminal.dart';
-import 'package:pw_agent/host/process_control.dart';
-import 'package:pw_agent/host/shell_adapter.dart';
+import 'package:pw_agent/host/local_host_runtime.dart';
 
 /// Проверка ConPTY на настоящей Windows-машине.
 ///
-/// Локальный терминал на Windows пока выключен в `LocalHostRuntime`, поэтому
-/// тест запускает `FlutterPtyLauncher` напрямую через тот же `cmd /c`, который
-/// использует продукт. Запускается только на Windows; на CI это отдельный шаг
-/// в job `windows-assembly`.
+/// Тест идёт через тот же `LocalHostRuntime.openTerminal`, что и продукт:
+/// `cmd /d /s /c`, окружение хоста и рабочая директория. Запускается только
+/// на Windows; на CI это отдельный шаг в job `windows-assembly`.
 void main() {
   final skip = Platform.isWindows
       ? null
@@ -26,6 +22,8 @@ void main() {
     'runs cmd in ConPTY and reports output and exit code',
     skip: skip,
     () async {
+      expect(LocalHostRuntime(os: HostOs.windows).hasTerminal, isTrue);
+
       final result = await _run('echo conpty-ok & exit /b 3');
 
       expect(result.output, contains('conpty-ok'));
@@ -59,28 +57,22 @@ void main() {
   });
 }
 
-/// Запускает команду так же, как `LocalHostRuntime.openTerminal`.
+/// Запускает команду через локальный Host, как в приложении.
 Future<({String output, int? exitCode})> _run(
   String script, {
   Map<String, String> environment = const {},
   String? cwd,
 }) async {
-  final control = ProcessControl(HostOs.windows);
-  final fullScript = cwd == null
-      ? script
-      : '${ShellAdapter(HostOs.windows).cd(cwd)} && $script';
-  final channel = await const FlutterPtyLauncher().start(
-    control.shellExecutable,
-    control.terminalShellArgs(control.wrapTerminal(fullScript)),
-    environment: localSessionEnvironment(
-      machine: Platform.environment,
-      host: environment,
-      terminal: true,
-    ),
+  final runtime = LocalHostRuntime(
+    os: HostOs.windows,
+    environment: environment,
+  );
+  final terminal = await runtime.openTerminal(
+    script,
+    cwd: cwd,
     columns: 100,
     rows: 40,
   );
-  final terminal = PtyHostTerminal(channel, markers: control.hasPidMarker);
   return _drain(terminal);
 }
 

@@ -15,8 +15,7 @@ import 'package:pw_agent/host/pty_launcher.dart';
 /// собранном через `dart build cli`.
 ///
 /// На iOS этот launcher не используется: там нет локального Host, а песочница
-/// не разрешает порождать shell-процессы. На Windows PTY пока не включён
-/// (см. `LocalHostRuntime.hasTerminal`).
+/// не разрешает порождать shell-процессы.
 @LazySingleton(as: PtyLauncher)
 final class FlutterPtyLauncher implements PtyLauncher {
   /// Создаёт launcher без состояния: настройки приходят в [start].

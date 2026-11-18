@@ -92,10 +92,9 @@
   собирается build hook-ом пакета. Нужен C-тулчейн: Xcode command line tools на macOS,
   `clang`/`gcc` на Linux, Visual Studio C++ tools на Windows.
   Локальный PTY проверен на Linux. Android и macOS используют тот же POSIX-путь, но не собраны и не проверены
-  на этой машине. На Windows ConPTY из `flutter_pty2` проверяется отдельным тестом
-  `test/host/windows_conpty_test.dart` в CI на `windows-latest`; сам локальный терминал на Windows пока
-  выключен, команды идут обычным `Process` без TTY. На iOS локального Host нет: используется только
-  виртуальный Host, а PTY-библиотека собирается ради успешной iOS-сборки.
+  на этой машине. На Windows локальный терминал работает через ConPTY из `flutter_pty2`; он проверяется
+  тестом `test/host/windows_conpty_test.dart` в CI на `windows-latest`. На iOS локального Host нет:
+  используется только виртуальный Host, а PTY-библиотека собирается ради успешной iOS-сборки.
   Почему пакет лежит в `third_party` и как его обновлять — в [docs/agent/PTY.md](docs/agent/PTY.md).
 - Ключ OpenRouter.
 - При желании — локальный сервер llama.cpp с OpenAI-совместимым API. Адрес и ключ задаются

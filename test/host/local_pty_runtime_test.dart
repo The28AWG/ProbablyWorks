@@ -13,7 +13,8 @@ import 'package:pw_agent/host/local_host_runtime.dart';
 /// пакета из `third_party/flutter_pty2`).
 ///
 /// Тесты пропускаются, если нативная библиотека не открывается, и на Windows:
-/// там PTY пока не включён (см. `LocalHostRuntime.hasTerminal`).
+/// они используют POSIX-команды `sh`, `stty` и `read`. Windows ConPTY
+/// проверяется отдельно в `windows_conpty_test.dart`.
 Future<void> main() async {
   final skip = Platform.isWindows
       ? 'POSIX PTY test; see windows_conpty_test.dart for Windows'
