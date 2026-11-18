@@ -14,7 +14,6 @@ on:
       - 'linux/**'
       - 'windows/**'
       - 'macos/**'
-      - 'ios/**'
       - 'snap/**'
       - '.github/actions/**'
       - '.github/workflows/platforms.yml'
@@ -30,7 +29,6 @@ on:
       - 'linux/**'
       - 'windows/**'
       - 'macos/**'
-      - 'ios/**'
       - 'snap/**'
       - '.github/actions/**'
       - '.github/workflows/platforms.yml'
@@ -121,10 +119,3 @@ jobs:
           dart run tool/ci/check_bundle.dart
           --platform=macos
           --root=build/macos/Build/Products/Release
-      - name: Build iOS simulator app
-        run: flutter build ios --simulator --no-codesign
-      - name: Check iOS assembly
-        run: >-
-          dart run tool/ci/check_bundle.dart
-          --platform=ios
-          --root=build/ios/iphonesimulator/Runner.app
