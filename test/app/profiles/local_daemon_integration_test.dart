@@ -1,3 +1,12 @@
+// Лимит теста: стандартные 30 секунд `package:test` меньше холодного старта
+// демона в CI, поэтому лимит покрывает ожидание `daemon.json`, HTTP-проверки
+// и остановку. Аннотация стоит на библиотеке, а не на `main`: `Timeout`
+// рассчитан на библиотеку, и на функции она молча игнорируется. Значение
+// задано литералом: загрузчик тестов разбирает аннотацию статически и не
+// принимает ссылку на константу.
+@Timeout(Duration(minutes: 4))
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -16,17 +25,10 @@ import 'package:pw_agent/core/security/system_secret_store.dart';
 /// это занимает больше минуты.
 const _startupTimeout = Duration(minutes: 2);
 
-/// Лимит самого теста.
-///
-/// Стандартные 30 секунд `package:test` меньше холодного старта демона в CI,
-/// поэтому лимит покрывает [_startupTimeout], HTTP-проверки и остановку.
-const _testTimeout = Duration(minutes: 4);
-
 /// Запускает настоящий демон и проверяет discovery, API и остановку.
 ///
 /// Тест выключен по умолчанию: он поднимает отдельный процесс и нужен в CI
 /// или при ручной проверке. Включается через `PW_DAEMON_TEST=1`.
-@Timeout(_testTimeout)
 void main() {
   test('starts a real daemon, discovers it and stops cleanly', () async {
     final temp = Directory.systemTemp.createTempSync('pw_daemon_integration');
