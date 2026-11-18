@@ -51,6 +51,7 @@ import 'agent/tools/self_tool_handler.dart' as _i865;
 import 'agent/tools/tool_executor.dart' as _i780;
 import 'agent/turn/turn_changeset_service.dart' as _i214;
 import 'agent/turn/turn_changeset_store.dart' as _i221;
+import 'agent/workspace/mention_search_service.dart' as _i92;
 import 'agent/workspace/workspace_context_loader.dart' as _i1055;
 import 'agent_module.dart' as _i200;
 import 'core/appearance/appearance_port.dart' as _i196;
@@ -247,6 +248,13 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i400.VirtualHostProvisioner>(),
       ),
     );
+    gh.lazySingleton<_i92.MentionSearchService>(
+      () => _i92.MentionSearchService(
+        gh<_i518.ProjectRepository>(),
+        gh<_i985.HostRepository>(),
+        gh<_i611.HostRuntimeFactory>(),
+      ),
+    );
     gh.singleton<_i607.LlamadartLlmProvider>(
       () => agentCoreModule.llamadartLlmProvider(
         gh<_i851.LocalModelsService>(),
@@ -328,16 +336,6 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i179.LlmProvider>(),
       ),
     );
-    gh.lazySingleton<_i346.ProjectsApi>(
-      () => _i623.LocalProjectsApi(
-        gh<_i518.ProjectRepository>(),
-        gh<_i906.ChatRepository>(),
-        gh<_i985.HostRepository>(),
-        gh<_i215.PolicyProfileRepository>(),
-        gh<_i384.SettingsRepository>(),
-        gh<_i666.ProjectMemoryService>(),
-      ),
-    );
     gh.lazySingleton<_i110.AgentSettingsApi>(
       () => _i825.LocalAgentSettingsApi(
         gh<_i384.SettingsRepository>(),
@@ -358,6 +356,18 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i865.SelfToolHandler>(),
         gh<_i518.ProjectRepository>(),
         gh<_i214.TurnChangesetService>(),
+      ),
+    );
+    gh.lazySingleton<_i346.ProjectsApi>(
+      () => _i623.LocalProjectsApi(
+        gh<_i518.ProjectRepository>(),
+        gh<_i906.ChatRepository>(),
+        gh<_i985.HostRepository>(),
+        gh<_i215.PolicyProfileRepository>(),
+        gh<_i384.SettingsRepository>(),
+        gh<_i666.ProjectMemoryService>(),
+        gh<_i475.ProjectLifecycleService>(),
+        gh<_i92.MentionSearchService>(),
       ),
     );
     gh.lazySingleton<_i298.PluginService>(

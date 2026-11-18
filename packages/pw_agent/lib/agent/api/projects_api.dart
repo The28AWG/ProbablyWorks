@@ -1,5 +1,6 @@
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/domain/host.dart';
 
@@ -16,6 +17,13 @@ abstract interface class ProjectsApi {
   Stream<ProjectMemory?> watchMemory(String projectId);
   Stream<List<ProjectSkill>> watchSkills(String projectId);
   Stream<List<Chat>> watchProjectChats(String projectId);
+
+  /// Существующий проект для пары «хост + папка», без создания.
+  Future<Project?> find({required String hostId, required String workspace});
+
+  /// Поиск файлов и каталогов проекта для упоминаний. Глубину, лимиты и
+  /// таймауты выбирает агент, а не клиент.
+  Future<List<WorkspaceEntry>> searchMentions(String projectId, String query);
 
   Future<void> saveProject(Project project);
   Future<void> deleteProject(String id);

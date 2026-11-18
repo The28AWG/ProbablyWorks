@@ -2,13 +2,20 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 
 /// Элемент очереди: пользовательский промпт или событие (например, фоновая команда завершилась).
 class QueuedPrompt {
-  const QueuedPrompt.user(this.text, {this.attachments = const []})
-    : isEvent = false;
+  const QueuedPrompt.user(
+    this.text, {
+    this.attachments = const [],
+    this.mentions = const [],
+  }) : isEvent = false;
 
-  const QueuedPrompt.event(this.text) : attachments = const [], isEvent = true;
+  const QueuedPrompt.event(this.text)
+    : attachments = const [],
+      mentions = const [],
+      isEvent = true;
 
   final String text;
   final List<AttachmentRef> attachments;
+  final List<MentionRef> mentions;
   final bool isEvent;
 }
 

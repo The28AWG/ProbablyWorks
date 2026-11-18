@@ -34,7 +34,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 22;
+  static const currentSchemaVersion = 23;
 
   static const _uuid = Uuid();
 
@@ -165,6 +165,11 @@ class AppDatabase extends _$AppDatabase {
           "WHERE status = 'failed' AND exit_code IS NOT NULL "
           'AND exit_code != 0',
         );
+      }
+      // Версия 23: упоминания файлов в черновике. В тексте остаётся basename,
+      // а полный путь и диапазон живут в JSON, чтобы не угадывать файл заново.
+      if (from < 23 && await _hasTable('chats')) {
+        await m.addColumn(chats, chats.draftMentions);
       }
     },
   );

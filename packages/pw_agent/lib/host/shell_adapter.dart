@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/shell_quote.dart';
 import 'package:pw_agent/host/host_op.dart';
+import 'package:pw_agent/host/workspace_search_pattern.dart';
 
 /// Командные билдеры host-инструментов по ОС. Файловые операции — это команды,
 /// а не методы рантайма.
@@ -58,6 +59,18 @@ class ShellAdapter {
       overwrite: overwrite,
     ),
     MakeDirOp(:final path) => makeDir(path),
+    SearchWorkspaceOp(
+      :final query,
+      :final maxDepth,
+      :final maxResults,
+      :final includeHidden,
+    ) =>
+      searchWorkspace(
+        query,
+        maxDepth: maxDepth,
+        maxResults: maxResults,
+        includeHidden: includeHidden,
+      ),
     GlobOp(:final pattern, :final root) => glob(pattern, root),
     RealpathOp(:final path) => realpath(path),
     CanonicalPathOp(:final path) => canonicalPath(path),
@@ -157,6 +170,92 @@ class ShellAdapter {
           'New-Item -ItemType Directory -Force -Path ${psQuote(path)} | Out-Null',
         )
       : 'mkdir -p -- ${quotePath(path)}';
+
+  /// Поиск файлов и каталогов по подпоследовательности имени.
+  ///
+  /// Глубина и число результатов ограничены вызывающим кодом. Скрытые
+  /// каталоги пропускаются целиком, чтобы `find` не уходил в `.git`; при
+  /// `includeHidden` они тоже просматриваются. Вывод сортируется по глубине:
+  /// файлы ближе к корню workspace должны попадать в ответ первыми.
+  String searchWorkspace(
+    String query, {
+    required int maxDepth,
+    required int maxResults,
+    required bool includeHidden,
+  }) {
+    final pattern = WorkspaceSearchPattern.glob(query);
+    final depth = maxDepth < 1 ? 1 : maxDepth;
+    final limit = maxResults < 1 ? 1 : maxResults;
+    final pathQuery = query.contains('/');
+    final matchFlag = pathQuery ? '-ipath' : '-iname';
+    final noise = WorkspaceSearchPattern.noiseDirectories;
+    final pruneNoise = [for (final name in noise) '-name ${shQuote(name)}']
+        .join(' -o ');
+    final hiddenPrune = includeHidden ? '' : "-name '.?*' -prune -o ";
+    final findBase =
+        'find . -mindepth 1 -maxdepth $depth '
+        '\\( $pruneNoise \\) -prune -o '
+        '$hiddenPrune';
+    final matcher = '$matchFlag ${shQuote(pattern)} -print';
+
+    if (_windows) {
+      return _searchWorkspaceWindows(
+        query,
+        maxDepth: depth,
+        maxResults: limit,
+        includeHidden: includeHidden,
+      );
+    }
+    // Каталоги печатаются с `/`: по этому признаку сервис отличает их от файлов.
+    const sed = r"sed 's#$#/#'";
+    const awk = r"""awk -F/ '{print NF-1 "\t" $0}'""";
+    return '{ '
+        '$findBase -type d $matcher | $sed; '
+        '$findBase \\( -type f -o -type l \\) $matcher; '
+        '} | $awk | sort -n -k1,1 | cut -f2- | head -n $limit';
+  }
+
+  /// PowerShell-вариант [searchWorkspace]. `-Depth` ограничивает обход, а
+  /// фильтрация по сегментам пути повторяет правила POSIX-версии.
+  String _searchWorkspaceWindows(
+    String query, {
+    required int maxDepth,
+    required int maxResults,
+    required bool includeHidden,
+  }) {
+    final regex = WorkspaceSearchPattern.regex(query);
+    final noise = WorkspaceSearchPattern.noiseDirectories;
+    final pathQuery = query.contains('/');
+    final noiseList = noise.map(psQuote).join(',');
+    final hiddenCheck = includeHidden
+        ? ''
+        : r'''$hidden = $false;
+      foreach ($part in ($rel -split '/')) {
+        if ($part.Length -gt 1 -and $part.StartsWith('.')) { $hidden = $true; break }
+      }
+      if ($hidden) { return }''';
+    return powershell(
+      '\$root = (Get-Location).Path; '
+      '\$regex = ${psQuote(regex)}; '
+      '\$noise = @($noiseList); '
+      '\$pathQuery = ${pathQuery ? r'$true' : r'$false'}; '
+      '\$includeHidden = ${includeHidden ? r'$true' : r'$false'}; '
+      'Get-ChildItem -LiteralPath \$root -Force -Recurse -Depth $maxDepth '
+      '-ErrorAction SilentlyContinue | '
+      'ForEach-Object { '
+      '\$rel = \$_.FullName.Substring(\$root.Length).TrimStart("\\", "/").Replace("\\", "/"); '
+      'if (\$rel.Length -eq 0) { return }; '
+      '\$parts = \$rel -split "/"; '
+      'if (\$parts | Where-Object { \$noise -contains \$_ }) { return }; '
+      '$hiddenCheck '
+      '\$hay = if (\$pathQuery) { \$rel } else { \$_.Name }; '
+      'if (\$hay -notmatch \$regex) { return }; '
+      '\$depth = (\$rel -split "/").Count - 1; '
+      '[pscustomobject]@{ rel = \$rel; depth = \$depth; dir = \$_.PSIsContainer } '
+      '} | Sort-Object depth, rel | Select-Object -First $maxResults | '
+      'ForEach-Object { if (\$_.dir) { \$_.rel + "/" } else { \$_.rel } }',
+    );
+  }
 
   /// Поиск файлов по имени под каталогом. Это не поиск по содержимому.
   String glob(String pattern, String root) {

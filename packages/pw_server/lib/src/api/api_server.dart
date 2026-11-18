@@ -830,6 +830,23 @@ final class ApiServer {
       final counts = await api.watchChatCounts().first;
       return _json(request.response, HttpStatus.ok, {'counts': counts});
     }
+    // Поиск существующего проекта для нового чата: без создания и без обхода
+    // файлов. Сканирование начинается только после /projects/{id}/mentions.
+    if (rest.length == 1 && rest.first == 'lookup' && request.method == 'GET') {
+      final hostId = request.uri.queryParameters['hostId'] ?? '';
+      final workspace = request.uri.queryParameters['workspace'] ?? '';
+      final project = await api.find(hostId: hostId, workspace: workspace);
+      return _json(request.response, HttpStatus.ok, {
+        'project': project == null ? null : _projectJson(project),
+      });
+    }
+    if (rest.length == 2 && rest[1] == 'mentions' && request.method == 'GET') {
+      final query = request.uri.queryParameters['q'] ?? '';
+      final entries = await api.searchMentions(rest.first, query);
+      return _json(request.response, HttpStatus.ok, {
+        'entries': [for (final entry in entries) entry.toJson()],
+      });
+    }
     if (rest.length == 1) {
       final id = rest.first;
       if (request.method == 'PUT' || request.method == 'PATCH') {
@@ -1745,6 +1762,7 @@ final class ApiServer {
       ChatDraft(
         text: body['text'] is String ? body['text'] as String : '',
         attachments: _attachments(body['attachments']),
+        mentions: _mentions(body['mentions']),
       ),
       expectedRevision: _revisionOf(body),
     );
@@ -1770,6 +1788,9 @@ final class ApiServer {
               : '',
           attachments: entry.value is Map
               ? _attachments(entry.value['attachments'])
+              : const [],
+          mentions: entry.value is Map
+              ? _mentions(entry.value['mentions'])
               : const [],
         ),
     };
@@ -1823,7 +1844,11 @@ final class ApiServer {
       'isRunning': session.isRunning,
       'queue': [
         for (final item in session.queue)
-          {'text': item.text, 'isEvent': item.isEvent},
+          {
+            'text': item.text,
+            'isEvent': item.isEvent,
+            'mentions': [for (final mention in item.mentions) mention.toJson()],
+          },
       ],
     });
     return Future<void>.value();
@@ -1841,8 +1866,14 @@ final class ApiServer {
   ) async {
     final body = await _body(request);
     try {
-      final accepted = await _session(chatId)
-          .editUserMessage(messageId, _string(body, 'text'));
+      final accepted = await _session(chatId).editUserMessage(
+        messageId,
+        _string(body, 'text'),
+        attachments: body['attachments'] == null
+            ? null
+            : _attachments(body['attachments']),
+        mentions: body['mentions'] == null ? null : _mentions(body['mentions']),
+      );
       _json(request.response, HttpStatus.ok, {'accepted': accepted});
     } on StateError catch (error, stack) {
       Error.throwWithStackTrace(
@@ -1898,6 +1929,7 @@ final class ApiServer {
       text,
       sendNow: body['sendNow'] == true,
       attachments: attachments,
+      mentions: _mentions(body['mentions']),
     );
     _json(request.response, HttpStatus.accepted, {'ok': true});
   }
@@ -2362,6 +2394,14 @@ List<AttachmentRef> _attachments(Object? raw) {
   ];
 }
 
+List<MentionRef> _mentions(Object? raw) {
+  if (raw is! List) return const [];
+  return [
+    for (final item in raw)
+      if (item is Map) MentionRef.fromJson(Map<String, dynamic>.from(item)),
+  ];
+}
+
 Chat _chatFromJson(String id, Map<String, dynamic> json) {
   final now = DateTime.now();
   return Chat(
@@ -2448,6 +2488,7 @@ Map<String, Object?> _draftJson(ChatDraft draft) => {
         'sizeBytes': attachment.sizeBytes,
       },
   ],
+  'mentions': [for (final mention in draft.mentions) mention.toJson()],
 };
 
 Map<String, Object?> _messageJson(ChatMessage message) => {
@@ -2471,6 +2512,7 @@ Map<String, Object?> _messageJson(ChatMessage message) => {
         'sizeBytes': attachment.sizeBytes,
       },
   ],
+  'mentions': [for (final mention in message.mentions) mention.toJson()],
   'createdAt': message.createdAt.toUtc().toIso8601String(),
 };
 

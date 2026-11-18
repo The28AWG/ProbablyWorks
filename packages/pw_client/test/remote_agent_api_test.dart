@@ -822,6 +822,7 @@ final class _FakeAgent implements AgentApi {
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
   }) async {
     sent.add((chatId, text, sendNow));
   }

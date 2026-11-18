@@ -21,6 +21,7 @@ class ComposerInput extends StatefulWidget {
     required this.maxLines,
     required this.onSubmit,
     this.onFocus,
+    this.onKeyEvent,
     super.key,
   });
 
@@ -36,6 +37,10 @@ class ComposerInput extends StatefulWidget {
 
   /// Фокус поля сменился. Нижний композер по этому сигналу сворачивает правку сообщения.
   final ValueChanged<bool>? onFocus;
+
+  /// Дополнительный перехват клавиш (например, навигация по списку упоминаний).
+  /// Возвращает `handled`, если событие уже обработано.
+  final KeyEventResult Function(KeyEvent event)? onKeyEvent;
 
   @override
   State<ComposerInput> createState() => _ComposerInputState();
@@ -79,6 +84,8 @@ class _ComposerInputState extends State<ComposerInput> {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final intercepted = widget.onKeyEvent?.call(event);
+    if (intercepted == KeyEventResult.handled) return KeyEventResult.handled;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
     final isEnter =

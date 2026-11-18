@@ -68,6 +68,10 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
         openNewChat(context);
       case KeybindingActions.settingsOpen:
         openSettingsTab();
+      case KeybindingActions.chatMention:
+        // Список открывает сфокусированное поле ввода. Здесь событие нельзя
+        // помечать обработанным: иначе оно не дойдёт до FocusNode композера.
+        return false;
     }
     return true;
   }

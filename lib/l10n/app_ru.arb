@@ -176,6 +176,18 @@
   "@composerAttach": {
     "description": "Подсказка кнопки прикрепления файла к сообщению."
   },
+  "mentionEmpty": "Файлы не найдены",
+  "@mentionEmpty": {
+    "description": "Пустое состояние списка упоминаний файлов."
+  },
+  "mentionLoading": "Ищу файлы…",
+  "@mentionLoading": {
+    "description": "Загрузка списка упоминаний файлов."
+  },
+  "mentionError": "Не удалось прочитать файлы проекта",
+  "@mentionError": {
+    "description": "Ошибка списка упоминаний файлов."
+  },
   "composerDropHint": "Перетащите файлы сюда",
   "@composerDropHint": {
     "description": "Подсказка при перетаскивании файлов над полем ввода."
@@ -3221,6 +3233,8 @@
   "@keybindingChatNew": {"description": "Действие: начать новый чат."},
   "keybindingSettingsOpen": "Открыть настройки",
   "@keybindingSettingsOpen": {"description": "Действие: открыть настройки."},
+  "keybindingChatMention": "Открыть упоминания файлов",
+  "@keybindingChatMention": {"description": "Действие: открыть список упоминаний файлов в поле ввода чата."},
   "keybindingRecordTitle": "Нажмите сочетание",
   "@keybindingRecordTitle": {"description": "Заголовок записи сочетания."},
   "keybindingRecordHint": "Esc отменяет. Сочетание сохранится на этом устройстве.",

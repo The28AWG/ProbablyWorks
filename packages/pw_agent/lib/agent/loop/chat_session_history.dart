@@ -14,6 +14,7 @@ extension _ChatSessionHistory on ChatSession {
       id: messageId,
       text: prompt.text,
       attachments: prompt.attachments,
+      mentions: prompt.mentions,
       openedRevisionId: revisions.opened,
       sealedBeforeRevisionId: revisions.sealedBefore,
     );
@@ -65,6 +66,7 @@ extension _ChatSessionHistory on ChatSession {
     List<ToolCallRef> toolCalls = const [],
     String? toolCallId,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
     String? openedRevisionId,
     String? sealedBeforeRevisionId,
   }) async {
@@ -80,6 +82,7 @@ extension _ChatSessionHistory on ChatSession {
       toolCalls: toolCalls,
       toolCallId: toolCallId,
       attachments: attachments,
+      mentions: mentions,
       openedRevisionId: openedRevisionId,
       sealedBeforeRevisionId: sealedBeforeRevisionId,
     );

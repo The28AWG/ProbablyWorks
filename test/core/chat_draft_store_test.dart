@@ -123,6 +123,31 @@ void main() {
     expect(saved.content, isNot(contains('sk-secret-value-123456789')));
   });
 
+  test('mentions of a draft survive a database round-trip', () async {
+    await drafts.flush();
+    drafts.update(
+      'c1',
+      const ChatDraft(
+        text: 'смотри @app.dart',
+        mentions: [
+          MentionRef(
+            kind: MentionKind.file,
+            path: 'src/app.dart',
+            start: 7,
+            end: 16,
+          ),
+        ],
+      ),
+    );
+    await drafts.flush();
+
+    final saved = (await chats.chat('c1'))!.draft.mentions.single;
+    expect(saved.path, 'src/app.dart');
+    expect(saved.kind, MentionKind.file);
+    expect(saved.start, 7);
+    expect(saved.end, 16);
+  });
+
   test('moving a draft copies it and clears the source', () async {
     await chats.saveChat(
       Chat(

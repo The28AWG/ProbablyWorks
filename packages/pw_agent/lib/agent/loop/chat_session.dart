@@ -30,6 +30,7 @@ import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/util/cancel_token.dart';
+import 'package:pw_agent/core/util/mention_text.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/core/util/workspace_path.dart';
@@ -180,13 +181,19 @@ class ChatSession {
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
     bool sendNow = false,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return;
+    // Диапазоны упоминаний считаются по исходному тексту, а в сообщение
+    // попадает trimmed-версия. Сдвигаем их на отрезанный префикс; упоминания,
+    // которые вышли за границы, отбрасываем.
+    final promptMentions = MentionText.shiftForTrimmed(text, trimmed, mentions);
     final prompt = QueuedPrompt.user(
       trimmed,
       attachments: [for (final a in attachments) a.redacted()],
+      mentions: promptMentions,
     );
     if (!_running) {
       _running = true;
@@ -475,6 +482,7 @@ class ChatSession {
     String messageId,
     String newText, {
     List<AttachmentRef>? attachments,
+    List<MentionRef>? mentions,
   }) async {
     if (_running) throw StateError('cannot edit while the agent is running');
     final message = await _find(messageId);
@@ -486,7 +494,11 @@ class ChatSession {
       return false;
     }
     await _truncate(message, fromSelf: true, restoreBefore: true);
-    await submit(newText, attachments: attachments ?? message.attachments);
+    await submit(
+      newText,
+      attachments: attachments ?? message.attachments,
+      mentions: mentions ?? message.mentions,
+    );
     return true;
   }
 

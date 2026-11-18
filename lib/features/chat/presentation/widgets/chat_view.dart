@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
+import 'package:probably_works/app/shortcuts/keybinding_service.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
@@ -20,6 +21,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_density.d
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
+import 'package:probably_works/features/chat/presentation/widgets/mention_text_controller.dart';
 import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_runtime_builder.dart';
@@ -30,10 +32,12 @@ import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/attachments/attachment_loader.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/util/workspace_path.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
@@ -155,10 +159,10 @@ class ChatBody extends StatefulWidget {
 }
 
 class _ChatBodyState extends State<ChatBody> {
-  final _composer = TextEditingController();
+  final _composer = MentionTextController();
 
   /// Поле правки уже отправленного сообщения. Не связано с черновиком нижнего композера.
-  final _editController = TextEditingController();
+  final _editController = MentionTextController();
 
   /// Композер переезжает между центром пустого чата и низом ленты. Ключ сохраняет его состояние при переезде.
   final _composerKey = GlobalKey();
@@ -173,6 +177,19 @@ class _ChatBodyState extends State<ChatBody> {
   /// при закрытии виджета, когда состояние блока уже нельзя читать.
   ChatMessage? _editingSource;
   List<AttachmentRef> _editAttachments = const [];
+  List<MentionRef> _editMentions = const [];
+
+  /// Проект, по которому ищутся упоминания. Кэш нужен новому чату:
+  /// `projectId` появляется только после первой отправки, а папка может уже
+  /// принадлежать существующему проекту.
+  String? _mentionScopeKey;
+  String? _mentionProjectKey;
+  String? _mentionProjectId;
+
+  /// В тестах сервис может быть не зарегистрирован: тогда остаётся набор `@`.
+  KeybindingService? get _keybindings => getIt.isRegistered<KeybindingService>()
+      ? getIt<KeybindingService>()
+      : null;
 
   /// Правки, когда [ChatBody.drafts] не передан (виджет-тесты). В приложении их держит хранилище.
   final _memoryEdits = <String, Map<String, ChatDraft>>{};
@@ -185,9 +202,21 @@ class _ChatBodyState extends State<ChatBody> {
   void initState() {
     super.initState();
     // Поле сразу показывает черновик текущего чата. Слушатель подключаем после, чтобы не отправить его обратно.
-    _composer.text = context.read<ChatBloc>().state.draft;
+    final initial = context.read<ChatBloc>().state;
+    _composer.resetDraft(initial.draft, initial.mentions);
     _composer.addListener(_onTextChanged);
+    _composer.onMentionsChanged = (_) => _onTextChanged();
     _editController.addListener(_onEditText);
+    _editController.onMentionsChanged = (_) => _onEditText();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = context.read<ChatBloc>().state;
+      _mentionScopeKey = _mentionScopeOf(state);
+      _mentionProjectId = state.project?.id;
+      if (_mentionProjectId == null) {
+        unawaited(_resolveMentionProjectForState(state));
+      }
+    });
   }
 
   @override
@@ -201,8 +230,9 @@ class _ChatBodyState extends State<ChatBody> {
     super.dispose();
   }
 
-  void _onTextChanged() =>
-      context.read<ChatBloc>().add(ChatDraftEdited(_composer.text));
+  void _onTextChanged() => context.read<ChatBloc>().add(
+    ChatDraftEdited(_composer.text, mentions: _composer.mentions),
+  );
 
   /// Плотность считается по ширине области чата (без боковой панели), а не по окну: см. [ChatDensity].
   @override
@@ -219,6 +249,10 @@ class _ChatBodyState extends State<ChatBody> {
       listenWhen: (previous, current) =>
           previous.draftId != current.draftId ||
           previous.chatId != current.chatId ||
+          previous.project?.id != current.project?.id ||
+          previous.chat?.hostId != current.chat?.hostId ||
+          previous.chat?.workspace != current.chat?.workspace ||
+          previous.unsaved != current.unsaved ||
           previous.isRunning != current.isRunning ||
           previous.messages != current.messages,
       listener: _onBlocState,
@@ -284,6 +318,10 @@ class _ChatBodyState extends State<ChatBody> {
                       onSubmit: (sendNow) => _submit(bloc, sendNow: sendNow),
                       onStop: () => bloc.add(const ChatStopped()),
                       onInputFocus: _onComposerFocus,
+                      onSearchMentions: _mentionProjectId == null
+                          ? null
+                          : _searchMentions,
+                      keybindings: _keybindings,
                     ),
                   ),
                 ),
@@ -330,6 +368,11 @@ class _ChatBodyState extends State<ChatBody> {
                                         onPickModel: () =>
                                             _pickModel(bloc, state, chat),
                                         onOpenContext: () => _openContext(bloc),
+                                        onSearchMentions:
+                                            _mentionProjectId == null
+                                            ? null
+                                            : _searchMentions,
+                                        keybindings: _keybindings,
                                       ),
                                 onEditMessage: readOnly ? null : _startEdit,
                                 onRegenerate: readOnly
@@ -413,6 +456,15 @@ class _ChatBodyState extends State<ChatBody> {
   /// если слушатель уже отсоединён.
   void _onBlocState(BuildContext context, ChatState state) {
     if (!context.mounted) return;
+    final scope = _mentionScopeOf(state);
+    if (scope != _mentionScopeKey) {
+      _mentionScopeKey = scope;
+      _mentionProjectKey = null;
+      _mentionProjectId = state.project?.id;
+      if (_mentionProjectId == null) {
+        unawaited(_resolveMentionProjectForState(state));
+      }
+    }
     _applyDraft(state);
     _syncEdit(state);
     _dropOrphanEdits(state);
@@ -421,8 +473,7 @@ class _ChatBodyState extends State<ChatBody> {
   void _applyDraft(ChatState state) {
     if (state.draftId == _draftId) return;
     _draftId = state.draftId;
-    _composer.text = state.draft;
-    _composer.selection = TextSelection.collapsed(offset: state.draft.length);
+    _composer.resetDraft(state.draft, state.mentions);
   }
 
   /// Сворачивает правку, когда сменился чат, сообщение исчезло или начался другой ход.
@@ -467,18 +518,19 @@ class _ChatBodyState extends State<ChatBody> {
     final attachments = saved == null
         ? [...message.attachments]
         : [...saved.attachments];
+    final mentions = saved == null
+        ? [...message.mentions]
+        : [...saved.mentions];
     // Подстановка текста не должна записаться как новая правка поверх уже сохранённой.
     _editController.removeListener(_onEditText);
-    _editController.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
+    _editController.resetDraft(text, mentions);
     _editController.addListener(_onEditText);
     setState(() {
       _editingId = message.id;
       _editingChatId = chatId;
       _editingSource = message;
       _editAttachments = attachments;
+      _editMentions = mentions;
     });
   }
 
@@ -527,9 +579,11 @@ class _ChatBodyState extends State<ChatBody> {
     final chatId = _editingChatId;
     final source = _editingSource;
     if (id == null || chatId == null || source == null) return;
+    _editMentions = _editController.mentions;
     final draft = ChatDraft(
       text: _editController.text,
       attachments: _editAttachments,
+      mentions: _editMentions,
     );
     if (_sameEdit(source, draft)) {
       _forgetEdit(chatId, id);
@@ -574,6 +628,7 @@ class _ChatBodyState extends State<ChatBody> {
         id,
         text,
         attachments: attachments,
+        mentions: _editController.mentions,
         onDone: (accepted) =>
             _finishEdit(accepted: accepted, chatId: chatId, messageId: id),
       ),
@@ -765,9 +820,65 @@ class _ChatBodyState extends State<ChatBody> {
     final attachments = bloc.state.attachments;
     if (text.trim().isEmpty && attachments.isEmpty) return;
     if (!_attachmentsReady(bloc, attachments)) return;
-    bloc.add(ChatSubmitted(text, attachments: attachments, sendNow: sendNow));
+    bloc.add(
+      ChatSubmitted(
+        text,
+        attachments: attachments,
+        mentions: _composer.mentions,
+        sendNow: sendNow,
+      ),
+    );
     // Очистка поля попадает в блок через слушатель и обнуляет черновик этого чата.
-    _composer.clear();
+    _composer.resetDraft('', const []);
+  }
+
+  /// Поиск файлов для `@`-подсказок. Работает только по проекту: новый чат
+  /// сначала ищет существующий проект по паре «хост + папка». Если проекта нет,
+  /// список не открывается — сканирование workspace в этот момент недоступно.
+  static String _mentionScopeOf(ChatState state) =>
+      '${state.chatId}\u0000${state.chat?.hostId ?? ''}\u0000'
+      '${state.chat?.workspace ?? ''}\u0000${state.project?.id ?? ''}';
+
+  Future<List<WorkspaceEntry>> _searchMentions(String query) async {
+    final projectId = _mentionProjectId;
+    if (projectId == null) return const [];
+    final api = ProfileScope.maybeOf(context)?.chatApi ?? getIt<ChatApi>();
+    return api.projects.searchMentions(projectId, query);
+  }
+
+  /// Ищет существующий проект для незаписанного чата. Если проекта нет,
+  /// `_mentionProjectId` остаётся null и подсказки не открываются: сканировать
+  /// workspace в этот момент не по чему.
+  Future<void> _resolveMentionProjectForState(ChatState state) async {
+    final project = state.project;
+    if (project != null) {
+      if (mounted) setState(() => _mentionProjectId = project.id);
+      return;
+    }
+    final chat = state.chat;
+    if (chat == null || !state.unsaved) {
+      if (mounted) setState(() => _mentionProjectId = null);
+      return;
+    }
+    Host? host;
+    for (final item in state.hosts) {
+      if (item.id == chat.hostId) {
+        host = item;
+        break;
+      }
+    }
+    if (host == null) return;
+    final workspace = explicitProjectWorkspace(host, chat.workspace);
+    if (workspace == null) return;
+    final key = '${chat.hostId}\u0000$workspace';
+    if (_mentionProjectKey == key) return;
+    _mentionProjectKey = key;
+    final api = ProfileScope.maybeOf(context)?.chatApi ?? getIt<ChatApi>();
+    final projectFound = await api.projects
+        .find(hostId: chat.hostId, workspace: workspace)
+        .catchError((Object _) => null);
+    if (!mounted || _mentionScopeKey != _mentionScopeOf(state)) return;
+    setState(() => _mentionProjectId = projectFound?.id);
   }
 
   Future<void> _pickWorkspace(ChatBloc bloc, Chat chat) async {
@@ -858,6 +969,10 @@ class _ChatBodyState extends State<ChatBody> {
 /// Правка совпадает с уже отправленным сообщением: отдельный черновик не нужен.
 bool _sameEdit(ChatMessage message, ChatDraft draft) {
   if (draft.text != message.text) return false;
+  if (draft.mentions.length != message.mentions.length) return false;
+  for (var i = 0; i < draft.mentions.length; i++) {
+    if (draft.mentions[i] != message.mentions[i]) return false;
+  }
   if (draft.attachments.length != message.attachments.length) return false;
   for (var i = 0; i < draft.attachments.length; i++) {
     final left = draft.attachments[i];
@@ -962,10 +1077,12 @@ class _MessageEditComposer extends StatelessWidget {
     required this.onPolicySelected,
     required this.onPickModel,
     required this.onOpenContext,
+    required this.onSearchMentions,
+    this.keybindings,
   });
 
   final ChatState state;
-  final TextEditingController controller;
+  final MentionTextController controller;
   final List<AttachmentRef> attachments;
   final bool dragging;
   final bool submitting;
@@ -979,6 +1096,8 @@ class _MessageEditComposer extends StatelessWidget {
   final ValueChanged<PolicyMode> onPolicySelected;
   final VoidCallback onPickModel;
   final VoidCallback onOpenContext;
+  final Future<List<WorkspaceEntry>> Function(String query)? onSearchMentions;
+  final KeybindingService? keybindings;
 
   @override
   Widget build(BuildContext context) {
@@ -1010,6 +1129,8 @@ class _MessageEditComposer extends StatelessWidget {
           onPickModel: onPickModel,
           onOpenContext: onOpenContext,
         ),
+        onSearchMentions: onSearchMentions,
+        keybindings: keybindings,
         onAttach: onAttach,
         onPickWorkspace: onPickWorkspace,
         onPolicySelected: onPolicySelected,

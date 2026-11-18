@@ -2,6 +2,7 @@ import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -95,6 +96,15 @@ abstract interface class ProjectsStore {
     bool workspaceSpecified = false,
   });
   Future<void> trustWorkspace(String projectId);
+
+  /// Существующий проект для пары «хост + папка», без создания.
+  /// Нужен новому чату: у него ещё нет projectId, но папка может уже
+  /// принадлежать проекту.
+  Future<Project?> find({required String hostId, required String workspace});
+
+  /// Поиск файлов и каталогов проекта для упоминаний. Глубину, лимиты и
+  /// таймауты выбирает агент, а не клиент.
+  Future<List<WorkspaceEntry>> searchMentions(String projectId, String query);
 }
 
 abstract interface class ModelStore
@@ -132,6 +142,7 @@ abstract interface class ChatSessionApi {
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
     bool sendNow = false,
   });
   Future<void> stop({String? reason});
@@ -143,6 +154,7 @@ abstract interface class ChatSessionApi {
     String messageId,
     String newText, {
     List<AttachmentRef>? attachments,
+    List<MentionRef>? mentions,
   });
   Future<void> deleteAfter(String messageId);
   Future<void> restoreUnanswered();

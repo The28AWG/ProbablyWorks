@@ -72,6 +72,31 @@ void main() {
     ),
   ];
 
+  test('mention span is resolved to the full workspace path', () {
+    final message = ChatMessage(
+      id: 'u1',
+      chatId: 'c1',
+      seq: 1,
+      role: MessageRole.user,
+      createdAt: now,
+      text: 'посмотри @app.dart',
+      mentions: const [
+        MentionRef(
+          kind: MentionKind.file,
+          path: 'src/app.dart',
+          start: 9,
+          end: 18,
+        ),
+      ],
+    );
+    final messages = ContextBuilder().build(input([message]));
+    expect(messages.last.content, contains('@src/app.dart'));
+    expect(
+      messages.first.content,
+      contains('relative to the project workspace'),
+    );
+  });
+
   test('binary file goes as a part only in the request that carries it', () {
     final files = {
       'u1': [

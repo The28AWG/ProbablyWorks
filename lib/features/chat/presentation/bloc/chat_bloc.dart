@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
@@ -50,6 +51,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }) : _runtimeOverride = modelRuntime,
        super(initialState ?? _seedState(_hub, _drafts, seedChat, seedHosts)) {
     _composerText = state.draft;
+    _composerMentions = state.mentions;
     on<ChatOpenEvent>(_onOpenEvent, transformer: _sequential());
     on<ChatDraftEdited>(_onDraftEdited);
     on<ChatAttachmentsAdded>(_onAttachmentsAdded);
@@ -119,6 +121,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   /// Текст поля ввода, как его знает блок: обновляется из [ChatDraftEdited] без перерисовки.
   String _composerText = '';
+
+  /// Упоминания поля ввода. Живут рядом с текстом и не эмитятся на каждый
+  /// сдвиг диапазона: контроллер в UI — источник истины для текущего кадра.
+  List<MentionRef> _composerMentions = const [];
 
   /// Подписки на сессию выбранного чата; меняются при смене чата.
   ChatSessionApi? _session;
@@ -193,10 +199,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// Кладёт черновик в поле ввода: текст и вложения. ChatBody переписывает поле, когда меняется [draftId].
   ChatState _pushDraft(ChatState from, ChatDraft draft) {
     _composerText = draft.text;
+    _composerMentions = draft.mentions;
     return from.copyWith(
       draft: draft.text,
       draftId: from.draftId + 1,
       attachments: draft.attachments,
+      mentions: draft.mentions,
     );
   }
 
@@ -206,7 +214,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (chatId == null) return;
     _drafts.update(
       chatId,
-      ChatDraft(text: _composerText, attachments: state.attachments),
+      ChatDraft(
+        text: _composerText,
+        attachments: state.attachments,
+        mentions: _composerMentions,
+      ),
     );
   }
 
@@ -245,6 +257,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       queue: [for (final item in session.queue) item.text],
       draft: draft.text,
       attachments: draft.attachments,
+      mentions: draft.mentions,
       loading: true,
     );
   }
@@ -552,11 +565,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (session == null) return;
     // Отправленное сразу уходит из черновика: набор во время отправки начнётся уже с пустого поля.
     _composerText = '';
-    emit(state.copyWith(attachments: const []));
+    _composerMentions = const [];
+    emit(state.copyWith(attachments: const [], mentions: const []));
     _saveDraft();
     await session.submit(
       event.text,
       attachments: event.attachments,
+      mentions: event.mentions,
       sendNow: event.sendNow,
     );
     emit(state.copyWith(queue: _queueTexts(), clearFailure: true));
@@ -580,9 +595,15 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   void _onDraftEdited(ChatDraftEdited event, Emitter<ChatState> emit) {
-    // Поле уведомляет и о смене выделения (например, при получении фокуса): тот же текст в черновик не пишем.
-    if (event.text == _composerText) return;
+    // Поле уведомляет и о смене выделения (например, при получении фокуса).
+    // Упоминания могут измениться и без текста: сменился полный путь при том
+    // же basename. Сравнение по обоим полям сохраняет это изменение.
+    if (event.text == _composerText &&
+        listEquals(event.mentions, _composerMentions)) {
+      return;
+    }
     _composerText = event.text;
+    _composerMentions = event.mentions;
     _saveDraft();
   }
 
@@ -653,6 +674,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             event.messageId,
             event.text,
             attachments: event.attachments,
+            mentions: event.mentions,
           ) ??
           false;
     } on StateError catch (error) {
@@ -742,7 +764,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(
       _pushDraft(
         state,
-        ChatDraft(text: item.text, attachments: state.attachments),
+        ChatDraft(
+          text: item.text,
+          attachments: state.attachments,
+          mentions: item.mentions,
+        ),
       ),
     );
   }

@@ -12,7 +12,10 @@ abstract final class KeybindingActions {
   static const chatNew = 'chat.new';
   static const settingsOpen = 'settings.open';
 
-  static const all = [paletteOpen, chatNew, settingsOpen];
+  /// Открыть список упоминаний файлов в поле ввода чата.
+  static const chatMention = 'chat.mention';
+
+  static const all = [paletteOpen, chatNew, settingsOpen, chatMention];
 }
 
 /// Хранит переназначенные сочетания и применяет их к событиям клавиатуры.
@@ -115,6 +118,12 @@ class KeybindingService extends ChangeNotifier {
         key: LogicalKeyboardKey.comma,
         control: !primary,
         meta: primary,
+      ),
+      // Ctrl+Space одинаково работает в IDE на всех платформах. На macOS
+      // Cmd+Space занят Spotlight, поэтому основную клавишу здесь не берём.
+      KeybindingActions.chatMention => const Keybinding(
+        key: LogicalKeyboardKey.space,
+        control: true,
       ),
       _ => Keybinding(
         key: LogicalKeyboardKey.f12,

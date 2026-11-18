@@ -97,6 +97,7 @@ class _KeybindingsSectionState extends State<KeybindingsSection> {
     KeybindingActions.paletteOpen => l10n.keybindingPaletteOpen,
     KeybindingActions.chatNew => l10n.keybindingChatNew,
     KeybindingActions.settingsOpen => l10n.keybindingSettingsOpen,
+    KeybindingActions.chatMention => l10n.keybindingChatMention,
     _ => id,
   };
 }

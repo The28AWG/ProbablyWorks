@@ -695,6 +695,20 @@ void main() {
     expect(explicit.read<int?>('archived_at'), null);
   });
 
+  test('v22 → v23 adds mentions to the chat draft', () async {
+    final db = _openAtVersion(22);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name, dflt_value FROM pragma_table_info('chats') "
+          "WHERE name = 'draft_mentions'",
+        )
+        .get();
+    expect(columns.single.read<String>('name'), 'draft_mentions');
+    expect(columns.single.read<String>('dflt_value'), "'[]'");
+  });
+
   test('v21 → v22 separates result errors from call failures', () async {
     final db = _openToolRunsV21();
     addTearDown(db.close);

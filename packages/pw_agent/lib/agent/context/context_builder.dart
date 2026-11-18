@@ -13,6 +13,7 @@ import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
+import 'package:pw_agent/core/util/mention_text.dart';
 import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
@@ -312,8 +313,9 @@ class ContextBuilder {
     required Set<String> inlineNames,
     required int previewChars,
   }) {
-    if (message.attachments.isEmpty) return message.text;
-    final buffer = StringBuffer(message.text);
+    final resolved = MentionText.resolve(message.text, message.mentions);
+    if (message.attachments.isEmpty) return resolved;
+    final buffer = StringBuffer(resolved);
     for (final attachment in message.attachments) {
       if (attachment.mode == AttachmentMode.attach &&
           attachment.content != null) {
@@ -382,6 +384,11 @@ class ContextBuilder {
       )
       ..writeln(
         'Answer in the same language as the user. Prefer tools over guessing about the host.',
+      )
+      ..writeln(
+        'Paths written as @path are relative to the project workspace. '
+        'Drop the leading @ when passing them to tools and inspect them '
+        'with read_file, list_dir, glob or grep instead of guessing content.',
       )
       ..writeln(
         'Destructive or privilege-escalating actions are restricted by policy; never try to bypass them.',

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/shortcuts/keybinding_service.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_column.dart';
@@ -6,9 +7,12 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_density.d
 import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_motion.dart';
 import 'package:probably_works/features/chat/presentation/widgets/composer_input.dart';
+import 'package:probably_works/features/chat/presentation/widgets/mention_autocomplete.dart';
+import 'package:probably_works/features/chat/presentation/widgets/mention_text_controller.dart';
 import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
 /// Композер: поле ввода, вложения, настройки чата и отправка в одной карточке.
@@ -42,6 +46,8 @@ class ChatComposer extends StatelessWidget {
     required this.onSubmit,
     required this.onStop,
     this.onInputFocus,
+    this.onSearchMentions,
+    this.keybindings,
     this.hint,
     this.editing = false,
     this.embedded = false,
@@ -80,6 +86,14 @@ class ChatComposer extends StatelessWidget {
 
   /// Фокус поля ввода. Нижний композер сообщает им, что пользователь вернулся к новому сообщению.
   final ValueChanged<bool>? onInputFocus;
+
+  /// Поиск файлов проекта для `@`-подсказок. Null — упоминания выключены
+  /// (например, у нового чата ещё нет проекта).
+  final Future<List<WorkspaceEntry>> Function(String query)? onSearchMentions;
+
+  /// Сервис горячих клавиш для открытия списка упоминаний. Null — только набор
+  /// `@` и перемещение каретки.
+  final KeybindingService? keybindings;
 
   /// Карточка заменяет пузырь пользователя. Кнопки остановки нет: ход в этот момент не идёт.
   final bool editing;
@@ -159,15 +173,29 @@ class ChatComposer extends StatelessWidget {
                 duration: AppDurations.fast,
                 curve: Curves.easeOutCubic,
                 alignment: Alignment.topCenter,
-                child: ComposerInput(
-                  controller: controller,
-                  hint: hint ?? l10n.composerHint,
-                  busy: busy,
-                  loading: state.loading,
-                  maxLines: density.composerMaxLines(centered: centered),
-                  onSubmit: onSubmit,
-                  onFocus: onInputFocus,
-                ),
+                child:
+                    controller is MentionTextController &&
+                        onSearchMentions != null
+                    ? MentionComposerInput(
+                        controller: controller as MentionTextController,
+                        hint: hint ?? l10n.composerHint,
+                        busy: busy,
+                        loading: state.loading,
+                        maxLines: density.composerMaxLines(centered: centered),
+                        onSubmit: onSubmit,
+                        onFocus: onInputFocus,
+                        search: onSearchMentions,
+                        keybindings: keybindings,
+                      )
+                    : ComposerInput(
+                        controller: controller,
+                        hint: hint ?? l10n.composerHint,
+                        busy: busy,
+                        loading: state.loading,
+                        maxLines: density.composerMaxLines(centered: centered),
+                        onSubmit: onSubmit,
+                        onFocus: onInputFocus,
+                      ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Row(

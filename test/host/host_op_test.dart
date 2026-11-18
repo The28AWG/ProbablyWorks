@@ -47,6 +47,12 @@ void main() {
       const RealpathOp('/tmp'),
       const CanonicalPathOp('/tmp/a'),
       const FirstFileOp(['/tmp/a', '/tmp/b']),
+      const SearchWorkspaceOp(
+        query: 'rdm',
+        maxDepth: 3,
+        maxResults: 20,
+        includeHidden: false,
+      ),
       WriteFileOp('/tmp/a', backupPath: '/tmp/a.bak', expectedMtime: '1'),
     ];
 
@@ -185,5 +191,36 @@ void main() {
       expect(run.ok, isFalse);
       expect(File(path).readAsStringSync(), 'old');
     });
+
+    test(
+      'SearchWorkspaceOp ищет по подпоследовательности и прячет скрытые',
+      () async {
+        File('${dir.path}/README.md').writeAsStringSync('root');
+        File('${dir.path}/src/app.dart')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('app');
+        File('${dir.path}/src/.hidden-readme.md')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('hidden');
+        File('${dir.path}/node_modules/pkg/readme.md')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('noise');
+
+        final run = await captureOp(
+          runtime,
+          const SearchWorkspaceOp(
+            query: 'rdm',
+            maxDepth: 4,
+            maxResults: 20,
+            includeHidden: false,
+          ),
+          cwd: dir.path,
+        );
+        expect(run.ok, isTrue, reason: run.stderr);
+        expect(run.stdout, contains('./README.md'));
+        expect(run.stdout, isNot(contains('hidden')));
+        expect(run.stdout, isNot(contains('node_modules')));
+      },
+    );
   });
 }

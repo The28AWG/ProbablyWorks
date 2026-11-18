@@ -20,6 +20,17 @@ void main() {
     expect(Keybinding.decode('ctrl+meta+k'), isNull);
   });
 
+  test('mention popup defaults to Ctrl+Space on every platform', () {
+    final service = KeybindingService(MemoryClientSettings());
+    const binding = Keybinding(key: LogicalKeyboardKey.space, control: true);
+    expect(service.bindingFor(KeybindingActions.chatMention), binding);
+    expect(binding.label, 'Ctrl+Space');
+    expect(
+      Keybinding.decode('ctrl+space'),
+      const Keybinding(key: LogicalKeyboardKey.space, control: true),
+    );
+  });
+
   test('persists overrides and reports conflicts', () async {
     final settings = MemoryClientSettings();
     final service = KeybindingService(settings);

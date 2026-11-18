@@ -39,6 +39,7 @@ class ChatState extends Equatable {
     this.trustNeeded = false,
     this.loading = false,
     this.attachments = const [],
+    this.mentions = const [],
     this.draft = '',
     this.draftId = 0,
     this.unsaved = false,
@@ -189,6 +190,9 @@ class ChatState extends Equatable {
   /// Вложения черновика текущего чата (до отправки).
   final List<AttachmentRef> attachments;
 
+  /// Упоминания файлов и каталогов в черновике. Диапазоны указывают на [draft].
+  final List<MentionRef> mentions;
+
   /// Текст, который нужно положить в поле ввода: смена чата, правка элемента очереди, подсказка.
   /// [draftId] меняется на каждый такой запрос, поэтому поле переписывается только по нему.
   final String draft;
@@ -234,6 +238,7 @@ class ChatState extends Equatable {
     bool? trustNeeded,
     bool? loading,
     List<AttachmentRef>? attachments,
+    List<MentionRef>? mentions,
     String? draft,
     int? draftId,
     bool? unsaved,
@@ -277,6 +282,7 @@ class ChatState extends Equatable {
     trustNeeded: trustNeeded ?? this.trustNeeded,
     loading: loading ?? this.loading,
     attachments: attachments ?? this.attachments,
+    mentions: mentions ?? this.mentions,
     draft: draft ?? this.draft,
     draftId: draftId ?? this.draftId,
     unsaved: unsaved ?? this.unsaved,
@@ -319,6 +325,7 @@ class ChatState extends Equatable {
     trustNeeded,
     loading,
     attachments,
+    mentions,
     draft,
     draftId,
     unsaved,

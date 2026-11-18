@@ -17,6 +17,7 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -195,7 +196,7 @@ class RemoteAgentApi
   late final ProjectStore projectStore = _RemoteProjectStore(this);
 
   @override
-  late final ProjectsStore projects = const _RemoteProjects();
+  late final ProjectsStore projects = _RemoteProjects(this);
 
   @override
   late final ModelStore models = _RemoteModels(this);
@@ -542,6 +543,7 @@ class RemoteAgentApi
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
   }) async {
     await _send(
       'POST',
@@ -552,6 +554,7 @@ class RemoteAgentApi
         'attachments': [
           for (final attachment in attachments) _attachmentBody(attachment),
         ],
+        'mentions': [for (final mention in mentions) mention.toJson()],
       },
     );
     await _trySyncSession(chatId);
@@ -569,7 +572,15 @@ class RemoteAgentApi
     final json = await _get('/chats/$chatId/session');
     _queues[chatId] = [
       for (final item in (json['queue'] as List? ?? const []))
-        if (item is Map) QueuedPrompt.user('${item['text'] ?? ''}'),
+        if (item is Map)
+          QueuedPrompt.user(
+            '${item['text'] ?? ''}',
+            mentions: [
+              for (final mention in (item['mentions'] as List? ?? const []))
+                if (mention is Map)
+                  MentionRef.fromJson(Map<String, dynamic>.from(mention)),
+            ],
+          ),
     ];
   }
 
@@ -1015,6 +1026,14 @@ class RemoteAgentApi
   Future<void> testPush() async {
     await _send('POST', '/push/test');
   }
+
+  @override
+  Future<Project?> find({required String hostId, required String workspace}) =>
+      projects.find(hostId: hostId, workspace: workspace);
+
+  @override
+  Future<List<WorkspaceEntry>> searchMentions(String projectId, String query) =>
+      projects.searchMentions(projectId, query);
 
   @override
   Stream<List<Project>> watchProjects() => _watchStateList(
@@ -1767,6 +1786,10 @@ ChatDraft _draft(Map<String, dynamic> json) => ChatDraft(
     for (final item in (json['attachments'] as List? ?? const []))
       if (item is Map) AttachmentRef.fromJson(Map<String, dynamic>.from(item)),
   ],
+  mentions: [
+    for (final item in (json['mentions'] as List? ?? const []))
+      if (item is Map) MentionRef.fromJson(Map<String, dynamic>.from(item)),
+  ],
 );
 
 SearchHit _searchHit(Map<String, dynamic> json) => SearchHit(
@@ -1801,6 +1824,11 @@ ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
         mimeType: attachment['mimeType'] as String?,
         sizeBytes: _int(Map<String, dynamic>.from(attachment), 'sizeBytes'),
       ),
+  ],
+  mentions: [
+    for (final mention in (json['mentions'] as List? ?? const []))
+      if (mention is Map)
+        MentionRef.fromJson(Map<String, dynamic>.from(mention)),
   ],
   createdAt: _time(json, 'createdAt'),
 );
@@ -1955,6 +1983,7 @@ Map<String, Object?> _draftBody(ChatDraft draft) => {
         'sizeBytes': attachment.sizeBytes,
       },
   ],
+  'mentions': [for (final mention in draft.mentions) mention.toJson()],
 };
 
 int _revision(Object? json) {
@@ -2292,7 +2321,9 @@ final class _RemoteProjectStore implements ProjectStore {
 }
 
 final class _RemoteProjects implements ProjectsStore {
-  const _RemoteProjects();
+  _RemoteProjects(this._api);
+
+  final RemoteAgentApi _api;
 
   @override
   Future<Chat> attach(Chat chat) => Future.value(chat);
@@ -2310,6 +2341,33 @@ final class _RemoteProjects implements ProjectsStore {
 
   @override
   Future<void> trustWorkspace(String projectId) => Future<void>.value();
+
+  @override
+  Future<Project?> find({
+    required String hostId,
+    required String workspace,
+  }) async {
+    final query = Uri(
+      queryParameters: {'hostId': hostId, 'workspace': workspace},
+    ).query;
+    final json = await _api._get('/projects/lookup?$query');
+    final project = json['project'];
+    return project is Map ? _project(Map<String, dynamic>.from(project)) : null;
+  }
+
+  @override
+  Future<List<WorkspaceEntry>> searchMentions(
+    String projectId,
+    String query,
+  ) async {
+    final suffix = Uri(queryParameters: {'q': query}).query;
+    final json = await _api._get('/projects/$projectId/mentions?$suffix');
+    return [
+      for (final item in (json['entries'] as List? ?? const []))
+        if (item is Map)
+          WorkspaceEntry.fromJson(Map<String, dynamic>.from(item)),
+    ];
+  }
 }
 
 final class _RemoteModels implements ModelStore {
@@ -2465,8 +2523,15 @@ final class _RemoteChatSession implements ChatSessionApi {
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
     bool sendNow = false,
-  }) => _api.send(_chatId, text, sendNow: sendNow, attachments: attachments);
+  }) => _api.send(
+    _chatId,
+    text,
+    sendNow: sendNow,
+    attachments: attachments,
+    mentions: mentions,
+  );
 
   @override
   Future<void> stop({String? reason}) => _api.stop(_chatId, reason: reason);
@@ -2507,11 +2572,20 @@ final class _RemoteChatSession implements ChatSessionApi {
     String messageId,
     String newText, {
     List<AttachmentRef>? attachments,
+    List<MentionRef>? mentions,
   }) async {
     final json = await _api.sendJson(
       'PATCH',
       '/chats/$_chatId/messages/$messageId',
-      body: {'text': newText},
+      body: {
+        'text': newText,
+        if (attachments != null)
+          'attachments': [
+            for (final attachment in attachments) _attachmentBody(attachment),
+          ],
+        if (mentions != null)
+          'mentions': [for (final mention in mentions) mention.toJson()],
+      },
     );
     return json is Map && json['accepted'] == true;
   }

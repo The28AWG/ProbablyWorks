@@ -2,8 +2,11 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/project/project_lifecycle.dart';
+import 'package:pw_agent/agent/workspace/mention_search_service.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/policy_profile_repository.dart';
@@ -21,6 +24,8 @@ final class LocalProjectsApi implements ProjectsApi {
     this._policies,
     this._settings,
     this._memory,
+    this._lifecycle,
+    this._mentions,
   );
 
   final ProjectRepository _projects;
@@ -29,6 +34,8 @@ final class LocalProjectsApi implements ProjectsApi {
   final PolicyProfileRepository _policies;
   final SettingsRepository _settings;
   final ProjectMemoryService _memory;
+  final ProjectLifecycleService _lifecycle;
+  final MentionSearchService _mentions;
 
   @override
   Stream<List<Project>> watchProjects() => _projects.watchAll();
@@ -53,6 +60,14 @@ final class LocalProjectsApi implements ProjectsApi {
   @override
   Stream<List<Chat>> watchProjectChats(String projectId) =>
       _chats.watchByProject(projectId);
+
+  @override
+  Future<Project?> find({required String hostId, required String workspace}) =>
+      _lifecycle.find(hostId: hostId, workspace: workspace);
+
+  @override
+  Future<List<WorkspaceEntry>> searchMentions(String projectId, String query) =>
+      _mentions.search(projectId, query);
 
   @override
   Future<void> saveProject(Project project) => _projects.save(project);

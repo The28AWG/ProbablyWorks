@@ -56,13 +56,18 @@ class ProjectLifecycleService {
   /// `RealpathOp` раскрывает `~` и симлинки силами Host. Если хост недоступен или папки
   /// ещё нет, остаётся лексическая форма: она стабильна и не даёт двух проектов на
   /// `~/repo` и `/home/user/repo/` в пределах одного запуска.
-  Future<String> canonicalKey(Host host, String workspace) async {
+  Future<String> canonicalKey(
+    Host host,
+    String workspace, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
     final windows = host.os == HostOs.windows;
     final lexical = normalizeWorkspacePath(workspace, windows: windows);
     try {
       final run = await captureOp(
         _runtimes.forHost(host),
         RealpathOp(workspace),
+        timeout: timeout,
       );
       if (!run.ok) return lexical;
       final path = run.stdout.trim();
@@ -232,8 +237,24 @@ class ProjectLifecycleService {
     if (host == null) return null;
     final workspace = projectWorkspace(chat, host);
     if (workspace == null) return null;
-    final key = await canonicalKey(host, workspace);
-    return _projects.find(chat.hostId, key);
+    return find(hostId: chat.hostId, workspace: workspace);
+  }
+
+  /// Существующий проект по паре «хост + папка», без создания и без обхода
+  /// файлов. Нужен новому чату: у него ещё нет `projectId`, но папка может уже
+  /// принадлежать проекту. Канонизация пути — один `realpath`, не скан дерева.
+  Future<Project?> find({
+    required String hostId,
+    required String workspace,
+  }) async {
+    final host = await _hosts.byId(hostId);
+    if (host == null) return null;
+    final key = await canonicalKey(
+      host,
+      workspace,
+      timeout: const Duration(seconds: 2),
+    );
+    return _projects.find(hostId, key);
   }
 
   /// Проект чата до удаления чата: после `deleteChat` связь уже потеряна.

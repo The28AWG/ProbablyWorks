@@ -107,6 +107,7 @@ abstract interface class AgentApi {
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
   });
   Future<void> stop(String chatId, {String? reason});
 

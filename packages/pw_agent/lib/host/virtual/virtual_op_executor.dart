@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:pw_agent/host/host_op.dart';
 import 'package:pw_agent/host/shell_adapter.dart';
 import 'package:pw_agent/host/virtual/read_file_pager.dart';
+import 'package:pw_agent/host/workspace_search_pattern.dart';
 import 'package:virtual_host/virtual_host.dart';
 
 /// Итог операции: код выхода и два потока. Тот же контракт, что у команды на реальном Host.
@@ -100,6 +101,19 @@ final class VirtualOpExecutor {
           overwrite: overwrite,
         ),
         MakeDirOp(:final path) => _makeDir(path, dir),
+        SearchWorkspaceOp(
+          :final query,
+          :final maxDepth,
+          :final maxResults,
+          :final includeHidden,
+        ) =>
+          _searchWorkspace(
+            query,
+            dir,
+            maxDepth: maxDepth,
+            maxResults: maxResults,
+            includeHidden: includeHidden,
+          ),
         GlobOp(:final pattern, :final root) => _glob(pattern, root, dir),
         RealpathOp(:final path) => _realpath(path, dir),
         CanonicalPathOp(:final path) => _canonical(path, dir),
@@ -252,6 +266,44 @@ final class VirtualOpExecutor {
   Future<VirtualOpResult> _makeDir(String path, String dir) async {
     await _fs.mkdir(_expand(path), cwd: dir, recursive: true);
     return VirtualOpResult(exitCode: 0);
+  }
+
+  /// Поиск файлов и каталогов по подпоследовательности имени. Повторяет
+  /// правила реального Host: скрытые и шумовые каталоги не обходятся, каталоги
+  /// в выводе заканчиваются `/`, результат отсортирован по глубине.
+  Future<VirtualOpResult> _searchWorkspace(
+    String query,
+    String dir, {
+    required int maxDepth,
+    required int maxResults,
+    required bool includeHidden,
+  }) async {
+    final root = _expand(dir);
+    final nodes = await _fs.walk(root, cwd: dir);
+    final prefix = root.endsWith('/') ? root : '$root/';
+    final matches = <(int, String)>[];
+    for (final node in nodes) {
+      final relative = node.path.startsWith(prefix)
+          ? node.path.replaceFirst(prefix, '')
+          : node.name;
+      if (relative.isEmpty) continue;
+      final parts = relative.split('/');
+      if (parts.length - 1 > maxDepth) continue;
+      if (parts.any(WorkspaceSearchPattern.noiseDirectories.contains)) continue;
+      final hidden = WorkspaceSearchPattern.isHidden(relative);
+      if (hidden && !includeHidden) continue;
+      if (!WorkspaceSearchPattern.matches(relative, query)) continue;
+      final display = node.kind == VfsNodeKind.dir ? '$relative/' : relative;
+      matches.add((parts.length - 1, display));
+    }
+    matches.sort((a, b) {
+      final byDepth = a.$1.compareTo(b.$1);
+      return byDepth != 0 ? byDepth : a.$2.compareTo(b.$2);
+    });
+    final limited = matches.take(maxResults < 1 ? 1 : maxResults);
+    return VirtualOpResult.text(
+      limited.isEmpty ? '' : '${limited.map((item) => item.$2).join('\n')}\n',
+    );
   }
 
   /// Поиск файлов по имени под каталогом. Это не поиск по содержимому.

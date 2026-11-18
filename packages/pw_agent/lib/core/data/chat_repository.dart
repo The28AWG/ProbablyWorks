@@ -47,6 +47,7 @@ class ChatRepository implements DraftPersistence {
   static ChatRow _withoutDraft(ChatRow row) => row.copyWith(
     draft: '',
     draftAttachments: '[]',
+    draftMentions: '[]',
     messageEdits: '{}',
     draftRevision: 0,
   );
@@ -90,6 +91,9 @@ class ChatRepository implements DraftPersistence {
           for (final attachment in draft.attachments)
             attachment.redacted().toJson(),
         ]),
+      ),
+      draftMentions: Value(
+        jsonEncode([for (final mention in draft.mentions) mention.toJson()]),
       ),
     ),
     expectedRevision,
@@ -494,6 +498,10 @@ class ChatRepository implements DraftPersistence {
       attachments: [
         for (final json in jsonDecode(row.draftAttachments) as List<dynamic>)
           AttachmentRef.fromJson(json as Map<String, dynamic>),
+      ],
+      mentions: [
+        for (final json in jsonDecode(row.draftMentions) as List<dynamic>)
+          MentionRef.fromJson(json as Map<String, dynamic>),
       ],
     ),
     messageEdits: decodeMessageEdits(row.messageEdits),

@@ -34,9 +34,17 @@ class Keybinding {
       if (meta) defaultTargetPlatform == TargetPlatform.macOS ? 'Cmd' : 'Meta',
       if (alt) 'Alt',
       if (shift) 'Shift',
-      key.keyLabel.isEmpty ? '?' : key.keyLabel.toUpperCase(),
+      _labelOf(key),
     ];
     return parts.join('+');
+  }
+
+  /// `LogicalKeyboardKey.space.keyLabel` — это пробел, поэтому без отдельного
+  /// имени сочетание выглядело бы как «Ctrl+ ».
+  static String _labelOf(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.space) return 'Space';
+    final label = key.keyLabel.trim();
+    return label.isEmpty ? '?' : label.toUpperCase();
   }
 
   String encode() => [

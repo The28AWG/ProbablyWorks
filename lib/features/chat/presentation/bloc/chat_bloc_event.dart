@@ -30,12 +30,13 @@ final class ChatOpened extends ChatOpenEvent {
 /// Текст в поле ввода изменился (набор, вставка, очистка). Состояние не меняется, чтобы каждый символ
 /// не перерисовывал экран: блок только запоминает черновик.
 final class ChatDraftEdited extends ChatEvent {
-  const ChatDraftEdited(this.text);
+  const ChatDraftEdited(this.text, {this.mentions = const []});
 
   final String text;
+  final List<MentionRef> mentions;
 
   @override
-  List<Object?> get props => [text];
+  List<Object?> get props => [text, mentions];
 }
 
 /// К черновику добавлены вложения (файлы уже прочитаны). Сверх лимита сообщения отбрасываются.
@@ -61,11 +62,13 @@ final class ChatSubmitted extends ChatEvent {
   const ChatSubmitted(
     this.text, {
     this.attachments = const [],
+    this.mentions = const [],
     this.sendNow = false,
   });
 
   final String text;
   final List<AttachmentRef> attachments;
+  final List<MentionRef> mentions;
   final bool sendNow;
 }
 
@@ -116,6 +119,7 @@ final class ChatMessageEdited extends ChatEvent {
     this.messageId,
     this.text, {
     this.attachments = const [],
+    this.mentions = const [],
     this.onDone,
   });
 
@@ -126,12 +130,15 @@ final class ChatMessageEdited extends ChatEvent {
   /// композер правки сам решает, что оставить от исходного сообщения.
   final List<AttachmentRef> attachments;
 
+  /// Упоминания нового текста. Пустой список — текст без упоминаний.
+  final List<MentionRef> mentions;
+
   /// true — история переписана и ход запущен. false — отмена отката файлов или сообщение
   /// не найдено: поле правки нужно оставить. В [props] нет: это не данные события.
   final void Function(bool accepted)? onDone;
 
   @override
-  List<Object?> get props => [messageId, text, attachments];
+  List<Object?> get props => [messageId, text, attachments, mentions];
 }
 
 final class ChatDeletedAfter extends ChatEvent {

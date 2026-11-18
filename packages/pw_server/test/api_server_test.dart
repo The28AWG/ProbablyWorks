@@ -16,6 +16,7 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -275,6 +276,49 @@ void main() {
     );
     expect(badStatus, HttpStatus.badRequest);
   });
+
+  test(
+    'looks up a project and searches mentions without client limits',
+    () async {
+      final now = DateTime.utc(2026, 11, 19);
+      projectsApi
+        ..found = Project(
+          id: 'p1',
+          hostId: 'local',
+          name: 'app',
+          workspace: '/work/app',
+          workspaceKey: '/work/app',
+          createdAt: now,
+          updatedAt: now,
+        )
+        ..entries = const [
+          WorkspaceEntry(path: 'src/app.dart', isDirectory: false),
+          WorkspaceEntry(path: 'lib/features', isDirectory: true),
+        ];
+
+      final (lookupStatus, lookupBody) = await _request(
+        client,
+        base,
+        'GET',
+        '/api/v1/projects/lookup?hostId=local&workspace=%2Fwork%2Fapp',
+        token: _token,
+      );
+      expect(lookupStatus, HttpStatus.ok);
+      expect(((jsonDecode(lookupBody) as Map)['project'] as Map)['id'], 'p1');
+
+      final (mentionsStatus, mentionsBody) = await _request(
+        client,
+        base,
+        'GET',
+        '/api/v1/projects/p1/mentions?q=rdm&depth=100000&limit=1',
+        token: _token,
+      );
+      expect(mentionsStatus, HttpStatus.ok);
+      final entries = (jsonDecode(mentionsBody) as Map)['entries'] as List;
+      expect(entries, hasLength(2));
+      expect((entries.first as Map)['path'], 'src/app.dart');
+    },
+  );
 
   test('searches chats and messages through the API', () async {
     final (status, body) = await _request(
@@ -1557,11 +1601,19 @@ void main() {
         'PUT',
         '/api/v1/chats/c1/draft',
         token: _token,
-        body: {'text': 'hello', 'attachments': [], 'revision': 0},
+        body: {
+          'text': 'hello @app.dart',
+          'attachments': [],
+          'mentions': [
+            {'kind': 'file', 'path': 'src/app.dart', 'start': 6, 'end': 15},
+          ],
+          'revision': 0,
+        },
       );
       expect(status, HttpStatus.ok);
       expect((jsonDecode(body) as Map)['revision'], 1);
-      expect(store.draft?.text, 'hello');
+      expect(store.draft?.text, 'hello @app.dart');
+      expect(store.draft?.mentions.single.path, 'src/app.dart');
 
       final (conflict, _) = await _request(
         client,
@@ -1815,6 +1867,7 @@ final class _FakeBackend implements AgentApi {
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
   }) async {
     sent.add((chatId, text, sendNow));
   }
@@ -2439,6 +2492,20 @@ final class _FakeRuntime implements ModelRuntimeSource {
 final class _FakeProjects implements ProjectsApi {
   ProjectMemory? memory;
   String? instruction;
+  Project? found;
+  List<WorkspaceEntry> entries = const [];
+
+  @override
+  Future<Project?> find({
+    required String hostId,
+    required String workspace,
+  }) async => found;
+
+  @override
+  Future<List<WorkspaceEntry>> searchMentions(
+    String projectId,
+    String query,
+  ) async => entries;
 
   @override
   Stream<ProjectMemory?> watchMemory(String projectId) => Stream.value(memory);

@@ -102,19 +102,82 @@ class AttachmentRef {
   );
 }
 
-/// Черновик поля ввода чата: текст и вложения, которые пользователь ещё не отправил.
+/// Что именно упомянуто в тексте сообщения.
+enum MentionKind { file, directory }
+
+/// Упоминание файла или каталога workspace.
+///
+/// В тексте сообщения лежит только последний сегмент пути (`@app.dart`), а
+/// полный путь хранится здесь. Диапазон [start]-[end] (UTF-16) связывает
+/// метаданные с токеном в тексте. Поэтому переименование или повторный выбор
+/// файла не требуют угадывать путь по имени: источник истины — [path].
+class MentionRef extends Equatable {
+  const MentionRef({
+    required this.kind,
+    required this.path,
+    required this.start,
+    required this.end,
+  });
+
+  factory MentionRef.fromJson(Map<String, dynamic> json) => MentionRef(
+    kind: MentionKind.values.asNameMap()['${json['kind']}'] ?? MentionKind.file,
+    path: '${json['path'] ?? ''}',
+    start: (json['start'] as num?)?.toInt() ?? -1,
+    end: (json['end'] as num?)?.toInt() ?? -1,
+  );
+
+  final MentionKind kind;
+
+  /// Путь относительно workspace без хвостового `/`.
+  final String path;
+
+  /// Смещение `@` в тексте сообщения.
+  final int start;
+
+  /// Смещение сразу после токена.
+  final int end;
+
+  MentionRef copyWith({
+    MentionKind? kind,
+    String? path,
+    int? start,
+    int? end,
+  }) => MentionRef(
+    kind: kind ?? this.kind,
+    path: path ?? this.path,
+    start: start ?? this.start,
+    end: end ?? this.end,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind.name,
+    'path': path,
+    'start': start,
+    'end': end,
+  };
+
+  @override
+  List<Object?> get props => [kind, path, start, end];
+}
+
+/// Черновик поля ввода чата: текст, вложения и упоминания, которые пользователь ещё не отправил.
 class ChatDraft extends Equatable {
-  const ChatDraft({this.text = '', this.attachments = const []});
+  const ChatDraft({
+    this.text = '',
+    this.attachments = const [],
+    this.mentions = const [],
+  });
 
   static const empty = ChatDraft();
 
   final String text;
   final List<AttachmentRef> attachments;
+  final List<MentionRef> mentions;
 
-  bool get isEmpty => text.isEmpty && attachments.isEmpty;
+  bool get isEmpty => text.isEmpty && attachments.isEmpty && mentions.isEmpty;
 
   @override
-  List<Object?> get props => [text, attachments];
+  List<Object?> get props => [text, attachments, mentions];
 }
 
 /// Черновики правки уже отправленных сообщений: id сообщения → текст и вложения.
@@ -128,6 +191,9 @@ String encodeMessageEdits(Map<String, ChatDraft> edits) => jsonEncode({
       'attachments': [
         for (final attachment in entry.value.attachments)
           attachment.redacted().toJson(),
+      ],
+      'mentions': [
+        for (final mention in entry.value.mentions) mention.toJson(),
       ],
     },
 });
@@ -156,9 +222,21 @@ Map<String, ChatDraft> decodeMessageEdits(String raw) {
         }
       }
     }
+    final mentions = <MentionRef>[];
+    final rawMentions = value['mentions'];
+    if (rawMentions is List) {
+      for (final item in rawMentions) {
+        if (item is Map<String, dynamic>) {
+          mentions.add(MentionRef.fromJson(item));
+        } else if (item is Map) {
+          mentions.add(MentionRef.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
     result['${entry.key}'] = ChatDraft(
       text: text is String ? text : '',
       attachments: attachments,
+      mentions: mentions,
     );
   }
   return result;
@@ -311,6 +389,7 @@ class ChatMessage {
     this.toolCalls = const [],
     this.toolCallId,
     this.attachments = const [],
+    this.mentions = const [],
     this.openedRevisionId,
     this.sealedBeforeRevisionId,
   });
@@ -343,6 +422,10 @@ class ChatMessage {
         for (final a in (map['attachments'] as List? ?? const []))
           AttachmentRef.fromJson(a as Map<String, dynamic>),
       ],
+      mentions: [
+        for (final m in (map['mentions'] as List? ?? const []))
+          MentionRef.fromJson(m as Map<String, dynamic>),
+      ],
       openedRevisionId: openedRevisionId,
       sealedBeforeRevisionId: sealedBeforeRevisionId,
     );
@@ -359,6 +442,9 @@ class ChatMessage {
   final List<ToolCallRef> toolCalls;
   final String? toolCallId;
   final List<AttachmentRef> attachments;
+
+  /// Упоминания файлов и каталогов workspace. Диапазоны указывают на [text].
+  final List<MentionRef> mentions;
   final DateTime createdAt;
   final String? openedRevisionId;
   final String? sealedBeforeRevisionId;
@@ -373,6 +459,7 @@ class ChatMessage {
     List<ToolCallRef>? toolCalls,
     String? toolCallId,
     List<AttachmentRef>? attachments,
+    List<MentionRef>? mentions,
     DateTime? createdAt,
     String? openedRevisionId,
     String? sealedBeforeRevisionId,
@@ -387,6 +474,7 @@ class ChatMessage {
     toolCalls: toolCalls ?? this.toolCalls,
     toolCallId: toolCallId ?? this.toolCallId,
     attachments: attachments ?? this.attachments,
+    mentions: mentions ?? this.mentions,
     openedRevisionId: openedRevisionId ?? this.openedRevisionId,
     sealedBeforeRevisionId:
         sealedBeforeRevisionId ?? this.sealedBeforeRevisionId,
@@ -399,6 +487,7 @@ class ChatMessage {
     'toolCalls': [for (final c in toolCalls) c.toJson()],
     'toolCallId': toolCallId,
     'attachments': [for (final a in attachments) a.toJson()],
+    'mentions': [for (final m in mentions) m.toJson()],
   });
 }
 

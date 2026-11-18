@@ -7,11 +7,13 @@ import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
+import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/agent/workspace/mention_search_service.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -28,9 +30,13 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
 class LocalChatApi implements ChatApi {
-  LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub;
+  LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub {
+    _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
+  }
 
   final AgentHub _hub;
+
+  late final MentionSearchService _mentions;
 
   /// Runtime-сервис есть у приложения и демона. В узких тестах его можно
   /// не передавать: модели работают, но прогресс и управление недоступны.
@@ -46,7 +52,7 @@ class LocalChatApi implements ChatApi {
   late final ProjectStore projectStore = _LocalProjectStore(_hub.projectStore);
 
   @override
-  late final ProjectsStore projects = _LocalProjects(_hub.projects);
+  late final ProjectsStore projects = _LocalProjects(_hub.projects, _mentions);
 
   @override
   late final ModelStore models = _LocalModels(
@@ -292,6 +298,7 @@ class LocalChatApi implements ChatApi {
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
   }) async {
     await requireChat(chatId);
     if (text.trim().isEmpty && attachments.isEmpty) {
@@ -299,7 +306,12 @@ class LocalChatApi implements ChatApi {
     }
     await _hub
         .session(chatId)
-        .submit(text, attachments: attachments, sendNow: sendNow);
+        .submit(
+          text,
+          attachments: attachments,
+          mentions: mentions,
+          sendNow: sendNow,
+        );
   }
 
   Future<void> stop(String chatId, {String? reason}) async {
@@ -472,9 +484,10 @@ final class _LocalProjectStore implements ProjectStore {
 }
 
 final class _LocalProjects implements ProjectsStore {
-  _LocalProjects(this._projects);
+  _LocalProjects(this._projects, this._mentions);
 
   final dynamic _projects;
+  final MentionSearchService _mentions;
 
   @override
   Future<Chat> attach(Chat chat) => _projects.attach(chat);
@@ -498,6 +511,14 @@ final class _LocalProjects implements ProjectsStore {
   @override
   Future<void> trustWorkspace(String projectId) =>
       _projects.trustWorkspace(projectId);
+
+  @override
+  Future<Project?> find({required String hostId, required String workspace}) =>
+      _projects.find(hostId: hostId, workspace: workspace);
+
+  @override
+  Future<List<WorkspaceEntry>> searchMentions(String projectId, String query) =>
+      _mentions.search(projectId, query);
 }
 
 final class _LocalModels implements ModelStore {
@@ -617,8 +638,14 @@ final class _LocalChatSession implements ChatSessionApi {
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
+    List<MentionRef> mentions = const [],
     bool sendNow = false,
-  }) => _session.submit(text, attachments: attachments, sendNow: sendNow);
+  }) => _session.submit(
+    text,
+    attachments: attachments,
+    mentions: mentions,
+    sendNow: sendNow,
+  );
 
   @override
   Future<void> stop({String? reason}) => _session.stop(reason: reason);
@@ -640,7 +667,13 @@ final class _LocalChatSession implements ChatSessionApi {
     String messageId,
     String newText, {
     List<AttachmentRef>? attachments,
-  }) => _session.editUserMessage(messageId, newText, attachments: attachments);
+    List<MentionRef>? mentions,
+  }) => _session.editUserMessage(
+    messageId,
+    newText,
+    attachments: attachments,
+    mentions: mentions,
+  );
 
   @override
   Future<void> deleteAfter(String messageId) => _session.deleteAfter(messageId);

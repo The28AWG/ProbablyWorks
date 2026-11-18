@@ -176,6 +176,18 @@
   "@composerAttach": {
     "description": "Tooltip of the button that attaches a file to the message."
   },
+  "mentionEmpty": "No files found",
+  "@mentionEmpty": {
+    "description": "Empty state of the @-mention file list."
+  },
+  "mentionLoading": "Looking for files…",
+  "@mentionLoading": {
+    "description": "Loading state of the @-mention file list."
+  },
+  "mentionError": "Could not read the project files",
+  "@mentionError": {
+    "description": "Error state of the @-mention file list."
+  },
   "composerDropHint": "Drop files here",
   "@composerDropHint": {
     "description": "Hint shown while files are dragged over the composer."
@@ -3221,6 +3233,8 @@
   "@keybindingChatNew": {"description": "Shortcut action: start a new chat."},
   "keybindingSettingsOpen": "Open settings",
   "@keybindingSettingsOpen": {"description": "Shortcut action: open settings."},
+  "keybindingChatMention": "Open file mentions",
+  "@keybindingChatMention": {"description": "Shortcut action: open the file mention popup in the chat composer."},
   "keybindingRecordTitle": "Press a shortcut",
   "@keybindingRecordTitle": {"description": "Title of the shortcut recorder."},
   "keybindingRecordHint": "Esc cancels. The combination is saved on this device.",

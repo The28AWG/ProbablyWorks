@@ -168,6 +168,28 @@ final class MakeDirOp extends HostOp {
   String get label => 'mkdir $path';
 }
 
+/// Поиск файлов и каталогов workspace по подпоследовательности имени.
+///
+/// Вывод — относительные пути по одному на строку; каталоги заканчиваются `/`.
+/// Глубина, число результатов и скрытые файлы задаёт вызывающий код, а не
+/// клиент API: это внутренняя операция агента.
+final class SearchWorkspaceOp extends HostOp {
+  const SearchWorkspaceOp({
+    required this.query,
+    required this.maxDepth,
+    required this.maxResults,
+    required this.includeHidden,
+  });
+
+  final String query;
+  final int maxDepth;
+  final int maxResults;
+  final bool includeHidden;
+
+  @override
+  String get label => 'search workspace ${query.isEmpty ? '*' : query}';
+}
+
 /// Поиск файлов по имени (glob), а не по содержимому. Вывод — по одному пути на строку.
 final class GlobOp extends HostOp {
   const GlobOp(this.pattern, this.root);
