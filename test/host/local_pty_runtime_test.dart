@@ -2,26 +2,35 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_pty2/flutter_pty2.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:portable_pty/portable_pty.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/host/host_runtime.dart';
 import 'package:pw_agent/host/host_terminal.dart';
 import 'package:pw_agent/host/local_host_runtime.dart';
 
-/// Настоящий PTY через нативную библиотеку portable_pty (Rust, собирается hook-ом пакета).
+/// Настоящий PTY через нативную библиотеку flutter_pty2 (C, собирается hook-ом
+/// пакета из `third_party/flutter_pty2`).
 ///
-/// Тесты пропускаются, если нативная библиотека не открывается, и на Windows: там PTY без
-/// неблокирующего режима пока не реализован (см. portable_pty_launcher.dart).
-final _skip = Platform.isWindows
-    ? 'portable_pty launcher is POSIX-only for now'
-    : _ptyAvailable()
-    ? null
-    : 'portable_pty native library is not available';
+/// Тесты пропускаются, если нативная библиотека не открывается, и на Windows:
+/// там PTY пока не включён (см. `LocalHostRuntime.hasTerminal`).
+Future<void> main() async {
+  final skip = Platform.isWindows
+      ? 'POSIX PTY test; see windows_conpty_test.dart for Windows'
+      : await _ptyAvailable()
+      ? null
+      : 'flutter_pty2 native library is not available';
+  _registerTests(skip);
+}
 
-bool _ptyAvailable() {
+/// Проверяет, что build hook собрал библиотеку и PTY можно открыть.
+Future<bool> _ptyAvailable() async {
   try {
-    PortablePty.open().close();
+    final session = await Pty.spawn(
+      const PtySpawnOptions(executable: '/bin/true'),
+    );
+    await session.processExit;
+    await session.close();
     return true;
   } on Object {
     return false;
@@ -40,17 +49,17 @@ Future<({String output, int? exitCode})> _drain(HostTerminal terminal) async {
   );
 }
 
-void main() {
+void _registerTests(String? skip) {
   final runtime = LocalHostRuntime(os: HostOs.posix);
 
-  test('command runs on a real TTY', skip: _skip, () async {
+  test('command runs on a real TTY', skip: skip, () async {
     final terminal = await runtime.openTerminal('[ -t 0 ] && echo tty');
     final result = await _drain(terminal);
     expect(result.output, contains('tty'));
     expect(result.exitCode, 0);
   });
 
-  test('terminal opens with the requested size', skip: _skip, () async {
+  test('terminal opens with the requested size', skip: skip, () async {
     final terminal = await runtime.openTerminal(
       'stty size',
       columns: 100,
@@ -60,7 +69,7 @@ void main() {
     expect(result.output, contains('40 100'));
   });
 
-  test('resize reaches the running command', skip: _skip, () async {
+  test('resize reaches the running command', skip: skip, () async {
     final terminal = await runtime.openTerminal(
       'sleep 1; stty size',
       columns: 100,
@@ -73,7 +82,7 @@ void main() {
 
   test(
     'input written to the terminal reaches the command',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal(
         'read line; echo "got:\$line"',
@@ -86,7 +95,7 @@ void main() {
 
   test(
     'pagers are disabled so git does not block on less',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal('echo "pager=\$PAGER"');
       final result = await _drain(terminal);
@@ -96,7 +105,7 @@ void main() {
 
   test(
     'colour codes from the command are kept in the raw output',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal(
         r"printf '\033[31mred\033[0m\n'",
@@ -106,7 +115,7 @@ void main() {
     },
   );
 
-  test('runs in the requested working directory', skip: _skip, () async {
+  test('runs in the requested working directory', skip: skip, () async {
     final dir = Directory.systemTemp.createTempSync('pw_pty_cwd');
     addTearDown(() => dir.deleteSync(recursive: true));
     final terminal = await runtime.openTerminal('pwd', cwd: dir.path);
@@ -116,7 +125,7 @@ void main() {
 
   test(
     'exit code is reported and output is replayed to a late subscriber',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal('echo once; exit 3');
       final first = await _drain(terminal);
@@ -128,7 +137,7 @@ void main() {
 
   test(
     'pid from the marker is known and kill by pid stops the terminal command',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal('sleep 30');
       final pid = await terminal.pid.timeout(const Duration(seconds: 5));
@@ -142,7 +151,7 @@ void main() {
 
   test(
     'execEventsOf reports pid, output and exit code like run()',
-    skip: _skip,
+    skip: skip,
     () async {
       final terminal = await runtime.openTerminal('echo hi; exit 4');
       final events = await execEventsOf(terminal).toList();

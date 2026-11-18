@@ -14,6 +14,8 @@ on:
       - 'linux/**'
       - 'windows/**'
       - 'macos/**'
+      - 'ios/**'
+      - 'third_party/flutter_pty2/**'
       - 'snap/**'
       - '.github/actions/**'
       - '.github/workflows/platforms.yml'
@@ -29,6 +31,8 @@ on:
       - 'linux/**'
       - 'windows/**'
       - 'macos/**'
+      - 'ios/**'
+      - 'third_party/flutter_pty2/**'
       - 'snap/**'
       - '.github/actions/**'
       - '.github/workflows/platforms.yml'
@@ -83,6 +87,8 @@ jobs:
           channel: stable
           cache: true
       - uses: ./.github/actions/generate
+      - name: Test Windows ConPTY
+        run: flutter test test/host/windows_conpty_test.dart
       - name: Build Windows GUI
         run: flutter build windows --release
       - name: Add headless daemon
@@ -119,3 +125,10 @@ jobs:
           dart run tool/ci/check_bundle.dart
           --platform=macos
           --root=build/macos/Build/Products/Release
+      - name: Build iOS simulator app
+        run: flutter build ios --simulator --no-codesign
+      - name: Check iOS assembly
+        run: >-
+          dart run tool/ci/check_bundle.dart
+          --platform=ios
+          --root=build/ios/iphonesimulator/Runner.app

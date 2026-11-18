@@ -88,6 +88,12 @@ Future<void> main(List<String> arguments) async {
     }
   }
 
+  // iOS получает PTY-библиотеку как dynamic framework из build hook
+  // flutter_pty2. Проверяем, что она действительно попала в приложение.
+  if (platform == 'ios' && _findContaining(gui, 'flutter_pty2').isEmpty) {
+    errors.add('${gui.path}: нет нативного framework flutter_pty2');
+  }
+
   _requireFile(gui, 'LICENSE', errors, skip: platform == 'ios');
   _requireNotice(gui, errors);
   _requireFile(gui, 'Inter-Regular.ttf', errors, skip: false);
@@ -111,8 +117,8 @@ Future<void> main(List<String> arguments) async {
     if (_findContaining(daemon, 'sqlite3').isEmpty) {
       errors.add('${daemon.path}: нет нативной библиотеки sqlite3');
     }
-    if (_findContaining(daemon, 'portable_pty').isEmpty) {
-      errors.add('${daemon.path}: нет нативной библиотеки portable_pty');
+    if (_findContaining(daemon, 'flutter_pty2').isEmpty) {
+      errors.add('${daemon.path}: нет нативной библиотеки flutter_pty2');
     }
   }
 

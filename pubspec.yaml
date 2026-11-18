@@ -43,6 +43,8 @@ dependencies:
   flutter_local_notifications: 23.0.2
   flutter_localizations:
     sdk: flutter
+  flutter_pty2:
+    path: third_party/flutter_pty2
   flutter_secure_storage: ^11.2.0
   flutter_svg: ^2.3.0
   get_it: ^9.2.1
@@ -80,7 +82,6 @@ dependencies:
     path: packages/plugin_web
   plugin_web_core:
     path: packages/plugin_web_core
-  portable_pty: 0.0.7-beta.2
   pw_agent:
     path: packages/pw_agent
   pw_client:

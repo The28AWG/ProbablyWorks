@@ -9,3 +9,7 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+    ignore:
+      # Вендоренный форк обновляется вручную вместе с патчами:
+      # docs/agent/PTY.md. Фактические версии фиксирует pubspec.lock.
+      - dependency-name: "flutter_pty2"

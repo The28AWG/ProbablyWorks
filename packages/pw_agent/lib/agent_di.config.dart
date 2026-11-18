@@ -73,9 +73,9 @@ import 'core/notify/push_service.dart' as _i737;
 import 'core/platform/external_url_opener.dart' as _i1019;
 import 'core/security/secret_store.dart' as _i249;
 import 'core/security/security_audit_service.dart' as _i376;
+import 'host/flutter_pty_launcher.dart' as _i127;
 import 'host/host_diagnostics.dart' as _i1011;
 import 'host/host_runtime_factory.dart' as _i611;
-import 'host/portable_pty_launcher.dart' as _i480;
 import 'host/pty_launcher.dart' as _i363;
 import 'host/ssh_connection_pool.dart' as _i414;
 import 'providers/ai/llama_cpp/llama_cpp_llm_provider.dart' as _i924;
@@ -116,9 +116,6 @@ extension GetItInjectableX on _i174.GetIt {
     await gh.factoryAsync<_i232.AppDatabase>(
       () => agentCoreModule.database(gh<_i342.AppPaths>()),
       preResolve: true,
-    );
-    gh.lazySingleton<_i363.PtyLauncher>(
-      () => const _i480.PortablePtyLauncher(),
     );
     gh.lazySingleton<_i214.TurnChangesetService>(
       () => _i214.TurnChangesetService(gh<_i221.TurnChangesetStore>()),
@@ -162,6 +159,7 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i249.SecretStore>(),
       ),
     );
+    gh.lazySingleton<_i363.PtyLauncher>(() => const _i127.FlutterPtyLauncher());
     gh.lazySingleton<_i262.StartupRecovery>(
       () => _i262.StartupRecovery(
         gh<_i906.ChatRepository>(),

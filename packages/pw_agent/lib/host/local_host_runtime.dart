@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/host/flutter_pty_launcher.dart';
 import 'package:pw_agent/host/host_environment.dart';
 import 'package:pw_agent/host/host_terminal.dart';
-import 'package:pw_agent/host/portable_pty_launcher.dart';
 import 'package:pw_agent/host/pty_launcher.dart';
 import 'package:pw_agent/host/wrapped_exec_runtime.dart';
 
@@ -15,7 +15,7 @@ final class LocalHostRuntime extends WrappedExecRuntime {
     required HostOs os,
     String? shell,
     this.environment = const {},
-    this.pty = const PortablePtyLauncher(),
+    this.pty = const FlutterPtyLauncher(),
   }) : super(os, shell: shell);
 
   /// Создание PTY для команд терминала (см. [openTerminal]).
@@ -24,10 +24,10 @@ final class LocalHostRuntime extends WrappedExecRuntime {
   /// Карта хоста. Накладывается на окружение машины и в обычном процессе, и в PTY.
   final Map<String, String> environment;
 
-  /// На Windows локальный PTY не поддерживается: `portable_pty` использует
-  /// ConPTY, но не отдаёт master fd, а блокирующее чтение нельзя опрашивать
-  /// таймером. Команды идут обычным `Process` без TTY — это ограничение
-  /// лучше, чем зависший или упавший терминал.
+  /// На Windows ConPTY в `flutter_pty2` уже есть, но локальный терминал пока
+  /// не включён: сначала отдельный Windows-тест в CI должен подтвердить вывод,
+  /// код выхода и окружение. Команды идут обычным `Process` без TTY — это
+  /// ограничение лучше, чем непроверенный терминал.
   @override
   bool get hasTerminal => os != HostOs.windows;
 

@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 ///
 /// Fastforge вызывает этот скрипт как pre-hook после `flutter build` и до
 /// упаковки. `dart build cli` нужен вместо `dart compile exe`: у `sqlite3` и
-/// `portable_pty` есть build hooks, а `dart compile` их не поддерживает.
+/// `flutter_pty2` есть build hooks, а `dart compile` их не поддерживает.
 ///
 /// Результат сохраняет раскладку `daemon/bin` + `daemon/lib`: загрузчик
 /// нативных ассетов ищет библиотеки относительно `../lib` от бинарника.

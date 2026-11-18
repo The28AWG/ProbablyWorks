@@ -15,6 +15,8 @@ dependencies:
   drift: ^2.35.0
   equatable: ^3.0.0
   ffi: ^2.1.4
+  flutter_pty2:
+    path: ../../third_party/flutter_pty2
   freedesktop_secret: ^0.1.6
   get_it: ^9.2.1
   http: ^1.5.0
@@ -35,7 +37,6 @@ dependencies:
   path: ^1.9.1
   plugin_api:
     path: ../plugin_api
-  portable_pty: 0.0.7-beta.2
   sqlite3: ^3.6.0
   uuid: ^4.5.3
   virtual_git:

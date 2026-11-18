@@ -88,13 +88,15 @@
 - Для сборки под Linux: набор зависимостей Flutter desktop (GTK 3, cmake, ninja и т.д.).
   Команда `flutter doctor` покажет, что не хватает.
 - Для уведомлений на Linux: `notify-send` (пакет `libnotify-bin`).
-- Локальный PTY (пакет `portable_pty`, нативная Rust-библиотека) собирается одним из способов:
-  - Rust-тулчейн версии 1.92 или новее (нужен для hook-а пакета `native_toolchain_rust`);
-  - либо предсобранная библиотека, которую hook пакета скачивает с GitHub Releases и проверяет по хешу из манифеста
-    пакета. Для этого нужен доступ в интернет при первой сборке.
+- Локальный PTY (пакет `flutter_pty2` из `third_party/flutter_pty2`, нативная C-библиотека)
+  собирается build hook-ом пакета. Нужен C-тулчейн: Xcode command line tools на macOS,
+  `clang`/`gcc` на Linux, Visual Studio C++ tools на Windows.
   Локальный PTY проверен на Linux. Android и macOS используют тот же POSIX-путь, но не собраны и не проверены
-  на этой машине. На Windows локальный PTY недоступен: неблокирующий режим для ConPTY не реализован.
-  Команды при этом выполняются обычным `Process` без TTY, SSH-хосты работают. На iOS локального Host нет.
+  на этой машине. На Windows ConPTY из `flutter_pty2` проверяется отдельным тестом
+  `test/host/windows_conpty_test.dart` в CI на `windows-latest`; сам локальный терминал на Windows пока
+  выключен, команды идут обычным `Process` без TTY. На iOS локального Host нет: используется только
+  виртуальный Host, а PTY-библиотека собирается ради успешной iOS-сборки.
+  Почему пакет лежит в `third_party` и как его обновлять — в [docs/agent/PTY.md](docs/agent/PTY.md).
 - Ключ OpenRouter.
 - При желании — локальный сервер llama.cpp с OpenAI-совместимым API. Адрес и ключ задаются
   в настройках, модели сервера попадают в общий каталог с префиксом `llamacpp:`.

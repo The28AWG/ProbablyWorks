@@ -23,7 +23,7 @@ class AppPlatform {
   /// а в браузере нет ни процессов, ни PTY, поэтому Host не создаётся.
   bool get hasLocalHost => !isWeb && !isIOS;
 
-  /// Локальный PTY (portable_pty). Совпадает с [hasLocalHost]: без локального Host PTY не нужен.
+  /// Локальный PTY (flutter_pty2). Совпадает с [hasLocalHost]: без локального Host PTY не нужен.
   bool get hasPty => hasLocalHost;
 
   /// Системный выбор папки. На мобильных недоступен: рабочая папка вводится вручную или берётся из папки приложения.

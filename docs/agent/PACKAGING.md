@@ -61,7 +61,7 @@ RPM и Pacman не настроены: для них нужны `rpmbuild` и `b
 
 ## Демон внутри пакета
 
-`dart compile exe` не подходит: у `sqlite3` и `portable_pty` есть build hooks,
+`dart compile exe` не подходит: у `sqlite3` и `flutter_pty2` есть build hooks,
 а компилятор требует `dart build`:
 
 ```bash
@@ -74,7 +74,7 @@ dart build cli --target packages/pw_server/bin/pw_server.dart -o build/daemon
 bundle/
   bin/pw_server
   lib/libsqlite3.so
-  lib/libportable_pty_rs.so
+  lib/libflutter_pty2.so
 ```
 
 Загрузчик нативных ассетов ищет библиотеки относительно `../lib` от
@@ -86,10 +86,10 @@ bundle/
   lib/...
   daemon/bin/pw_server
   daemon/lib/libsqlite3.so
-  daemon/lib/libportable_pty_rs.so
+  daemon/lib/libflutter_pty2.so
 ```
 
-Кроме `sqlite3` и `portable_pty`, в `lib` попадают библиотеки llama.cpp из
+Кроме `sqlite3` и `flutter_pty2`, в `lib` попадают библиотеки llama.cpp из
 build hook `llamadart` (рантайм скачивается при первой сборке и кэшируется).
 Если нужен только CPU, задайте `hooks.user_defines.llamadart` в корневом
 `pubspec.yaml`; полный список ключей — в [LOCAL_MODELS.md](LOCAL_MODELS.md).
@@ -142,16 +142,19 @@ runner'а.
 
 ### Проверка состава сборок
 
-Отдельный workflow `.github/workflows/platforms.yml` собирает Linux, Windows
-и macOS на изменения в коде и упаковке. После сборки
+Отдельный workflow `.github/workflows/platforms.yml` собирает Linux, Windows,
+macOS и iOS simulator на изменения в коде и упаковке. После сборки
 `tool/ci/check_bundle.dart` проверяет, что в bundle есть GUI, `LICENSE`,
 `NOTICES`, шрифты, ассеты, актуальный `build-info.json` и демон с
 нативными библиотеками. Демон запускается с `--help`, чтобы проверить
 загрузку AOT-бинарника.
 
-iOS в проверку не входит: проект нацелен на desktop, а `portable_pty`
-0.0.7-beta.2 отдаёт для iOS static code asset, несовместимый с текущим
-Flutter. Вернуть шаг можно после исправления зависимости.
+iOS входит в проверку как simulator-сборка. Настоящий локальный PTY там не
+нужен: на iOS приложение использует только виртуальный Host. Но зависимость
+`flutter_pty2` обязана собрать dynamic code asset, иначе Flutter не примет
+статическую библиотеку. Поэтому пакет лежит в `third_party/flutter_pty2` с
+локальным патчем `libproc.h`; причина форка и порядок обновления описаны в
+[PTY.md](PTY.md).
 
 Это проверка упаковки, а не поведения ОС: установка и ручные сценарии на
 реальных машинах в неё не входят. Если пользователь сообщает о проблеме
