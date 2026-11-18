@@ -30,6 +30,7 @@ import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/host/host_diagnostics.dart';
 import 'package:pw_agent/host/host_runtime_factory.dart';
 import 'package:pw_agent/host/ssh_connection_pool.dart';
@@ -39,12 +40,13 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import '../../test_support/fake_appearance.dart';
 
 final class _FakeToolSource extends ToolSource {
-  _FakeToolSource({this.mutatesHost = true});
+  _FakeToolSource({this.mutatesHost = true, this.resultText = 'fake ok'});
 
   int calls = 0;
 
   @override
   final bool mutatesHost;
+  final String resultText;
 
   @override
   String get id => 'fake';
@@ -65,7 +67,7 @@ final class _FakeToolSource extends ToolSource {
     ToolContext context,
   ) async {
     calls++;
-    return const ToolResult('fake ok');
+    return ToolResult(resultText);
   }
 
   @override
@@ -297,5 +299,28 @@ void main() {
     await pending;
 
     expect(await turnCs(), isNull);
+  });
+
+  test('external tool output is redacted before it is saved', () async {
+    const secret = 'q7Yp2Lm9RandomToken';
+    Redactor.registerSecret(secret);
+    addTearDown(Redactor.clearRegisteredSecrets);
+
+    final source = _FakeToolSource(resultText: 'result: $secret');
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final pending = tools.execute(
+      call('e', 'fake_tool', {'value': secret}),
+      ctx,
+    );
+    final approval = await broker.approvalRequests.first;
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+    await pending;
+
+    final run = (await chats.toolRunsForChat(chatId)).single;
+    expect(run.argsJson, isNot(contains(secret)));
+    expect(run.outputText, isNot(contains(secret)));
+    expect(run.resultPreview, isNot(contains(secret)));
   });
 }

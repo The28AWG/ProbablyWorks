@@ -233,8 +233,24 @@ class ToolExecutor {
   Stream<ToolRun> get runChanges => _runChanges.stream;
 
   Future<void> _saveRun(ToolRun run) async {
-    await _chats.saveToolRun(run);
-    if (!_runChanges.isClosed) _runChanges.add(run);
+    // Единая точка сохранения: сюда приходят и встроенные инструменты, и
+    // плагины, и ошибки запуска. Маскируем до БД и до UI, чтобы секрет не
+    // остался в истории, карточке подтверждения или журнале.
+    final safe = run.copyWith(
+      argsJson: Redactor.redact(run.argsJson),
+      command: run.command == null ? null : Redactor.redact(run.command!),
+      outputText: run.outputText == null
+          ? null
+          : Redactor.redact(run.outputText!),
+      resultPreview: run.resultPreview == null
+          ? null
+          : Redactor.redact(run.resultPreview!),
+      pendingCard: run.pendingCard == null
+          ? null
+          : Redactor.redact(run.pendingCard!),
+    );
+    await _chats.saveToolRun(safe);
+    if (!_runChanges.isClosed) _runChanges.add(safe);
   }
 
   Future<ToolResult> execute(LlmToolCall call, ToolContext ctx) async {
