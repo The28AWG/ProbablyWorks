@@ -15,7 +15,6 @@
 | PW-018 | P1 | частично | Семантический поиск по истории и файлам |
 | PW-022 | P1 | todo | Полное маскирование секретов в `Redactor` |
 | PW-023 | P1 | todo | Подпись Android и имена приложений |
-| PW-021 | P2 | частично | Автоматическая проверка состава сборок Windows и macOS |
 
 ## P1
 
@@ -166,40 +165,3 @@ release-APK нельзя обновить поверх правильно под
 `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`,
 `windows/runner/main.cpp`, `macos/Runner/Configs/AppInfo.xcconfig`,
 `ios/Runner/Info.plist`.
-
-## P2
-
-### PW-021. Автоматическая проверка состава сборок Windows и macOS
-
-**Статус:** частично. Linux-сборка проверена локально; workflow для Linux,
-Windows и macOS проходит проверку состава, ждёт зелёного прогона после
-исправления раскладки bundle.
-
-**Решение.** Ручной матрицы проверок на реальных ОС нет: toolchain считается
-исправным, а сообщения пользователей о проблемах платформы оформляются новыми
-issue. Проверяем только то, что может дать сбой при упаковке: наличие наших
-файлов, демона, нативных библиотек и актуальной версии в bundle. iOS не
-входит: проект нацелен на desktop, а `portable_pty` 0.0.7-beta.2 отдаёт для
-iOS static code asset, несовместимый с текущим Flutter.
-
-**Что сделать.**
-- Собирать Linux, Windows и macOS в отдельном workflow.
-- Проверять `version.json`/`build-info.json` против `pubspec.yaml`, наличие
-  GUI, `LICENSE`, `NOTICES`, шрифтов, ассетов и desktop-демона с его
-  библиотеками.
-- Запускать `pw_server --help` из собранного bundle, чтобы проверить
-  загрузку AOT-бинарника и нативных библиотек.
-- Не проверять установку, запуск GUI, SSH и уведомления на реальных машинах.
-
-**Критерии приёмки.**
-- Job'ы `linux-assembly`, `windows-assembly` и `macos-assembly` проходят на
-  PR и в `main`.
-- `check_bundle` падает, если пропал файл, демон, библиотека или версия не
-  совпала с `pubspec.yaml`.
-- Ошибки поведения на конкретной ОС не входят в эту задачу.
-
-**Файлы:** `.github/workflows/platforms.yml`,
-`.github/actions/generate/action.yml`, `tool/ci/check_bundle.dart`,
-`tool/package/prepare_daemon.dart`.
-
-**Ссылки:** [PACKAGING.md](PACKAGING.md).
