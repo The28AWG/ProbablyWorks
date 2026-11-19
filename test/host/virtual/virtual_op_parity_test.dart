@@ -49,24 +49,43 @@ void main() {
       await fs.writeBytes('$base/$relative', Uint8List.fromList(bytes));
     }
 
+    /// Создаёт пустой каталог в обеих файловых системах.
+    Future<void> dir(String relative) async {
+      Directory('$base/$relative').createSync(recursive: true);
+      await fs.mkdir('$base/$relative', recursive: true);
+    }
+
     /// Сравнивает результат реальной команды и виртуальной по коду выхода и обоим потокам.
     /// Возвращает описание расхождения или null, если результаты совпали.
+    ///
+    /// [normalizeOutput] нужен для операций, чей текстовый формат намеренно
+    /// отличается префиксом: `find` печатает `./`, а виртуальный Host — путь
+    /// от корня workspace.
     Future<String?> parityMismatch(
       HostOp op, {
       Uint8List? stdin,
+      String? cwd,
       bool compareStderr = true,
       bool sortLines = false,
+      String Function(String output)? normalizeOutput,
     }) async {
-      final actual = await captureOp(real, op, cwd: base, stdin: stdin);
-      final expected = await virtual.execute(op, cwd: base, stdin: stdin);
+      final actual = await captureOp(real, op, cwd: cwd ?? base, stdin: stdin);
+      final expected = await virtual.execute(
+        op,
+        cwd: cwd ?? base,
+        stdin: stdin,
+      );
       final expectedOut = utf8.decode(expected.stdout, allowMalformed: true);
       final expectedErr = utf8.decode(expected.stderr, allowMalformed: true);
+      final actualOut = normalizeOutput?.call(actual.stdout) ?? actual.stdout;
+      final expectedNormalized =
+          normalizeOutput?.call(expectedOut) ?? expectedOut;
       final differences = [
         if (expected.exitCode != actual.exitCode)
           'код выхода: виртуальный ${expected.exitCode}, реальный ${actual.exitCode}',
         if (sortLines
-            ? _sorted(expectedOut) != _sorted(actual.stdout)
-            : expectedOut != actual.stdout)
+            ? _sorted(expectedNormalized) != _sorted(actualOut)
+            : expectedNormalized != actualOut)
           'вывод: виртуальный «$expectedOut», реальный «${actual.stdout}»',
         if (compareStderr && expectedErr != actual.stderr)
           'stderr: виртуальный «$expectedErr», реальный «${actual.stderr}»',
@@ -420,6 +439,84 @@ void main() {
           isNull,
         );
         expect(File('$base/w/ro.txt').readAsStringSync(), 'ro');
+      });
+    });
+
+    group('search_workspace', () {
+      setUp(() async {
+        await file('ws/README.md', [1]);
+        await file('ws/readme', [1]);
+        await file('ws/docs/README.MD', [1]);
+        await file('ws/src/app.dart', [1]);
+        await file('ws/src/app_test.dart', [1]);
+        await file('ws/src/.hidden-readme.md', [1]);
+        await file('ws/.env', [1]);
+        await file('ws/.github/workflows/ci.yml', [1]);
+        await file('ws/node_modules/pkg/README.md', [1]);
+        await file('ws/build/README.md', [1]);
+        await dir('ws/src/empty');
+        await dir('ws/d1/d2/emptydir');
+        // Глубина 7 и 8: именно здесь расходились фильтры `find` и виртуального Host.
+        await file('ws/d1/d2/d3/d4/d5/d6/f6.txt', [1]);
+        await file('ws/d1/d2/d3/d4/d5/d6/d7/f7.txt', [1]);
+        await file('ws/d1/d2/d3/d4/d5/d6/d7/d8/f8.txt', [1]);
+      });
+
+      /// `find` печатает пути с `./`, виртуальный Host — без него.
+      String withoutDotSlash(String output) => output
+          .split('\n')
+          .map((line) => line.replaceFirst('./', ''))
+          .join('\n');
+
+      for (final query in [
+        '',
+        'rdm',
+        'f6',
+        'd7',
+        '.env',
+        'src/app',
+        './src/app',
+      ]) {
+        for (final depth in [2, 6]) {
+          for (final hidden in [false, true]) {
+            test(
+              'запрос «$query», глубина $depth, скрытые: $hidden',
+              () async => expect(
+                await parityMismatch(
+                  SearchWorkspaceOp(
+                    query: query,
+                    maxDepth: depth,
+                    maxResults: 200,
+                    includeHidden: hidden,
+                  ),
+                  sortLines: true,
+                  normalizeOutput: withoutDotSlash,
+                ),
+                isNull,
+              ),
+            );
+          }
+        }
+      }
+
+      test('workspace — симлинк: вложенные пути сохраняют каталоги', () async {
+        await file('target/nested/x.dart', [1]);
+        Link('$base/link').createSync('$base/target');
+        await fs.symlink('$base/target', '$base/link');
+        expect(
+          await parityMismatch(
+            const SearchWorkspaceOp(
+              query: '',
+              maxDepth: 2,
+              maxResults: 200,
+              includeHidden: false,
+            ),
+            cwd: '$base/link',
+            sortLines: true,
+            normalizeOutput: withoutDotSlash,
+          ),
+          isNull,
+        );
       });
     });
   }, skip: skip);

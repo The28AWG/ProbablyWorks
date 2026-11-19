@@ -23,6 +23,15 @@ void main() {
     expect(WorkspaceSearchPattern.searchesHidden('rdm'), isFalse);
   });
 
+  test('leading ./ is a relative path, not a hidden-file request', () {
+    expect(WorkspaceSearchPattern.glob('./src'), '*s*r*c*');
+    expect(WorkspaceSearchPattern.regex('./src'), 's.*r.*c');
+    expect(WorkspaceSearchPattern.matches('src/app.dart', './src'), isTrue);
+    expect(WorkspaceSearchPattern.matches('src/app.dart', './src/app'), isTrue);
+    expect(WorkspaceSearchPattern.searchesHidden('./src'), isFalse);
+    expect(WorkspaceSearchPattern.searchesHidden('./src/.env'), isTrue);
+  });
+
   test('glob metacharacters in the query are literal', () {
     expect(WorkspaceSearchPattern.glob('a[1]'), '*a*\\[*1*\\]*');
   });

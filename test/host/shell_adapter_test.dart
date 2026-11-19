@@ -70,6 +70,25 @@ void main() {
       expect(script, contains('OpenStandardInput'));
     });
 
+    test(
+      'searchWorkspace не выходит на уровень глубже, чем find -maxdepth',
+      () {
+        // PowerShell -Depth N отдаёт содержимое корня и N уровней подкаталогов,
+        // то есть элементы уровней 1..N+1. find -maxdepth N включает ровно N
+        // уровней, поэтому в скрипт уходит maxDepth - 1.
+        final script = _decodePowershell(
+          cmd.searchWorkspace(
+            'rdm',
+            maxDepth: 2,
+            maxResults: 20,
+            includeHidden: false,
+          ),
+        );
+        expect(script, contains('-Recurse -Depth 1 '));
+        expect(script, isNot(contains('-Recurse -Depth 2 ')));
+      },
+    );
+
     test('scanSkills и readHead читают UTF-8 через PowerShell', () {
       expect(
         _decodePowershell(cmd.readHead(r'C:\x\SKILL.md', maxBytes: 10)),

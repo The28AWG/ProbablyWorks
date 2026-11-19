@@ -217,6 +217,11 @@ class ShellAdapter {
 
   /// PowerShell-вариант [searchWorkspace]. `-Depth` ограничивает обход, а
   /// фильтрация по сегментам пути повторяет правила POSIX-версии.
+  ///
+  /// `Get-ChildItem -Depth N` печатает содержимое корня и N уровней
+  /// подкаталогов, то есть элементы уровней 1..N+1. `find -maxdepth N` включает
+  /// ровно N уровней. Поэтому в PowerShell передаётся `maxDepth - 1`: иначе
+  /// Windows показывал бы на один уровень больше Linux и SSH.
   String _searchWorkspaceWindows(
     String query, {
     required int maxDepth,
@@ -227,6 +232,7 @@ class ShellAdapter {
     final noise = WorkspaceSearchPattern.noiseDirectories;
     final pathQuery = query.contains('/');
     final noiseList = noise.map(psQuote).join(',');
+    final depth = maxDepth < 1 ? 0 : maxDepth - 1;
     final hiddenCheck = includeHidden
         ? ''
         : r'''$hidden = $false;
@@ -240,7 +246,7 @@ class ShellAdapter {
       '\$noise = @($noiseList); '
       '\$pathQuery = ${pathQuery ? r'$true' : r'$false'}; '
       '\$includeHidden = ${includeHidden ? r'$true' : r'$false'}; '
-      'Get-ChildItem -LiteralPath \$root -Force -Recurse -Depth $maxDepth '
+      'Get-ChildItem -LiteralPath \$root -Force -Recurse -Depth $depth '
       '-ErrorAction SilentlyContinue | '
       'ForEach-Object { '
       '\$rel = \$_.FullName.Substring(\$root.Length).TrimStart("\\", "/").Replace("\\", "/"); '

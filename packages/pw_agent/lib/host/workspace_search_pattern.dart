@@ -47,6 +47,10 @@ abstract final class WorkspaceSearchPattern {
 
   /// Совпадает ли путь с запросом. Если запрос содержит `/`, проверяется
   /// полный относительный путь; иначе — только последний сегмент.
+  ///
+  /// Ведущие `./` не меняют смысла: путь в workspace и так относительный, а
+  /// `find -ipath` находит `./src/app`, даже если шаблон без `./`. Иначе
+  /// виртуальный Host и Windows не находили бы такой запрос.
   static bool matches(String path, String query) {
     final needle = _searchChars(query);
     if (needle.isEmpty) return true;
@@ -70,13 +74,27 @@ abstract final class WorkspaceSearchPattern {
       .any((segment) => segment.length > 1 && segment.startsWith('.'));
 
   /// Запрос ищет скрытые файлы: начинается с точки или содержит `/.`.
-  static bool searchesHidden(String query) =>
-      query.startsWith('.') || query.contains('/.');
+  /// Ведущие `./` — это путь от текущего каталога, а не запрос скрытых файлов.
+  static bool searchesHidden(String query) {
+    final value = _stripDotSlash(query);
+    return value.startsWith('.') || value.contains('/.');
+  }
 
   static List<String> _searchChars(String query) => [
-    for (final rune in query.trim().toLowerCase().runes)
+    for (final rune in _stripDotSlash(query).trim().toLowerCase().runes)
       if (!_isSpace(rune)) String.fromCharCode(rune),
   ];
+
+  /// Убирает ведущие `./`: пользователь может ввести путь от текущей папки,
+  /// а матчеры сравнивают его без этого префикса. `..` и абсолютные пути не
+  /// трогаем: их отсекает проверка безопасного пути упоминания.
+  static String _stripDotSlash(String query) {
+    var value = query.trim();
+    while (value.startsWith('./')) {
+      value = value.replaceFirst('./', '');
+    }
+    return value;
+  }
 
   static bool _isSpace(int rune) => String.fromCharCode(rune).trim().isEmpty;
 

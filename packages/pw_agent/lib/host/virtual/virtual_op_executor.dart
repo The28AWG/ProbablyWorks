@@ -278,9 +278,16 @@ final class VirtualOpExecutor {
     required int maxResults,
     required bool includeHidden,
   }) async {
-    final root = _expand(dir);
+    // `walk` возвращает канонические пути: если сам workspace — симлинк,
+    // префикс исходного пути к ним не подходит, и вложенные файлы потеряли бы
+    // каталоги. `realpath` повторяет поведение `find` с путём-симлинком.
+    final root = await _fs.realpath(_expand(dir), cwd: dir);
     final nodes = await _fs.walk(root, cwd: dir);
     final prefix = root.endsWith('/') ? root : '$root/';
+    // Глубина считается как у `find -maxdepth`: прямой потомок — уровень 1,
+    // поэтому число слэшей в относительном пути на единицу меньше. Иначе
+    // виртуальный Host показывал бы на уровень больше, чем `find`.
+    final depthLimit = maxDepth < 1 ? 1 : maxDepth;
     final matches = <(int, String)>[];
     for (final node in nodes) {
       final relative = node.path.startsWith(prefix)
@@ -288,7 +295,7 @@ final class VirtualOpExecutor {
           : node.name;
       if (relative.isEmpty) continue;
       final parts = relative.split('/');
-      if (parts.length - 1 > maxDepth) continue;
+      if (parts.length - 1 >= depthLimit) continue;
       if (parts.any(WorkspaceSearchPattern.noiseDirectories.contains)) continue;
       final hidden = WorkspaceSearchPattern.isHidden(relative);
       if (hidden && !includeHidden) continue;
