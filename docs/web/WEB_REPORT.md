@@ -5,6 +5,14 @@
 демону по HTTP/SSE, сохраняет удалённый профиль и дальше работает с чатами,
 настройками и карточками через профильный API.
 
+Есть две сборки web-клиента:
+
+- `lib/main_web.dart` — статический релиз с hash-навигацией; его можно
+  разместить на публичном хостинге без URL rewrite;
+- `lib/main_web_hosted.dart` — страница, которую отдаёт сам сервер; использует
+  path-навигацию и SPA fallback. Устройство bundled-варианта описано в
+  [SERVER_WEB.md](SERVER_WEB.md).
+
 Дата проверки: 13 ноября 2026. Проверки выполнялись на Linux в Chrome против
 реального демона. Сборка web проверена отдельно.
 
@@ -81,21 +89,18 @@
 - **Плагины.** Реестры UI-плагинов и команд плагинов в web пустые: локальные
   скомпилированные плагины не подключаются. Поведение серверных плагинов и MCP
   в web отдельно не проверялось.
-- **Тестовая оболочка.** `web/index.html`, `web/manifest.json` и иконки —
-  шаблон Flutter: заголовок `probably_works`, описание
-  `A new Flutter project.`, стандартные иконки. Сейчас это нормально: web
-  собирается в release-режиме для проверки, а не как готовый брендированный
-  релиз. Заменять оболочку нужно только если web-артефакт начнут публиковать
-  как отдельный продукт.
-- **Хостинг.** Web разворачивает пользователь. В репозитории нет конфигурации
-  статического хостинга, reverse proxy и базового пути. Сборка по умолчанию
-  ожидает размещение в корне (`base href="/"`); для подкаталога нужен
-  `flutter build web --base-href=/.../`.
+- **Тестовая оболочка.** `web/index.html` и `web/manifest.json` уже
+  используют название ProbablyWorks и описание продукта; стандартные иконки
+  Flutter остаются. Оболочка не влияет на функциональность web-клиента.
+- **Хостинг.** Статический web-релиз собирается с `base href="/"` и
+  размещается в корне сайта. URL используют hash-навигацию, поэтому rewrite
+  не нужен. Bundled-вариант отдаёт сервер; он описан в
+  [SERVER_WEB.md](SERVER_WEB.md).
 - **Выгрузка вкладки.** Поведение при закрытии/засыпании вкладки и потере SSE
   на редких конфигурациях отдельно не проверялось.
-- **Тесты.** Отдельных web-тестов нет. Проверены полный `flutter test`, сборка
-  и ручной сценарий; web-специфичные виджеты и CORS-сценарии тестами не
-  покрыты.
+- **Тесты.** Раздача статики, SPA fallback, traversal и защита API покрыты
+  тестами `pw_server`. Отдельных тестов web-виджетов и CORS-сценариев в
+  браузере нет.
 - **Windows/macOS/iOS.** Web проверен на Linux/Chrome; реальные проверки
   desktop-платформ остаются отдельной задачей.
 
@@ -122,60 +127,25 @@
 списков. Вложения, браузерные уведомления и выгрузка вкладки в этот прогон не
 входили.
 
-## 6. CI, релиз и self-hosted пакет
+## 6. CI, релиз и артефакты
 
-Сейчас web-сборки нет ни в `.github/workflows/ci.yml`, ни в
-`.github/workflows/release.yml`. `release.yml` собирает Linux, Windows, macOS,
-Snap и standalone-серверы. Web-сборка в release-режиме использовалась для
-проверки, а не как готовый артефакт.
+`ci.yml` собирает оба web-entrypoint’а: статический `lib/main_web.dart` и
+hosted `lib/main_web_hosted.dart`. Это ловит поломки path-стратегии и
+bundled-сборки до релиза.
 
-**Что стоит сделать сразу:** добавить в `ci.yml` шаг
-`flutter build web -t lib/main_web.dart`. Это занимает около 40 секунд и ловит
-поломки web-entrypoint на pull request, не создавая обязательств по хостингу и
-брендированию. Добавлять отдельный web-архив в `release.yml` только ради
-публикации пока не обязательно: web разворачивает пользователь, а оболочка
-сейчас тестовая.
+`release.yml` выпускает три независимых группы артефактов:
 
-**Предпочтительный сценарий на будущее:** не отдельный web-архив, а единый
-self-hosted пакет «сервер + статическая web-сборка + скрипт запуска». Тогда
-пользователь распаковывает пакет, запускает один скрипт, а сервер сам отдаёт
-`build/web` и работает backend'ом. Один origin убирает CORS из схемы, а токен
-и адрес можно напечатать в консоли при старте.
+- `probably-works-server-...` — только сервер;
+- `probably-works-web-...` — только статический web-клиент;
+- `probably-works-server-web-...` — сервер и web рядом, без встраивания
+  статики в бинарник.
 
-Что для этого нужно изменить в коде и упаковке:
-
-- `ApiServer` сейчас обслуживает только `/api/v1/...` и требует Bearer-токен
-  для всех путей, кроме `/api/v1/health`. Нужен режим `--web-dir <path>`:
-  публичная раздача `index.html`, `assets/`, `canvaskit/` и остальных файлов
-  статики, при этом API по-прежнему защищён токеном.
-- Нужна защита от path traversal, корректные `Content-Type`, кэш-заголовки и
-  fallback на `index.html` для неизвестных путей, если позже отказаться от
-  hash-URL.
-- `tool/package/package_server.dart` сейчас кладёт в архив только `bin`, `lib`
-  и README. В self-hosted пакет нужно добавить `web/` и launcher для
-  Linux/macOS/Windows; launcher печатает адрес и токен.
-- Для публикации — отдельный шаг сборки web и упаковка его вместе с сервером
-  в тот же архив; тогда web не нужно публиковать отдельным артефактом.
-- Нужны интеграционные тесты: статика отдаётся без токена, API без токена
-  отвечает `401`, traversal не выходит за `web-dir`, отсутствующий файл даёт
-  понятный ответ.
-
-Ожидаемая структура такого пакета:
-
-```text
-probably-works-server/
-  bin/pw_server
-  lib/
-  web/          # build/web
-  start.sh      # Linux/macOS
-  start.bat     # Windows
-```
-
-`start` запускает сервер с `--web-dir web --print-token`; CORS не нужен,
-потому что страница и API находятся на одном origin.
+Bundled-дистрибутив содержит `server/`, `web/`, `start.sh`/`start.bat` и
+README. Launcher запускает сервер с `--web-dir web`. Устройство и ограничения —
+в [SERVER_WEB.md](SERVER_WEB.md).
 
 Отдельный статический хостинг остаётся возможным: в этом случае web и API
-разные origin'ы, демону нужен `--allow-origin` с адресом web-клиента, а
+разные origin'ы, серверу нужен `--allow-origin` с адресом web-клиента, а
 wildcard использовать нельзя.
 
 ## 7. Как запустить локально
@@ -202,24 +172,39 @@ flutter run -d chrome -t lib/main_web.dart \
 Production-сборка:
 
 ```bash
-flutter build web -t lib/main_web.dart
-# содержимое build/web отдать статическим сервером в корне домена
+flutter build web -t lib/main_web.dart --release \
+  -o build/web-static --base-href=/
+# содержимое build/web-static отдать статическим сервером в корне домена
+```
+
+Для bundled-варианта:
+
+```bash
+flutter build web -t lib/main_web_hosted.dart --release \
+  -o build/web-hosted --base-href=/
+dart run tool/package/package_server_web.dart \
+  --platform=linux --arch=x64 --web-dir=build/web-hosted
 ```
 
 ## 8. Файлы
 
-- `lib/main_web.dart` — web-entrypoint.
+- `lib/main_web.dart` — статический web-entrypoint с hash-навигацией.
+- `lib/main_web_hosted.dart` — web-entrypoint для раздачи сервером.
 - `lib/app/bootstrap/web_bootstrap.dart` — DI без БД и локального агента.
+- `lib/app/bootstrap/web_host_config.dart` — адрес сервера по умолчанию для
+  статической и bundled-сборки.
 - `lib/features/connect/presentation/pages/web_connect_page.dart` — экран
   подключения.
 - `lib/app/profiles/profile_service.dart` — удалённые профили и
   `RemoteAgentApi`.
 - `packages/pw_client/lib/src/remote_agent_api.dart` — HTTP/SSE-клиент,
   reconnect и offline-статусы.
-- `packages/pw_server/lib/src/api/api_server.dart` — CORS и API.
+- `packages/pw_server/lib/src/api/api_server.dart` — CORS, API и ранняя
+  обработка статики.
+- `packages/pw_server/lib/src/web/static_web.dart` — раздача web-сборки,
+  SPA fallback и защита путей.
 - `lib/app/backend/backend_status.dart` — offline-баннер и заглушка.
 - `lib/core/platform/app_platform.dart` — отключение локального Host в web.
 - `lib/core/notify/web_app_notifier.dart` — заглушка уведомлений.
 - `lib/app/router/app_router.dart` — deep links и fallback-маршрут.
-- `web/index.html`, `web/manifest.json` — статическая оболочка (пока шаблон
-  Flutter).
+- `web/index.html`, `web/manifest.json` — статическая оболочка.

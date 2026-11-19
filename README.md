@@ -285,10 +285,30 @@ dart run tool/package/package.dart linux appimage,deb,tar.gz
 `dist/<version>/`. Требования, форматы и подпись описаны в
 [docs/agent/PACKAGING.md](docs/agent/PACKAGING.md).
 
+Web-клиент выпускается в двух вариантах:
+
+```bash
+# только статика, hash-URL, подходит для публичного хостинга
+flutter build web -t lib/main_web.dart --release \
+  -o build/web-static --base-href=/
+dart run tool/package/package_web.dart --web-dir=build/web-static
+
+# страница, которую отдаёт сам сервер, с path-URL и SPA fallback
+flutter build web -t lib/main_web_hosted.dart --release \
+  -o build/web-hosted --base-href=/
+dart run tool/package/package_server_web.dart \
+  --platform=linux --arch=x64 --web-dir=build/web-hosted
+```
+
+Bundled-дистрибутив содержит отдельно `server/` и `web/`, launcher
+`start.sh`/`start.bat` и README. Устройство — в
+[docs/web/SERVER_WEB.md](docs/web/SERVER_WEB.md).
+
 Релизы собираются в GitHub Actions по тегу `v<version>`: GUI для Linux x64,
 Windows x64 и macOS arm64/x64, отдельные архивы headless-сервера для тех же
-платформ и Snap amd64. Артефакты и `SHA256SUMS.txt` автоматически
-прикрепляются к GitHub Release, Snap публикуется в канал `edge`.
+платформ, отдельный web-архив, дистрибутив «сервер + web» и Snap amd64.
+Артефакты и `SHA256SUMS.txt` автоматически прикрепляются к GitHub Release,
+Snap публикуется в канал `edge`.
 
 Приложение нацелено на настольные платформы (Linux, macOS, Windows); остальные папки платформ в проекте
 созданы стандартным шаблоном Flutter.

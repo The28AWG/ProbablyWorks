@@ -8,6 +8,7 @@ final class DaemonOptions {
     this.bind,
     this.printToken = false,
     this.rotateToken = false,
+    this.webDir,
     this.allowedOrigins = const [],
     this.help = false,
   });
@@ -18,6 +19,7 @@ final class DaemonOptions {
     InternetAddress? bind;
     var printToken = false;
     var rotateToken = false;
+    String? webDir;
     final allowedOrigins = <String>[];
     var help = false;
     for (var i = 0; i < args.length; i++) {
@@ -39,6 +41,8 @@ final class DaemonOptions {
           printToken = true;
         case '--rotate-token':
           rotateToken = true;
+        case '--web-dir':
+          webDir = _value(args, ++i, '--web-dir');
         case '--allow-origin':
           final raw = _value(args, ++i, '--allow-origin');
           final uri = Uri.tryParse(raw);
@@ -62,6 +66,7 @@ final class DaemonOptions {
       bind: bind,
       printToken: printToken || rotateToken,
       rotateToken: rotateToken,
+      webDir: webDir,
       allowedOrigins: allowedOrigins,
       help: help,
     );
@@ -72,6 +77,9 @@ final class DaemonOptions {
   final InternetAddress? bind;
   final bool printToken;
   final bool rotateToken;
+
+  /// Каталог готовой web-сборки. null — сервер отдаёт только API.
+  final String? webDir;
 
   /// Origin'ы браузера, которым разрешены CORS-запросы к API.
   final List<String> allowedOrigins;
@@ -94,6 +102,7 @@ Usage: pw_server [options]
   --bind <address>   bind address (default: 127.0.0.1)
   --print-token      print the API token on stdout
   --rotate-token     issue a new API token and print it
+  --web-dir <path>   serve a static web build from this directory
   --allow-origin <origin>
                      allow browser CORS from this origin (repeatable)
   -h, --help         show this help

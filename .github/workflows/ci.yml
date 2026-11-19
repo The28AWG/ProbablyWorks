@@ -58,8 +58,14 @@ jobs:
       - name: Analyze and test all packages
         run: tool/ci/test_packages.sh
 
-      - name: Build web client
-        run: flutter build web -t lib/main_web.dart --release
+      # Release собирает web только по тегу. Здесь проверяем оба entrypoint
+      # на каждом PR, чтобы поломка static/hosted не всплыла только в релизе.
+      - name: Build web clients
+        run: |
+          flutter build web -t lib/main_web.dart --release \
+            -o build/web-static --base-href=/
+          flutter build web -t lib/main_web_hosted.dart --release \
+            -o build/web-hosted --base-href=/
 
       - name: Integration test real daemon
         env:

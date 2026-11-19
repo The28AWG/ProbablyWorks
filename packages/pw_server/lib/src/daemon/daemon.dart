@@ -43,6 +43,7 @@ import 'package:pw_server/src/daemon/daemon_paths.dart';
 import 'package:pw_server/src/daemon/noop_appearance.dart';
 import 'package:pw_server/src/daemon/process_url_opener.dart';
 import 'package:pw_server/src/daemon/push_app_notifier.dart';
+import 'package:pw_server/src/web/static_web.dart';
 
 /// Запускает headless-демон. Возвращает код выхода.
 Future<int> runDaemon(List<String> args) async {
@@ -58,6 +59,14 @@ Future<int> runDaemon(List<String> args) async {
   if (options.help) {
     stdout.writeln(DaemonOptions.usage);
     return 0;
+  }
+
+  final StaticWeb? web;
+  try {
+    web = options.webDir == null ? null : StaticWeb.open(options.webDir!);
+  } on FormatException catch (error) {
+    stderr.writeln(error.message);
+    return 2;
   }
 
   final paths = await resolveDaemonPaths(explicit: options.dataDir);
@@ -133,6 +142,7 @@ Future<int> runDaemon(List<String> args) async {
     securityAuditApi: getIt<SecurityAuditApi>(),
     pushApi: getIt<PushApi>(),
     accessLog: accessLog,
+    web: web,
     allowedOrigins: options.allowedOrigins.toSet(),
   );
   final port = await server.start();
@@ -152,9 +162,12 @@ Future<int> runDaemon(List<String> args) async {
 
   final address = options.bind?.address ?? InternetAddress.loopbackIPv4.address;
   stdout.writeln('ProbablyWorks daemon listening on http://$address:$port');
+  if (web != null) stdout.writeln('Web UI: http://$address:$port/');
   if (!_isLoopback(options.bind)) {
+    final exposed = web == null ? 'API is' : 'API and web UI are';
     stderr.writeln(
-      'Warning: API is bound to $address. Use an SSH tunnel or a TLS proxy.',
+      'Warning: $exposed bound to $address. '
+      'Use an SSH tunnel or a TLS proxy.',
     );
   }
   if (options.printToken) stdout.writeln('API token: $token');

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:plugin_web/plugin_web.dart';
+import 'package:probably_works/app/bootstrap/web_host_config.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/guards/api_key_guard.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
@@ -24,7 +25,11 @@ import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Запуск web-клиента: только удалённые профили, без БД и локального агента.
-Future<void> bootstrapWeb() async {
+///
+/// [hosted] включает вариант, в котором страницу отдаёт сам сервер: адрес
+/// подключения по умолчанию берётся из текущего origin. Для отдельного
+/// статического хостинга остаётся прежний адрес локального демона.
+Future<void> bootstrapWeb({bool hosted = false}) async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = SharedPreferencesClientSettings(SharedPreferencesAsync());
   final secrets = FlutterSecretStore(const FlutterSecureStorage());
@@ -50,6 +55,9 @@ Future<void> bootstrapWeb() async {
     ..registerSingleton<LocalAgentApisProvider>(local)
     ..registerSingleton<ProfileService>(profiles)
     ..registerSingleton<AppNotifier>(const WebAppNotifier())
+    ..registerSingleton<WebHostConfig>(
+      hosted ? WebHostConfig.hosted() : WebHostConfig.staticHosting(),
+    )
     ..registerSingleton<ChatDraftStore>(ChatDraftStore.unbound())
     ..registerSingleton<LiveOutputBus>(LiveOutputBus())
     ..registerSingleton<StartupHosts>(const StartupHosts([]))

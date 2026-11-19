@@ -110,6 +110,39 @@ void main() {
     expect(jsonDecode(body), containsPair('ok', true));
   });
 
+  test('serves web without token and keeps API protected', () async {
+    final temp = Directory.systemTemp.createTempSync('pw_api_web_');
+    addTearDown(() => temp.deleteSync(recursive: true));
+    File(p.join(temp.path, 'index.html')).writeAsStringSync('<html>web</html>');
+    final webServer = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      web: StaticWeb.open(temp.path),
+    );
+    final webPort = await webServer.start();
+    final webClient = HttpClient();
+    addTearDown(() async {
+      webClient.close(force: true);
+      await webServer.stop();
+    });
+    final webBase = 'http://127.0.0.1:$webPort';
+
+    expect((await _request(webClient, webBase, 'GET', '/')).$1, HttpStatus.ok);
+    expect(
+      (await _request(webClient, webBase, 'GET', '/a/x/chats')).$1,
+      HttpStatus.ok,
+    );
+    expect(
+      (await _request(webClient, webBase, 'GET', '/api/v1/health')).$1,
+      HttpStatus.ok,
+    );
+    expect(
+      (await _request(webClient, webBase, 'GET', '/api/v1/chats')).$1,
+      HttpStatus.unauthorized,
+    );
+  });
+
   test('rate limits requests and returns Retry-After', () async {
     final limitedBackend = _FakeBackend();
     final limited = ApiServer(

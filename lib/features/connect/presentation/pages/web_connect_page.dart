@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_ui/app_ui.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:probably_works/app/bootstrap/web_host_config.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
@@ -23,7 +24,7 @@ class WebConnectPage extends StatefulWidget {
 
 class _WebConnectPageState extends State<WebConnectPage> {
   final _name = TextEditingController(text: 'ProbablyWorks');
-  final _url = TextEditingController(text: 'http://127.0.0.1:7787');
+  late final TextEditingController _url;
   final _token = TextEditingController();
   AgentProfile? _existing;
   var _busy = false;
@@ -32,6 +33,7 @@ class _WebConnectPageState extends State<WebConnectPage> {
   @override
   void initState() {
     super.initState();
+    _url = TextEditingController(text: _defaultServerUrl());
     final existing = getIt<ProfileService>().profiles
         .where((profile) => !profile.isLocal)
         .firstOrNull;
@@ -40,6 +42,13 @@ class _WebConnectPageState extends State<WebConnectPage> {
     _name.text = existing.name;
     if (existing.baseUri case final uri?) _url.text = uri.toString();
     unawaited(_checkExisting(existing));
+  }
+
+  /// В bundled-сборке API живёт на том же origin, что и страница. В
+  /// статическом web-клиенте остаётся адрес локального демона.
+  String _defaultServerUrl() {
+    if (!getIt.isRegistered<WebHostConfig>()) return 'http://127.0.0.1:7787';
+    return getIt<WebHostConfig>().defaultServerUrl;
   }
 
   Future<void> _checkExisting(AgentProfile profile) async {

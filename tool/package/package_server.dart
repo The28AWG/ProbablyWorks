@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'package_archive.dart';
+
 /// Собирает standalone-пакеты headless-сервера.
 ///
 /// Linux/macOS: tar.gz и (только Linux) DEB. Windows: zip. Внутри архива
@@ -23,7 +25,7 @@ Future<void> main(List<String> arguments) async {
   }
 
   final projectRoot = Directory.current;
-  final version = _readVersion(projectRoot);
+  final version = readVersion(projectRoot);
   if (version == null) {
     stderr.writeln('package_server: version not found in pubspec.yaml');
     exitCode = 2;
@@ -62,8 +64,9 @@ Future<void> main(List<String> arguments) async {
     final staging = Directory(p.join(temp.path, 'staging'));
     final app = Directory(p.join(staging.path, 'probably-works-server'))
       ..createSync(recursive: true);
-    _copyDirectory(Directory(p.join(bundle.path, 'bin')), app, 'bin');
-    _copyDirectory(Directory(p.join(bundle.path, 'lib')), app, 'lib');
+    copyDirectory(Directory(p.join(bundle.path, 'bin')), app, 'bin');
+    copyDirectory(Directory(p.join(bundle.path, 'lib')), app, 'lib');
+    ensureExecutable(p.join(app.path, 'bin', 'pw_server'));
     File(p.join(projectRoot.path, 'tool', 'server', 'README.md'))
         .copySync(p.join(app.path, 'README.md'));
     File(p.join(projectRoot.path, 'LICENSE'))
@@ -72,9 +75,17 @@ Future<void> main(List<String> arguments) async {
     final base =
         'probably-works-server-$version-${options.platform}-${options.arch}';
     if (options.platform == 'windows') {
-      await _zip(staging, File(p.join(output.path, '$base.zip')));
+      await zip(
+        staging,
+        File(p.join(output.path, '$base.zip')),
+        'probably-works-server',
+      );
     } else {
-      await _tarGz(staging, File(p.join(output.path, '$base.tar.gz')));
+      await tarGz(
+        staging,
+        File(p.join(output.path, '$base.tar.gz')),
+        'probably-works-server',
+      );
     }
     if (options.platform == 'linux') {
       await _deb(
@@ -108,7 +119,7 @@ final class _Options {
   const _Options({required this.platform, required this.arch, this.error});
 
   factory _Options.parse(List<String> arguments) {
-    var platform = _hostPlatform();
+    var platform = hostPlatform();
     var arch = 'x64';
     for (final argument in arguments) {
       if (argument.startsWith('--platform=')) {
@@ -145,75 +156,6 @@ final class _Options {
   final String? error;
 }
 
-String _hostPlatform() {
-  if (Platform.isLinux) return 'linux';
-  if (Platform.isMacOS) return 'macos';
-  if (Platform.isWindows) return 'windows';
-  throw UnsupportedError('Unsupported desktop platform');
-}
-
-String? _readVersion(Directory root) {
-  final pubspec = File(p.join(root.path, 'pubspec.yaml'));
-  if (!pubspec.existsSync()) return null;
-  final match = RegExp(
-    r'^version:\s*(.+)$',
-    multiLine: true,
-  ).firstMatch(pubspec.readAsStringSync());
-  return match?.group(1)?.trim();
-}
-
-void _copyDirectory(Directory source, Directory destination, String name) {
-  if (!source.existsSync()) {
-    throw StateError('${source.path} is missing');
-  }
-  final target = Directory(p.join(destination.path, name));
-  for (final entity in source.listSync(recursive: true)) {
-    final relative = p.relative(entity.path, from: source.path);
-    final path = p.join(target.path, relative);
-    if (entity is Directory) {
-      Directory(path).createSync(recursive: true);
-    } else if (entity is File) {
-      Directory(p.dirname(path)).createSync(recursive: true);
-      entity.copySync(path);
-    }
-  }
-  if (!Platform.isWindows) {
-    final executable = File(p.join(target.path, 'pw_server'));
-    if (executable.existsSync()) {
-      Process.runSync('chmod', ['755', executable.path]);
-    }
-  }
-}
-
-Future<void> _tarGz(Directory staging, File output) async {
-  final result = await Process.run('tar', [
-    '-czf',
-    output.path,
-    '-C',
-    staging.path,
-    'probably-works-server',
-  ]);
-  if (result.exitCode != 0) {
-    throw StateError('tar failed: ${result.stderr}');
-  }
-}
-
-Future<void> _zip(Directory staging, File output) async {
-  if (output.existsSync()) output.deleteSync();
-  final archivePath = p.join(staging.path, 'probably-works-server');
-  final escapedArchive = archivePath.replaceAll("'", "''");
-  final escapedOutput = output.path.replaceAll("'", "''");
-  final result = await Process.run('powershell', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    "Compress-Archive -Path '$escapedArchive' -DestinationPath '$escapedOutput' -Force",
-  ]);
-  if (result.exitCode != 0) {
-    throw StateError('Compress-Archive failed: ${result.stderr}');
-  }
-}
-
 Future<void> _deb(
   Directory staging,
   Directory output, {
@@ -223,16 +165,17 @@ Future<void> _deb(
 }) async {
   final root = Directory(p.join(staging.path, 'deb'))..createSync();
   final app = Directory(p.join(root.path, 'opt', 'probably-works-server'));
-  _copyDirectory(
+  copyDirectory(
     Directory(p.join(staging.path, 'probably-works-server', 'bin')),
     app,
     'bin',
   );
-  _copyDirectory(
+  copyDirectory(
     Directory(p.join(staging.path, 'probably-works-server', 'lib')),
     app,
     'lib',
   );
+  ensureExecutable(p.join(app.path, 'bin', 'pw_server'));
   File(p.join(projectRoot.path, 'LICENSE'))
       .copySync(p.join(app.path, 'LICENSE'));
 

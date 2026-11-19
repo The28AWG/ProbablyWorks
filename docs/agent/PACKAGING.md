@@ -113,9 +113,10 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 В репозитории три workflow:
 
 - `.github/workflows/ci.yml` — форматирование, `flutter analyze`,
-  `flutter test`, тесты всех пакетов и release-сборка web на каждый push в
-  `main` и pull request. DCM в CI не запускается из-за лицензии; для него
-  есть `tool/ci/check_local.sh` и необязательный pre-push hook;
+  `flutter test`, тесты всех пакетов и release-сборки обоих web-entrypoint’ов
+  на каждый push в `main` и pull request. DCM в CI не запускается из-за
+  лицензии; для него есть `tool/ci/check_local.sh` и необязательный pre-push
+  hook;
 - `.github/workflows/parity.yml` — проверка git/bash на закреплённых и
   системных версиях;
 - `.github/workflows/release.yml` — сборка релиза по тегу `v<version>`.
@@ -133,7 +134,7 @@ Windows EXE — в каталог установки, macOS — в `.app`.
 | `ubuntu-24.04` (snap) | Snap (`amd64`) | — |
 
 Сначала job `checks` вызывает CI целиком: форматирование, analyze, тесты,
-web-сборку и интеграционные проверки. После него `prepare` делает
+обе web-сборки и интеграционные проверки. После него `prepare` делает
 `flutter pub get`, генерацию l10n/DI и `build_runner`. Готовые
 сгенерированные файлы уходят в artifact `generated-sources`;
 платформенные job'ы скачивают его и не повторяют генерацию и тесты.
@@ -228,6 +229,38 @@ DEB ставит бинарник в `/opt/probably-works-server`, а коман
 `/usr/bin/pw-server`. Сервер не требует GTK и работает headless. Release
 workflow собирает сервер для Linux x64, Windows x64, macOS arm64 и x64 и
 прикладывает архивы к GitHub Release.
+
+## Web и server + web
+
+Web-клиент выпускается отдельно от сервера и в связке с ним. Это разные
+артефакты с разными целями.
+
+Статический web-клиент использует hash-навигацию и не требует rewrite:
+
+```bash
+dart run tool/package/package_web.dart --web-dir=build/web-static
+```
+
+Артефакт: `probably-works-web-<version>.tar.gz` (на Windows `.zip`). Внутри —
+готовая статика и README. Сервер запускается отдельно; для браузера
+настраивается `--allow-origin`.
+
+Дистрибутив «сервер + web» собирает `package_server_web.dart`:
+
+```bash
+dart run tool/package/package_server_web.dart \
+  --platform=linux --arch=x64 --web-dir=build/web-hosted
+```
+
+Артефакт: `probably-works-server-web-<version>-<platform>-<arch>.tar.gz`
+(на Windows `.zip`). Внутри отдельно `server/` и `web/`, launcher
+`start.sh`/`start.bat`, README и LICENSE. Launcher запускает сервер с
+`--web-dir web`. Web для этого варианта собирается из
+`lib/main_web_hosted.dart` с path-стратегией.
+
+Release workflow собирает оба варианта web (`main_web.dart` и
+`main_web_hosted.dart`) и упаковывает сервер+web на Linux, Windows и macOS.
+Подробности — в [docs/web/SERVER_WEB.md](../web/SERVER_WEB.md).
 
 ## OS-keyring в пакетах
 

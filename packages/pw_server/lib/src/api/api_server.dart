@@ -34,6 +34,7 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_rate_limiter.dart';
+import 'package:pw_server/src/web/static_web.dart';
 
 /// Локальный HTTP API поверх агента.
 ///
@@ -55,6 +56,7 @@ final class ApiServer {
     this.securityAuditApi,
     this.pushApi,
     this.accessLog,
+    this.web,
     this.allowedOrigins = const {},
     this.maxConcurrentRequests = 32,
     this.requestTimeout = const Duration(minutes: 5),
@@ -80,6 +82,9 @@ final class ApiServer {
   final SecurityAuditApi? securityAuditApi;
   final PushApi? pushApi;
   final ApiAccessLog? accessLog;
+
+  /// Статическая web-сборка. null — сервер работает только как API.
+  final StaticWeb? web;
   final String _token;
   final InternetAddress _address;
   final int _port;
@@ -134,6 +139,14 @@ final class ApiServer {
     try {
       if (_applyCors(request, response)) {
         audit = false;
+        return;
+      }
+
+      // Статика публичная и не должна расходовать API rate limit или слоты
+      // одновременных запросов. API-пути остаются ниже, под токеном.
+      if (web case final staticWeb? when !_isApiPath(request.uri.path)) {
+        audit = false;
+        await staticWeb.serve(request, response);
         return;
       }
 
@@ -321,6 +334,11 @@ final class ApiServer {
     }
     return _newRequestId();
   }
+
+  /// Пути API никогда не отдаются статикой, даже если файл с таким именем
+  /// случайно оказался в web-каталоге.
+  static bool _isApiPath(String path) =>
+      path == '/api' || path.startsWith('/api/');
 
   static String? _clientHeader(HttpRequest request, String name) {
     final value = request.headers.value(name);
