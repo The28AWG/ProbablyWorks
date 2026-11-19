@@ -36,7 +36,7 @@ jobs:
     steps:
       # Всегда main: артефакты любого запуска собираются из main, а не из ветки,
       # с которой нажали кнопку.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
 
