@@ -1,30 +1,51 @@
 name: Release
 
+# Выпуск GitHub Release: только то, что пользователь скачивает и ставит сам.
+# Дистрибуции в магазины (AAB, IPA, Snap) живут в отдельных workflow и в релиз не входят.
+#
+# Порядок: номер сборки на main → проверки и сборки на этом коммите → тег и
+# опубликованный релиз только при успехе всех сборок. Тег создаётся как следствие
+# успешной сборки, а не до неё.
+
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Маркетинговая версия X.Y.Z (номер сборки назначается автоматически)
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+# Общая группа со всеми workflow, которые меняют счётчик: релиз и дистрибуции идут по очереди.
 concurrency:
-  group: release-${{ github.ref }}
+  group: pipeline
   cancel-in-progress: false
 
 jobs:
+  bump:
+    name: Bump build number
+    uses: ./.github/workflows/bump-build-number.yml
+    with:
+      marketing_version: ${{ inputs.version }}
+
   checks:
     name: CI checks
+    needs: bump
     uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
 
   prepare:
     name: Prepare sources
-    needs: checks
+    needs: [bump, checks]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -65,11 +86,13 @@ jobs:
 
   web:
     name: Web client
-    needs: prepare
+    needs: [bump, prepare]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
 
       - name: Download generated sources
         uses: actions/download-artifact@v4
@@ -122,7 +145,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.artifact }}
-    needs: prepare
+    needs: [bump, prepare]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     strategy:
@@ -151,6 +174,8 @@ jobs:
             suffix: '-x64'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
 
       - name: Download generated sources
         uses: actions/download-artifact@v4
@@ -160,19 +185,6 @@ jobs:
 
       - name: Extract generated sources
         run: tar -xzf generated-sources.tar.gz
-
-      - name: Check tag matches pubspec version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^version: //p' pubspec.yaml | head -1)
-          expected="v${version}"
-          if [ "${GITHUB_REF_NAME}" != "${expected}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match pubspec version ${expected}."
-            echo "Create a tag like v${version} or update pubspec.yaml."
-            exit 1
-          fi
 
       - uses: subosito/flutter-action@v2
         with:
@@ -237,7 +249,7 @@ jobs:
 
   server:
     name: Server ${{ matrix.artifact }}
-    needs: prepare
+    needs: [bump, prepare]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -262,6 +274,8 @@ jobs:
             artifact: probably-works-server-macos-x64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
 
       - name: Download generated sources
         uses: actions/download-artifact@v4
@@ -297,7 +311,7 @@ jobs:
 
   server-web:
     name: Server + web ${{ matrix.artifact }}
-    needs: [prepare, web]
+    needs: [bump, prepare, web]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -322,6 +336,8 @@ jobs:
             artifact: probably-works-server-web-macos-x64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
 
       - name: Download generated sources
         uses: actions/download-artifact@v4
@@ -362,96 +378,105 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  snap:
-    name: Build Snap
-    needs: prepare
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+  android:
+    name: Android APK
+    needs: [bump, prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Секреты читаются на уровне job, потому что условие `if` на уровне step не видит secrets.
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      # Без секрета подписи APK не собирается и в релиз не попадает. Это не ошибка:
+      # релиз выходит без Android. Частично заданные секреты — ошибка конфигурации.
+      - name: Check signing secrets
+        id: signing
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Секрет подписи Android не задан: APK не войдёт в релиз."
+            exit 0
+          fi
+          if [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "Задан ANDROID_KEYSTORE_BASE64, но не заданы остальные секреты подписи."
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
       - name: Download generated sources
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/download-artifact@v4
         with:
           name: generated-sources
           path: .
 
       - name: Extract generated sources
+        if: steps.signing.outputs.enabled == 'true'
         run: tar -xzf generated-sources.tar.gz
 
       - uses: subosito/flutter-action@v2
+        if: steps.signing.outputs.enabled == 'true'
         with:
           flutter-version: 3.50.0
           channel: stable
           cache: true
 
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev \
-            liblzma-dev libsecret-1-dev libjsoncpp-dev libnotify-dev
-
-      - name: Resolve dependencies
-        run: flutter pub get
-
-      - name: Build Linux bundle
-        run: flutter build linux --release
-
-      - name: Add daemon to bundle
-        env:
-          PLATFORM: linux
-          BUILD_OUTPUT_DIRECTORY: ${{ github.workspace }}/build/linux/x64/release/bundle
-        run: dart run tool/package/prepare_daemon.dart
-
-      - name: Build snap
+      - name: Write signing configuration
+        if: steps.signing.outputs.enabled == 'true'
         run: |
           set -euo pipefail
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -w /work \
-            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
-            snapcraft pack --destructive-mode
-          sudo chown -R "$USER:$USER" .
-          mkdir -p dist
-          mv ./*.snap dist/
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+          {
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "storeFile=release.jks"
+          } > android/key.properties
 
-      - name: Upload snap
+      - name: Resolve dependencies
+        if: steps.signing.outputs.enabled == 'true'
+        run: flutter pub get
+
+      - name: Build release APK
+        if: steps.signing.outputs.enabled == 'true'
+        run: flutter build apk --release
+
+      - name: Collect APK
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          VERSION: ${{ needs.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/probably-works-${VERSION}-android.apk"
+
+      - name: Upload APK
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: probably-works-snap-amd64
+          name: probably-works-android
           path: dist/
           if-no-files-found: error
           retention-days: 14
 
-  snap-publish:
-    name: Publish Snap to Store
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: snap
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: probably-works-snap-amd64
-          path: dist
-
-      - name: Upload to Snap Store
-        env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        run: |
-          docker run --rm \
-            -e SNAPCRAFT_STORE_CREDENTIALS \
-            -v "$GITHUB_WORKSPACE:/work" \
-            -w /work \
-            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
-            snapcraft upload --release=edge dist/*.snap
-
   publish:
     name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, server, web, server-web, snap]
+    needs: [bump, build, server, web, server-web, android]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.bump.outputs.version }}
+      SHA: ${{ needs.bump.outputs.sha }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -461,13 +486,33 @@ jobs:
 
       - name: Generate checksums
         run: |
+          set -euo pipefail
           cd dist
-          find . -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/**
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+      # Релиз сначала создаётся черновиком, и ассеты загружаются в него. Черновик
+      # невидим пользователям, поэтому частичная загрузка не попадает наружу.
+      # Повторный запуск продолжает черновик; уже опубликованный релиз не трогается.
+      - name: Create draft release and upload assets
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if is_draft=$(gh release view "$tag" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [ "$is_draft" = "false" ]; then
+              echo "Релиз $tag уже опубликован. Номер сборки не переиспользуется."
+              exit 1
+            fi
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --target "$SHA" \
+              --title "ProbablyWorks ${VERSION}" \
+              --generate-notes \
+              --draft
+          fi
+
+      # Тег появляется здесь, на SHA успешной сборки. Пока релиз в черновике, тега может
+      # не быть; публикация создаёт его на target_commitish.
+      - name: Publish release
+        run: gh release edit "v${VERSION}" --draft=false

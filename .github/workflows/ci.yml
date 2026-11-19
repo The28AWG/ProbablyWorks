@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
+    inputs:
+      ref:
+        # Релиз и дистрибуция проверяют коммит со счётчиком, а не SHA вызывающего run:
+        # он появляется уже после bump-коммита. Пустое значение = обычный ref события.
+        description: Коммит, который нужно проверить
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -19,6 +27,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -77,6 +87,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: subosito/flutter-action@v2
         with:

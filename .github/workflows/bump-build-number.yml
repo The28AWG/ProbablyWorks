@@ -1,0 +1,82 @@
+name: Bump build number
+
+# Сквозной счётчик сборок: увеличивает `+N` в pubspec.yaml на main и коммитит результат.
+# Вызывается релизом и каждой дистрибуцией. Каждый вызов расходует номер, даже если
+# последующая сборка упала: пропуски допустимы, повторного использования номера нет.
+# Вызывающий workflow обязан объявить concurrency group, общую для всех, кто меняет
+# счётчик, иначе два запуска прочитают один и тот же N.
+
+on:
+  workflow_call:
+    inputs:
+      marketing_version:
+        description: Новая маркетинговая версия X.Y.Z; пусто — оставить текущую
+        required: false
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: Версия с новым номером сборки, например 1.0.2+121
+        value: ${{ jobs.bump.outputs.version }}
+      sha:
+        description: Коммит на main с новым номером сборки
+        value: ${{ jobs.bump.outputs.sha }}
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump build number
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      # Всегда main: артефакты любого запуска собираются из main, а не из ветки,
+      # с которой нажали кнопку.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Bump build number
+        id: bump
+        env:
+          MARKETING_VERSION: ${{ inputs.marketing_version }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "$MARKETING_VERSION" ]; then
+            if [[ ! "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Маркетинговая версия должна быть X.Y.Z, получено: $MARKETING_VERSION"
+              exit 1
+            fi
+            args+=(--marketing "$MARKETING_VERSION")
+          fi
+          version=$(dart run tool/release/bump_build_number.dart "${args[@]}")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Если main успел уйти вперёд, push отклоняется (non-fast-forward): запуск
+      # падает без частичного результата, и его можно перезапустить.
+      - name: Commit and push
+        id: push
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          git commit -m "chore(build): номер сборки ${VERSION}"
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

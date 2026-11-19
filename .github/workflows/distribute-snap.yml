@@ -1,0 +1,130 @@
+name: Distribute Snap
+
+# Дистрибуция в Snap Store. Не входит в GitHub Release: снап собирается и
+# отправляется отдельно, каждый запуск получает свой номер сборки.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Общая группа с релизом и другими дистрибуциями: счётчик меняется по очереди.
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump build number
+    uses: ./.github/workflows/bump-build-number.yml
+
+  checks:
+    name: CI checks
+    needs: bump
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
+
+  snap:
+    name: Build Snap
+    needs: [bump, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.0
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev \
+            liblzma-dev libsecret-1-dev libjsoncpp-dev libnotify-dev
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate localization
+        run: flutter gen-l10n
+
+      - name: Generate DI and routes
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Generate agent DI
+        working-directory: packages/pw_agent
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Linux bundle
+        run: flutter build linux --release
+
+      - name: Add daemon to bundle
+        env:
+          PLATFORM: linux
+          BUILD_OUTPUT_DIRECTORY: ${{ github.workspace }}/build/linux/x64/release/bundle
+        run: dart run tool/package/prepare_daemon.dart
+
+      - name: Build snap
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
+            snapcraft pack --destructive-mode
+          sudo chown -R "$USER:$USER" .
+          mkdir -p dist
+          mv ./*.snap dist/
+
+      - name: Upload snap
+        uses: actions/upload-artifact@v4
+        with:
+          name: probably-works-snap-amd64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish Snap to Store
+    needs: [bump, snap]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Секрет читается на уровне job: условие `if` на уровне step не видит secrets.
+    env:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    steps:
+      - name: Check store credentials
+        id: credentials
+        run: |
+          if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Секрет SNAPCRAFT_STORE_CREDENTIALS не задан: отправка в Snap Store пропущена."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        if: steps.credentials.outputs.enabled == 'true'
+        with:
+          name: probably-works-snap-amd64
+          path: dist
+
+      # Ошибка отправки видна в статусе run'а: номер уже израсходован, поэтому
+      # повторный запуск безопасен и получит следующий номер.
+      - name: Upload to Snap Store
+        if: steps.credentials.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e SNAPCRAFT_STORE_CREDENTIALS \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            myroslavmail/snapcraft@sha256:641e5191de3891925e6bb14be6cc24663add54af59762d37686604856e4a2573 \
+            snapcraft upload --release=edge dist/*.snap
