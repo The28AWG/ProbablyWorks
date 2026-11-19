@@ -59,9 +59,10 @@ class HostCard extends StatelessWidget {
         ? (AppTone.success, l10n.hostStatusOnline)
         : (AppTone.neutral, l10n.hostStatusUnknown);
     // У локального хоста нет адреса: он всегда на этом компьютере, поэтому показываем систему.
+    // Подпись с версией приходит от агента, а если её нет — прежнее имя семейства HostOs.
     // У виртуального адреса тоже нет: он живёт в приложении, поэтому показываем пояснение.
     final address = switch (host.kind) {
-      HostKind.local => _osLabel(host.os, l10n),
+      HostKind.local => host.systemLabel ?? _osLabel(host.os, l10n),
       HostKind.virtual => l10n.hostVirtualSubtitle,
       HostKind.ssh =>
         '${host.username ?? ''}@${host.address ?? ''}:${host.port}',

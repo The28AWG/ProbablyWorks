@@ -8,6 +8,7 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/platform/local_system_info.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
@@ -51,6 +52,26 @@ void main() {
       expect(loaded.notes, 'prod API box');
       expect(loaded.connectTimeoutSeconds, 7);
       expect(loaded.lastCheckAt, isNull);
+    },
+  );
+
+  test(
+    'система заполняется только у локального Host и не пишется в БД',
+    () async {
+      await hosts.ensureLocalHost(now);
+      final expected = LocalSystemInfo.current?.displayName;
+      expect(expected, isNotNull);
+
+      final local = (await hosts.byId(HostRepository.localHostId))!;
+      expect(local.systemLabel, expected);
+
+      // Значение из формы или API не должно пережить запись и чтение.
+      await hosts.save(sshHost().copyWith(systemLabel: 'чужая система'));
+      expect((await hosts.byId('h1'))!.systemLabel, isNull);
+
+      final raw = await db.customSelect('SELECT * FROM hosts').get();
+      final joined = raw.map((row) => row.data.values.join('\n')).join('\n');
+      expect(joined, isNot(contains('чужая система')));
     },
   );
 

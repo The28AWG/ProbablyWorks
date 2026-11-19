@@ -1,7 +1,7 @@
-import 'package:app_ui/app_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
+import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_card.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -11,6 +11,7 @@ final _local = Host(
   name: 'Local',
   kind: HostKind.local,
   os: HostOs.posix,
+  systemLabel: 'Ubuntu 24.04.1 LTS',
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),
 );
@@ -78,15 +79,33 @@ void main() {
     expect(find.text(l10n.hostNeverChecked), findsNothing);
   });
 
-  testWidgets('the local computer shows its system name, not the raw code', (
+  testWidgets('the local computer shows the system label from the Host', (
     tester,
   ) async {
     final log = <String>[];
-    final l10n = await _pump(tester, _local, log);
+    await _pump(tester, _local, log);
 
-    expect(find.text(l10n.hostOsPosix), findsOneWidget);
+    expect(find.text('Ubuntu 24.04.1 LTS'), findsOneWidget);
     expect(find.text('posix'), findsNothing);
   });
+
+  testWidgets(
+    'a local Host without a system label falls back to its OS family',
+    (tester) async {
+      final log = <String>[];
+      final host = Host(
+        id: 'local',
+        name: 'Local',
+        kind: HostKind.local,
+        os: HostOs.posix,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final l10n = await _pump(tester, host, log);
+
+      expect(find.text(l10n.hostOsPosix), findsOneWidget);
+    },
+  );
 
   testWidgets('the local computer can still be edited but not deleted', (
     tester,

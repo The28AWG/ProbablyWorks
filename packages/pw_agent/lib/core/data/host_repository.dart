@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/domain/host.dart';
+import 'package:pw_agent/core/platform/local_system_info.dart';
 import 'package:pw_agent/core/platform/platform_profile.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 
@@ -98,28 +99,36 @@ class HostRepository {
     return hosts;
   }
 
-  Future<Host> _toDomain(HostRow row) async => Host(
-    id: row.id,
-    name: row.name,
-    kind: HostKind.values.byName(row.kind),
-    address: row.address,
-    port: row.port,
-    username: row.username,
-    authType: SshAuthType.values.byName(row.authType),
-    keyPath: row.keyPath,
-    hostKeyFingerprint: row.hostKeyFingerprint,
-    os: HostOs.values.byName(row.osFamily),
-    defaultWorkspace: row.defaultWorkspace,
-    shellOverride: row.shellOverride,
-    notes: row.notes,
-    connectTimeoutSeconds: row.connectTimeoutSeconds,
-    lastCheckAt: row.lastCheckAt,
-    lastLatencyMs: row.lastLatencyMs,
-    lastCheckError: row.lastCheckError,
-    environment: await _readEnvironment(row.id),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  );
+  Future<Host> _toDomain(HostRow row) async {
+    final kind = HostKind.values.byName(row.kind);
+    return Host(
+      id: row.id,
+      name: row.name,
+      kind: kind,
+      address: row.address,
+      port: row.port,
+      username: row.username,
+      authType: SshAuthType.values.byName(row.authType),
+      keyPath: row.keyPath,
+      hostKeyFingerprint: row.hostKeyFingerprint,
+      os: HostOs.values.byName(row.osFamily),
+      // Подпись системы относится к машине, где работает агент, поэтому есть
+      // только у локального Host. В БД её нет: она вычисляется при чтении.
+      systemLabel: kind == HostKind.local
+          ? LocalSystemInfo.current?.displayName
+          : null,
+      defaultWorkspace: row.defaultWorkspace,
+      shellOverride: row.shellOverride,
+      notes: row.notes,
+      connectTimeoutSeconds: row.connectTimeoutSeconds,
+      lastCheckAt: row.lastCheckAt,
+      lastLatencyMs: row.lastLatencyMs,
+      lastCheckError: row.lastCheckError,
+      environment: await _readEnvironment(row.id),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    );
+  }
 
   HostsCompanion _toRow(Host host) => HostsCompanion.insert(
     id: host.id,

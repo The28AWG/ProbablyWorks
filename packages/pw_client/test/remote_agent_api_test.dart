@@ -91,6 +91,7 @@ void main() {
 
     expect(chats.single.title, 'Test chat');
     expect(hosts.single.id, 'local');
+    expect(hosts.single.systemLabel, 'Ubuntu 24.04.1 LTS');
     expect(messages.single.text, 'hello');
     expect(runs.single.status, ToolRunStatus.done);
     expect(runs.single.resultError, isTrue);
@@ -716,6 +717,7 @@ final class _FakeAgent implements AgentApi {
       kind: HostKind.local,
       createdAt: DateTime.utc(2026, 11, 11),
       updatedAt: DateTime.utc(2026, 11, 11),
+      systemLabel: 'Ubuntu 24.04.1 LTS',
       lastCheckAt: DateTime(2026, 11, 11, 12, 30),
       lastLatencyMs: 12,
     ),

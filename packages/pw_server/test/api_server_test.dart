@@ -392,7 +392,9 @@ void main() {
     );
 
     expect(hostsStatus, HttpStatus.ok);
-    expect((jsonDecode(hostsBody) as Map)['hosts'], hasLength(1));
+    final host =
+        ((jsonDecode(hostsBody) as Map)['hosts'] as List).single as Map;
+    expect(host['systemLabel'], 'Ubuntu 24.04.1 LTS');
     expect(createStatus, HttpStatus.created);
     expect((jsonDecode(createBody) as Map)['hostId'], 'local');
   });
@@ -1746,6 +1748,7 @@ final class _FakeBackend implements AgentApi {
       id: 'local',
       name: 'Local',
       kind: HostKind.local,
+      systemLabel: 'Ubuntu 24.04.1 LTS',
       createdAt: DateTime(2026, 11, 11),
       updatedAt: DateTime(2026, 11, 11),
       lastCheckAt: DateTime(2026, 11, 11, 12, 30),

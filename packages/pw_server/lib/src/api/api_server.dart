@@ -2279,6 +2279,7 @@ Map<String, Object?> _hostJson(Host host) => {
   'keyPath': host.keyPath,
   'hostKeyFingerprint': host.hostKeyFingerprint,
   'os': host.os.name,
+  'systemLabel': host.systemLabel,
   'defaultWorkspace': host.defaultWorkspace,
   'shellOverride': host.shellOverride,
   'notes': host.notes,

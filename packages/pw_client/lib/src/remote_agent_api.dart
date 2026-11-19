@@ -1899,6 +1899,9 @@ Host _host(Map<String, dynamic> json) => Host(
   keyPath: json['keyPath'] as String?,
   hostKeyFingerprint: json['hostKeyFingerprint'] as String?,
   os: HostOs.values.byName('${json['os'] ?? 'posix'}'),
+  systemLabel: json['systemLabel'] is String
+      ? json['systemLabel'] as String
+      : null,
   defaultWorkspace: json['defaultWorkspace'] as String?,
   shellOverride: json['shellOverride'] as String?,
   notes: json['notes'] as String?,

@@ -39,6 +39,7 @@ class Host {
     this.keyPath,
     this.hostKeyFingerprint,
     this.os = HostOs.posix,
+    this.systemLabel,
     this.defaultWorkspace,
     this.shellOverride,
     this.notes,
@@ -59,6 +60,15 @@ class Host {
   final String? keyPath;
   final String? hostKeyFingerprint;
   final HostOs os;
+
+  /// Человекочитаемая система машины Host: «Ubuntu 24.04.1 LTS»,
+  /// «macOS 15.1.1», «Windows 11 Pro 23H2», «Android 14».
+  ///
+  /// Заполняется только у [HostKind.local] при чтении из репозитория или из
+  /// ответа агента. В БД не хранится: [HostOs] остаётся диалектом оболочки,
+  /// а здесь — подпись для интерфейса. null — система не сообщила название.
+  final String? systemLabel;
+
   final String? defaultWorkspace;
   final String? shellOverride;
   final String? notes;
@@ -92,6 +102,7 @@ class Host {
     String? hostKeyFingerprint,
     bool clearHostKeyFingerprint = false,
     HostOs? os,
+    String? systemLabel,
     String? defaultWorkspace,
     String? shellOverride,
     String? notes,
@@ -117,6 +128,7 @@ class Host {
         ? null
         : (hostKeyFingerprint ?? this.hostKeyFingerprint),
     os: os ?? this.os,
+    systemLabel: systemLabel ?? this.systemLabel,
     defaultWorkspace: defaultWorkspace ?? this.defaultWorkspace,
     shellOverride: shellOverride ?? this.shellOverride,
     notes: notes ?? this.notes,
