@@ -71,7 +71,7 @@ jobs:
         run: |
           tar -czf generated-sources.tar.gz \
             lib/app/router/app_router.gr.dart \
-            lib/app/di/injection.config.dart \
+            lib/app/di/injection_native.config.dart \
             lib/l10n/generated \
             packages/pw_agent/lib/agent_di.config.dart \
             packages/pw_agent/lib/core/db/app_database.g.dart
