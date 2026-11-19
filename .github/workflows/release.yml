@@ -217,6 +217,10 @@ jobs:
         if: matrix.platform == 'macos'
         run: npm install --global appdmg
 
+      - name: Select Xcode 26
+        if: matrix.platform == 'macos'
+        uses: ./.github/actions/select-xcode
+
       - name: Resolve dependencies
         run: flutter pub get
 

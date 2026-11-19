@@ -113,6 +113,7 @@ jobs:
           channel: stable
           cache: true
       - uses: ./.github/actions/generate
+      - uses: ./.github/actions/select-xcode
       - name: Build macOS GUI
         run: flutter build macos --release
       - name: Add headless daemon

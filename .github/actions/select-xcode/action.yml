@@ -1,0 +1,25 @@
+name: Select Xcode 26
+description: >-
+  Выбирает установленный Xcode 26.x для сборки macOS. Плагин connectivity_plus
+  использует API, которого нет в SDK macOS 15, поэтому Xcode 16 не подходит.
+  Образы runner'ов ставят несколько версий рядом; берётся самая новая.
+
+runs:
+  using: composite
+  steps:
+    - name: Select newest Xcode 26.x
+      shell: bash
+      run: |
+        set -euo pipefail
+        xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+        if [ -z "$xcode" ]; then
+          echo "На runner нет Xcode 26.x: сборка macOS требует SDK macOS 26."
+          exit 1
+        fi
+        echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+        sdk_major=$(DEVELOPER_DIR="$xcode/Contents/Developer" xcrun --show-sdk-version | cut -d. -f1)
+        if [ "$sdk_major" -lt 26 ]; then
+          echo "SDK macOS $sdk_major в $xcode, нужен 26 или новее."
+          exit 1
+        fi
+        echo "Используется $xcode (SDK macOS $sdk_major)"
