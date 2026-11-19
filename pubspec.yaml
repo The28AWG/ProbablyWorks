@@ -2,7 +2,7 @@ name: probably_works
 description: "Настольный ИИ-агент для локальной машины и SSH; модели через OpenRouter, llama.cpp и локальные GGUF."
 publish_to: 'none'
 
-version: 1.0.0+4
+version: 1.0.0+5
 
 environment:
   sdk: ^3.14.0
