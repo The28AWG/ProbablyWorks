@@ -488,6 +488,22 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Пакеты лежат в dist/<version>/, а gh принимает файлы, не каталоги. Имена файлов
+      # содержат версию и платформу, поэтому конфликт имён считается ошибкой.
+      - name: Flatten artifacts
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            name=$(basename "$file")
+            if [ -e "dist/$name" ]; then
+              echo "Конфликт имён артефактов: $name"
+              exit 1
+            fi
+            mv "$file" dist/
+          done < <(find dist -mindepth 2 -type f -print0)
+          find dist -mindepth 1 -type d -empty -delete
+          ls -la dist
+
       - name: Generate checksums
         run: |
           set -euo pipefail
