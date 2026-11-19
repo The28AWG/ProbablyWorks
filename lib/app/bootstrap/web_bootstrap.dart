@@ -29,11 +29,12 @@ Future<void> bootstrapWeb() async {
   final settings = SharedPreferencesClientSettings(SharedPreferencesAsync());
   final secrets = FlutterSecretStore(const FlutterSecureStorage());
   final local = LocalAgentApisProvider();
+  final clientInfo = const ClientInfo.fallback();
   final profiles = ProfileService(
     settings,
     secrets,
     local,
-    const ClientInfo.fallback(),
+    clientInfo,
     const WebAppNotifier(),
     includeLocal: false,
   );
@@ -44,6 +45,7 @@ Future<void> bootstrapWeb() async {
 
   getIt
     ..registerSingleton<ClientSettings>(settings)
+    ..registerSingleton<ClientInfo>(clientInfo)
     ..registerSingleton<SecretStore>(secrets)
     ..registerSingleton<LocalAgentApisProvider>(local)
     ..registerSingleton<ProfileService>(profiles)
