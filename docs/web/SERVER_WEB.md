@@ -37,14 +37,14 @@ Server-only и web-only можно использовать вместе: web н
 Web для bundled-варианта использует path-стратегию:
 
 ```bash
-flutter build web -t lib/main_web_hosted.dart --release \
+flutter build web -t lib/main_web_hosted.dart --wasm --release \
   -o build/web-hosted --base-href=/
 ```
 
 Web-only релиз использует hash-стратегию и не требует rewrite:
 
 ```bash
-flutter build web -t lib/main_web.dart --release \
+flutter build web -t lib/main_web.dart --wasm --release \
   -o build/web-static --base-href=/
 ```
 
@@ -61,6 +61,29 @@ dart run tool/package/package_server_web.dart \
 
 Оба скрипта без `--web-dir` собирают соответствующую web-сборку сами.
 Артефакты кладутся в `dist/<version>/`.
+
+## Wasm и заголовки
+
+Сборка с `--wasm` содержит оба варианта: WebAssembly для браузеров с
+WasmGC и JS-fallback для остальных. Выбор делает `flutter_bootstrap.js` при
+старте. В Flutter 3.50 Wasm по умолчанию включён для Chromium 137+; Safari и
+Firefox получают JavaScript, пока для них явно не включён `wasmAllowList`.
+
+Многопоточный Skwasm включается только при cross-origin isolation. Сервер
+`pw_server` выставляет для HTML-документа:
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+Без этих заголовков Wasm работает в однопоточном режиме — это допустимый
+режим, но медленнее. На ассеты и ответы API заголовки не ставятся.
+
+Внешний статический хостинг должен отдавать `.wasm` с
+`Content-Type: application/wasm`, а `.mjs` — как JavaScript. Заголовки
+изоляции на нём настраиваются отдельно; если хостинг их не поддерживает,
+Wasm останется однопоточным.
 
 ## URL rewrite
 
@@ -80,7 +103,7 @@ dart run tool/package/package_server_web.dart \
 - `/api/v1/**` — Bearer-токен;
 - `/` и SPA-маршруты — `index.html`;
 - `assets/**`, `canvaskit/**`, `icons/**` — только реальные файлы;
-- отсутствующий `.js`/`.css`/`.wasm` — `404`, не `index.html`.
+- отсутствующий `.js`/`.mjs`/`.css`/`.wasm` — `404`, не `index.html`.
 
 Статика публичная, API защищён токеном. Web должен находиться в корне origin:
 `RemoteAgentApi` обращается к `/api/v1` от корня.

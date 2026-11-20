@@ -20,6 +20,7 @@ void main() {
     File(p.join(temp.path, 'assets', 'app.js'))
         .writeAsStringSync('console.log(1);');
     File(p.join(temp.path, 'assets', 'style.css')).writeAsStringSync('body{}');
+    File(p.join(temp.path, 'main.dart.mjs')).writeAsStringSync('export {};');
     Directory(p.join(temp.path, 'canvaskit')).createSync();
     File(p.join(temp.path, 'canvaskit', 'canvaskit.wasm'))
         .writeAsBytesSync([0, 97, 115, 109]);
@@ -65,6 +66,38 @@ void main() {
 
     expect(response.status, HttpStatus.ok);
     expect(response.headers.contentType?.mimeType, 'application/wasm');
+  });
+
+  test('serves the wasm module loader as JavaScript', () async {
+    final response = await _request(client, base, '/main.dart.mjs');
+
+    expect(response.status, HttpStatus.ok);
+    expect(response.headers.contentType?.mimeType, 'text/javascript');
+    expect(response.body, 'export {};');
+  });
+
+  test('enables cross-origin isolation for HTML documents', () async {
+    for (final path in ['/', '/a/profile/chats']) {
+      final response = await _request(client, base, path);
+
+      expect(response.status, HttpStatus.ok, reason: 'path $path');
+      expect(
+        response.headers.value('cross-origin-opener-policy'),
+        'same-origin',
+        reason: 'path $path',
+      );
+      expect(
+        response.headers.value('cross-origin-embedder-policy'),
+        'require-corp',
+        reason: 'path $path',
+      );
+    }
+  });
+
+  test('does not add cross-origin isolation to assets', () async {
+    final response = await _request(client, base, '/assets/app.js');
+
+    expect(response.headers.value('cross-origin-opener-policy'), isNull);
   });
 
   test('falls back to index.html for an extensionless route', () async {

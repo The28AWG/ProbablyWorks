@@ -13,13 +13,19 @@
   path-навигацию и SPA fallback. Устройство bundled-варианта описано в
   [SERVER_WEB.md](SERVER_WEB.md).
 
-Дата проверки: 13 ноября 2026. Проверки выполнялись на Linux в Chrome против
+Дата проверки: 20 ноября 2026. Проверки выполнялись на Linux в Chrome против
 реального демона. Сборка web проверена отдельно.
+
+С 20 ноября 2026 обе сборки выпускаются с `--wasm`: Chromium 137+ исполняет
+WebAssembly, остальные браузеры автоматически получают JS-fallback из той же
+сборки.
 
 ## 1. Что реализовано
 
 - Точка входа `lib/main_web.dart` и отдельный bootstrap
   `lib/app/bootstrap/web_bootstrap.dart`.
+- Web-сборка компилируется в WebAssembly (`--wasm`); `flutter_bootstrap.js`
+  выбирает Wasm или JS-fallback по поддержке WasmGC и `wasmAllowList`.
 - В web-bootstrap нет локальной БД, `AgentHub`, MCP-клиента и SSH. В DI
   регистрируются только клиентские зависимости: настройки, `SecretStore`,
   профили, роутер, локаль, тема, клавиши, `WebAppNotifier` и пустые реестры
@@ -83,7 +89,8 @@
 ## 4. Ограничения текущего среза
 
 - **Вложения.** Реализовано чтение байтов через `file_selector` и
-  `classifyAttachmentBytes`, но отдельного ручного прогона web-вложений нет.
+  `classifyAttachmentBytes`, но отдельного ручного прогона web-вложений нет;
+  под Wasm этот сценарий тоже не проверялся.
 - **Уведомления.** `WebAppNotifier` — заглушка. Разрешения браузера,
   Service Worker и фоновая вкладка не проверены.
 - **Плагины.** Реестры UI-плагинов и команд плагинов в web пустые: локальные
@@ -96,6 +103,12 @@
   размещается в корне сайта. URL используют hash-навигацию, поэтому rewrite
   не нужен. Bundled-вариант отдаёт сервер; он описан в
   [SERVER_WEB.md](SERVER_WEB.md).
+- **Браузеры Wasm.** В Flutter 3.50 Wasm по умолчанию работает в Chromium
+  137+. Safari и Firefox получают JS-fallback, пока для них явно не включён
+  `wasmAllowList`. Fallback проверяется автоматически при старте.
+- **Многопоточность.** Bundled-сервер выставляет COOP/COEP и включает
+  многопоточный Skwasm. На внешнем статическом хостинге без этих заголовков
+  Wasm работает в однопоточном режиме.
 - **Выгрузка вкладки.** Поведение при закрытии/засыпании вкладки и потере SSE
   на редких конфигурациях отдельно не проверялось.
 - **Тесты.** Раздача статики, SPA fallback, traversal и защита API покрыты
@@ -106,14 +119,10 @@
 
 ## 5. Проверки и измерения
 
-Выполнено 13 ноября 2026:
+Базовая JS-сборка до включения Wasm (13 ноября 2026):
 
 | Проверка | Результат |
 |---|---|
-| `flutter test` | 1067 прошло, 12 пропущено |
-| `flutter analyze` | без замечаний |
-| `dcm analyze lib test` | без замечаний |
-| `dart format --output=none --set-exit-if-changed lib test` | без изменений |
 | `flutter build web -t lib/main_web.dart` | успешно, около 40 секунд |
 | `build/web` | 47 МБ, 51 файл |
 | `probably-works-web.tar.gz` из `build/web` | около 16 МБ |
@@ -122,6 +131,33 @@
 `MaterialIcons` и `CupertinoIcons`. Основной объём даёт `canvaskit` (37 МБ),
 затем `main.dart.js` (6 МБ) и `assets` (4 МБ).
 
+Wasm-сборка (20 ноября 2026):
+
+| Проверка | Результат |
+|---|---|
+| `flutter build web -t lib/main_web.dart --wasm --release` | успешно, 52 секунды |
+| `flutter build web -t lib/main_web_hosted.dart --wasm --release` | успешно, 53 секунды |
+| `build/web` с Wasm | 53 МБ: `main.dart.wasm` 5,6 МБ, `main.dart.js` 6,5 МБ, Skwasm 3,5 МБ |
+| `probably-works-web.tar.gz` | около 18 МБ |
+| Chrome 157, headless | загружены `main.dart.wasm`, `main.dart.mjs`, `skwasm.wasm` |
+| Подключение к демону | токен, профиль, `FlutterSecureStorage`, чаты и настройки |
+| SSE `/api/v1/events` | соединение открыто 30 секунд |
+| COOP/COEP и отдельный API-origin | `crossOriginIsolated: true`, API и SSE работают |
+
+`main.dart.js` в Wasm-сборке — это штатный JS-fallback, а не второй
+обязательный файл. Браузер загружает либо Wasm, либо JavaScript.
+
+Проверки правки (20 ноября 2026):
+
+| Проверка | Результат |
+|---|---|
+| `flutter test` | 1328 прошло, 15 пропущено |
+| `flutter analyze` | без замечаний |
+| `dcm analyze lib test` | без замечаний |
+| `dart format --output=none --set-exit-if-changed lib test tool packages` | без изменений |
+| `dart test` в `packages/pw_server` | 15 прошло |
+| `tool/ci/test_packages.sh` | все пакеты прошли |
+
 Ручной сценарий против реального демона: подключение по адресу и токену,
 открытие чатов, настройки, потеря сервера, offline-баннер, Retry и возврат
 списков. Вложения, браузерные уведомления и выгрузка вкладки в этот прогон не
@@ -129,9 +165,9 @@
 
 ## 6. CI, релиз и артефакты
 
-`ci.yml` собирает оба web-entrypoint’а: статический `lib/main_web.dart` и
-hosted `lib/main_web_hosted.dart`. Это ловит поломки path-стратегии и
-bundled-сборки до релиза.
+`ci.yml` собирает оба web-entrypoint’а с `--wasm`: статический
+`lib/main_web.dart` и hosted `lib/main_web_hosted.dart`. Это ловит поломки
+path-стратегии, Wasm-компиляции, JS-fallback и bundled-сборки до релиза.
 
 `release.yml` выпускает три независимых группы артефактов:
 
@@ -165,14 +201,14 @@ wildcard использовать нельзя.
   --allow-origin http://localhost:8080 \
   --allow-origin http://127.0.0.1:8080)
 
-flutter run -d chrome -t lib/main_web.dart \
+flutter run -d chrome --wasm -t lib/main_web.dart \
   --web-hostname localhost --web-port 8080
 ```
 
 Production-сборка:
 
 ```bash
-flutter build web -t lib/main_web.dart --release \
+flutter build web -t lib/main_web.dart --wasm --release \
   -o build/web-static --base-href=/
 # содержимое build/web-static отдать статическим сервером в корне домена
 ```
@@ -180,7 +216,7 @@ flutter build web -t lib/main_web.dart --release \
 Для bundled-варианта:
 
 ```bash
-flutter build web -t lib/main_web_hosted.dart --release \
+flutter build web -t lib/main_web_hosted.dart --wasm --release \
   -o build/web-hosted --base-href=/
 dart run tool/package/package_server_web.dart \
   --platform=linux --arch=x64 --web-dir=build/web-hosted
@@ -202,7 +238,8 @@ dart run tool/package/package_server_web.dart \
 - `packages/pw_server/lib/src/api/api_server.dart` — CORS, API и ранняя
   обработка статики.
 - `packages/pw_server/lib/src/web/static_web.dart` — раздача web-сборки,
-  SPA fallback и защита путей.
+  MIME-типы `.wasm`/`.mjs`, cross-origin isolation, SPA fallback и защита
+  путей.
 - `lib/app/backend/backend_status.dart` — offline-баннер и заглушка.
 - `lib/core/platform/app_platform.dart` — отключение локального Host в web.
 - `lib/core/notify/web_app_notifier.dart` — заглушка уведомлений.

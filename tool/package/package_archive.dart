@@ -59,6 +59,10 @@ void ensureExecutable(String path) {
 }
 
 /// Собирает Flutter web в указанный каталог.
+///
+/// Всегда включает `--wasm`: браузеры с WasmGC исполняют WebAssembly, а
+/// остальные получают JS-fallback, который Flutter кладёт в ту же сборку.
+/// Так релиз не теряет поддержку старых браузеров.
 Future<void> buildWeb(
   Directory projectRoot,
   String entrypoint,
@@ -72,6 +76,7 @@ Future<void> buildWeb(
       'web',
       '-t',
       entrypoint,
+      '--wasm',
       '--release',
       '-o',
       output.path,

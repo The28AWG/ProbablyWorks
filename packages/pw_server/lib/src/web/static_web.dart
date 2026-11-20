@@ -46,9 +46,20 @@ final class StaticWeb {
     'flutter.js',
     'flutter_bootstrap.js',
     'main.dart.js',
+    'main.dart.wasm',
+    'main.dart.mjs',
     'flutter_service_worker.js',
     'version.json',
     'manifest.json',
+  };
+
+  /// Заголовки cross-origin isolation для HTML-документа.
+  ///
+  /// С ними Flutter выбирает многопоточный Skwasm. На ассеты и ответы API их
+  /// ставить не нужно: изоляция — свойство документа, а не отдельного файла.
+  static const _crossOriginIsolationHeaders = {
+    'cross-origin-opener-policy': 'same-origin',
+    'cross-origin-embedder-policy': 'require-corp',
   };
 
   static const _contentTypes = {
@@ -203,6 +214,11 @@ final class StaticWeb {
       ..set(HttpHeaders.cacheControlHeader, _cacheControlFor(path))
       ..set('x-content-type-options', 'nosniff')
       ..set('referrer-policy', 'no-referrer');
+    if (p.extension(path).toLowerCase() == '.html') {
+      for (final header in _crossOriginIsolationHeaders.entries) {
+        response.headers.set(header.key, header.value);
+      }
+    }
 
     if (_isNotModified(request, etag, stat.modified)) {
       response.statusCode = HttpStatus.notModified;

@@ -70,11 +70,12 @@ jobs:
 
       # Release собирает web только по тегу. Здесь проверяем оба entrypoint
       # на каждом PR, чтобы поломка static/hosted не всплыла только в релизе.
+      # --wasm проверяет WebAssembly и заодно компилирует JS-fallback.
       - name: Build web clients
         run: |
-          flutter build web -t lib/main_web.dart --release \
+          flutter build web -t lib/main_web.dart --wasm --release \
             -o build/web-static --base-href=/
-          flutter build web -t lib/main_web_hosted.dart --release \
+          flutter build web -t lib/main_web_hosted.dart --wasm --release \
             -o build/web-hosted --base-href=/
 
       - name: Integration test real daemon

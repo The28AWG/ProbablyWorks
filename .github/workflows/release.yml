@@ -114,12 +114,12 @@ jobs:
 
       - name: Build static web client
         run: >-
-          flutter build web -t lib/main_web.dart --release
+          flutter build web -t lib/main_web.dart --wasm --release
           -o build/web-static --base-href=/
 
       - name: Build hosted web client
         run: >-
-          flutter build web -t lib/main_web_hosted.dart --release
+          flutter build web -t lib/main_web_hosted.dart --wasm --release
           -o build/web-hosted --base-href=/
 
       - name: Package static web client
