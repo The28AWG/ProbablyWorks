@@ -6,7 +6,6 @@ import 'package:plugin_api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/plugins/network_guard.dart';
-import 'package:pw_agent/agent/plugins/plugin_file_reader.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/agent/tools/tool_name.dart';
 import 'package:pw_agent/agent/tools/tool_source.dart';
@@ -158,34 +157,9 @@ final class _PluginHost implements PluginHost {
   }
 
   @override
-  Future<PluginFileReader> readFile(String path) => ReadFileCursor.open(
-    (offset, byteOffset, first) =>
-        _readChunk(path, offset, byteOffset, first: first),
-  );
-
-  @override
-  Future<PluginFileResult> readAll(String path) async {
-    final reader = await readFile(path);
-    while (!reader.done) {
-      await reader.next();
-    }
-    return PluginFileResult(reader.text, isError: reader.isError);
-  }
-
-  Future<({String text, bool isError})> _readChunk(
-    String path,
-    int offset,
-    int byteOffset, {
-    required bool first,
-  }) async {
-    final result = await _files.readFileChunkForPlugin(
-      _context,
-      path,
-      offset: offset,
-      byteOffset: byteOffset,
-      first: first,
-    );
-    return (text: result.text, isError: result.isError);
+  Future<PluginFileResult> readFile(String path) async {
+    final result = await _files.readFileForPlugin(_context, path);
+    return PluginFileResult(result.text, isError: result.isError);
   }
 
   @override

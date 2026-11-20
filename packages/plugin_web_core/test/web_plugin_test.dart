@@ -74,11 +74,7 @@ final class _Host implements PluginHost {
   }
 
   @override
-  Future<PluginFileReader> readFile(String path) =>
-      throw UnsupportedError('file read is not used in this test');
-
-  @override
-  Future<PluginFileResult> readAll(String path) =>
+  Future<PluginFileResult> readFile(String path) =>
       throw UnsupportedError('file read is not used in this test');
 
   @override

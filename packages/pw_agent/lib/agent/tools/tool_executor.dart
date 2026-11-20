@@ -498,47 +498,44 @@ class ToolExecutor {
     }
   }
 
-  /// Один кусок чтения файла по запросу плагина. Путь идёт тем же путём, что у
-  /// инструмента `read_file`; возвращается сырой вывод формата `read_file`,
-  /// который курсор плагина разбирает сам.
+  /// Чтение файла по запросу плагина: содержимое отдаётся как есть, без формата
+  /// инструмента `read_file`. Путь разрешается и проверяется тем же путём, что у
+  /// инструмента.
   ///
-  /// [first] — первый кусок: policy и, при необходимости, подтверждение
-  /// спрашиваются один раз. Продолжения дочитываются тем же разрешением, без
-  /// новой карточки и без отдельной записи в журнале.
-  Future<ToolResult> readFileChunkForPlugin(
-    ToolContext ctx,
-    String path, {
-    required int offset,
-    required int byteOffset,
-    required bool first,
-  }) async {
-    final args = <String, dynamic>{
-      'path': path,
-      'offset': offset < 1 ? 1 : offset,
-      'byte_offset': byteOffset < 0 ? 0 : byteOffset,
-    };
+  /// Слишком большой файл, который Host не отдаёт целиком, возвращается
+  /// ошибкой, а не обрезанным хвостом: плагин получает либо полные данные,
+  /// либо понятный отказ.
+  Future<ToolResult> readFileForPlugin(ToolContext ctx, String path) async {
+    final args = <String, dynamic>{'path': path};
     final call = LlmToolCall(
       id: _uuid.v4(),
       name: ToolNames.readFile,
       arguments: jsonEncode(args),
     );
     final resolved = _resolve(ctx, path);
-    final op = _hostOpForRead(ctx, call, args, resolved);
-    if (first) {
-      return _hostOp(
-        ctx,
-        call,
-        args,
-        op,
-        guardedPath: resolved,
-        rawOutput: true,
+    final result = await _hostOp(
+      ctx,
+      call,
+      args,
+      ReadRawOp(resolved),
+      guardedPath: resolved,
+      rawOutput: true,
+    );
+    // `cat ... 2>/dev/null` глушит stderr, поэтому пустой текст ошибки ничего
+    // не объясняет.
+    if (result.isError && result.text.trim().isEmpty) {
+      return ToolResult(
+        'cannot read $path (file missing or unreadable)',
+        isError: true,
       );
     }
-    // Продолжение уже разрешённого чтения: policy и подтверждение не повторяем.
-    final run = await captureOp(ctx.runtime, op);
-    // Ошибка read_file печатается в stderr, обычный текст — в stdout.
-    final text = run.stdout.isNotEmpty ? run.stdout : run.stderr;
-    return ToolResult(Redactor.redact(text), isError: !run.ok);
+    if (result.text.contains('\u0000')) {
+      return const ToolResult(
+        'binary file, cannot be read as text',
+        isError: true,
+      );
+    }
+    return result;
   }
 
   /// Инструкция плагина на запись файла. Содержимое применяет приложение:

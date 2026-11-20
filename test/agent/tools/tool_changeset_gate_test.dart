@@ -107,27 +107,8 @@ final class _FilePlugin implements Plugin {
         'required': ['path'],
       },
       run: (args, host) async {
-        final result = await host.readAll(args['path'] as String);
+        final result = await host.readFile(args['path'] as String);
         return PluginToolResult(result.text, isError: result.isError);
-      },
-    ),
-    PluginTool(
-      name: 'read_loop',
-      title: 'Read file in chunks',
-      description: 'Reads a file chunk by chunk through the host',
-      inputSchema: const {
-        'type': 'object',
-        'properties': {
-          'path': {'type': 'string'},
-        },
-        'required': ['path'],
-      },
-      run: (args, host) async {
-        final reader = await host.readFile(args['path'] as String);
-        while (!reader.done) {
-          await reader.next();
-        }
-        return PluginToolResult(reader.text, isError: reader.isError);
       },
     ),
     PluginTool(
@@ -455,20 +436,32 @@ void main() {
     expect(result.text, content);
   });
 
-  test('plugin cursor reads a large file in chunks exactly', () async {
-    final content =
-        '${List.generate(1000, (i) => 'line ${i.toString().padLeft(4, '0')}').join('\n')}\n';
-    File('${tmp.path}/large.txt').writeAsStringSync(content);
+  test('plugin read reports a file too large to return', () async {
+    File('${tmp.path}/huge.txt').writeAsStringSync('x' * (1024 * 1024 + 64));
     final source = await fileSource();
     tools.registerToolSource(source);
     addTearDown(() => tools.unregisterToolSource(source.id));
 
-    final result = await runPlugin('p2', 'plugin_files_read_loop', {
-      'path': 'large.txt',
+    final result = await runPlugin('p2', 'plugin_files_read', {
+      'path': 'huge.txt',
     });
 
-    expect(result.isError, isFalse);
-    expect(result.text, content);
+    expect(result.isError, isTrue);
+    expect(result.text, contains('too large'));
+  });
+
+  test('plugin read rejects a binary file', () async {
+    File('${tmp.path}/binary.bin').writeAsBytesSync([0x00, 0x01, 0x02, 0xFF]);
+    final source = await fileSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final result = await runPlugin('p3', 'plugin_files_read', {
+      'path': 'binary.bin',
+    });
+
+    expect(result.isError, isTrue);
+    expect(result.text, contains('binary'));
   });
 
   test('plugin write then read round-trips content exactly', () async {
