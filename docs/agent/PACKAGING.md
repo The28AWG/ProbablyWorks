@@ -101,7 +101,7 @@ foreground-сервисов и разрешений сверх уже объяв
 проекте 2.4.0) и iOS 14+ (в проекте 16.4). Уведомления канала загрузки
 локализованы через `android/app/src/main/res/values*/strings.xml`.
 
-На macOS каталог кладётся в `probably_works.app/Contents/MacOS/daemon`.
+На macOS каталог кладётся в `ProbablyWorks.app/Contents/MacOS/daemon`.
 `PackagedDaemonLauncher` сначала ищет `daemon/bin/pw_server`, затем одиночный
 `pw_server` рядом с GUI для совместимости со старыми пакетами.
 

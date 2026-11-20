@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.the28awg" "\0"
-            VALUE "FileDescription", "probably_works" "\0"
+            VALUE "CompanyName", "The28AWG" "\0"
+            VALUE "FileDescription", "ProbablyWorks" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "probably_works" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.the28awg. All rights reserved." "\0"
-            VALUE "OriginalFilename", "probably_works.exe" "\0"
-            VALUE "ProductName", "probably_works" "\0"
+            VALUE "InternalName", "probably-works" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 The28AWG. All rights reserved." "\0"
+            VALUE "OriginalFilename", "probably-works.exe" "\0"
+            VALUE "ProductName", "ProbablyWorks" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -13,7 +13,7 @@
 | PW-016 | P1 | частично | Автоматический выбор модели под задачу |
 | PW-017 | P1 | частично | Release, подпись и интеграционные проверки демона |
 | PW-018 | P1 | частично | Семантический поиск по истории и файлам |
-| PW-023 | P1 | todo | Подпись Android и имена приложений |
+| PW-023 | P1 | частично | Подпись Android и имена приложений |
 | PW-024 | P2 | todo | Временные исключения после обновления Flutter 3.50 |
 | PW-025 | P2 | todo | Убрать dependency_overrides для equatable |
 
@@ -101,33 +101,48 @@ Web выпускается отдельной статической сборк�
 
 ### PW-023. Подпись Android и имена приложений
 
-**Статус:** todo. Дополняет PW-017: там учтены Windows Authenticode и
+**Статус:** частично. Дополняет PW-017: там учтены Windows Authenticode и
 notarization macOS, но не Android и не пользовательские имена.
 
-**Проблема.** Release-сборка Android подписывается debug-ключом
-(`signingConfig = signingConfigs.getByName("debug")`), в конфигурации остался
-шаблонный TODO. Пользовательские имена на Android, Windows, macOS и iOS —
-`probably_works`; в macOS остался шаблонный copyright. Если APK или
-установщик попадут пользователю, приложение будет выглядеть как черновик, а
-release-APK нельзя обновить поверх правильно подписанной версии.
+**Сделано.**
+- Release-подпись Android читается из `key.properties`, который CI создаёт из
+  секретов; debug-ключ остаётся только как fallback без секретов, и такой APK
+  в релиз не попадает.
+- Отображаемые имена приведены к бренду `ProbablyWorks` (см.
+  [IDENTITY_SPECIFICATION.md](../ui/IDENTITY_SPECIFICATION.md)): метка Android,
+  ресурсы и имя окна Windows, имя окна Linux, `PRODUCT_NAME` и copyright
+  macOS, `CFBundleName`/`CFBundleDisplayName` iOS. Имена пакетов используют
+  слаг `probably-works`.
+
+**Проблема.** Осталось подтвердить сборки и настроить секреты. Сборка с
+настоящим ключом ещё не проверялась, а упаковку и имена нельзя проверить без
+целевой ОС: кросс-компиляции нет. Имена, которые Fastforge выводит из `name` в
+`pubspec.yaml` (`probably_works`), — каталог установки Windows, исполняемый
+файл Linux и каталог AppImage — остаются техническими и видимыми для
+пользователя.
 
 **Что сделать.**
-- Настроить release keystore через секреты CI, не хранить ключ в репозитории.
-- Задать `ProbablyWorks`/`probably-works` в манифестах и ресурсах, убрать
-  шаблонные TODO и copyright.
-- Либо добавить Android-сборку в release, либо явно записать в документации,
-  что APK не публикуется.
+- Завести в репозитории секреты `ANDROID_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+- Собрать release-APK, EXE и DMG и проверить имя в свойствах и в видимой
+  части, а также подпись APK.
+- Решить, приводить ли к бренду имена, выводимые Fastforge из `name` в
+  `pubspec.yaml` (каталог установки Windows, исполняемый файл Linux, AppDir).
+  Смена `name` — крупный рефакторинг импортов; делать только при явной
+  необходимости.
 
 **Критерии приёмки.**
-- APK, EXE и DMG показывают правильное имя и не содержат `probably_works` в
-  видимых метаданных.
+- APK, EXE и DMG показывают правильное имя; в отображаемых метаданных нет
+  `probably_works`.
 - Release-APK подписан не debug-ключом; ключ и пароль не лежат в репозитории.
 - PW-017 и PW-023 не противоречат друг другу по охвату платформ.
 
 **Файлы:** `android/app/build.gradle.kts`,
 `android/app/src/main/AndroidManifest.xml`, `windows/runner/Runner.rc`,
-`windows/runner/main.cpp`, `macos/Runner/Configs/AppInfo.xcconfig`,
-`ios/Runner/Info.plist`.
+`windows/runner/main.cpp`, `windows/CMakeLists.txt`,
+`linux/runner/my_application.cc`, `macos/Runner/Configs/AppInfo.xcconfig`,
+`macos/packaging/dmg/make_config.yaml`, `ios/Runner/Info.plist`,
+`tool/ci/check_bundle.dart`.
 
 ## P2
 

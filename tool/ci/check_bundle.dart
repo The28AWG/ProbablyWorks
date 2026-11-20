@@ -145,8 +145,8 @@ String _defaultRoot(String platform) => switch (platform) {
 
 File _mainExecutable(String platform, Directory gui) => switch (platform) {
   'linux' => File(p.join(gui.path, 'probably_works')),
-  'windows' => File(p.join(gui.path, 'probably_works.exe')),
-  'macos' => File(p.join(gui.path, 'Contents', 'MacOS', 'probably_works')),
+  'windows' => File(p.join(gui.path, 'probably-works.exe')),
+  'macos' => File(p.join(gui.path, 'Contents', 'MacOS', 'ProbablyWorks')),
   'ios' => File(p.join(gui.path, 'Runner')),
   _ => throw StateError('unknown platform $platform'),
 };
