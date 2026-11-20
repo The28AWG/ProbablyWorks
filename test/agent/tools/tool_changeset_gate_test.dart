@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_api/plugin_api.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
@@ -9,6 +10,7 @@ import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/exec/exec_log_store.dart';
 import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/plugins/plugin_tool_source.dart';
 import 'package:pw_agent/agent/policy/command_classifier.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
@@ -76,6 +78,95 @@ final class _FakeToolSource extends ToolSource {
 
   @override
   String reasonFor(LlmToolCall call) => 'fake reason';
+}
+
+/// Плагин, который читает и пишет файлы только через [PluginHost].
+final class _FilePlugin implements Plugin {
+  const _FilePlugin();
+
+  @override
+  String get id => 'files';
+
+  @override
+  Set<String> get dependsOn => const {};
+
+  @override
+  bool get defaultEnabled => true;
+
+  @override
+  Future<List<PluginTool>> createTools(PluginSettings settings) async => [
+    PluginTool(
+      name: 'read',
+      title: 'Read file',
+      description: 'Reads a whole file through the host',
+      inputSchema: const {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string'},
+        },
+        'required': ['path'],
+      },
+      run: (args, host) async {
+        final result = await host.readAll(args['path'] as String);
+        return PluginToolResult(result.text, isError: result.isError);
+      },
+    ),
+    PluginTool(
+      name: 'read_loop',
+      title: 'Read file in chunks',
+      description: 'Reads a file chunk by chunk through the host',
+      inputSchema: const {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string'},
+        },
+        'required': ['path'],
+      },
+      run: (args, host) async {
+        final reader = await host.readFile(args['path'] as String);
+        while (!reader.done) {
+          await reader.next();
+        }
+        return PluginToolResult(reader.text, isError: reader.isError);
+      },
+    ),
+    PluginTool(
+      name: 'write',
+      title: 'Write file',
+      description: 'Proposes a file write through the host',
+      inputSchema: const {
+        'type': 'object',
+        'properties': {
+          'path': {'type': 'string'},
+          'content': {'type': 'string'},
+        },
+        'required': ['path', 'content'],
+      },
+      run: (args, host) async {
+        final result = await host.writeFile(
+          args['path'] as String,
+          args['content'] as String,
+        );
+        return PluginToolResult(result.text, isError: result.isError);
+      },
+    ),
+  ];
+}
+
+final class _NoopSettings implements PluginSettings {
+  const _NoopSettings();
+
+  @override
+  Future<Map<String, Object?>> read() async => const {};
+
+  @override
+  Future<void> save(Map<String, Object?> value) => Future<void>.value();
+
+  @override
+  Future<bool> hasSecret(String name) async => false;
+
+  @override
+  Future<void> writeSecret(String name, String? value) => Future<void>.value();
 }
 
 final class _DenyPolicy extends PolicyEngine {
@@ -160,6 +251,7 @@ void main() {
         title: 't',
         createdAt: now,
         updatedAt: now,
+        workspace: tmp.path,
         policyMode: PolicyMode.ask,
       ),
     );
@@ -322,5 +414,141 @@ void main() {
     expect(run.argsJson, isNot(contains(secret)));
     expect(run.outputText, isNot(contains(secret)));
     expect(run.resultPreview, isNot(contains(secret)));
+  });
+
+  Future<PluginToolSource> fileSource() async => PluginToolSource(
+    plugin: const _FilePlugin(),
+    tools: await const _FilePlugin().createTools(const _NoopSettings()),
+    commands: CommandExecutor(
+      ExecLogStore(tmp),
+      ActiveExecRegistry(),
+      LiveOutputBus(),
+    ),
+    files: tools,
+    secrets: MemorySecretStore(),
+  );
+
+  /// Выполняет инструмент плагина, подтверждая внешний вызов.
+  Future<ToolResult> runPlugin(
+    String id,
+    String name,
+    Map<String, Object?> args,
+  ) async {
+    final pending = tools.execute(call(id, name, args), ctx);
+    final approval = await broker.approvalRequests.first;
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+    return pending;
+  }
+
+  test('plugin read returns the whole file exactly', () async {
+    const content = 'строка 1\nстрока 2\r\nбез перевода в конце ✓';
+    File('${tmp.path}/note.txt').writeAsStringSync(content);
+    final source = await fileSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final result = await runPlugin('p1', 'plugin_files_read', {
+      'path': 'note.txt',
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.text, content);
+  });
+
+  test('plugin cursor reads a large file in chunks exactly', () async {
+    final content =
+        '${List.generate(1000, (i) => 'line ${i.toString().padLeft(4, '0')}').join('\n')}\n';
+    File('${tmp.path}/large.txt').writeAsStringSync(content);
+    final source = await fileSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final result = await runPlugin('p2', 'plugin_files_read_loop', {
+      'path': 'large.txt',
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.text, content);
+  });
+
+  test('plugin write then read round-trips content exactly', () async {
+    const content = 'первая строка\r\nвторая\nбез перевода в конце';
+    final source = await fileSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final writePending = tools.execute(
+      call('w1', 'plugin_files_write', {
+        'path': 'round-trip.txt',
+        'content': content,
+      }),
+      ctx,
+    );
+    final writeOuter = await broker.approvalRequests.first;
+    broker.resolveApproval(writeOuter.id, const ApprovalDecision.allowOnce());
+    final writeInner = await broker.approvalRequests.first;
+    broker.resolveApproval(writeInner.id, const ApprovalDecision.allowOnce());
+    expect((await writePending).isError, isFalse);
+
+    final result = await runPlugin('r1', 'plugin_files_read', {
+      'path': 'round-trip.txt',
+    });
+
+    expect(result.isError, isFalse);
+    expect(result.text, content);
+  });
+
+  test('plugin write applies after approval and records the file', () async {
+    final path = '${tmp.path}/plugin-out.txt';
+    final source = await fileSource();
+    tools.registerToolSource(source);
+    addTearDown(() => tools.unregisterToolSource(source.id));
+
+    final pending = tools.execute(
+      call('p3', 'plugin_files_write', {
+        'path': 'plugin-out.txt',
+        'content': 'from plugin',
+      }),
+      ctx,
+    );
+    final outer = await broker.approvalRequests.first;
+    expect(outer.toolName, 'plugin_files_write');
+    broker.resolveApproval(outer.id, const ApprovalDecision.allowOnce());
+    // Запись — отдельное действие: приложение спрашивает на неё второй раз.
+    final inner = await broker.approvalRequests.first;
+    expect(inner.toolName, ToolNames.writeFile);
+    expect(inner.diff, contains('from plugin'));
+    broker.resolveApproval(inner.id, const ApprovalDecision.allowOnce());
+    final result = await pending;
+
+    expect(result.isError, isFalse);
+    expect(File(path).readAsStringSync(), 'from plugin');
+    expect((await turnCs())?.files.containsKey(path), isTrue);
+  });
+
+  test('rejected plugin write leaves the file untouched', () async {
+    final path = '${tmp.path}/plugin-rejected.txt';
+
+    final pending = tools.writeFileForPlugin(ctx, path, 'nope');
+    final approval = await broker.approvalRequests.first;
+    broker.resolveApproval(approval.id, const ApprovalDecision.deny());
+    final result = await pending;
+
+    expect(result.isError, isTrue);
+    expect(File(path).existsSync(), isFalse);
+    expect((await turnCs())?.files ?? const {}, isEmpty);
+  });
+
+  test('plugin write accepts empty content', () async {
+    final path = '${tmp.path}/plugin-empty.txt';
+
+    final pending = tools.writeFileForPlugin(ctx, path, '');
+    final approval = await broker.approvalRequests.first;
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+    final result = await pending;
+
+    expect(result.isError, isFalse);
+    expect(File(path).existsSync(), isTrue);
+    expect(File(path).lengthSync(), 0);
   });
 }

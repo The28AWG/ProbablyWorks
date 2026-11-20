@@ -12,6 +12,7 @@ extension _ToolExecutorHost on ToolExecutor {
     HostOp op, {
     String? guardedPath,
     bool recursive = false,
+    bool rawOutput = false,
   }) async {
     var decision = ctx.policy.decide(call.name, args);
     var reason = ctx.policy.reasonFor(call.name, args);
@@ -60,9 +61,18 @@ extension _ToolExecutorHost on ToolExecutor {
         op: op,
         background: false,
         presetRunId: runId,
+        rawOutput: rawOutput,
       );
     }
-    return _exec(ctx, call, args, command: op.label, op: op, background: false);
+    return _exec(
+      ctx,
+      call,
+      args,
+      command: op.label,
+      op: op,
+      background: false,
+      rawOutput: rawOutput,
+    );
   }
 
   Future<ToolResult> _runCommand(

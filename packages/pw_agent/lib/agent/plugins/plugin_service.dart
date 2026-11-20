@@ -96,6 +96,7 @@ class PluginService {
             plugin: plugin,
             tools: tools,
             commands: _commands,
+            files: _tools,
             secrets: _secrets,
           ),
         );

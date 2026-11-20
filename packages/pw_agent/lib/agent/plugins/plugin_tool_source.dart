@@ -6,9 +6,10 @@ import 'package:plugin_api/plugin_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/plugins/network_guard.dart';
+import 'package:pw_agent/agent/plugins/plugin_file_reader.dart';
+import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/agent/tools/tool_name.dart';
 import 'package:pw_agent/agent/tools/tool_source.dart';
-import 'package:pw_agent/agent/tools/tool_types.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 import 'package:pw_agent/core/util/workspace_path.dart';
 import 'package:pw_agent/host/shell_adapter.dart';
@@ -21,6 +22,7 @@ final class PluginToolSource extends ToolSource {
     required this.plugin,
     required this.tools,
     required this.commands,
+    required this.files,
     required this.secrets,
   }) {
     final used = <String>{};
@@ -42,6 +44,11 @@ final class PluginToolSource extends ToolSource {
   final Plugin plugin;
   final List<PluginTool> tools;
   final CommandExecutor commands;
+
+  /// Общий исполнитель файловых операций: через него плагин читает и
+  /// предлагает запись, чтобы policy, подтверждение и changeset оставались
+  /// в одном месте, а плагин не обходил их.
+  final ToolExecutor files;
   final SecretStore secrets;
   final _tools = <String, PluginTool>{};
 
@@ -66,7 +73,7 @@ final class PluginToolSource extends ToolSource {
     }
     final result = await tool.run(
       arguments,
-      _PluginHost(context, commands, secrets),
+      _PluginHost(context, commands, files, secrets),
     );
     return ToolResult(result.text, isError: result.isError);
   }
@@ -108,12 +115,13 @@ final class PluginToolSource extends ToolSource {
 }
 
 final class _PluginHost implements PluginHost {
-  _PluginHost(this._context, this.commands, this._secrets);
+  _PluginHost(this._context, this.commands, this._files, this._secrets);
 
   static const _uuid = Uuid();
 
   final ToolContext _context;
   final CommandExecutor commands;
+  final ToolExecutor _files;
   final SecretStore _secrets;
 
   @override
@@ -147,6 +155,43 @@ final class _PluginHost implements PluginHost {
       exitCode: outcome.exitCode,
       isError: outcome.resultError || outcome.status != ToolRunStatus.done,
     );
+  }
+
+  @override
+  Future<PluginFileReader> readFile(String path) => ReadFileCursor.open(
+    (offset, byteOffset, first) =>
+        _readChunk(path, offset, byteOffset, first: first),
+  );
+
+  @override
+  Future<PluginFileResult> readAll(String path) async {
+    final reader = await readFile(path);
+    while (!reader.done) {
+      await reader.next();
+    }
+    return PluginFileResult(reader.text, isError: reader.isError);
+  }
+
+  Future<({String text, bool isError})> _readChunk(
+    String path,
+    int offset,
+    int byteOffset, {
+    required bool first,
+  }) async {
+    final result = await _files.readFileChunkForPlugin(
+      _context,
+      path,
+      offset: offset,
+      byteOffset: byteOffset,
+      first: first,
+    );
+    return (text: result.text, isError: result.isError);
+  }
+
+  @override
+  Future<PluginFileResult> writeFile(String path, String content) async {
+    final result = await _files.writeFileForPlugin(_context, path, content);
+    return PluginFileResult(result.text, isError: result.isError);
   }
 
   @override

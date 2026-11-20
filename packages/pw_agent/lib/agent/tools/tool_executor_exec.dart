@@ -17,6 +17,7 @@ extension _ToolExecutorExec on ToolExecutor {
     Duration? timeout,
     HostOp? op,
     DateTime? startedAt,
+    bool rawOutput = false,
   }) async {
     final runId = presetRunId ?? ToolExecutor._uuid.v4();
     var run = _newRun(
@@ -97,6 +98,20 @@ extension _ToolExecutorExec on ToolExecutor {
         op is WriteFileOp &&
         isEphemeralHostWriteBackup(op.backupPath)) {
       await _discardEphemeralWriteBackup(ctx, op.backupPath);
+    }
+    // Сырой вывод нужен, когда содержимое читают как данные, а не как результат
+    // команды: обрезанный лимитом текст неполон, поэтому лучше вернуть ошибку.
+    if (rawOutput) {
+      if (outcome.outputTruncated) {
+        return const ToolResult(
+          'the file is too large to read as text: the output was truncated',
+          isError: true,
+        );
+      }
+      return ToolResult(
+        outcome.outputText,
+        isError: outcome.resultError || outcome.status != ToolRunStatus.done,
+      );
     }
     return ToolResult(
       _modelText(outcome, ctx.limits, finished.id),

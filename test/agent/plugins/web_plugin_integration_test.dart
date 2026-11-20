@@ -208,6 +208,7 @@ void main() {
         ActiveExecRegistry(),
         LiveOutputBus(),
       ),
+      files: executor,
       secrets: MemorySecretStore(),
     );
     executor.registerToolSource(source);

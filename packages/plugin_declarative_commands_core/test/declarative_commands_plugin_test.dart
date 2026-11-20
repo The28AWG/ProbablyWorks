@@ -55,6 +55,18 @@ final class _Host implements PluginHost {
     bool allowPrivateNetwork = true,
     int? maxBytes,
   }) => throw UnsupportedError('HTTP is not used in this test');
+
+  @override
+  Future<PluginFileReader> readFile(String path) =>
+      throw UnsupportedError('file read is not used in this test');
+
+  @override
+  Future<PluginFileResult> readAll(String path) =>
+      throw UnsupportedError('file read is not used in this test');
+
+  @override
+  Future<PluginFileResult> writeFile(String path, String content) =>
+      throw UnsupportedError('file write is not used in this test');
 }
 
 void main() {

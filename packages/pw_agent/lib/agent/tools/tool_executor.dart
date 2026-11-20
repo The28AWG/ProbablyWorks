@@ -497,4 +497,78 @@ class ToolExecutor {
       return _failTool(run, 'invalid arguments: ${error.message}');
     }
   }
+
+  /// Один кусок чтения файла по запросу плагина. Путь идёт тем же путём, что у
+  /// инструмента `read_file`; возвращается сырой вывод формата `read_file`,
+  /// который курсор плагина разбирает сам.
+  ///
+  /// [first] — первый кусок: policy и, при необходимости, подтверждение
+  /// спрашиваются один раз. Продолжения дочитываются тем же разрешением, без
+  /// новой карточки и без отдельной записи в журнале.
+  Future<ToolResult> readFileChunkForPlugin(
+    ToolContext ctx,
+    String path, {
+    required int offset,
+    required int byteOffset,
+    required bool first,
+  }) async {
+    final args = <String, dynamic>{
+      'path': path,
+      'offset': offset < 1 ? 1 : offset,
+      'byte_offset': byteOffset < 0 ? 0 : byteOffset,
+    };
+    final call = LlmToolCall(
+      id: _uuid.v4(),
+      name: ToolNames.readFile,
+      arguments: jsonEncode(args),
+    );
+    final resolved = _resolve(ctx, path);
+    final op = _hostOpForRead(ctx, call, args, resolved);
+    if (first) {
+      return _hostOp(
+        ctx,
+        call,
+        args,
+        op,
+        guardedPath: resolved,
+        rawOutput: true,
+      );
+    }
+    // Продолжение уже разрешённого чтения: policy и подтверждение не повторяем.
+    final run = await captureOp(ctx.runtime, op);
+    // Ошибка read_file печатается в stderr, обычный текст — в stdout.
+    final text = run.stdout.isNotEmpty ? run.stdout : run.stderr;
+    return ToolResult(Redactor.redact(text), isError: !run.ok);
+  }
+
+  /// Инструкция плагина на запись файла. Содержимое применяет приложение:
+  /// policy, подтверждение пользователя, запись на Host и changeset для отката.
+  ///
+  /// В отличие от инструмента `write_file`, пустое содержимое допустимо: плагин
+  /// может создать пустой файл.
+  Future<ToolResult> writeFileForPlugin(
+    ToolContext ctx,
+    String path,
+    String content,
+  ) async {
+    final args = <String, dynamic>{'path': path, 'content': content};
+    final call = LlmToolCall(
+      id: _uuid.v4(),
+      name: ToolNames.writeFile,
+      arguments: jsonEncode(args),
+    );
+    final resolved = _resolve(ctx, path);
+    // mtime снимается раньше содержимого: защита записи заметит изменение между ними.
+    final mtime = await _mtimeOrNull(ctx, resolved);
+    final before = await _readOrEmpty(ctx, resolved);
+    return _mutateFile(
+      ctx,
+      call,
+      args,
+      path: resolved,
+      before: before,
+      after: content,
+      expectedMtime: mtime,
+    );
+  }
 }
