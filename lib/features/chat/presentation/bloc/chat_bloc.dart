@@ -21,6 +21,7 @@ import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
+import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/host/host_terminal.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
@@ -634,6 +635,25 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _saveDraft();
   }
 
+  /// Сколько отложенных задач попадёт в форк до [untilMessageId]. null —
+  /// прочитать не удалось.
+  ///
+  /// Нужно экрану перед форком из ответа: вопрос о переносе задач задаётся до
+  /// события, потому что диалог — дело интерфейса, а не блока. Учитываются
+  /// только задачи выше линии форка: ниже линии они не переносятся.
+  Future<int?> pendingScheduledTasks({String? untilMessageId}) async {
+    final chatId = state.chatId;
+    if (chatId == null) return 0;
+    try {
+      return await _hub.pendingScheduledTasks(
+        chatId,
+        untilMessageId: untilMessageId,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
   Future<void> _onFork(ChatForkRequested event, Emitter<ChatState> emit) async {
     final chatId = state.chatId;
     if (chatId == null || state.isRunning) return;
@@ -642,10 +662,13 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         chatId,
         untilMessageId: event.messageId,
         title: event.title,
+        copyPendingTasks: event.copyPendingTasks,
       );
       if (forked != null) onChatCreated?.call(forked.id);
-    } on Object {
-      // Форк не должен ломать открытый чат: ошибка остаётся без навигации.
+    } on Object catch (error, stack) {
+      // Форк не должен ломать открытый чат, но молчать нельзя: иначе «ничего
+      // не произошло» не отличить от сбоя. Разбираться по журналу приложения.
+      AppLog.root.warning('cannot fork chat $chatId', error, stack);
     }
   }
 

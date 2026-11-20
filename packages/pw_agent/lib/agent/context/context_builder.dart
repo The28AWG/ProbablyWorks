@@ -34,6 +34,7 @@ class ContextInput {
     this.inlineFiles = const {},
     this.tools = const [],
     this.projectMemory,
+    this.now,
   });
 
   final Chat chat;
@@ -75,6 +76,10 @@ class ContextInput {
   /// Схемы инструментов, которые уйдут в этом запросе. Нужны оценке токенов:
   /// они занимают окно наравне с сообщениями и не сокращаются сжатием.
   final List<LlmToolSpec> tools;
+
+  /// Текущее локальное время для планирования задач. Null в тестах: тогда
+  /// строка времени в системной подсказке не появляется и вывод детерминирован.
+  final DateTime? now;
 }
 
 /// Собирает system-промпт и историю для модели. Не делает I/O.
@@ -412,6 +417,10 @@ class ContextBuilder {
         'workspace: ${input.workspace.workspace ?? chat.workspace ?? '(not set, use absolute paths)'}',
       )
       ..writeln('policy: ${chat.policyMode.name}');
+    // Локальное время нужно, чтобы посчитать абсолютное due_at для schedule_task.
+    if (input.now != null) {
+      buffer.writeln('now: ${input.now!.toIso8601String()}');
+    }
 
     if (input.hostStub != null) {
       buffer.writeln(Untrusted.wrap('host_info', input.hostStub!));

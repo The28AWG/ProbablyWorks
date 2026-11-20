@@ -6,17 +6,25 @@ class QueuedPrompt {
     this.text, {
     this.attachments = const [],
     this.mentions = const [],
+    this.note,
   }) : isEvent = false;
 
   const QueuedPrompt.event(this.text)
     : attachments = const [],
       mentions = const [],
+      note = null,
       isEvent = true;
 
   final String text;
   final List<AttachmentRef> attachments;
   final List<MentionRef> mentions;
   final bool isEvent;
+
+  /// Служебная заметка перед промптом, отдельным событием.
+  ///
+  /// Так отложенная задача сообщает, что сработала позже срока, не меняя текст,
+  /// который написал пользователь.
+  final String? note;
 }
 
 /// Очередь ввода во время хода агента.

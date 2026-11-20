@@ -31,6 +31,9 @@ import 'package:pw_agent/agent/policy/command_risk.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/recovery/startup_recovery.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
+import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
 import 'package:pw_agent/agent/tools/self_tool_handler.dart';
 import 'package:pw_agent/agent/tools/tool_catalog.dart';
@@ -208,6 +211,7 @@ void main() {
       self,
       ProjectRepository(db),
       turnChangesets,
+      ScheduledTaskRepository(db),
     );
     final compactor = ContextCompactor(chats, llm, builder);
     final mcp = McpService(
@@ -248,6 +252,7 @@ void main() {
       projectStore,
       PolicyProfileRepository(db),
       ProjectMemoryService(projectStore, chats, settings, llm),
+      ScheduledTaskRepository(db),
     );
     await hosts.ensureLocalHost(DateTime.now());
     await settings.write(SettingsRepository.keyDefaultModel, 'fake/model');
@@ -324,6 +329,84 @@ void main() {
     await runTurn(session, 'hello');
 
     expect(failures.single.message, contains('daily spending limit'));
+  });
+
+  test('a due scheduled task runs in its chat and awaitTurns waits', () async {
+    final chatId = await createChat();
+    final tasks = ScheduledTaskRepository(db);
+    final task = await tasks.create(
+      chatId: chatId,
+      prompt: 'run later',
+      dueAt: DateTime.now().toUtc().subtract(const Duration(minutes: 1)),
+    );
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await TaskScheduler(hub, tasks).tick(awaitTurns: true);
+
+    expect((await tasks.byId(task.id))!.status, ScheduledTaskStatus.dispatched);
+    final messages = await hub.chats.messages(chatId);
+    expect(
+      messages.any((m) => m.role == MessageRole.user && m.text == 'run later'),
+      isTrue,
+    );
+    expect(
+      messages.any((m) => m.role == MessageRole.assistant && m.text == 'done'),
+      isTrue,
+    );
+    // Опоздание на минуту — обычная задержка тика, заметки быть не должно.
+    expect(messages.where((m) => m.role == MessageRole.event), isEmpty);
+  });
+
+  test('a long overdue task notes how late it started', () async {
+    final chatId = await createChat();
+    final tasks = ScheduledTaskRepository(db);
+    await tasks.create(
+      chatId: chatId,
+      prompt: 'check the deploy',
+      dueAt: DateTime.now().toUtc().subtract(const Duration(days: 3)),
+    );
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+
+    await TaskScheduler(hub, tasks).tick(awaitTurns: true);
+
+    final messages = await hub.chats.messages(chatId);
+    final note = messages.singleWhere((m) => m.role == MessageRole.event);
+    expect(note.text, contains('scheduled task was due'));
+    expect(note.text, contains('late'));
+    // Текст пользователя остаётся тем, что было запланировано.
+    expect(
+      messages.singleWhere((m) => m.role == MessageRole.user).text,
+      'check the deploy',
+    );
+  });
+
+  test('editing a scheduled prompt removes its overdue note', () async {
+    final chatId = await createChat();
+    final tasks = ScheduledTaskRepository(db);
+    await tasks.create(
+      chatId: chatId,
+      prompt: 'check the deploy',
+      dueAt: DateTime.now().toUtc().subtract(const Duration(days: 3)),
+    );
+    llm.script.add([const LlmTextDelta('done'), const LlmCompleted()]);
+    await TaskScheduler(hub, tasks).tick(awaitTurns: true);
+    final prompt = (await hub.chats.messages(chatId))
+        .singleWhere((message) => message.role == MessageRole.user);
+
+    final session = hub.session(chatId);
+    final finished = session.events.firstWhere((e) => e is AgentTurnFinished);
+    llm.script.add([const LlmTextDelta('edited'), const LlmCompleted()]);
+
+    expect(await session.editUserMessage(prompt.id, 'new text'), isTrue);
+    await finished;
+
+    final messages = await hub.chats.messages(chatId);
+    // Заметка описывала доставку промпта, которого больше нет.
+    expect(messages.where((m) => m.role == MessageRole.event), isEmpty);
+    expect(
+      messages.singleWhere((m) => m.role == MessageRole.user).text,
+      'new text',
+    );
   });
 
   test('the global step ceiling stops a turn', () async {
@@ -2167,6 +2250,466 @@ void main() {
       MessageRole.user,
       MessageRole.assistant,
     ]);
+  });
+
+  test('forkChat keeps finished tasks and copies pending ones by choice', () async {
+    final chatId = await createChat();
+    // Секунды без долей: drift хранит время с точностью до секунды.
+    final now = DateTime.utc(2026, 11, 20, 12);
+    final tasks = ScheduledTaskRepository(db);
+    final pending = await tasks.create(
+      chatId: chatId,
+      prompt: 'remind me',
+      dueAt: now.toUtc().add(const Duration(minutes: 10)),
+      now: now,
+    );
+    final finished = await tasks.create(
+      chatId: chatId,
+      prompt: 'already run',
+      dueAt: now.toUtc(),
+      now: now,
+    );
+    await tasks.markDispatched(finished.id);
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'a1',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.assistant,
+        createdAt: now,
+      ),
+    );
+    // Шаг постановки ссылается на ожидающую задачу по id из своего вывода.
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'r1',
+        chatId: chatId,
+        messageId: 'a1',
+        toolName: ToolNames.scheduleTask,
+        argsJson: '{}',
+        command: 'schedule in 10m · remind me',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText: 'scheduled task ${pending.id} at 2026-11-20 17:00',
+      ),
+    );
+
+    // Отказ: ожидающая задача остаётся в исходном чате, её шаг в копию не идёт.
+    final discarded = await hub.forkChat(chatId, title: 'discarded');
+    final discardedTasks = await tasks.forChat(discarded.id);
+    expect(discardedTasks.map((task) => task.status), [
+      ScheduledTaskStatus.dispatched,
+    ]);
+    expect(await hub.chats.toolRunsForChat(discarded.id), isEmpty);
+
+    // Перенос: у копии свои id, время и статус сохраняются, шаг копируется.
+    final carried = await hub.forkChat(
+      chatId,
+      title: 'carried',
+      copyPendingTasks: true,
+    );
+    final carriedTasks = await tasks.forChat(carried.id);
+    expect(carriedTasks.map((task) => task.status).toSet(), {
+      ScheduledTaskStatus.pending,
+      ScheduledTaskStatus.dispatched,
+    });
+    expect(carriedTasks.every((task) => task.id != pending.id), isTrue);
+    expect(
+      carriedTasks
+          .firstWhere((task) => task.status == ScheduledTaskStatus.pending)
+          .dueAt
+          .isAtSameMomentAs(pending.dueAt),
+      isTrue,
+    );
+    final carriedRun = (await hub.chats.toolRunsForChat(carried.id)).single;
+    final carriedPending = carriedTasks.firstWhere(
+      (task) => task.status == ScheduledTaskStatus.pending,
+    );
+    // Шаг копии ссылается на задачу копии, а не на задачу исходного чата.
+    expect(ScheduledTaskRepository.taskIdOfRun(carriedRun), carriedPending.id);
+    expect(carriedRun.outputText, isNot(contains(pending.id)));
+
+    // Исходный чат не тронут: обе задачи на месте.
+    expect(await tasks.forChat(chatId), hasLength(2));
+  });
+
+  test('forkChat drops tasks whose step is below the fork line', () async {
+    final chatId = await createChat();
+    final now = DateTime.utc(2026, 11, 20, 12);
+    final tasks = ScheduledTaskRepository(db);
+    for (final (id, seq, role) in [
+      ('u1', 1, MessageRole.user),
+      ('a1', 2, MessageRole.assistant),
+      ('u2', 3, MessageRole.user),
+      ('a2', 4, MessageRole.assistant),
+    ]) {
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: id,
+          chatId: chatId,
+          seq: seq,
+          role: role,
+          createdAt: now,
+          text: role == MessageRole.user ? id : '',
+        ),
+      );
+    }
+    final first = await tasks.create(
+      chatId: chatId,
+      prompt: 'first',
+      dueAt: now.add(const Duration(minutes: 10)),
+      now: now,
+    );
+    final second = await tasks.create(
+      chatId: chatId,
+      prompt: 'second',
+      dueAt: now.add(const Duration(minutes: 20)),
+      now: now,
+    );
+    for (final (runId, messageId, task) in [
+      ('r1', 'a1', first),
+      ('r2', 'a2', second),
+    ]) {
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: runId,
+          chatId: chatId,
+          messageId: messageId,
+          toolName: ToolNames.scheduleTask,
+          argsJson: '{}',
+          command: 'schedule in 10m · ${task.prompt}',
+          status: ToolRunStatus.done,
+          startedAt: now,
+          finishedAt: now,
+          outputText: 'scheduled task ${task.id} at 2026-11-20 17:00',
+        ),
+      );
+    }
+
+    // Счётчик для диалога знает линию форка: ниже неё задачи не переносятся.
+    expect(await hub.pendingScheduledTasks(chatId), 2);
+    expect(await hub.pendingScheduledTasks(chatId, untilMessageId: 'a1'), 1);
+
+    final forked = await hub.forkChat(
+      chatId,
+      title: 'branch',
+      untilMessageId: 'a1',
+      copyPendingTasks: true,
+    );
+
+    // Задача ниже линии форка отброшена сознательно.
+    final copied = await tasks.forChat(forked.id);
+    expect(copied.map((task) => task.prompt), ['first']);
+    final copiedRuns = await hub.chats.toolRunsForChat(forked.id);
+    expect(copiedRuns, hasLength(1));
+    expect(
+      ScheduledTaskRepository.taskIdOfRun(copiedRuns.single),
+      copied.single.id,
+    );
+    // Исходный чат сохраняет обе задачи.
+    expect(await tasks.forChat(chatId), hasLength(2));
+  });
+
+  test(
+    'deleting messages deletes the scheduled tasks their steps created',
+    () async {
+      final chatId = await createChat();
+      final now = DateTime.utc(2026, 11, 20, 12);
+      final tasks = ScheduledTaskRepository(db);
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'u1',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: now,
+          text: 'remind me',
+        ),
+      );
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'a1',
+          chatId: chatId,
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: now,
+        ),
+      );
+      final task = await tasks.create(
+        chatId: chatId,
+        prompt: 'remind me',
+        dueAt: now.add(const Duration(minutes: 10)),
+        now: now,
+      );
+      await hub.chats.saveToolRun(
+        ToolRun(
+          id: 'r1',
+          chatId: chatId,
+          messageId: 'a1',
+          toolName: ToolNames.scheduleTask,
+          argsJson: '{}',
+          command: 'schedule in 10m · remind me',
+          status: ToolRunStatus.done,
+          startedAt: now,
+          finishedAt: now,
+          outputText: 'scheduled task ${task.id} at 2026-11-20 17:00',
+        ),
+      );
+
+      // Правка истории сначала спрашивает: задачи в удаляемых сообщениях
+      // исчезнут вместе с ними, и об этом нужно предупредить.
+      final deleting = hub.session(chatId).deleteAfter('u1');
+      final request = await hub.broker.editFileChangesRequests
+          .where((item) => item.chatId == chatId)
+          .first;
+      expect(request.files, isEmpty);
+      expect(request.scheduledTasks, 1);
+      hub.broker.resolveEditFileChanges(
+        request.id,
+        EditFileChangesChoice.continueWithoutRollback,
+      );
+      await deleting;
+
+      expect(await tasks.byId(task.id), isNull);
+      expect(await hub.chats.toolRunsForChat(chatId), isEmpty);
+    },
+  );
+
+  test('cancelling the task warning keeps messages and tasks', () async {
+    final chatId = await createChat();
+    final now = DateTime.utc(2026, 11, 20, 12);
+    final tasks = ScheduledTaskRepository(db);
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'u1',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: now,
+        text: 'remind me',
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'a1',
+        chatId: chatId,
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+      ),
+    );
+    final task = await tasks.create(
+      chatId: chatId,
+      prompt: 'remind me',
+      dueAt: now.add(const Duration(minutes: 10)),
+      now: now,
+    );
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'r1',
+        chatId: chatId,
+        messageId: 'a1',
+        toolName: ToolNames.scheduleTask,
+        argsJson: '{}',
+        command: 'schedule in 10m · remind me',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText: 'scheduled task ${task.id} at 2026-11-20 17:00',
+      ),
+    );
+
+    // Правка сообщения пользователя тоже задевает задачи ниже него.
+    final editing = hub.session(chatId).editUserMessage('u1', 'changed');
+    final request = await hub.broker.editFileChangesRequests
+        .where((item) => item.chatId == chatId)
+        .first;
+    expect(request.scheduledTasks, 1);
+    hub.broker.resolveEditFileChanges(request.id, EditFileChangesChoice.cancel);
+
+    expect(await editing, isFalse);
+    expect(await tasks.byId(task.id), isNotNull);
+    expect(await hub.chats.messages(chatId), hasLength(2));
+    expect(await hub.chats.toolRunsForChat(chatId), hasLength(1));
+  });
+
+  test(
+    'a task without a step is removed only if it was created after the anchor',
+    () async {
+      final chatId = await createChat();
+      final anchorAt = DateTime.utc(2026, 11, 20, 12);
+      final tasks = ScheduledTaskRepository(db);
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'u1',
+          chatId: chatId,
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: anchorAt,
+          text: 'anchor',
+        ),
+      );
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'a1',
+          chatId: chatId,
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: anchorAt.add(const Duration(minutes: 1)),
+        ),
+      );
+      // Строки без шага — записи, созданные до появления шагов в журнале.
+      final before = await tasks.create(
+        chatId: chatId,
+        prompt: 'before',
+        dueAt: anchorAt.add(const Duration(minutes: 10)),
+        now: anchorAt.subtract(const Duration(minutes: 5)),
+      );
+      final after = await tasks.create(
+        chatId: chatId,
+        prompt: 'after',
+        dueAt: anchorAt.add(const Duration(minutes: 20)),
+        now: anchorAt.add(const Duration(minutes: 2)),
+      );
+
+      // Счётчик и форк пользуются одной линией; несуществующая линия не
+      // обещает переноса.
+      expect(await hub.pendingScheduledTasks(chatId), 2);
+      expect(await hub.pendingScheduledTasks(chatId, untilMessageId: 'a1'), 1);
+      expect(
+        await hub.pendingScheduledTasks(chatId, untilMessageId: 'missing'),
+        0,
+      );
+
+      // Полный форк переносит обе строки без шага.
+      final full = await hub.forkChat(
+        chatId,
+        title: 'full',
+        copyPendingTasks: true,
+      );
+      expect(
+        (await tasks.forChat(full.id)).map((task) => task.prompt).toSet(),
+        {'before', 'after'},
+      );
+      // Копия сохраняет время создания, поэтому частичный форк копии оставляет
+      // только задачу не позже линии.
+      final copiedAssistant = (await hub.chats.messages(full.id))
+          .lastWhere((message) => message.role == MessageRole.assistant);
+      final partial = await hub.forkChat(
+        full.id,
+        title: 'partial',
+        untilMessageId: copiedAssistant.id,
+        copyPendingTasks: true,
+      );
+      expect(
+        [for (final task in await tasks.forChat(partial.id)) task.prompt],
+        ['before'],
+      );
+
+      final deleting = hub.session(chatId).deleteAfter('u1');
+      final request = await hub.broker.editFileChangesRequests
+          .where((item) => item.chatId == chatId)
+          .first;
+      expect(request.files, isEmpty);
+      expect(request.scheduledTasks, 1);
+      hub.broker.resolveEditFileChanges(
+        request.id,
+        EditFileChangesChoice.continueWithoutRollback,
+      );
+      await deleting;
+
+      expect(await tasks.byId(before.id), isNotNull);
+      expect(await tasks.byId(after.id), isNull);
+    },
+  );
+
+  test('fork from an answer copies tasks only when the choice says so', () async {
+    final chatId = await createChat();
+    final now = DateTime.utc(2026, 11, 20, 12);
+    final tasks = ScheduledTaskRepository(db);
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'u1',
+        chatId: chatId,
+        seq: 1,
+        role: MessageRole.user,
+        createdAt: now,
+        text: 'remind me',
+      ),
+    );
+    await hub.chats.insertMessage(
+      ChatMessage(
+        id: 'a1',
+        chatId: chatId,
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+        text: 'ok',
+      ),
+    );
+    final task = await tasks.create(
+      chatId: chatId,
+      prompt: 'remind me',
+      dueAt: now.add(const Duration(minutes: 10)),
+      now: now,
+    );
+    await hub.chats.saveToolRun(
+      ToolRun(
+        id: 'r1',
+        chatId: chatId,
+        messageId: 'a1',
+        toolName: ToolNames.scheduleTask,
+        argsJson: '{}',
+        command: 'schedule in 10m · remind me',
+        status: ToolRunStatus.done,
+        startedAt: now,
+        finishedAt: now,
+        outputText: 'scheduled task ${task.id} at 2026-11-20 17:00',
+      ),
+    );
+
+    // Второй путь форка — из ответа в ленте — должен спрашивать про задачи так
+    // же, как список чатов; здесь проверяется передача выбора в хаб.
+    Future<String> forkFromAnswer({
+      required String title,
+      required bool copyPendingTasks,
+    }) async {
+      final created = Completer<String>();
+      final bloc = ChatBloc(
+        LocalChatApi(hub),
+        LiveOutputBus(),
+        drafts,
+        onChatCreated: created.complete,
+      );
+      addTearDown(bloc.close);
+      bloc.add(ChatOpened(chatId));
+      await bloc.stream.firstWhere((s) => !s.loading && s.chat != null);
+      bloc.add(
+        ChatForkRequested(
+          'a1',
+          title: title,
+          copyPendingTasks: copyPendingTasks,
+        ),
+      );
+      return created.future;
+    }
+
+    final withoutTasks = await forkFromAnswer(
+      title: 'no tasks',
+      copyPendingTasks: false,
+    );
+    expect(await tasks.forChat(withoutTasks), isEmpty);
+    expect(await hub.chats.toolRunsForChat(withoutTasks), isEmpty);
+
+    final withTasks = await forkFromAnswer(
+      title: 'with tasks',
+      copyPendingTasks: true,
+    );
+    expect(
+      (await tasks.forChat(withTasks)).single.status,
+      ScheduledTaskStatus.pending,
+    );
   });
 
   test('list_runs and read_run_output expose stored output by pages', () async {

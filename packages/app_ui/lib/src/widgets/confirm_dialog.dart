@@ -1,5 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 
+/// Ответ на вопрос с двумя действиями в [ConfirmDialog.choose].
+enum ConfirmChoice {
+  /// Основное действие.
+  primary,
+
+  /// Альтернативное действие: не отказ от операции, а другой её вариант.
+  secondary,
+}
+
 /// Единые диалоги: подтверждение действия и ввод текста. Вместо ручных `AlertDialog` в экранах.
 /// Деструктивное действие [destructive] выделяется цветом ошибки.
 abstract final class ConfirmDialog {
@@ -53,6 +62,53 @@ abstract final class ConfirmDialog {
     );
     return result ?? false;
   }
+
+  /// Вопрос с двумя действиями и отменой. Нужен там, где «нет» — это не отказ
+  /// от операции, а другой её вариант: например, перенести задачи при
+  /// дублировании чата или отбросить их.
+  ///
+  /// null — пользователь отменил или закрыл диалог, операцию начинать не нужно.
+  static Future<ConfirmChoice?> choose(
+    BuildContext context, {
+    required String title,
+    required String message,
+    required String cancelLabel,
+    required String secondaryLabel,
+    required String primaryLabel,
+  }) => showDialog<ConfirmChoice>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(
+            cancelLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.pop(dialogContext, ConfirmChoice.secondary),
+          child: Text(
+            secondaryLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, ConfirmChoice.primary),
+          child: Text(
+            primaryLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    ),
+  );
 
   /// Диалог с одним полем ввода (переименование, редактирование сообщения).
   /// Возвращает введённый текст или null при отмене.

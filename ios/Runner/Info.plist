@@ -26,6 +26,18 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Периодическая задача планировщика — BGAppRefreshTask: без режима
+	     fetch система отклоняет её регистрацию. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<!-- Идентификатор фоновой задачи планировщика (workmanager). Строка должна
+	     совпадать с ScheduledTaskRunner.taskIdentifier в Dart. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.the28awg.probablyWorks.scheduledTasks</string>
+	</array>
 	<!-- iOS 14+ без этого ключа молча не пропускает SSH к адресам локальной сети. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>ProbablyWorks подключается по SSH к вашим компьютерам и серверам в локальной сети.</string>

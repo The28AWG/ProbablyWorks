@@ -36,7 +36,14 @@ abstract interface class ChatApi {
     String chatId, {
     String? title,
     String? untilMessageId,
+    bool copyPendingTasks = false,
   });
+
+  /// Сколько отложенных задач чата ещё не сработало. Перед форком из ответа
+  /// клиент спрашивает, что с ними делать, поэтому счётчик нужен и здесь.
+  ///
+  /// [untilMessageId] ограничивает счёт задачами выше линии форка.
+  Future<int> pendingScheduledTasks(String chatId, {String? untilMessageId});
   Chat draftChat({required String hostId, Host? host});
 }
 

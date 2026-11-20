@@ -82,7 +82,8 @@ extension _ChatSessionContext on ChatSession {
     // фактического заполнения окна.
     await _hub.mcp.ensureReady();
     await _hub.plugins.ensureReady();
-    final tools = _hub.tools.specs;
+    // В скрытом чате субагента нет инструментов расписания: их не показываем.
+    final tools = _hub.tools.specsFor(chat);
     // Окно берём у фактически используемой модели, а не только из поля чата:
     // чат с моделью по умолчанию своего окна не хранит.
     final limit =
@@ -107,6 +108,7 @@ extension _ChatSessionContext on ChatSession {
       inlineFiles: files,
       tools: tools,
       projectMemory: projectMemory,
+      now: DateTime.now(),
     );
     // Вложения текущего запроса входят в бюджет: решение о сжатии должно
     // видеть тот же запрос, который уйдёт провайдеру.

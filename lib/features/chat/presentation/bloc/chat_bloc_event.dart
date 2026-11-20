@@ -85,13 +85,21 @@ final class ChatRegenerateRequested extends ChatEvent {
 }
 
 final class ChatForkRequested extends ChatEvent {
-  const ChatForkRequested(this.messageId, {this.title});
+  const ChatForkRequested(
+    this.messageId, {
+    this.title,
+    this.copyPendingTasks = false,
+  });
 
   final String messageId;
   final String? title;
 
+  /// Выбор пользователя, сделанный до отправки события: задачи выше линии
+  /// форка переносятся только по нему.
+  final bool copyPendingTasks;
+
   @override
-  List<Object?> get props => [messageId, title];
+  List<Object?> get props => [messageId, title, copyPendingTasks];
 }
 
 final class ChatApprovalAnswered extends ChatEvent {

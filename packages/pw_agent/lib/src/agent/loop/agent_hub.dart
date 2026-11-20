@@ -14,6 +14,8 @@ import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/plugins/plugin_service.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
 import 'package:pw_agent/agent/subagent/subagent_manager.dart';
 import 'package:pw_agent/agent/subagent/subagent_tool_source.dart';
@@ -60,6 +62,7 @@ class AgentHub {
     this.projectStore,
     this.policyProfiles,
     this.memory,
+    this.scheduledTasks,
   ) {
     final manager = SubagentManager(this);
     subagents = manager;
@@ -97,8 +100,19 @@ class AgentHub {
   final ProjectRepository projectStore;
   final PolicyProfileRepository policyProfiles;
 
+  /// Очередь отложенных задач: форк чата переносит их по выбору пользователя.
+  /// Запуск остаётся у планировщика, а не у хаба.
+  final ScheduledTaskRepository scheduledTasks;
+
   /// Автоматическое обновление саммари проекта после хода.
   final ProjectMemoryService memory;
+
+  /// Обновлять ли память проекта после хода.
+  ///
+  /// Фоновый запускатель планировщика выключает это: он закрывает базу сразу
+  /// после хода, а сетевое обновление памяти не укладывается в бюджет фоновой
+  /// задачи. Память обновится в следующем обычном ходе.
+  bool memoryUpdatesEnabled = true;
 
   final Map<String, ChatSession> _sessions = {};
 
@@ -211,16 +225,91 @@ class AgentHub {
 
   static const _uuid = Uuid();
 
+  /// Сколько несработавших задач попадёт в форк до [untilMessageId].
+  ///
+  /// Правило то же, что у [forkChat]: задачи берутся по шагам сообщений выше
+  /// линии, а строки без шага (записи, созданные до появления шагов в журнале)
+  /// относятся к чату по времени создания. Спрашивать пользователя о переносе
+  /// имеет смысл только про те задачи, которые действительно перенесутся.
+  Future<int> pendingScheduledTasks(
+    String chatId, {
+    String? untilMessageId,
+  }) async {
+    final messages = await chats.messages(chatId);
+    int? cutSeq;
+    DateTime? cutAt;
+    for (final message in messages) {
+      if (message.id != untilMessageId) continue;
+      cutSeq = message.seq;
+      cutAt = message.createdAt;
+    }
+    // Такой линии в чате нет: форк её не примет, переносить нечего.
+    if (untilMessageId != null && cutSeq == null) return 0;
+    final copiedMessageIds = {
+      for (final message in messages)
+        if (cutSeq == null || message.seq <= cutSeq) message.id,
+    };
+    final tasks = await scheduledTasks.forChat(chatId);
+    if (tasks.isEmpty) return 0;
+    final aboveLine = _taskIdsAboveLine(
+      runs: await chats.toolRunsForChat(chatId),
+      tasks: tasks,
+      copiedMessageIds: copiedMessageIds,
+      cutAt: cutAt,
+    );
+    return tasks
+        .where(
+          (task) =>
+              task.status == ScheduledTaskStatus.pending &&
+              aboveLine.contains(task.id),
+        )
+        .length;
+  }
+
+  /// id задач выше линии форка.
+  ///
+  /// Задача со шагом попадает сюда, если скопировано сообщение её шага. Строка
+  /// без шага (созданная до появления шагов в журнале) — если время создания не
+  /// позже линии. Одна функция для счётчика и для копии: иначе вопрос и перенос
+  /// однажды разойдутся.
+  static Set<String> _taskIdsAboveLine({
+    required List<ToolRun> runs,
+    required List<ScheduledTask> tasks,
+    required Set<String> copiedMessageIds,
+    required DateTime? cutAt,
+  }) {
+    final linked = <String>{};
+    final aboveLine = <String>{};
+    for (final run in runs) {
+      final taskId = ScheduledTaskRepository.taskIdOfRun(run);
+      if (taskId == null) continue;
+      linked.add(taskId);
+      if (copiedMessageIds.contains(run.messageId)) aboveLine.add(taskId);
+    }
+    for (final task in tasks) {
+      if (linked.contains(task.id)) continue;
+      if (cutAt != null && task.createdAt.isAfter(cutAt)) continue;
+      aboveLine.add(task.id);
+    }
+    return aboveLine;
+  }
+
   /// Форк чата до завершённого ответа [untilMessageId].
   ///
   /// Без [untilMessageId] копируется вся история. С ним — только сообщения до
   /// указанного ответа включительно; состояние берётся из ревизии последнего
   /// пользовательского сообщения этого отрезка. Файлы на Host не копируются
   /// и не откатываются: оба чата смотрят на текущую рабочую папку.
+  ///
+  /// [copyPendingTasks] переносит в копию и ещё не сработавшие задачи. Это
+  /// выбор пользователя: перенос спасает напоминание, если исходный чат потом
+  /// удалят, но то же напоминание может сработать дважды. Выполненные задачи
+  /// копируются всегда — они часть истории и ничего не запустят.
   Future<Chat> forkChat(
     String chatId, {
     String? title,
     String? untilMessageId,
+    bool copyPendingTasks = false,
   }) async {
     final source = await chats.chat(chatId);
     if (source == null) {
@@ -243,6 +332,12 @@ class AgentHub {
     final messageIds = <String, String>{
       for (final message in messages) message.id: _uuid.v4(),
     };
+    // Время линии форка: по нему определяется положение задач, у которых нет
+    // шага (записи, созданные до появления шагов в журнале).
+    DateTime? cutAt;
+    for (final message in messages) {
+      if (message.id == untilMessageId) cutAt = message.createdAt;
+    }
     final runs = await chats.toolRunsForChat(chatId);
     ChatMessage? lastUser;
     for (final message in messages) {
@@ -303,12 +398,45 @@ class AgentHub {
         ),
       );
     }
+    // Отложенная задача принадлежит своему шагу `schedule_task`: удалённый шаг
+    // уносит и её. Поэтому судьба задачи решается там же, где судьба шага:
+    // сообщение ниже линии форка не копируется — задача остаётся в исходном
+    // чате, а ожидающая задача, которую решили не переносить, отбрасывается
+    // вместе со своим шагом. У задач без шага (созданных до появления шагов в
+    // журнале) положение определяется временем создания.
+    final allTasks = await scheduledTasks.forChat(chatId);
+    final tasksById = {for (final task in allTasks) task.id: task};
+    final aboveLine = _taskIdsAboveLine(
+      runs: runs,
+      tasks: allTasks,
+      copiedMessageIds: messageIds.keys.toSet(),
+      cutAt: cutAt,
+    );
+    final referencedTaskIds = <String>{};
+    final copiedTaskIds = <String>{};
     for (final run in runs) {
       // Ожидающие и активные запуски в новый чат не переносятся: ответ на
       // карточку принадлежит исходному ходу.
       if (run.isActive) continue;
+      final taskId = ScheduledTaskRepository.taskIdOfRun(run);
+      if (taskId != null) referencedTaskIds.add(taskId);
       final messageId = messageIds[run.messageId];
       if (messageId == null) continue;
+      // Шаг копии должен ссылаться на задачу копии: старый id остался в
+      // исходном чате, и удаление шага иначе не нашло бы свою задачу.
+      var outputText = run.outputText;
+      var resultPreview = run.resultPreview;
+      if (taskId != null) {
+        final task = tasksById[taskId];
+        // Ниже линии форка задача не переносится, значит не нужен и шаг.
+        if (task != null && !aboveLine.contains(task.id)) continue;
+        if (task != null && !_carryTask(task, copyPendingTasks)) continue;
+        if (task != null && copiedTaskIds.add(task.id)) {
+          final carried = await scheduledTasks.copyTo(id, task);
+          outputText = _retargetTaskId(outputText, task.id, carried.id);
+          resultPreview = _retargetTaskId(resultPreview, task.id, carried.id);
+        }
+      }
       await chats.saveToolRun(
         ToolRun(
           id: _uuid.v4(),
@@ -324,15 +452,32 @@ class AgentHub {
           resultError: run.resultError,
           exitCode: run.exitCode,
           timedOut: run.timedOut,
-          outputText: run.outputText,
+          outputText: outputText,
           outputTruncated: run.outputTruncated,
-          resultPreview: run.resultPreview,
+          resultPreview: resultPreview,
           toolCallId: run.toolCallId,
         ),
       );
     }
+    // Задачи без шага: их положение определяется временем создания, общая
+    // линия уже посчитана в [aboveLine].
+    for (final task in allTasks) {
+      if (referencedTaskIds.contains(task.id)) continue;
+      if (!aboveLine.contains(task.id)) continue;
+      if (!_carryTask(task, copyPendingTasks)) continue;
+      if (copiedTaskIds.add(task.id)) await scheduledTasks.copyTo(id, task);
+    }
     return copy;
   }
+
+  /// Можно ли переносить задачу. Выполненные задачи копируются всегда:
+  /// они часть истории и ничего не запустят.
+  static bool _carryTask(ScheduledTask task, bool copyPendingTasks) =>
+      task.status != ScheduledTaskStatus.pending || copyPendingTasks;
+
+  /// Текст шага с id задачи копии вместо исходного.
+  static String? _retargetTaskId(String? text, String from, String to) =>
+      text?.replaceFirst(from, to);
 
   /// Новый пустой чат на Host, сразу записанный в БД; политика — из настроек по умолчанию.
   /// Проект появляется только вместе с явной папкой чата или папкой хоста.

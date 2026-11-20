@@ -1,8 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:package_info_plus/package_info_plus.dart';
+import 'package:probably_works/app/background/scheduled_task_runner.dart';
 import 'package:probably_works/app/bootstrap/app_paths_resolve.dart';
+import 'package:probably_works/app/bootstrap/client_info.dart';
 import 'package:probably_works/app/bootstrap/file_permissions_migration.dart';
 import 'package:probably_works/app/di/injection_native.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
@@ -27,6 +28,7 @@ import 'package:pw_agent/agent/exec/live_output_bus.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/recovery/startup_recovery.dart';
+import 'package:pw_agent/agent/schedule/task_scheduler.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/config/local_daemon_info.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
@@ -50,7 +52,7 @@ Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await resolveAppPaths();
   await AppLog.init(paths.logs.path);
-  final clientInfo = await _loadClientInfo();
+  final clientInfo = await loadClientInfo();
   final clientSettings = SharedPreferencesClientSettings(
     SharedPreferencesAsync(),
   );
@@ -154,6 +156,8 @@ Future<bool> _bootstrapEmbedded(
   // Карточки здесь не показываются. Их регистрирует открытие чата.
   // Вызовы без карточки, чьи зависимости уже закрыты, продолжаются сразу.
   await getIt<AgentApi>().resumeAfterRestart();
+  // Планировщик отложенных задач: таймер в приложении и фоновая задача на телефоне.
+  await ScheduledTaskRunner(getIt<TaskScheduler>()).start();
   // Хосты тоже читаются здесь, чтобы список хостов был в первом кадре, а не появлялся после чтения БД.
   getIt.registerSingleton(StartupHosts(await getIt<HostRepository>().all()));
   // Ширина панели читается здесь, а не в кубите: иначе панель сначала показывается с ширины по умолчанию и переезжает.
@@ -238,13 +242,4 @@ Future<void> _wireNotificationActions() async {
     ),
   ).handle;
   if (notifier is PluginAppNotifier) await notifier.initialize();
-}
-
-Future<ClientInfo> _loadClientInfo() async {
-  try {
-    return ClientInfo.fromPackageInfo(await PackageInfo.fromPlatform());
-  } on Object catch (error) {
-    AppLog.root.warning('cannot read package info', error);
-    return const ClientInfo.fallback();
-  }
 }

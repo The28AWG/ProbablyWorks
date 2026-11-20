@@ -59,7 +59,7 @@ extension _ChatSessionRuntime on ChatSession {
       _emitQueue();
       return;
     }
-    _running = true;
+    _beginTurn();
     await _append(MessageRole.event, text: text);
     unawaited(_runTurn());
   }
@@ -68,6 +68,9 @@ extension _ChatSessionRuntime on ChatSession {
 
   /// Запускает memory-цикл проекта. Ошибки не должны влиять на завершённый ход.
   Future<void> _updateProjectMemory() async {
+    // В фоновом прогоне база закрывается сразу после хода, а обновление памяти
+    // требует сети и времени: оно подождёт следующего обычного хода.
+    if (!_hub.memoryUpdatesEnabled) return;
     try {
       await _hub.memory.updateAfterTurn(chatId);
     } on Object catch (error, stack) {

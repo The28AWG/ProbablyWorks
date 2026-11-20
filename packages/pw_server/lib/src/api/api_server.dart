@@ -21,7 +21,6 @@ import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -670,16 +669,6 @@ final class ApiServer {
             request.method == 'PUT') {
           return _editFileChanges(request, rest.first);
         }
-      case 'schedules':
-        if (rest.isEmpty && request.method == 'GET') return _schedules(request);
-        if (rest.isEmpty && request.method == 'POST') return _schedule(request);
-        if (rest.length == 1 && request.method == 'GET') {
-          return _scheduleItem(request, rest.first);
-        }
-        if (rest.length == 1 && request.method == 'DELETE') {
-          await _backend.cancelSchedule(rest.first);
-          return _json(request.response, HttpStatus.noContent, {});
-        }
       case 'events':
         if (rest.isEmpty && request.method == 'GET') return _events(request);
     }
@@ -764,6 +753,10 @@ final class ApiServer {
               reason: request.uri.queryParameters['reason'],
             );
             return _json(request.response, HttpStatus.noContent, {});
+          }
+        case 'scheduled-tasks':
+          if (rest.length == 2 && request.method == 'GET') {
+            return _scheduledTaskCount(request, chatId);
           }
         case 'forks':
           if (rest.length == 2 && request.method == 'POST') {
@@ -1306,10 +1299,26 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
+  /// Сколько отложенных задач чата ещё не сработало. Клиент спрашивает это
+  /// перед форком, чтобы не показывать вопрос впустую.
+  Future<void> _scheduledTaskCount(HttpRequest request, String chatId) async {
+    final count = await _backend.pendingScheduledTasks(
+      chatId,
+      untilMessageId: request.uri.queryParameters['untilMessageId'],
+    );
+    _json(request.response, HttpStatus.ok, {'count': count});
+  }
+
   Future<void> _forkChat(HttpRequest request, String chatId) async {
     final body = await _body(request);
-    final title = body['title'] is String ? body['title'] as String : null;
-    final chat = await _backend.forkChat(chatId, title: title);
+    final chat = await _backend.forkChat(
+      chatId,
+      title: body['title'] is String ? body['title'] as String : null,
+      untilMessageId: body['untilMessageId'] is String
+          ? body['untilMessageId'] as String
+          : null,
+      copyPendingTasks: body['copyPendingTasks'] == true,
+    );
     if (chat == null) {
       throw AgentApiException(
         HttpStatus.notFound,
@@ -1997,44 +2006,6 @@ final class ApiServer {
     _json(request.response, HttpStatus.noContent, {});
   }
 
-  Future<void> _scheduleItem(HttpRequest request, String id) async {
-    final task = await _backend.scheduledTask(id);
-    if (task == null) {
-      throw AgentApiException(
-        HttpStatus.notFound,
-        'schedule_not_found',
-        'schedule $id not found',
-      );
-    }
-    _json(request.response, HttpStatus.ok, _taskJson(task));
-  }
-
-  Future<void> _schedules(HttpRequest request) async {
-    final tasks = await _backend.schedules();
-    _json(request.response, HttpStatus.ok, {
-      'schedules': [for (final task in tasks) _taskJson(task)],
-    });
-  }
-
-  Future<void> _schedule(HttpRequest request) async {
-    final body = await _body(request);
-    final dueAtRaw = _string(body, 'dueAt');
-    final dueAt = DateTime.tryParse(dueAtRaw)?.toUtc();
-    if (dueAt == null) {
-      throw const AgentApiException(
-        HttpStatus.badRequest,
-        'bad_due_at',
-        'dueAt must be an ISO-8601 date',
-      );
-    }
-    final task = await _backend.schedule(
-      chatId: _string(body, 'chatId'),
-      prompt: _string(body, 'prompt'),
-      dueAt: dueAt,
-    );
-    _json(request.response, HttpStatus.created, _taskJson(task));
-  }
-
   /// SSE-поток всех событий или одного чата (`?chatId=`).
   Future<void> _events(HttpRequest request, {String? chatId}) async {
     final response = request.response;
@@ -2557,17 +2528,6 @@ Map<String, Object?> _runJson(ToolRun run) => {
   'pendingCard': run.pendingCard == null ? null : jsonDecode(run.pendingCard!),
 };
 
-Map<String, Object?> _taskJson(ScheduledTask task) => {
-  'id': task.id,
-  'chatId': task.chatId,
-  'prompt': task.prompt,
-  'dueAt': task.dueAt.toUtc().toIso8601String(),
-  'status': task.status.name,
-  'error': task.error,
-  'createdAt': task.createdAt.toUtc().toIso8601String(),
-  'updatedAt': task.updatedAt.toUtc().toIso8601String(),
-};
-
 Map<String, Object?> _approvalJson(ApprovalRequest request) => {
   'id': request.id,
   'chatId': request.chatId,
@@ -2594,6 +2554,7 @@ Map<String, Object?> _editJson(EditFileChangesRequest request) => {
       {'path': file.path, 'kind': file.kind.name},
   ],
   'shellMayHaveChangedFiles': request.shellMayHaveChangedFiles,
+  'scheduledTasks': request.scheduledTasks,
 };
 
 bool _matchesChat(Object event, String? chatId) {

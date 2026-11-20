@@ -151,16 +151,22 @@ class LocalChatApi implements ChatApi {
   }
 
   @override
+  Future<int> pendingScheduledTasks(String chatId, {String? untilMessageId}) =>
+      _hub.pendingScheduledTasks(chatId, untilMessageId: untilMessageId);
+
+  @override
   Future<Chat?> forkChat(
     String chatId, {
     String? title,
     String? untilMessageId,
+    bool copyPendingTasks = false,
   }) async {
     try {
       return await _hub.forkChat(
         chatId,
         title: title,
         untilMessageId: untilMessageId,
+        copyPendingTasks: copyPendingTasks,
       );
     } on Object {
       return null;

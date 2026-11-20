@@ -23,7 +23,6 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -910,6 +909,33 @@ void main() {
     expect((jsonDecode(runsBody) as Map)['runs'], isEmpty);
   });
 
+  test('reports pending scheduled tasks and passes the fork choice', () async {
+    backend.pendingTasks = 2;
+    final (countStatus, countBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/chats/c1/scheduled-tasks?untilMessageId=a1',
+      token: _token,
+    );
+    expect(countStatus, HttpStatus.ok);
+    expect((jsonDecode(countBody) as Map)['count'], 2);
+    // Счётчик обязан знать линию форка: ниже неё задачи не переносятся.
+    expect(backend.countsUntilMessageId, 'a1');
+
+    final (forkStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/chats/c1/forks',
+      token: _token,
+      body: {'title': 'copy', 'untilMessageId': 'a1', 'copyPendingTasks': true},
+    );
+    expect(forkStatus, HttpStatus.created);
+    expect(backend.copiedPendingTasks, isTrue);
+    expect(backend.forkedUntilMessageId, 'a1');
+  });
+
   test('uses resources for presence and stopping a turn', () async {
     final (presence, _) = await _request(
       client,
@@ -954,26 +980,6 @@ void main() {
     expect(choice, HttpStatus.noContent);
     expect(backend.answers, ['yes']);
     expect(backend.choices, [EditFileChangesChoice.cancel]);
-  });
-
-  test('creates a scheduled task', () async {
-    final dueAt = DateTime(2026, 11, 12, 9);
-    final (status, body) = await _request(
-      client,
-      base,
-      'POST',
-      '/api/v1/schedules',
-      token: _token,
-      body: {
-        'chatId': 'c1',
-        'prompt': 'later',
-        'dueAt': dueAt.toIso8601String(),
-      },
-    );
-
-    expect(status, HttpStatus.created);
-    expect((jsonDecode(body) as Map)['prompt'], 'later');
-    expect(backend.scheduled, hasLength(1));
   });
 
   test('streams more than one event on the same connection', () async {
@@ -1042,47 +1048,6 @@ void main() {
     await lines.cancel();
     expect(event, 'event: stateAreaChanged');
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['area'], 'chats');
-  });
-
-  test('serializes schedule timestamps as UTC', () async {
-    final local = DateTime(2030, 1, 1, 5);
-    backend.scheduled.add(
-      ScheduledTask(
-        id: 'local',
-        chatId: 'c1',
-        prompt: 'later',
-        dueAt: local,
-        status: ScheduledTaskStatus.pending,
-        createdAt: local,
-        updatedAt: local,
-      ),
-    );
-
-    final (status, body) = await _request(
-      client,
-      base,
-      'GET',
-      '/api/v1/schedules/local',
-      token: _token,
-    );
-
-    expect(status, HttpStatus.ok);
-    final dueRaw = (jsonDecode(body) as Map)['dueAt'] as String;
-    expect(dueRaw, endsWith('Z'));
-    expect(DateTime.parse(dueRaw).isAtSameMomentAs(local), isTrue);
-  });
-
-  test('returns 404 for an unknown schedule', () async {
-    final (status, body) = await _request(
-      client,
-      base,
-      'GET',
-      '/api/v1/schedules/missing',
-      token: _token,
-    );
-
-    expect(status, HttpStatus.notFound);
-    expect((jsonDecode(body) as Map)['error'], contains('code'));
   });
 
   test('streams agent events over SSE', () async {
@@ -1710,8 +1675,10 @@ final class _FakeBackend implements AgentApi {
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final sent = <(String, String, bool)>[];
   final decisions = <ApprovalAction>[];
-  final scheduled = <ScheduledTask>[];
   final answers = <String?>[];
+  int pendingTasks = 0;
+  bool? copiedPendingTasks;
+  String? forkedUntilMessageId;
   String? updatedTitle;
   String? updatedModel;
   PolicyMode? updatedPolicy;
@@ -1845,7 +1812,27 @@ final class _FakeBackend implements AgentApi {
   }
 
   @override
-  Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;
+  Future<Chat?> forkChat(
+    String chatId, {
+    String? title,
+    String? untilMessageId,
+    bool copyPendingTasks = false,
+  }) async {
+    copiedPendingTasks = copyPendingTasks;
+    forkedUntilMessageId = untilMessageId;
+    return _chat;
+  }
+
+  String? countsUntilMessageId;
+
+  @override
+  Future<int> pendingScheduledTasks(
+    String chatId, {
+    String? untilMessageId,
+  }) async {
+    countsUntilMessageId = untilMessageId;
+    return pendingTasks;
+  }
 
   @override
   Future<void> deleteChat(String chatId) => Future<void>.value();
@@ -1955,39 +1942,6 @@ final class _FakeBackend implements AgentApi {
   Future<List<EditFileChangesRequest>> pendingEditFileChanges(
     String chatId,
   ) async => const [];
-
-  @override
-  Future<List<ScheduledTask>> schedules() async => scheduled;
-
-  @override
-  Future<ScheduledTask?> scheduledTask(String id) async {
-    for (final task in scheduled) {
-      if (task.id == id) return task;
-    }
-    return null;
-  }
-
-  @override
-  Future<ScheduledTask> schedule({
-    required String chatId,
-    required String prompt,
-    required DateTime dueAt,
-  }) async {
-    final task = ScheduledTask(
-      id: 's1',
-      chatId: chatId,
-      prompt: prompt,
-      dueAt: dueAt,
-      status: ScheduledTaskStatus.pending,
-      createdAt: DateTime(2026, 11, 11),
-      updatedAt: DateTime(2026, 11, 11),
-    );
-    scheduled.add(task);
-    return task;
-  }
-
-  @override
-  Future<void> cancelSchedule(String id) => Future<void>.value();
 
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();

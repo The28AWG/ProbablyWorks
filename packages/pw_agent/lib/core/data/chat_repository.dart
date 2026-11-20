@@ -323,6 +323,18 @@ class ChatRepository implements DraftPersistence {
     return terms.isEmpty ? null : terms;
   }
 
+  /// Удаляет одно сообщение и его запись в поиске.
+  ///
+  /// Нужно правке: заметка о просроченной задаче стоит отдельным событием перед
+  /// промптом и должна уходить вместе с ним.
+  Future<void> deleteMessage(String id) async {
+    await _db.customStatement(
+      'DELETE FROM message_search WHERE message_id = ?',
+      [id],
+    );
+    await (_db.delete(_messagesTable)..where((t) => t.id.equals(id))).go();
+  }
+
   /// Удаляет сообщения с seq >= [fromSeq] и связанные записи. Возвращает удалённые id.
   Future<List<String>> deleteMessagesFrom(String chatId, int fromSeq) async {
     final rows =

@@ -25,7 +25,6 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
@@ -389,16 +388,33 @@ class RemoteAgentApi
   }
 
   @override
+  Future<int> pendingScheduledTasks(
+    String chatId, {
+    String? untilMessageId,
+  }) async {
+    final suffix = untilMessageId == null
+        ? ''
+        : '?${Uri(queryParameters: {'untilMessageId': untilMessageId}).query}';
+    final json = await _get('/chats/$chatId/scheduled-tasks$suffix');
+    return (json['count'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
   Future<Chat?> forkChat(
     String chatId, {
     String? title,
     String? untilMessageId,
+    bool copyPendingTasks = false,
   }) async {
     try {
       final json = await _send(
         'POST',
         '/chats/$chatId/forks',
-        body: {'title': ?title},
+        body: {
+          'title': ?title,
+          'untilMessageId': ?untilMessageId,
+          if (copyPendingTasks) 'copyPendingTasks': true,
+        },
       );
       final map = Map<String, dynamic>.from(json as Map);
       final chat = _chat(map);
@@ -692,49 +708,6 @@ class RemoteAgentApi
     }
     _waiting.removeWhere((id) => id == chatId && !_hasPending(chatId));
     if (_hasPending(chatId)) _waiting.add(chatId);
-  }
-
-  @override
-  Future<List<ScheduledTask>> schedules() async {
-    final json = await _get('/schedules');
-    return [
-      for (final item in (json['schedules'] as List? ?? const []))
-        _task(Map<String, dynamic>.from(item as Map)),
-    ];
-  }
-
-  @override
-  Future<ScheduledTask?> scheduledTask(String id) async {
-    try {
-      final json = await _get('/schedules/$id');
-      return _task(Map<String, dynamic>.from(json as Map));
-    } on AgentApiException catch (error) {
-      if (error.status == 404) return null;
-      rethrow;
-    }
-  }
-
-  @override
-  Future<ScheduledTask> schedule({
-    required String chatId,
-    required String prompt,
-    required DateTime dueAt,
-  }) async {
-    final json = await _send(
-      'POST',
-      '/schedules',
-      body: {
-        'chatId': chatId,
-        'prompt': prompt,
-        'dueAt': dueAt.toUtc().toIso8601String(),
-      },
-    );
-    return _task(Map<String, dynamic>.from(json as Map));
-  }
-
-  @override
-  Future<void> cancelSchedule(String id) async {
-    await _send('DELETE', '/schedules/$id');
   }
 
   @override
@@ -1921,17 +1894,6 @@ Host _host(Map<String, dynamic> json) => Host(
       DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
 );
 
-ScheduledTask _task(Map<String, dynamic> json) => ScheduledTask(
-  id: _string(json, 'id'),
-  chatId: _string(json, 'chatId'),
-  prompt: _string(json, 'prompt'),
-  dueAt: _time(json, 'dueAt'),
-  status: ScheduledTaskStatus.values.byName(_string(json, 'status')),
-  error: json['error'] as String?,
-  createdAt: _time(json, 'createdAt'),
-  updatedAt: _time(json, 'updatedAt'),
-);
-
 ApprovalRequest _approval(Map<String, dynamic> json) => ApprovalRequest(
   id: _string(json, 'id'),
   chatId: _string(json, 'chatId'),
@@ -1964,6 +1926,7 @@ EditFileChangesRequest _editChangesRequest(Map<String, dynamic> json) =>
           ),
       ],
       shellMayHaveChangedFiles: json['shellMayHaveChangedFiles'] == true,
+      scheduledTasks: (json['scheduledTasks'] as num?)?.toInt() ?? 0,
     );
 
 String _string(Map<String, dynamic> json, String key) => '${json[key] ?? ''}';

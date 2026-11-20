@@ -20,7 +20,6 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -202,21 +201,38 @@ void main() {
     expect(backend.updatedModel, 'vendor/model');
   });
 
-  test('creates and reads a schedule', () async {
-    final task = await remote.schedule(
-      chatId: 'c1',
-      prompt: 'later',
-      dueAt: DateTime.utc(2030),
-    );
-    final fetched = await remote.scheduledTask(task.id);
+  test('reads pending tasks and passes the fork choice', () async {
+    backend.pendingTasks = 3;
+    expect(await remote.pendingScheduledTasks('c1', untilMessageId: 'a1'), 3);
+    expect(backend.countsUntilMessageId, 'a1');
 
-    expect(fetched?.prompt, 'later');
-    expect(fetched?.dueAt.isUtc, isTrue);
+    await remote.forkChat('c1', untilMessageId: 'a1', copyPendingTasks: true);
+    expect(backend.copiedPendingTasks, isTrue);
+    expect(backend.forkedUntilMessageId, 'a1');
+
+    await remote.forkChat('c1');
+    expect(backend.copiedPendingTasks, isFalse);
+  });
+
+  test('round-trips the scheduled task count of a rewind card', () async {
+    backend.editRequests.add(
+      const EditFileChangesRequest(
+        id: 'e1',
+        chatId: 'c1',
+        files: [],
+        shellMayHaveChangedFiles: false,
+        scheduledTasks: 2,
+      ),
+    );
+
+    final request = (await remote.pendingEditFileChanges('c1')).single;
+
+    expect(request.scheduledTasks, 2);
+    expect(request.files, isEmpty);
   });
 
   test('maps missing resources to null and 404 errors', () async {
     expect(await remote.chat('missing'), isNull);
-    expect(await remote.scheduledTask('missing'), isNull);
     await expectLater(
       remote.messages('missing'),
       throwsA(
@@ -642,11 +658,13 @@ final class _FakeAgent implements AgentApi {
   final sent = <(String, String, bool)>[];
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
-  final scheduled = <ScheduledTask>[];
   final searchQueries = <SearchQuery>[];
   String? updatedModel;
   String? savedChatId;
   ReasoningPreference? savedReasoning;
+  int pendingTasks = 0;
+  bool? copiedPendingTasks;
+  String? forkedUntilMessageId;
 
   final _chat = Chat(
     id: 'c1',
@@ -770,7 +788,27 @@ final class _FakeAgent implements AgentApi {
   }
 
   @override
-  Future<Chat?> forkChat(String chatId, {String? title}) async => _chat;
+  Future<Chat?> forkChat(
+    String chatId, {
+    String? title,
+    String? untilMessageId,
+    bool copyPendingTasks = false,
+  }) async {
+    copiedPendingTasks = copyPendingTasks;
+    forkedUntilMessageId = untilMessageId;
+    return _chat;
+  }
+
+  String? countsUntilMessageId;
+
+  @override
+  Future<int> pendingScheduledTasks(
+    String chatId, {
+    String? untilMessageId,
+  }) async {
+    countsUntilMessageId = untilMessageId;
+    return pendingTasks;
+  }
 
   @override
   Future<void> deleteChat(String chatId) => Future<void>.value();
@@ -859,43 +897,12 @@ final class _FakeAgent implements AgentApi {
   @override
   Future<List<UserQuestion>> pendingQuestions(String chatId) async => const [];
 
+  final editRequests = <EditFileChangesRequest>[];
+
   @override
   Future<List<EditFileChangesRequest>> pendingEditFileChanges(
     String chatId,
-  ) async => const [];
-
-  @override
-  Future<List<ScheduledTask>> schedules() async => scheduled;
-
-  @override
-  Future<ScheduledTask?> scheduledTask(String id) async {
-    for (final task in scheduled) {
-      if (task.id == id) return task;
-    }
-    return null;
-  }
-
-  @override
-  Future<ScheduledTask> schedule({
-    required String chatId,
-    required String prompt,
-    required DateTime dueAt,
-  }) async {
-    final task = ScheduledTask(
-      id: 's1',
-      chatId: chatId,
-      prompt: prompt,
-      dueAt: dueAt,
-      status: ScheduledTaskStatus.pending,
-      createdAt: DateTime.utc(2026, 11, 11),
-      updatedAt: DateTime.utc(2026, 11, 11),
-    );
-    scheduled.add(task);
-    return task;
-  }
-
-  @override
-  Future<void> cancelSchedule(String id) => Future<void>.value();
+  ) async => editRequests;
 
   @override
   Future<void> resumeAfterRestart() => Future<void>.value();

@@ -39,6 +39,27 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(cubit.state.chats, isEmpty);
   });
+
+  test('reads the pending task count and survives a failure', () async {
+    final statuses = StreamController<AgentStatus>.broadcast();
+    final chats = StreamController<List<Chat>>.broadcast();
+    final hosts = StreamController<List<Host>>.broadcast();
+    final api = _FakeAgent(statuses.stream, chats.stream, hosts.stream);
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await statuses.close();
+      await chats.close();
+      await hosts.close();
+    });
+
+    api.pendingTasks = 2;
+    expect(await cubit.pendingScheduledTasks('c1'), 2);
+
+    // Не удалось прочитать: вызывающая сторона решает сама, вопрос не задаём.
+    api.pendingTasksFailed = true;
+    expect(await cubit.pendingScheduledTasks('c1'), isNull);
+  });
 }
 
 final class _FakeAgent implements AgentApi {
@@ -77,6 +98,18 @@ final class _FakeAgent implements AgentApi {
 
   @override
   Set<String> get waitingChatIds => const {};
+
+  int pendingTasks = 0;
+  bool pendingTasksFailed = false;
+
+  @override
+  Future<int> pendingScheduledTasks(
+    String chatId, {
+    String? untilMessageId,
+  }) async {
+    if (pendingTasksFailed) throw StateError('count unavailable');
+    return pendingTasks;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
+import 'package:pw_agent/core/util/elapsed_format.dart';
+import 'package:pw_agent/core/util/short_time.dart';
 import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
 /// Отправляет созревшие отложенные задачи в их чаты.
@@ -20,6 +23,14 @@ class TaskScheduler {
   Timer? _timer;
   var _ticking = false;
 
+  /// С какого опоздания сообщать о нём отдельной заметкой.
+  ///
+  /// Обычная задержка тика и фонового запуска сюда не попадает: иначе заметка
+  /// появлялась бы почти всегда и только мешала. Час — это уже не «через
+  /// секунду», напоминание пришло заметно позже, и модель должна это знать,
+  /// чтобы не говорить «сегодня», когда речь о прошлой неделе.
+  static const lateNoteAfter = Duration(hours: 1);
+
   /// Проверяет очередь сразу и затем раз в [interval].
   void start({Duration interval = const Duration(seconds: 15)}) {
     _timer?.cancel();
@@ -32,16 +43,31 @@ class TaskScheduler {
     _timer = null;
   }
 
+  /// Выключает обновление памяти проекта после ходов этого прогона.
+  ///
+  /// Нужно фоновому запускателю: он закрывает базу сразу после хода, а
+  /// обновление памяти требует сети и времени. Память обновится в следующем
+  /// обычном ходе.
+  void disableProjectMemoryUpdates() => _hub.memoryUpdatesEnabled = false;
+
   /// Один проход по очереди. Публичный для тестов и ручного запуска.
-  Future<void> tick() async {
+  ///
+  /// [awaitTurns] — дождаться конца хода. Нужен платформенному запускателю:
+  /// в фоновом изоляте управление нельзя возвращать, пока агент не ответил,
+  /// иначе систему выгрузит изолят вместе с незавершённым ходом. Демону и
+  /// приложению ждать не нужно: они живут дальше.
+  Future<void> tick({bool awaitTurns = false}) async {
     if (_ticking) return;
     _ticking = true;
     try {
-      final due = await _tasks.due(DateTime.now());
+      final now = DateTime.now();
+      final due = await _tasks.due(now);
       for (final task in due) {
         await _tasks.markDispatched(task.id);
         try {
-          await _hub.session(task.chatId).submit(task.prompt);
+          final session = _hub.session(task.chatId);
+          await session.submit(task.prompt, note: _lateNote(task, now));
+          if (awaitTurns) await session.whenIdle;
         } on Object catch (error, stack) {
           _log.warning(
             'scheduled task ${task.id} failed: $error',
@@ -56,5 +82,18 @@ class TaskScheduler {
     } finally {
       _ticking = false;
     }
+  }
+
+  /// Заметка о пропущенном сроке или null, если опоздание обычное.
+  ///
+  /// Время в заметке — местное и короткое (см. [formatShortTime]): рядом с
+  /// длительностью опоздания этого достаточно. Текст английский, как у прочих
+  /// событий журнала: он технический и не переводится.
+  String? _lateNote(ScheduledTask task, DateTime now) {
+    final late = now.difference(task.dueAt);
+    if (late <= lateNoteAfter) return null;
+    final due = formatShortTime(task.dueAt, now: now);
+    return '$scheduledTaskLateNotePrefix'
+        '$due, started ${formatElapsed(late)} late';
   }
 }

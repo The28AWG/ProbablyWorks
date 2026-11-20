@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/chats/presentation/fork_tasks_prompt.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -183,12 +184,7 @@ Future<void> _showChatMenu(
     case _ChatAction.rename:
       await _renameChat(context, chat);
     case _ChatAction.fork:
-      final sourceTitle = chat.title.isEmpty ? l10n.chatsNew : chat.title;
-      final forked = await context.read<ChatListCubit>().fork(
-        chat.id,
-        title: l10n.chatForkTitle(sourceTitle),
-      );
-      if (forked != null && context.mounted) onOpen(forked.id);
+      await _forkChat(context, chat, onOpen: onOpen);
     case _ChatAction.delete:
       await _deleteChat(context, chat, onDeleted: onDeleted);
   }
@@ -208,22 +204,65 @@ Future<void> _renameChat(BuildContext context, Chat chat) async {
   }
 }
 
+/// Дублирование чата. Если в нём есть несработавшие задачи, сначала
+/// спрашиваем, перенести их или отбросить: перенос спасает напоминание после
+/// удаления исходного чата, отказ гарантирует, что оно не сработает дважды.
+/// Выполненные задачи копируются всегда и вопроса не требуют.
+Future<void> _forkChat(
+  BuildContext context,
+  Chat chat, {
+  void Function(String chatId)? onOpen,
+}) async {
+  final l10n = AppLocalizations.of(context);
+  final cubit = context.read<ChatListCubit>();
+  final pending = await cubit.pendingScheduledTasks(chat.id);
+  if (!context.mounted) return;
+  var copyPendingTasks = false;
+  if (pending == null) {
+    // Проверить не удалось: переносим молча, чтобы не потерять напоминания,
+    // о которых пользователя даже не спросили. Дубль заметен, потеря — нет.
+    copyPendingTasks = true;
+  } else if (pending > 0) {
+    final choice = await askForkTasksChoice(context, pending);
+    // Отмена — форк не начинаем: пользователь ещё не решил.
+    if (choice == null) return;
+    copyPendingTasks = choice;
+  }
+  final sourceTitle = chat.title.isEmpty ? l10n.chatsNew : chat.title;
+  final forked = await cubit.fork(
+    chat.id,
+    title: l10n.chatForkTitle(sourceTitle),
+    copyPendingTasks: copyPendingTasks,
+  );
+  if (forked != null && onOpen != null && context.mounted) onOpen(forked.id);
+}
+
+/// Удаление чата. Если в нём есть несработавшие задачи, говорим об этом прямо:
+/// задачи уходят вместе с чатом каскадом, вернуть их будет нечем.
 Future<void> _deleteChat(
   BuildContext context,
   Chat chat, {
   void Function(String chatId)? onDeleted,
 }) async {
   final l10n = AppLocalizations.of(context);
+  final cubit = context.read<ChatListCubit>();
+  final pending = await cubit.pendingScheduledTasks(chat.id);
+  if (!context.mounted) return;
+  // Не удалось посчитать — показываем обычный текст: обещать число, которого
+  // не знаем, нельзя.
+  final hasTasks = pending != null && pending > 0;
   final ok = await ConfirmDialog.confirm(
     context,
     title: l10n.commonDelete,
-    message: l10n.chatsDeleteConfirm,
+    message: hasTasks
+        ? l10n.chatsDeleteTasksConfirm(pending)
+        : l10n.chatsDeleteConfirm,
     cancelLabel: l10n.commonCancel,
     confirmLabel: l10n.commonDelete,
     destructive: true,
   );
   if (ok && context.mounted) {
-    await context.read<ChatListCubit>().delete(chat.id);
+    await cubit.delete(chat.id);
     onDeleted?.call(chat.id);
   }
 }

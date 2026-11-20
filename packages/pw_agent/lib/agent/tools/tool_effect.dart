@@ -26,6 +26,8 @@ class ToolEffect {
     this.hostWrite = false,
     this.sessionRead = false,
     this.sessionWrite = false,
+    this.tasksRead = false,
+    this.tasksWrite = false,
     this.hostsRead = false,
     this.hostsWrite = false,
     this.settingsRead = false,
@@ -63,6 +65,13 @@ class ToolEffect {
 
   /// Запись текущей ревизии. `mutate` читает и сохраняет её без своего замка.
   final bool sessionWrite;
+
+  /// Чтение очереди отложенных задач чата.
+  final bool tasksRead;
+
+  /// Запись очереди: создание и отмена. Список должен видеть только что
+  /// созданную задачу, поэтому чтение конфликтует с записью.
+  final bool tasksWrite;
 
   /// Реестр хостов приложения.
   final bool hostsRead;
@@ -102,6 +111,8 @@ class ToolEffect {
       hostWrite: hostWrite || writes.ambiguous,
       sessionRead: sessionRead,
       sessionWrite: sessionWrite,
+      tasksRead: tasksRead,
+      tasksWrite: tasksWrite,
       hostsRead: hostsRead,
       hostsWrite: hostsWrite,
       settingsRead: settingsRead,
@@ -165,6 +176,9 @@ ToolEffect toolEffectFor(
     ToolNames.unpinFact => const ToolEffect(sessionWrite: true),
     ToolNames.listStateRevisions ||
     ToolNames.getStateRevision => const ToolEffect(sessionRead: true),
+    ToolNames.scheduleTask ||
+    ToolNames.cancelScheduledTask => const ToolEffect(tasksWrite: true),
+    ToolNames.listScheduledTasks => const ToolEffect(tasksRead: true),
     ToolNames.chatHistorySearch => const ToolEffect(transcriptRead: true),
     ToolNames.listRuns || ToolNames.readRunOutput => const ToolEffect(),
     ToolNames.stopRun => const ToolEffect(hostWrite: true),
@@ -275,6 +289,9 @@ String? _path(String? workspace, Map<String, dynamic> args) {
 bool _hits(ToolEffect writer, ToolEffect other) {
   if (writer.hostWrite && _touchesHost(other)) return true;
   if (writer.sessionWrite && (other.sessionRead || other.sessionWrite)) {
+    return true;
+  }
+  if (writer.tasksWrite && (other.tasksRead || other.tasksWrite)) {
     return true;
   }
   if (writer.hostsWrite && (other.hostsRead || other.hostsWrite)) return true;

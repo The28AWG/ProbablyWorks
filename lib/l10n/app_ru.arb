@@ -94,9 +94,39 @@
   "@chatsDeleteConfirm": {
     "description": "Подтверждение перед удалением чата и его сообщений."
   },
+  "chatsDeleteTasksConfirm": "В этом чате есть отложенные задачи: {count}. Они будут удалены вместе с чатом и его историей. Продолжить?",
+  "@chatsDeleteTasksConfirm": {
+    "description": "Подтверждение перед удалением чата, в котором ещё есть несработавшие отложенные задачи: они удаляются вместе с чатом.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chatsFork": "Дублировать",
   "@chatsFork": {
     "description": "Пункт меню: скопировать текущую историю чата в новый чат."
+  },
+  "chatsForkTasksTitle": "Отложенные задачи",
+  "@chatsForkTasksTitle": {
+    "description": "Заголовок вопроса при дублировании чата, в котором ещё есть несработавшие задачи."
+  },
+  "chatsForkTasksMessage": "Отложенные задачи в этом чате: {count}. Скопировать их в копию? Если отбросить, они останутся только в исходном чате.",
+  "@chatsForkTasksMessage": {
+    "description": "Поясняет, что значит перенос или отказ от отложенных задач при дублировании чата.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsForkTasksCopy": "Скопировать",
+  "@chatsForkTasksCopy": {
+    "description": "Подтверждает перенос отложенных задач в дубликат чата."
+  },
+  "chatsForkTasksDiscard": "Отбросить",
+  "@chatsForkTasksDiscard": {
+    "description": "Дублирует чат без несработавших отложенных задач."
   },
   "chatForkTitle": "Копия «{title}»",
   "@chatForkTitle": {
@@ -3150,6 +3180,20 @@
   "@editFileChangesRestore": {"description": "Откатить файлы на хосте и продолжить правку истории."},
   "editFileChangesKeep": "Оставить файлы",
   "@editFileChangesKeep": {"description": "Продолжить без восстановления файлов на хосте."},
+  "historyRewindTasksTitle": "Удалить отложенные задачи?",
+  "@historyRewindTasksTitle": {"description": "Заголовок карточки, когда правка или регенерация удалит отложенные задачи."},
+  "historyRewindTasksBody": "Вместе с этими сообщениями будут удалены отложенные задачи: {count}. Продолжить?",
+  "@historyRewindTasksBody": {
+    "description": "Поясняет, что несработавшие задачи из удаляемых сообщений исчезнут.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "historyRewindTasksWarning": "Ещё будут удалены отложенные задачи: {count}.",
+  "@historyRewindTasksWarning": {
+    "description": "Дополнительное предупреждение на карточке отката файлов, если удалятся и задачи.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "historyRewindTasksContinue": "Удалить и продолжить",
+  "@historyRewindTasksContinue": {"description": "Подтвердить правку истории и удаление задач из неё."},
   "editFileChangesKindCreated": "Создан",
   "@editFileChangesKindCreated": {"description": "Файл создан агентом."},
   "editFileChangesKindModified": "Изменён",

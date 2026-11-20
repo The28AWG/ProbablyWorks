@@ -112,10 +112,31 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _api.renameChat(chatId, trimmed);
   }
 
-  /// Форк текущего чата. Файлы на Host не копируются и не откатываются.
-  Future<Chat?> fork(String chatId, {String? title}) async {
+  /// Сколько отложенных задач чата ещё не сработало.
+  ///
+  /// null — прочитать не удалось. Тогда вопрос задать нельзя, и вызывающая
+  /// сторона выбирает безопасный вариант сама.
+  Future<int?> pendingScheduledTasks(String chatId) async {
     try {
-      return await _api.forkChat(chatId, title: title);
+      return await _api.pendingScheduledTasks(chatId);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Форк текущего чата. Файлы на Host не копируются и не откатываются.
+  /// [copyPendingTasks] — выбор пользователя, сделанный в диалоге переноса.
+  Future<Chat?> fork(
+    String chatId, {
+    String? title,
+    bool copyPendingTasks = false,
+  }) async {
+    try {
+      return await _api.forkChat(
+        chatId,
+        title: title,
+        copyPendingTasks: copyPendingTasks,
+      );
     } on Object {
       return null;
     }

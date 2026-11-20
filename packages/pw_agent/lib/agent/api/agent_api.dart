@@ -3,7 +3,6 @@ import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
-import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
@@ -89,7 +88,27 @@ abstract interface class AgentApi {
     String? workspace,
     bool workspaceSpecified = false,
   });
-  Future<Chat?> forkChat(String chatId, {String? title});
+
+  /// Дубликат чата. [untilMessageId] обрывает историю на указанном ответе:
+  /// всё, что ниже линии, в копию не идёт, включая задачи этих сообщений.
+  ///
+  /// [copyPendingTasks] переносит и не сработавшие задачи выше линии:
+  /// пользователь выбирает это сам, потому что перенос может задвоить
+  /// напоминание, а отказ теряет его после удаления исходного чата.
+  Future<Chat?> forkChat(
+    String chatId, {
+    String? title,
+    String? untilMessageId,
+    bool copyPendingTasks = false,
+  });
+
+  /// Сколько отложенных задач чата ещё не сработало. Нужно перед форком:
+  /// спрашивать имеет смысл только когда есть что переносить.
+  ///
+  /// [untilMessageId] ограничивает счёт задачами выше линии форка: ниже линии
+  /// они в копию не попадут, и обещать их перенос нельзя.
+  Future<int> pendingScheduledTasks(String chatId, {String? untilMessageId});
+
   Future<void> deleteChat(String chatId);
 
   Future<List<ChatMessage>> messages(String chatId);
@@ -125,13 +144,4 @@ abstract interface class AgentApi {
   Future<List<ApprovalRequest>> pendingApprovals(String chatId);
   Future<List<UserQuestion>> pendingQuestions(String chatId);
   Future<List<EditFileChangesRequest>> pendingEditFileChanges(String chatId);
-
-  Future<List<ScheduledTask>> schedules();
-  Future<ScheduledTask?> scheduledTask(String id);
-  Future<ScheduledTask> schedule({
-    required String chatId,
-    required String prompt,
-    required DateTime dueAt,
-  });
-  Future<void> cancelSchedule(String id);
 }

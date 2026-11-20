@@ -7,8 +7,14 @@ import 'package:pw_agent/core/util/redactor.dart';
 const _maxBytes = 2 * 1024 * 1024;
 const _keepFiles = 3;
 
+/// Инициализирован ли журнал в текущем изоляте. Повторный вызов не должен
+/// добавлять второй слушатель: иначе каждая запись писалась бы дважды.
+var _initialized = false;
+
 /// Файловый журнал с ротацией. Запускается только в native-сборке.
 Future<void> init(String logDir) async {
+  if (_initialized) return;
+  _initialized = true;
   final directory = Directory(logDir);
   final created = !directory.existsSync();
   await directory.create(recursive: true);

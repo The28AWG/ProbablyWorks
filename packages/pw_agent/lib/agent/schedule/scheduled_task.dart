@@ -3,6 +3,12 @@
 /// `dispatched` — сообщение уже передано сессии; дальнейшая судьба видна в журнале чата.
 enum ScheduledTaskStatus { pending, dispatched, failed, cancelled }
 
+/// Начало служебного события о просроченной задаче.
+///
+/// По нему правка сообщения удаляет заметку вместе с промптом: иначе в истории
+/// остаётся строка про доставку, которой больше нет.
+const scheduledTaskLateNotePrefix = 'scheduled task was due ';
+
 /// Отложенный запуск агента в конкретном чате.
 final class ScheduledTask {
   const ScheduledTask({

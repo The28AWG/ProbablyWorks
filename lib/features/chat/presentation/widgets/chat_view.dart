@@ -22,6 +22,7 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_meta_bar.
 import 'package:probably_works/features/chat/presentation/widgets/chat_timeline.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_welcome.dart';
 import 'package:probably_works/features/chat/presentation/widgets/mention_text_controller.dart';
+import 'package:probably_works/features/chats/presentation/fork_tasks_prompt.dart';
 import 'package:probably_works/features/models/presentation/reasoning_labels.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_picker_dialog.dart';
 import 'package:probably_works/features/models/presentation/widgets/model_runtime_builder.dart';
@@ -382,10 +383,11 @@ class _ChatBodyState extends State<ChatBody> {
                                       ),
                                 onForkMessage: readOnly
                                     ? null
-                                    : (message) => bloc.add(
-                                        ChatForkRequested(
-                                          message.id,
-                                          title: l10n.chatForkTitle(forkTitle),
+                                    : (message) => unawaited(
+                                        _forkAt(
+                                          bloc,
+                                          message,
+                                          l10n.chatForkTitle(forkTitle),
                                         ),
                                       ),
                               ),
@@ -811,6 +813,34 @@ class _ChatBodyState extends State<ChatBody> {
       }
     }
     return true;
+  }
+
+  /// Форк от выбранного ответа. Задачи выше линии можно перенести: без вопроса
+  /// форк молча терял бы напоминания, поставленные в этой ветке.
+  Future<void> _forkAt(ChatBloc bloc, ChatMessage message, String title) async {
+    // Считаем только задачи выше линии форка: ниже линии они не переносятся.
+    final pending = await bloc.pendingScheduledTasks(
+      untilMessageId: message.id,
+    );
+    if (!mounted) return;
+    var copyPendingTasks = false;
+    if (pending == null) {
+      // Проверить не удалось: переносим, чтобы не потерять напоминания молча.
+      copyPendingTasks = true;
+    } else if (pending > 0) {
+      final choice = await askForkTasksChoice(context, pending);
+      if (choice == null) return;
+      // Пока диалог был открыт, экран могли закрыть: блок уже закрыт.
+      if (!mounted) return;
+      copyPendingTasks = choice;
+    }
+    bloc.add(
+      ChatForkRequested(
+        message.id,
+        title: title,
+        copyPendingTasks: copyPendingTasks,
+      ),
+    );
   }
 
   void _submit(ChatBloc bloc, {required bool sendNow}) {

@@ -446,13 +446,20 @@ class _EditFileChangesCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final bloc = context.read<ChatBloc>();
     final scheme = Theme.of(context).colorScheme;
+    // Файлов может не быть: тогда карточка существует только ради напоминаний,
+    // которые исчезнут вместе с сообщениями. Восстанавливать нечего, поэтому
+    // вместо «вернуть/оставить» остаётся одно действие — продолжить.
+    final hasFiles = request.files.isNotEmpty;
+    final tasks = request.scheduledTasks;
     final fileLines = [
       for (final file in request.files)
         '${_editFileKindLabel(l10n, file.kind)}  ${file.path}',
     ].join('\n');
     return ActionCard(
-      title: l10n.editFileChangesTitle,
-      icon: Icons.edit_note_outlined,
+      title: hasFiles
+          ? l10n.editFileChangesTitle
+          : l10n.historyRewindTasksTitle,
+      icon: hasFiles ? Icons.edit_note_outlined : Icons.schedule_outlined,
       tone: AppTone.warning,
       actions: [
         TextButton(
@@ -464,30 +471,51 @@ class _EditFileChangesCard extends StatelessWidget {
           ),
           child: Text(l10n.commonCancel),
         ),
-        TextButton(
-          onPressed: () => bloc.add(
-            ChatEditFileChangesAnswered(
-              request.id,
-              EditFileChangesChoice.continueWithoutRollback,
+        if (hasFiles) ...[
+          TextButton(
+            onPressed: () => bloc.add(
+              ChatEditFileChangesAnswered(
+                request.id,
+                EditFileChangesChoice.continueWithoutRollback,
+              ),
             ),
+            child: Text(l10n.editFileChangesKeep),
           ),
-          child: Text(l10n.editFileChangesKeep),
-        ),
-        FilledButton(
-          onPressed: () => bloc.add(
-            ChatEditFileChangesAnswered(
-              request.id,
-              EditFileChangesChoice.rollbackAndContinue,
+          FilledButton(
+            onPressed: () => bloc.add(
+              ChatEditFileChangesAnswered(
+                request.id,
+                EditFileChangesChoice.rollbackAndContinue,
+              ),
             ),
+            child: Text(l10n.editFileChangesRestore),
           ),
-          child: Text(l10n.editFileChangesRestore),
-        ),
+        ] else
+          FilledButton(
+            onPressed: () => bloc.add(
+              ChatEditFileChangesAnswered(
+                request.id,
+                EditFileChangesChoice.continueWithoutRollback,
+              ),
+            ),
+            child: Text(l10n.historyRewindTasksContinue),
+          ),
       ],
       children: [
         Text(
-          l10n.editFileChangesBody,
+          hasFiles
+              ? l10n.editFileChangesBody
+              : l10n.historyRewindTasksBody(tasks),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
+        if (hasFiles && tasks > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              l10n.historyRewindTasksWarning(tasks),
+              style: TextStyle(color: scheme.error, fontSize: 12),
+            ),
+          ),
         if (request.shellMayHaveChangedFiles)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm),

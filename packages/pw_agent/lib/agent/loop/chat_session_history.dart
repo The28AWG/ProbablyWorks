@@ -7,6 +7,10 @@ extension _ChatSessionHistory on ChatSession {
   Future<void> _persistPrompt(QueuedPrompt prompt) async {
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return;
+    // Заметка идёт отдельным событием: текст пользователя остаётся тем, что
+    // было запланировано, а модель и лента видят причину опоздания.
+    final note = prompt.note;
+    if (note != null) await _append(MessageRole.event, text: note);
     final messageId = ChatSession._uuid.v4();
     final revisions = await _hub.state.onUserMessage(chat, messageId);
     await _append(
@@ -194,6 +198,17 @@ extension _ChatSessionHistory on ChatSession {
       await _hub.state.restoreAfter(chat, message);
     }
     final fromSeq = fromSelf ? message.seq : message.seq + 1;
+    // Заметка о просроченной задаче стоит отдельным событием перед промптом.
+    // При правке промпта она уходит вместе с ним, иначе описывает доставку,
+    // которой больше нет.
+    if (fromSelf) {
+      for (final previous in await _messages()) {
+        if (previous.seq != message.seq - 1) continue;
+        if (previous.role != MessageRole.event) continue;
+        if (!previous.text.startsWith(scheduledTaskLateNotePrefix)) continue;
+        await _hub.chats.deleteMessage(previous.id);
+      }
+    }
     final ids = await _hub.chats.deleteMessagesFrom(chatId, fromSeq);
     _turnHistory = null;
     final runs = await _hub.chats.toolRunsForMessages(ids);
@@ -201,6 +216,29 @@ extension _ChatSessionHistory on ChatSession {
       await _hub.logs.deleteFile(run.logPath);
     }
     await _hub.chats.deleteToolRuns([for (final r in runs) r.id]);
+    // Отложенная задача живёт вместе со своим шагом: исчез шаг — исчезает и
+    // она. Иначе напоминание осталось бы без сообщения, которое его объясняет.
+    final taskIds = <String>[];
+    for (final run in runs) {
+      final taskId = ScheduledTaskRepository.taskIdOfRun(run);
+      if (taskId != null) taskIds.add(taskId);
+    }
+    // Строки без шага (созданные до появления шагов в журнале) удаляются по
+    // времени: они относятся к переписываемой части, если появились позже
+    // самого сообщения. Строгая граница: одинаковое время при точности в
+    // секунду скорее значит «предыдущий ход», такую задачу сохраняем.
+    // Оставшиеся запуски показывают, у кого шаг есть.
+    final referenced = <String>{};
+    for (final run in await _hub.chats.toolRunsForChat(chatId)) {
+      final id = ScheduledTaskRepository.taskIdOfRun(run);
+      if (id != null) referenced.add(id);
+    }
+    for (final task in await _hub.scheduledTasks.forChat(chatId)) {
+      if (referenced.contains(task.id)) continue;
+      if (!task.createdAt.isAfter(message.createdAt)) continue;
+      taskIds.add(task.id);
+    }
+    await _hub.scheduledTasks.deleteByIds(taskIds);
     await _hub.chats.deleteRevisionsTriggeredBy(ids);
     // Сводка могла покрывать удалённые сообщения. Оставлять её и старую границу нельзя:
     // после правки раннего сообщения cutoff может оказаться больше всех оставшихся seq,

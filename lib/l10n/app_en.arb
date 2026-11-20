@@ -94,9 +94,39 @@
   "@chatsDeleteConfirm": {
     "description": "Confirmation text before a chat and its messages are deleted."
   },
+  "chatsDeleteTasksConfirm": "This chat has scheduled tasks: {count}. They will be deleted with the chat and its history. Continue?",
+  "@chatsDeleteTasksConfirm": {
+    "description": "Confirmation before deleting a chat that still has pending scheduled tasks; they are deleted together with the chat.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "chatsFork": "Duplicate",
   "@chatsFork": {
     "description": "Menu action that copies the current chat history into a new chat."
+  },
+  "chatsForkTasksTitle": "Scheduled tasks",
+  "@chatsForkTasksTitle": {
+    "description": "Title of the question asked when duplicating a chat that still has pending scheduled tasks."
+  },
+  "chatsForkTasksMessage": "Scheduled tasks in this chat: {count}. Copy them to the duplicate? If you discard them, they stay only in the original chat.",
+  "@chatsForkTasksMessage": {
+    "description": "Explains what copying or discarding pending scheduled tasks means when a chat is duplicated.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatsForkTasksCopy": "Copy",
+  "@chatsForkTasksCopy": {
+    "description": "Confirms copying pending scheduled tasks into the duplicated chat."
+  },
+  "chatsForkTasksDiscard": "Discard",
+  "@chatsForkTasksDiscard": {
+    "description": "Duplicates the chat without its pending scheduled tasks."
   },
   "chatForkTitle": "Copy of {title}",
   "@chatForkTitle": {
@@ -3150,6 +3180,20 @@
   "@editFileChangesRestore": {"description": "Roll back listed files on the host, then edit or trim history."},
   "editFileChangesKeep": "Keep files",
   "@editFileChangesKeep": {"description": "Edit or trim history without restoring files on the host."},
+  "historyRewindTasksTitle": "Delete scheduled tasks?",
+  "@historyRewindTasksTitle": {"description": "Title of the dock card when editing or regenerating history would delete scheduled tasks."},
+  "historyRewindTasksBody": "Scheduled tasks will be deleted together with these messages: {count}. Continue?",
+  "@historyRewindTasksBody": {
+    "description": "Explains that pending scheduled tasks created in the removed messages disappear.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "historyRewindTasksWarning": "Scheduled tasks will also be deleted: {count}.",
+  "@historyRewindTasksWarning": {
+    "description": "Extra warning on the file rollback card when scheduled tasks would be deleted too.",
+    "placeholders": {"count": {"type": "int"}}
+  },
+  "historyRewindTasksContinue": "Delete and continue",
+  "@historyRewindTasksContinue": {"description": "Confirm history rewinding and deleting the scheduled tasks it contains."},
   "editFileChangesKindCreated": "Created",
   "@editFileChangesKindCreated": {"description": "File was created by the agent."},
   "editFileChangesKindModified": "Modified",

@@ -93,6 +93,9 @@ extension _ChatSessionTurn on ChatSession {
       // Решение уже записано в запуск. Следующее открытие читает базу, а не эту карту.
       _parked.clear();
       _emit(AgentTurnFinished(chatId, end));
+      // Ход полностью завершён: ждавший его фоновый запускатель может закрывать изолят.
+      _idleTurn?.complete();
+      _idleTurn = null;
     }
     // Stop пользователем уведомления не даёт: он сам знает, что остановил ход.
     switch (end) {

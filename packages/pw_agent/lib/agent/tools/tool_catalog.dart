@@ -24,6 +24,9 @@ abstract final class ToolNames {
   static const unpinFact = 'unpin_fact';
   static const listStateRevisions = 'list_state_revisions';
   static const getStateRevision = 'get_state_revision';
+  static const scheduleTask = 'schedule_task';
+  static const listScheduledTasks = 'list_scheduled_tasks';
+  static const cancelScheduledTask = 'cancel_scheduled_task';
   static const chatHistorySearch = 'chat_history_search';
   static const listRuns = 'list_runs';
   static const readRunOutput = 'read_run_output';
@@ -343,6 +346,53 @@ abstract final class ToolCatalog {
     const LlmToolSpec(
       name: ToolNames.getStateRevision,
       description: 'Get the full sealed state (goal, plan, pinned facts) of an earlier revision by id.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string'},
+        },
+        'required': ['id'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.scheduleTask,
+      description:
+          'Schedule a message to this chat to be sent later, when the user asks to be '
+          'reminded or to run something after a delay. The prompt is the full instruction '
+          'the agent will receive at that time, so make it self-contained. Give either '
+          'delay_seconds (relative, preferred for "in N minutes") or due_at (ISO-8601 local '
+          'time). The current local time is in the environment section. '
+          'Available only in a user chat: subagents report reminders to the parent instead.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'prompt': {
+            'type': 'string',
+            'description': 'Full self-contained instruction for the future run, e.g. "Remind the user about the deploy at 18:00".',
+          },
+          'delay_seconds': {
+            'type': 'integer',
+            'description': 'Seconds from now until the task runs.',
+          },
+          'due_at': {
+            'type': 'string',
+            'description':
+                'Absolute time in ISO-8601, e.g. 2026-11-20T18:00:00.',
+          },
+        },
+        'required': ['prompt'],
+      },
+    ),
+    const LlmToolSpec(
+      name: ToolNames.listScheduledTasks,
+      description:
+          'List the scheduled tasks of this chat with their id, due time and status. '
+          'Pending tasks are the ones that will still run.',
+      parameters: {'type': 'object', 'properties': <String, dynamic>{}},
+    ),
+    const LlmToolSpec(
+      name: ToolNames.cancelScheduledTask,
+      description: 'Cancel a pending scheduled task of this chat by id (see list_scheduled_tasks).',
       parameters: {
         'type': 'object',
         'properties': {

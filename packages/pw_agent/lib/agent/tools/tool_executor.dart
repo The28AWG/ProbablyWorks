@@ -11,6 +11,8 @@ import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
 import 'package:pw_agent/agent/policy/sensitive_paths.dart';
+import 'package:pw_agent/agent/schedule/schedule_tool_handler.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
 import 'package:pw_agent/agent/tools/attachment_lookup.dart';
 import 'package:pw_agent/agent/tools/self_tool_catalog.dart';
@@ -102,6 +104,7 @@ class ToolExecutor {
     this._self,
     this._projects,
     this._changesets,
+    this._scheduledTasks,
   ) : _registry = ToolRegistry() {
     assert(() {
       final declared = {
@@ -130,6 +133,7 @@ class ToolExecutor {
   final SelfToolHandler _self;
   final ProjectRepository _projects;
   final TurnChangesetService _changesets;
+  final ScheduledTaskRepository _scheduledTasks;
   final ToolRegistry _registry;
 
   /// Инструменты состояния вынесены из исполнителя: policy, подтверждения и
@@ -139,6 +143,12 @@ class ToolExecutor {
     _state,
     _projects,
     _workspace,
+  );
+
+  /// Инструменты расписания: работают с таблицей отложенных задач, а запускает
+  /// их планировщик. Отдельно от состояния, у которого своя таблица ревизий.
+  late final ScheduleToolHandler _scheduleTools = ScheduleToolHandler(
+    _scheduledTasks,
   );
 
   /// Диспетчеризация встроенных инструментов. Имя без обработчика считается
@@ -174,6 +184,9 @@ class ToolExecutor {
     ToolNames.unpinFact: _stateTool,
     ToolNames.listStateRevisions: _stateTool,
     ToolNames.getStateRevision: _stateTool,
+    ToolNames.scheduleTask: _scheduleTool,
+    ToolNames.listScheduledTasks: _scheduleTool,
+    ToolNames.cancelScheduledTask: _scheduleTool,
     ToolNames.chatHistorySearch: _stateTool,
     ToolNames.listSkills: _stateTool,
     ToolNames.loadSkill: _stateTool,
@@ -204,6 +217,22 @@ class ToolExecutor {
 
   /// Описания всех доступных инструментов: встроенные и внешние источники.
   List<LlmToolSpec> get specs => _registry.specs;
+
+  /// То же для конкретного чата. Субагент работает в скрытом чате: инструменты
+  /// расписания ему недоступны, и предлагать их модели незачем — иначе она
+  /// тратит шаг на вызов, который заведомо отклонят.
+  List<LlmToolSpec> specsFor(Chat chat) => chat.kind == ChatKind.main
+      ? specs
+      : [
+          for (final spec in specs)
+            if (!_scheduleToolNames.contains(spec.name)) spec,
+        ];
+
+  static const _scheduleToolNames = {
+    ToolNames.scheduleTask,
+    ToolNames.listScheduledTasks,
+    ToolNames.cancelScheduledTask,
+  };
 
   /// Подключает внешний источник инструментов. Дубликаты имён запрещены.
   void registerToolSource(ToolSource source) => _registry.register(source);
@@ -294,6 +323,42 @@ class ToolExecutor {
   ) async {
     final result = await _stateTools.call(ctx, call, args);
     return _limitedResult(ctx, call, args, result);
+  }
+
+  /// Инструмент расписания. Постановка и отмена задачи сохраняются как шаг
+  /// журнала: пользователь видит, что напоминание действительно создано или
+  /// снято, а не выводит это из текста ответа модели. Чтение списка шага не
+  /// создаёт: результат остаётся только у модели.
+  ///
+  /// Результат идёт через тот же предел, что и прочие вызовы.
+  Future<ToolResult> _scheduleTool(
+    ToolContext ctx,
+    LlmToolCall call,
+    Map<String, dynamic> args,
+  ) async {
+    final result = await _scheduleTools.call(ctx, call, args);
+    final summary = _scheduleTools.summaryFor(call, args);
+    if (summary == null) return _limitedResult(ctx, call, args, result);
+    // Ошибка результата (например, задача уже не pending) — не сбой вызова:
+    // строка остаётся обычной, а текст ошибки виден в теле шага.
+    final id = _uuid.v4();
+    final text = plainTerminalText(result.text);
+    await _saveRun(
+      _newRun(
+        ctx,
+        id,
+        call,
+        args,
+        ToolRunStatus.done,
+        command: summary,
+        finishedAt: DateTime.now(),
+      ).copyWith(
+        resultError: result.isError,
+        outputText: text,
+        resultPreview: previewToolText(text),
+      ),
+    );
+    return _limitedResult(ctx, call, args, result, runId: id);
   }
 
   /// Единый предел одного результата инструмента.

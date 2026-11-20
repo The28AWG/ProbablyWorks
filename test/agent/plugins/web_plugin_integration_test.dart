@@ -14,6 +14,7 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/plugins/plugin_tool_source.dart';
 import 'package:pw_agent/agent/policy/command_classifier.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/state/session_state_service.dart';
 import 'package:pw_agent/agent/tools/self_tool_handler.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
@@ -129,6 +130,7 @@ void main() {
       self,
       ProjectRepository(db),
       TurnChangesetService(TurnChangesetStore(tmp)),
+      ScheduledTaskRepository(db),
     );
 
     final now = DateTime.now();

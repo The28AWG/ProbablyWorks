@@ -19,6 +19,8 @@ import 'package:pw_agent/agent/loop/turn_budget.dart';
 import 'package:pw_agent/agent/loop/turn_progress_guard.dart';
 import 'package:pw_agent/agent/policy/command_classifier.dart';
 import 'package:pw_agent/agent/policy/policy_engine.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/subagent/subagent_manager.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/agent/turn/turn_changeset_logic.dart';
@@ -124,6 +126,11 @@ class ChatSession {
   CancelToken? _turnCancel;
   CancelToken? _stepCancel;
 
+  /// Завершается вместе с текущим ходом. Нужен платформенному запускателю:
+  /// в фоновом изоляте ход оборвался бы, если вернуть управление сразу после
+  /// `submit`. Null, когда ход не идёт.
+  Completer<void>? _idleTurn;
+
   /// Модель, на которую ход переключился из-за fallback. Сбрасывается на новом ходе.
   String? _modelOverride;
 
@@ -156,6 +163,16 @@ class ChatSession {
 
   bool get isRunning => _running;
 
+  /// Идущий сейчас ход или уже выполненное будущее, если хода нет.
+  Future<void> get whenIdle => _idleTurn?.future ?? Future<void>.value();
+
+  /// Отмечает начало хода. Заменяет прямое присваивание `_running = true`,
+  /// чтобы [whenIdle] всегда знал, чего ждать.
+  void _beginTurn() {
+    _running = true;
+    _idleTurn ??= Completer<void>();
+  }
+
   List<QueuedPrompt> get queue => _queue.items;
 
   /// Есть ли подписчик на события этой сессии (локальный UI или API-адаптер).
@@ -178,11 +195,16 @@ class ChatSession {
   // ---- public API --------------------------------------------------------
 
   /// Пользовательский ввод. Во время хода: обычный — в очередь (soft drain), [sendNow] — прерывает шаг модели.
+  ///
+  /// [note] — служебная строка перед промптом (например, отложенная задача
+  /// сработала позже срока). Пишется отдельным событием: [text] остаётся
+  /// ровно тем, что было запланировано.
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
     bool sendNow = false,
+    String? note,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return;
@@ -194,9 +216,10 @@ class ChatSession {
       trimmed,
       attachments: [for (final a in attachments) a.redacted()],
       mentions: promptMentions,
+      note: note,
     );
     if (!_running) {
-      _running = true;
+      _beginTurn();
       await _persistPrompt(prompt);
       unawaited(_runTurn());
       return;
@@ -220,7 +243,7 @@ class ChatSession {
     if (_running) {
       _stepCancel?.cancel();
     } else {
-      _running = true;
+      _beginTurn();
       unawaited(_runTurn());
     }
   }
@@ -299,7 +322,7 @@ class ChatSession {
     try {
       final runs = await _hub.chats.waitingRuns(chatId);
       if (runs.isEmpty || _running) return;
-      _running = true;
+      _beginTurn();
       final turn = _turnCancel = CancelToken();
       final reopened = <ReopenedWait>[];
       for (final run in runs) {
@@ -380,7 +403,7 @@ class ChatSession {
         _parked.clear();
         return;
       }
-      _running = true;
+      _beginTurn();
       final turn = _turnCancel = CancelToken();
       unawaited(
         _finishTurn(() async {
@@ -468,7 +491,7 @@ class ChatSession {
   /// получает свежий счётчик шагов и свежий бюджет.
   Future<void> continueAfterStepLimit() async {
     if (_running) return;
-    _running = true;
+    _beginTurn();
     unawaited(_runTurn());
   }
 
@@ -524,7 +547,7 @@ class ChatSession {
       return false;
     }
     await _truncate(user, fromSelf: false, restoreBefore: false);
-    _running = true;
+    _beginTurn();
     unawaited(_runTurn());
     return true;
   }
@@ -544,7 +567,50 @@ class ChatSession {
     _emit(AgentStateChanged(chatId));
   }
 
-  /// Спрашивает об откате файлов на Host. false — пользователь отменил или откат не удался.
+  /// Задачи, которые исчезнут вместе с сообщениями от [fromSeq].
+  ///
+  /// Связанные задачи берутся по шагам удаляемых сообщений. У строк без шага
+  /// (записей, созданных до появления шагов в журнале) положение определяется
+  /// временем: к переписываемой части относятся созданные позже [anchorAt].
+  /// Граница строгая: при точности в секунду одинаковое время скорее значит
+  /// «предыдущий ход», и такую задачу лучше сохранить.
+  /// Считаются только несработавшие: остальные уже ничего не запустят.
+  Future<List<String>> _pendingScheduledTaskIdsFrom(
+    int fromSeq,
+    DateTime anchorAt,
+  ) async {
+    final doomed = [
+      for (final message in await _messages())
+        if (message.seq >= fromSeq) message.id,
+    ];
+    final linked = <String>{};
+    if (doomed.isNotEmpty) {
+      for (final run in await _hub.chats.toolRunsForMessages(doomed)) {
+        final id = ScheduledTaskRepository.taskIdOfRun(run);
+        if (id != null) linked.add(id);
+      }
+    }
+    final tasks = await _hub.scheduledTasks.forChat(chatId);
+    if (tasks.isEmpty) return const [];
+    // Связанные с шагами задачи — все, на кого ссылается хоть один запуск.
+    final referenced = <String>{};
+    for (final run in await _hub.chats.toolRunsForChat(chatId)) {
+      final id = ScheduledTaskRepository.taskIdOfRun(run);
+      if (id != null) referenced.add(id);
+    }
+    return [
+      for (final task in tasks)
+        if (task.status == ScheduledTaskStatus.pending &&
+            (linked.contains(task.id) ||
+                (!referenced.contains(task.id) &&
+                    task.createdAt.isAfter(anchorAt))))
+          task.id,
+    ];
+  }
+
+  /// Спрашивает об откате файлов на Host и об удалении напоминаний.
+  ///
+  /// false — пользователь отменил, откат не удался или хвост не тронут.
   Future<bool> _confirmFileChangesBeforeRewind({
     required ChatMessage anchor,
     required bool afterOnly,
@@ -557,7 +623,13 @@ class ChatSession {
       anchorSeq: anchor.seq,
       afterOnly: afterOnly,
     );
-    if (turnIds.isEmpty) return true;
+    final fromSeq = afterOnly ? anchor.seq + 1 : anchor.seq;
+    final taskIds = await _pendingScheduledTaskIdsFrom(
+      fromSeq,
+      anchor.createdAt,
+    );
+    // Ни файлов, ни напоминаний — спрашивать не о чем.
+    if (turnIds.isEmpty && taskIds.isEmpty) return true;
 
     final newestFirst = turnIdsNewestFirst(
       messages: messages,
@@ -576,14 +648,21 @@ class ChatSession {
           turnIdsOldestFirst: oldestFirst,
         ),
         shellMayHaveChangedFiles: shellWarning,
+        scheduledTasks: taskIds.length,
       ),
     );
     if (choice == EditFileChangesChoice.cancel) return false;
 
     if (choice == EditFileChangesChoice.continueWithoutRollback) {
-      await _hub.turnChangesets.markKeptOnEdit(chatId, turnIds);
+      if (turnIds.isNotEmpty) {
+        await _hub.turnChangesets.markKeptOnEdit(chatId, turnIds);
+      }
       return true;
     }
+
+    // Файлов не было: восстанавливать нечего, напоминания просто удаляются
+    // вместе с сообщениями.
+    if (turnIds.isEmpty) return true;
 
     final chat = await _hub.chats.chat(chatId);
     if (chat == null) return false;
