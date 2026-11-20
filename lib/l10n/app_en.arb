@@ -3657,5 +3657,7 @@
   "localModelsNotificationError": "Model download failed",
   "@localModelsNotificationError": {"description": "Notification title when a local model download failed."},
   "localModelsDownloadPreparing": "Preparing download…",
-  "@localModelsDownloadPreparing": {"description": "Shown for a resumed model download before progress is known."}
+  "@localModelsDownloadPreparing": {"description": "Shown for a resumed model download before progress is known."},
+  "routeLoading": "Loading…",
+  "@routeLoading": {"description": "Semantics label while a deferred route module is loading."}
 }

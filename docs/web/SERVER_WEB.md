@@ -38,14 +38,14 @@ Web для bundled-варианта использует path-стратегию
 
 ```bash
 flutter build web -t lib/main_web_hosted.dart --wasm --release \
-  -o build/web-hosted --base-href=/
+  --enable-wasm-deferred-loading -o build/web-hosted --base-href=/
 ```
 
 Web-only релиз использует hash-стратегию и не требует rewrite:
 
 ```bash
 flutter build web -t lib/main_web.dart --wasm --release \
-  -o build/web-static --base-href=/
+  --enable-wasm-deferred-loading -o build/web-static --base-href=/
 ```
 
 Упаковка:
@@ -68,6 +68,11 @@ dart run tool/package/package_server_web.dart \
 WasmGC и JS-fallback для остальных. Выбор делает `flutter_bootstrap.js` при
 старте. В Flutter 3.50 Wasm по умолчанию включён для Chromium 137+; Safari и
 Firefox получают JavaScript, пока для них явно не включён `wasmAllowList`.
+
+Отложенные экраны приходят отдельными файлами: JS-части называются
+`main.dart.js_*.part.js`, Wasm-модули — `main.dart_module*.wasm`. Их нужно
+отдавать вместе с остальной сборкой и не кэшировать надолго: имена не содержат
+хэш. `pw_server` отдаёт их с правильным `Content-Type` и `no-cache`.
 
 Многопоточный Skwasm включается только при cross-origin isolation. Сервер
 `pw_server` выставляет для HTML-документа:

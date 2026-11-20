@@ -293,18 +293,23 @@ Web-клиент выпускается в двух вариантах:
 ```bash
 # только статика, hash-URL, подходит для публичного хостинга
 flutter build web -t lib/main_web.dart --wasm --release \
-  -o build/web-static --base-href=/
+  --enable-wasm-deferred-loading -o build/web-static --base-href=/
 dart run tool/package/package_web.dart --web-dir=build/web-static
 
 # страница, которую отдаёт сам сервер, с path-URL и SPA fallback
 flutter build web -t lib/main_web_hosted.dart --wasm --release \
-  -o build/web-hosted --base-href=/
+  --enable-wasm-deferred-loading -o build/web-hosted --base-href=/
 dart run tool/package/package_server_web.dart \
   --platform=linux --arch=x64 --web-dir=build/web-hosted
 ```
 
 Сборка с `--wasm` содержит и WebAssembly, и JS-fallback: Chromium 137+
 исполняет Wasm, остальные браузеры автоматически переключаются на JavaScript.
+Необязательные экраны вынесены в отдельные модули: `main.dart.js_*.part.js`
+для JS и `main.dart_module*.wasm` для Wasm. Эти файлы нужно публиковать вместе
+с остальной сборкой. Имена частей не содержат хэш, поэтому кэшировать их
+надолго нельзя.
+
 Внешнему статическому хостингу нужно отдавать
 `.wasm` с `Content-Type: application/wasm`; для многопоточного Skwasm также
 нужны заголовки `Cross-Origin-Opener-Policy: same-origin` и

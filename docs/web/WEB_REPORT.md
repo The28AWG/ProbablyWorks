@@ -147,15 +147,28 @@ Wasm-сборка (20 ноября 2026):
 `main.dart.js` в Wasm-сборке — это штатный JS-fallback, а не второй
 обязательный файл. Браузер загружает либо Wasm, либо JavaScript.
 
+Отложенная загрузка (20 ноября 2026):
+
+| Проверка | Результат |
+|---|---|
+| `flutter build web ... --wasm --enable-wasm-deferred-loading` | успешно для static и hosted |
+| Начальный `main.dart.js` | 6,2 МБ; 17 частей `main.dart.js_*.part.js` на 521 КБ |
+| Начальный `main.dart.wasm` | 5,5 МБ; 17 модулей `main.dart_module*.wasm` на 944 КБ |
+| Chrome 157, headless, deep link `/#/onboarding` и `/#/connect` | загружены `main.dart.wasm` и отложенные модули, ошибок в консоли нет |
+
+`main.dart.js` в отложенной сборке тоже разбит на части: этим пользуются
+браузеры без Wasm. Имена частей не содержат хэш, поэтому `StaticWeb` отдаёт
+их с `no-cache`.
+
 Проверки правки (20 ноября 2026):
 
 | Проверка | Результат |
 |---|---|
-| `flutter test` | 1328 прошло, 15 пропущено |
+| `flutter test` | 1329 прошло, 15 пропущено |
 | `flutter analyze` | без замечаний |
 | `dcm analyze lib test` | без замечаний |
 | `dart format --output=none --set-exit-if-changed lib test tool packages` | без изменений |
-| `dart test` в `packages/pw_server` | 15 прошло |
+| `dart test` в `packages/pw_server` | 17 прошло |
 | `tool/ci/test_packages.sh` | все пакеты прошли |
 
 Ручной сценарий против реального демона: подключение по адресу и токену,
@@ -165,9 +178,10 @@ Wasm-сборка (20 ноября 2026):
 
 ## 6. CI, релиз и артефакты
 
-`ci.yml` собирает оба web-entrypoint’а с `--wasm`: статический
-`lib/main_web.dart` и hosted `lib/main_web_hosted.dart`. Это ловит поломки
-path-стратегии, Wasm-компиляции, JS-fallback и bundled-сборки до релиза.
+`ci.yml` собирает оба web-entrypoint’а с `--wasm` и
+`--enable-wasm-deferred-loading`: статический `lib/main_web.dart` и hosted
+`lib/main_web_hosted.dart`. Это ловит поломки path-стратегии, Wasm-компиляции,
+JS-fallback, отложенных модулей и bundled-сборки до релиза.
 
 `release.yml` выпускает три независимых группы артефактов:
 
@@ -209,7 +223,7 @@ Production-сборка:
 
 ```bash
 flutter build web -t lib/main_web.dart --wasm --release \
-  -o build/web-static --base-href=/
+  --enable-wasm-deferred-loading -o build/web-static --base-href=/
 # содержимое build/web-static отдать статическим сервером в корне домена
 ```
 
@@ -217,7 +231,7 @@ flutter build web -t lib/main_web.dart --wasm --release \
 
 ```bash
 flutter build web -t lib/main_web_hosted.dart --wasm --release \
-  -o build/web-hosted --base-href=/
+  --enable-wasm-deferred-loading -o build/web-hosted --base-href=/
 dart run tool/package/package_server_web.dart \
   --platform=linux --arch=x64 --web-dir=build/web-hosted
 ```

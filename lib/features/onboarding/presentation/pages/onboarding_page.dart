@@ -20,7 +20,7 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 
 /// Мастер первого запуска: ключ OpenRouter с проверкой, модель по умолчанию, папка локального Host,
 /// необязательный SSH-хост и первый чат. Если локальный провайдер уже настроен, шаг ключа можно пропустить.
-@RoutePage()
+@RoutePage(deferredLoading: true)
 class OnboardingPage extends StatelessWidget {
   const OnboardingPage({super.key});
 

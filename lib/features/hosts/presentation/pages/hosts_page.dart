@@ -12,7 +12,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/core/domain/host.dart';
 
-@RoutePage()
+@RoutePage(deferredLoading: true)
 class HostsPage extends StatelessWidget {
   const HostsPage({super.key});
 

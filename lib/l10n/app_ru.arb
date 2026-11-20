@@ -3640,5 +3640,7 @@
   "localModelsNotificationError": "Не удалось скачать модель",
   "@localModelsNotificationError": {"description": "Заголовок уведомления, если загрузка модели не удалась."},
   "localModelsDownloadPreparing": "Подготовка загрузки…",
-  "@localModelsDownloadPreparing": {"description": "Показывается для возобновлённой загрузки, пока прогресс неизвестен."}
+  "@localModelsDownloadPreparing": {"description": "Показывается для возобновлённой загрузки, пока прогресс неизвестен."},
+  "routeLoading": "Загрузка…",
+  "@routeLoading": {"description": "Подпись для скринридера, пока загружается отложенный модуль маршрута."}
 }

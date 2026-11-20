@@ -10,15 +10,11 @@ import 'package:probably_works/features/projects/presentation/widgets/project_ca
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
-/// Вкладка «Проекты»: контейнер вложенного стека со списком и карточкой проекта.
-@RoutePage()
-class ProjectsTabPage extends AutoRouter {
-  const ProjectsTabPage({super.key});
-}
-
 /// Список проектов. Проект нельзя создать кнопкой: он появляется вместе с первым чатом
 /// в паре «хост + папка», а здесь его можно открыть, переименовать и удалить архивный.
-@RoutePage()
+///
+/// Экран не нужен на старте: загружается отдельно при открытии вкладки.
+@RoutePage(deferredLoading: true)
 class ProjectsPage extends StatelessWidget {
   const ProjectsPage({super.key});
 

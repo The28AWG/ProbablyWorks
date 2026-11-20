@@ -8,7 +8,7 @@ import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/projects/presentation/widgets/policy_profile_dialog.dart';
-import 'package:probably_works/features/settings/presentation/pages/settings_page.dart';
+import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
@@ -20,7 +20,7 @@ import 'package:pw_agent/core/util/short_time.dart';
 
 /// Карточка проекта: имя, неизменяемые хост и папка, профиль политики, доверие,
 /// skills и общая память. Факты меняются только здесь или подтверждённым инструментом агента.
-@RoutePage()
+@RoutePage(deferredLoading: true)
 class ProjectPage extends StatelessWidget {
   const ProjectPage({
     @PathParam('projectId') required this.projectId,
@@ -403,7 +403,7 @@ class _PolicySection extends StatelessWidget {
 
 /// Открывает настройки безопасности: у глобального профиля нет своей карточки.
 Future<void> _openPolicySecuritySettings(BuildContext context) async {
-  SettingsPage.requestedGroup.value = 'safety';
+  settingsRequestedGroup.value = 'safety';
   showWorkspaceTab(context, WorkspaceTab.settings);
   await AutoTabsRouter.of(context)
       .navigate(SettingsRoute(initialGroup: 'safety'));

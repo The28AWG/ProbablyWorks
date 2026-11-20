@@ -21,6 +21,10 @@ void main() {
         .writeAsStringSync('console.log(1);');
     File(p.join(temp.path, 'assets', 'style.css')).writeAsStringSync('body{}');
     File(p.join(temp.path, 'main.dart.mjs')).writeAsStringSync('export {};');
+    File(p.join(temp.path, 'main.dart.js_1.part.js'))
+        .writeAsStringSync('console.log(2);');
+    File(p.join(temp.path, 'main.dart_module1.wasm'))
+        .writeAsBytesSync([0, 97, 115, 109]);
     Directory(p.join(temp.path, 'canvaskit')).createSync();
     File(p.join(temp.path, 'canvaskit', 'canvaskit.wasm'))
         .writeAsBytesSync([0, 97, 115, 109]);
@@ -74,6 +78,23 @@ void main() {
     expect(response.status, HttpStatus.ok);
     expect(response.headers.contentType?.mimeType, 'text/javascript');
     expect(response.body, 'export {};');
+  });
+
+  test('serves deferred JS parts as JavaScript without caching', () async {
+    final response = await _request(client, base, '/main.dart.js_1.part.js');
+
+    expect(response.status, HttpStatus.ok);
+    expect(response.headers.contentType?.mimeType, 'text/javascript');
+    expect(response.body, 'console.log(2);');
+    expect(response.headers.value(HttpHeaders.cacheControlHeader), 'no-cache');
+  });
+
+  test('serves deferred Wasm modules as application/wasm', () async {
+    final response = await _request(client, base, '/main.dart_module1.wasm');
+
+    expect(response.status, HttpStatus.ok);
+    expect(response.headers.contentType?.mimeType, 'application/wasm');
+    expect(response.headers.value(HttpHeaders.cacheControlHeader), 'no-cache');
   });
 
   test('enables cross-origin isolation for HTML documents', () async {

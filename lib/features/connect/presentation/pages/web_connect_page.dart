@@ -14,7 +14,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 ///
 /// Браузер не ищет локальный демон и не поднимает агент. После подключения
 /// профиль сохраняется как обычный удалённый профиль.
-@RoutePage()
+@RoutePage(deferredLoading: true)
 class WebConnectPage extends StatefulWidget {
   const WebConnectPage({super.key});
 

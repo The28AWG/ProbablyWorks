@@ -9,6 +9,7 @@ export 'package:app_ui/app_ui.dart';
 export 'code_block.dart';
 export 'command_output.dart';
 export 'copy_button.dart';
+export 'deferred_route_placeholder.dart';
 export 'file_change_view.dart';
 export 'local_host_presentation.dart';
 export 'read_file_view.dart';

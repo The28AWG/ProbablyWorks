@@ -44,7 +44,7 @@ import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
-@RoutePage()
+@RoutePage(deferredLoading: true)
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
     @PathParam('group') required this.initialGroup,
@@ -53,9 +53,6 @@ class SettingsPage extends StatelessWidget {
 
   /// Начальная группа настроек (например, `safety` при переходе из проекта).
   final String initialGroup;
-
-  /// Уведомление о запросе переключения группы (для уже открытой страницы настроек).
-  static final ValueNotifier<String?> requestedGroup = settingsRequestedGroup;
 
   @override
   Widget build(BuildContext context) => BlocProvider(
@@ -104,22 +101,22 @@ class _SettingsViewState extends State<_SettingsView> {
   void initState() {
     super.initState();
     final initial = widget.initialGroup;
-    SettingsPage.requestedGroup.value = null;
+    settingsRequestedGroup.value = null;
     _group = _groupFromName(initial) ?? _Group.account;
-    SettingsPage.requestedGroup.addListener(_onRequestedGroup);
-    final requested = SettingsPage.requestedGroup.value;
+    settingsRequestedGroup.addListener(_onRequestedGroup);
+    final requested = settingsRequestedGroup.value;
     if (requested != null) {
       final next = _groupFromName(requested);
       if (next != null) _group = next;
-      SettingsPage.requestedGroup.value = null;
+      settingsRequestedGroup.value = null;
     }
   }
 
   void _onRequestedGroup() {
-    final requested = SettingsPage.requestedGroup.value;
+    final requested = settingsRequestedGroup.value;
     if (requested == null) return;
     final next = _groupFromName(requested);
-    SettingsPage.requestedGroup.value = null;
+    settingsRequestedGroup.value = null;
     if (next != null) _selectGroup(context, next);
   }
 
@@ -134,7 +131,7 @@ class _SettingsViewState extends State<_SettingsView> {
 
   @override
   void dispose() {
-    SettingsPage.requestedGroup.removeListener(_onRequestedGroup);
+    settingsRequestedGroup.removeListener(_onRequestedGroup);
     _denylist.dispose();
     _limits.dispose();
     _attachPerMessage.dispose();

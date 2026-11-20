@@ -13,6 +13,7 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/app/profiles/profiles_cubit.dart';
 import 'package:probably_works/app/router/app_router.dart';
 import 'package:probably_works/app/theme/theme_controller.dart';
+import 'package:probably_works/app/ui/deferred_route_placeholder.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/storage/download_notifications.dart';
 import 'package:probably_works/features/hosts/presentation/widgets/host_key_prompter_stub.dart'
@@ -103,6 +104,7 @@ class _ProbablyWorksAppState extends State<ProbablyWorksApp> {
           localizationsDelegates: appLocalizationsDelegates,
           routerConfig: _router.config(
             deepLinkTransformer: normalizeAppDeepLink,
+            placeholder: (_) => const DeferredRoutePlaceholder(),
           ),
           builder: (context, child) => HostKeyPrompter(
             navigatorKey: _router.navigatorKey,
