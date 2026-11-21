@@ -1,4 +1,5 @@
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/chat_run_stopper.dart';
 import 'package:pw_agent/agent/exec/exec_log_store.dart';
 import 'package:pw_agent/agent/turn/turn_changeset_store.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
@@ -20,6 +21,7 @@ import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_runtime_service.dart';
 import 'package:pw_agent/providers/ai/openrouter/openrouter_llm_provider.dart';
 import 'package:pw_agent/providers/ai/provider_settings_store.dart';
+import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 
 /// Ресурсы агента, которым нужны каталоги и секреты.
 ///
@@ -106,4 +108,8 @@ abstract class AgentCoreModule {
   @singleton
   ModelRuntimeService modelRuntimeService(LlmProviderRegistry registry) =>
       ModelRuntimeService(registry);
+
+  /// Остановка хода для очистки истории: реализация живёт в [AgentHub].
+  @lazySingleton
+  ChatRunStopper chatRunStopper(AgentHub hub) => hub;
 }

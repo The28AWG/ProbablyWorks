@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/widgets.dart';
+import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/router/app_router.dart';
 
 /// Разделы оболочки. Порядок совпадает с вкладками [AutoTabsRouter].
@@ -32,6 +33,25 @@ String? selectedProjectIdOf(TabsRouter tabs) {
 /// Переключает раздел. Вкладка чатов сохраняет открытый чат, как и остальные вкладки.
 void showWorkspaceTab(BuildContext context, WorkspaceTab tab) =>
     AutoTabsRouter.of(context).setActiveIndex(tab.index);
+
+/// Id открытого чата во вкладке чатов, даже если сейчас открыт другой раздел.
+///
+/// Null — открыт стартовый экран или оболочки нет (например, онбординг).
+String? workspaceOpenChatId(BuildContext context) {
+  if (ProfileScope.maybeOf(context) == null) return null;
+  return selectedChatIdOf(AutoTabsRouter.of(context));
+}
+
+/// Заменяет открытый чат стартовым экраном, не переключая активный раздел.
+///
+/// Нужно массовой очистке истории: если удалён чат, который остался в стеке
+/// вкладки, возвращаться на него нельзя.
+void resetOpenChat(BuildContext context) {
+  if (ProfileScope.maybeOf(context) == null) return;
+  final stack = _chatsStack(AutoTabsRouter.of(context));
+  if (stack == null || stack.topRoute.name == NewChatRoute.name) return;
+  unawaited(stack.replace(const NewChatRoute()));
+}
 
 /// Открывает чат из списка или боковой панели. Стек вкладки чатов всегда содержит один экран: стартовый
 /// экран или чат, поэтому новый выбор заменяет текущий, а не копится в истории.

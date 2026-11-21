@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/chat_run_stopper.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -38,7 +39,7 @@ import 'package:uuid/uuid.dart';
 /// Точка входа агента: зависимости хода и одна сессия на чат.
 /// Сессии живут, пока работает приложение: фоновые команды доставляют результаты в свой чат.
 @singleton
-class AgentHub {
+class AgentHub implements ChatRunStopper {
   AgentHub(
     this.chats,
     this.settings,
@@ -144,6 +145,16 @@ class AgentHub {
 
   /// Чаты с неотвеченными карточками.
   Set<String> get waitingChatIds => broker.waitingChatIds;
+
+  /// Останавливает ход в чате, если он идёт.
+  ///
+  /// Не создаёт сессию для чата, которого нет в памяти: очистка истории
+  /// удаляет старые записи, и лишний объект ей не нужен.
+  @override
+  Future<void> stopChat(String chatId) async {
+    final session = _sessions[chatId];
+    if (session != null && session.isRunning) await session.stop();
+  }
 
   /// Чаты, в которых сейчас идёт ход.
   Set<String> get runningChatIds => {

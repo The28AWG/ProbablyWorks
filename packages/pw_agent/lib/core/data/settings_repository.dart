@@ -67,6 +67,37 @@ class SettingsRepository {
   static const keyDailyUsagePrefix = 'dailyUsage:';
   static const keyCompactionInfoPrefix = 'compactionInfo:';
 
+  /// Предпочтения агента, которые возвращает к значениям по умолчанию сброс.
+  ///
+  /// Доверие проектов, расходы чатов, одноразовые флаги миграций и секреты
+  /// сюда не входят: сброс настроек не должен стирать данные или доступы.
+  static const preferenceKeys = <String>[
+    keyDefaultModel,
+    keyTitleModel,
+    keyMemoryModel,
+    keySubagentModel,
+    keyFallbackModel,
+    keyDefaultReasoning,
+    keyMemoryReasoning,
+    keySubagentReasoning,
+    keyFallbackReasoning,
+    keyLanguage,
+    keyThemeMode,
+    keyDefaultPolicy,
+    keyDenylist,
+    keySecurityProfile,
+    keyLimits,
+    keyPinnedModels,
+    keyStepsGroup,
+    keyStepsExpandWhileActive,
+    keyStepsThoughts,
+    keyStepsTools,
+    keySidebarWidth,
+    keyLlamaCppEnabled,
+    keyLlamaCppBaseUrl,
+    keyLocalModelsAutoUnload,
+  ];
+
   /// Загружает kv-таблицу в память. Вызывается при старте, до первого чтения настроек.
   Future<void> preload() async {
     final rows = await _db.select(_kvSettingsTable).get();
@@ -74,6 +105,34 @@ class SettingsRepository {
       ..clear()
       ..addAll({for (final row in rows) row.key: row.value});
     _preloaded = true;
+  }
+
+  /// Возвращает предпочтения агента к значениям по умолчанию.
+  ///
+  /// Удаляет ключи из [preferenceKeys] и все настройки провайдеров
+  /// (`provider.<id>.*`). Секреты провайдеров лежат в `SecretStore` и
+  /// остаются на месте. После очистки кэш перечитывается из базы: чтения
+  /// настроек синхронны и должны сразу видеть значения по умолчанию.
+  Future<void> resetPreferences() async {
+    final keys = <String>{...preferenceKeys};
+    for (final key in await _keys()) {
+      if (key.startsWith('provider.')) keys.add(key);
+    }
+    await _db.transaction(() async {
+      for (final key in keys) {
+        await (_db.delete(
+          _kvSettingsTable,
+        )..where((t) => t.key.equals(key))).go();
+      }
+    });
+    await preload();
+  }
+
+  /// Все ключи kv-таблицы: из кэша после [preload] или из базы.
+  Future<List<String>> _keys() async {
+    if (_preloaded) return _cache.keys.toList();
+    final rows = await _db.select(_kvSettingsTable).get();
+    return [for (final row in rows) row.key];
   }
 
   Future<String?> read(String key) async {

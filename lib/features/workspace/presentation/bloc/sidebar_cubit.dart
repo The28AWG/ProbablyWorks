@@ -51,4 +51,13 @@ class SidebarCubit extends Cubit<SidebarState> {
     ClientSettingsKeys.sidebarWidth,
     state.width.round().toString(),
   );
+
+  /// Возвращает ширину по умолчанию и убирает сохранённое значение.
+  ///
+  /// Нужно сбросу настроек: панель должна встать на место сразу, а не после
+  /// следующего запуска.
+  Future<void> resetWidth() async {
+    emit(const SidebarState());
+    await _settings.write(ClientSettingsKeys.sidebarWidth, null);
+  }
 }

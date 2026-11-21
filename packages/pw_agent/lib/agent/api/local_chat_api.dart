@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -32,11 +33,22 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 class LocalChatApi implements ChatApi {
   LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
+    // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
+    _deletion = ChatDeletionService(
+      hub.chats,
+      hub.settings,
+      hub.broker,
+      hub.logs,
+      hub.turnChangesets,
+      hub.projects,
+      hub,
+    );
   }
 
   final AgentHub _hub;
 
   late final MentionSearchService _mentions;
+  late final ChatDeletionService _deletion;
 
   /// Runtime-сервис есть у приложения и демона. В узких тестах его можно
   /// не передавать: модели работают, но прогресс и управление недоступны.
@@ -173,17 +185,7 @@ class LocalChatApi implements ChatApi {
     }
   }
 
-  Future<void> deleteChat(String chatId) async {
-    final session = _hub.session(chatId);
-    if (session.isRunning) await session.stop();
-    final project = await _hub.projects.projectForChat(chatId);
-    await _hub.chats.deleteChat(chatId);
-    await _hub.settings.deleteChatData(chatId);
-    _hub.broker.clearChatGrants(chatId);
-    await _hub.logs.deleteChat(chatId);
-    await _hub.turnChangesets.store.deleteChat(chatId);
-    await _hub.projects.releaseIfEmpty(project?.id);
-  }
+  Future<void> deleteChat(String chatId) => _deletion.delete(chatId);
 
   Future<List<ChatMessage>> messages(String chatId) async {
     await requireChat(chatId);

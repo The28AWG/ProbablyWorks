@@ -193,6 +193,7 @@ Future<bool> _bootstrapDaemon(
       mode: LocalRuntimeMode.localDaemon,
       agent: remote,
       chat: remote,
+      data: remote,
       hosts: remote,
       projects: remote,
       settings: remote,

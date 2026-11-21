@@ -18,6 +18,7 @@ import 'package:probably_works/features/settings/presentation/bloc/settings_cubi
 import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/attachment_limit_fields.dart';
+import 'package:probably_works/features/settings/presentation/widgets/data_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/local_models_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
@@ -33,6 +34,7 @@ import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
@@ -75,6 +77,7 @@ enum _Group {
   safety,
   plugins,
   mcp,
+  data,
   advanced,
 }
 
@@ -148,6 +151,7 @@ class _SettingsViewState extends State<_SettingsView> {
     'safety' => _Group.safety,
     'plugins' => _Group.plugins,
     'mcp' => _Group.mcp,
+    'data' => _Group.data,
     'advanced' => _Group.advanced,
     _ => null,
   };
@@ -214,6 +218,7 @@ class _SettingsViewState extends State<_SettingsView> {
     final l10n = AppLocalizations.of(context);
     final scope = ProfileScope.maybeOf(context);
     final source = scope?.chatApi.models ?? getIt<ChatApi>().models;
+    final dataApi = scope?.dataApi ?? getIt<DataApi>();
     final mcpApi = scope?.mcpApi ?? getIt<McpApi>();
     final pluginApi = scope?.pluginApi ?? getIt<PluginApi>();
     final agentApi = scope?.agentApi ?? getIt<AgentApi>();
@@ -262,6 +267,7 @@ class _SettingsViewState extends State<_SettingsView> {
             l10n.settingsGroupPluginsHint,
           ),
           _Group.mcp: (l10n.settingsGroupMcp, l10n.settingsGroupMcpHint),
+          _Group.data: (l10n.settingsGroupData, l10n.settingsGroupDataHint),
           _Group.advanced: (
             l10n.settingsGroupAdvanced,
             l10n.settingsGroupAdvancedHint,
@@ -271,7 +277,12 @@ class _SettingsViewState extends State<_SettingsView> {
           builder: (context, status) {
             final offline = status == AgentStatus.offline;
             final available = offline
-                ? const [_Group.agents, _Group.interface, _Group.advanced]
+                ? const [
+                    _Group.agents,
+                    _Group.interface,
+                    _Group.data,
+                    _Group.advanced,
+                  ]
                 : _Group.values;
             final selectedGroup = available.contains(_group)
                 ? _group
@@ -302,6 +313,7 @@ class _SettingsViewState extends State<_SettingsView> {
               ),
               _Group.plugins: _pluginSections(pluginApi, agentApi),
               _Group.mcp: _mcpSections(mcpApi),
+              _Group.data: _dataSections(dataApi, offline: offline),
               _Group.advanced: _advancedSections(
                 context,
                 state,
@@ -884,6 +896,14 @@ class _SettingsViewState extends State<_SettingsView> {
 
   List<Widget> _mcpSections(McpApi api) => [McpSettingsSection(api: api)];
 
+  List<Widget> _dataSections(DataApi api, {required bool offline}) => [
+    DataSettingsSection(
+      api: api,
+      offline: offline,
+      onReset: () => setState(() => _initialized = false),
+    ),
+  ];
+
   List<Widget> _advancedSections(
     BuildContext context,
     SettingsState state,
@@ -971,6 +991,7 @@ class _SettingsViewState extends State<_SettingsView> {
     _Group.safety => Icons.shield_outlined,
     _Group.plugins => Icons.extension_outlined,
     _Group.mcp => Icons.cable_outlined,
+    _Group.data => Icons.storage_outlined,
     _Group.advanced => Icons.tune,
   };
 }

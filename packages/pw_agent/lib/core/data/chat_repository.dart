@@ -133,6 +133,36 @@ class ChatRepository implements DraftPersistence {
     return [for (final row in rows) _chat(row)];
   }
 
+  /// Чат и все его потомки, самые глубокие сначала: дочерние строки удаляются раньше родителя.
+  ///
+  /// `deleteChat` сам рекурсивно удаляет детей, но очистке истории нужны id
+  /// каждого чата: у скрытых субагентов свои логи и снимки файлов, и они не
+  /// уходят каскадом внешних ключей. Пустой список — чата нет.
+  Future<List<Chat>> chatAndDescendants(String rootId) async {
+    final all = await allChats();
+    final children = <String, List<Chat>>{};
+    Chat? root;
+    for (final chat in all) {
+      if (chat.id == rootId) root = chat;
+      final parentId = chat.parentChatId;
+      if (parentId != null) {
+        children.putIfAbsent(parentId, () => []).add(chat);
+      }
+    }
+    if (root == null) return const [];
+    final result = <Chat>[];
+    void visit(Chat chat) {
+      result.add(chat);
+      for (final child in children[chat.id] ?? const <Chat>[]) {
+        visit(child);
+      }
+    }
+
+    visit(root);
+    result.sort((a, b) => b.depth.compareTo(a.depth));
+    return result;
+  }
+
   @override
   Future<Chat?> chat(String id) async {
     final row = await (_db.select(

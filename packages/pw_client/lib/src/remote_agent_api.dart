@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -47,6 +48,7 @@ class RemoteAgentApi
     implements
         AgentApi,
         ChatApi,
+        DataApi,
         HostsApi,
         ProjectsApi,
         AgentSettingsApi,
@@ -1189,6 +1191,25 @@ class RemoteAgentApi
 
   void _publishState(String area) {
     if (!_stateChanges.isClosed) _stateChanges.add(area);
+  }
+
+  @override
+  Future<DataUsage> usage() async =>
+      DataUsage.fromJson(await _get('/data/usage'));
+
+  @override
+  Future<HistoryClearResult> clearHistory({int? olderThanDays}) async {
+    final json = await _send(
+      'POST',
+      '/data/history/clear',
+      body: {'olderThanDays': ?olderThanDays},
+    );
+    return HistoryClearResult.fromJson(_asMap(json));
+  }
+
+  @override
+  Future<void> resetSettings() async {
+    await _send('POST', '/data/settings/reset', body: const {});
   }
 
   Future<Map<String, dynamic>> _get(String path) async =>

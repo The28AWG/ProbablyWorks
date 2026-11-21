@@ -38,6 +38,7 @@ class WorkspacePage extends StatelessWidget {
       profile: profile,
       agentApi: agentApi,
       chatApi: chatApi,
+      dataApi: service.dataApiFor(profile),
       hostsApi: service.hostsApiFor(profile),
       projectsApi: service.projectsApiFor(profile),
       settingsApi: service.settingsApiFor(profile),

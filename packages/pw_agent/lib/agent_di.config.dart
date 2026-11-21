@@ -14,11 +14,14 @@ import 'package:get_it/get_it.dart' as _i174;
 import 'package:injectable/injectable.dart' as _i526;
 
 import 'agent/api/agent_settings_api.dart' as _i110;
+import 'agent/api/chat_run_stopper.dart' as _i773;
+import 'agent/api/data_api.dart' as _i474;
 import 'agent/api/draft_persistence.dart' as _i9;
 import 'agent/api/hosts_api.dart' as _i907;
 import 'agent/api/local_agent_api.dart' as _i269;
 import 'agent/api/local_agent_settings_api.dart' as _i825;
 import 'agent/api/local_chat_api.dart' as _i866;
+import 'agent/api/local_data_api.dart' as _i955;
 import 'agent/api/local_hosts_api.dart' as _i915;
 import 'agent/api/local_mcp_api.dart' as _i300;
 import 'agent/api/local_plugin_api.dart' as _i929;
@@ -30,6 +33,7 @@ import 'agent/api/plugin_api.dart' as _i60;
 import 'agent/api/projects_api.dart' as _i346;
 import 'agent/api/push_api.dart' as _i52;
 import 'agent/api/security_audit_api.dart' as _i796;
+import 'agent/cleanup/chat_deletion_service.dart' as _i1027;
 import 'agent/context/context_builder.dart' as _i654;
 import 'agent/context/context_compactor.dart' as _i894;
 import 'agent/exec/active_exec_registry.dart' as _i1048;
@@ -427,6 +431,9 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i225.ModelRuntimeService>(),
       ),
     );
+    gh.lazySingleton<_i773.ChatRunStopper>(
+      () => agentCoreModule.chatRunStopper(gh<_i667.AgentHub>()),
+    );
     gh.lazySingleton<_i866.LocalChatApi>(
       () => _i866.LocalChatApi(
         gh<_i667.AgentHub>(),
@@ -442,6 +449,29 @@ extension GetItInjectableX on _i174.GetIt {
     gh.lazySingleton<_i60.PluginApi>(
       () =>
           _i929.LocalPluginApi(gh<_i298.PluginService>(), gh<_i667.AgentHub>()),
+    );
+    gh.lazySingleton<_i1027.ChatDeletionService>(
+      () => _i1027.ChatDeletionService(
+        gh<_i906.ChatRepository>(),
+        gh<_i384.SettingsRepository>(),
+        gh<_i589.InteractionBroker>(),
+        gh<_i473.ExecLogStore>(),
+        gh<_i214.TurnChangesetService>(),
+        gh<_i475.ProjectLifecycleService>(),
+        gh<_i773.ChatRunStopper>(),
+      ),
+    );
+    gh.lazySingleton<_i474.DataApi>(
+      () => _i955.LocalDataApi(
+        gh<_i232.AppDatabase>(),
+        gh<_i342.AppPaths>(),
+        gh<_i384.SettingsRepository>(),
+        gh<_i906.ChatRepository>(),
+        gh<_i1027.ChatDeletionService>(),
+        gh<_i370.ModelCatalogService>(),
+        gh<_i225.ModelRuntimeService>(),
+        gh<_i502.LlmProviderRegistry>(),
+      ),
     );
     return this;
   }

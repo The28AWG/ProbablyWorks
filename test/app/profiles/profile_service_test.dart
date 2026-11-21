@@ -9,6 +9,7 @@ import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -51,6 +52,7 @@ void main() {
       LocalAgentApis(
         agent: _FakeAgentApi(),
         chat: _FakeChatApi(),
+        data: _FakeDataApi(),
         hosts: _FakeHostsApi(),
         projects: _FakeProjectsApi(),
         settings: _FakeSettingsApi(),
@@ -105,6 +107,7 @@ void main() {
         LocalAgentApis(
           agent: _FakeAgentApi(),
           chat: _FakeChatApi(),
+          data: _FakeDataApi(),
           hosts: hostsApi,
           projects: _FakeProjectsApi(),
           settings: settingsApi,
@@ -172,6 +175,12 @@ final class _FakeChatApi implements ChatApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('ChatApi is not used in profile tests');
+}
+
+final class _FakeDataApi implements DataApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('not used in profile test');
 }
 
 final class _FakeHostsApi implements HostsApi {

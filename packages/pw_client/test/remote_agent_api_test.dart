@@ -5,6 +5,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -41,6 +42,7 @@ const _token = 'client-token';
 void main() {
   late _FakeAgent backend;
   late _FakeSettings settings;
+  late _FakeData data;
   late _FakeMcp mcp;
   late _FakePlugins pluginsApi;
   late _FakeSecurityAudit securityAudit;
@@ -52,6 +54,7 @@ void main() {
   setUp(() async {
     backend = _FakeAgent();
     settings = _FakeSettings();
+    data = _FakeData();
     mcp = _FakeMcp();
     pluginsApi = _FakePlugins();
     securityAudit = _FakeSecurityAudit();
@@ -62,6 +65,7 @@ void main() {
       _token,
       port: 0,
       projects: projectsApi,
+      dataApi: data,
       settingsApi: settings,
       mcpApi: mcp,
       pluginApi: pluginsApi,
@@ -80,6 +84,21 @@ void main() {
     await remote.dispose();
     await server.stop();
     await backend.dispose();
+  });
+
+  test('reads usage, clears history and resets settings', () async {
+    final usage = await remote.usage();
+    expect(usage.chats, 2);
+    expect(usage.messages, 10);
+    expect(usage.completedTasks, 2);
+
+    final result = await remote.clearHistory(olderThanDays: 30);
+    expect(result.deletedChats, 1);
+    expect(result.compacted, isFalse);
+    expect(data.clearedDays, 30);
+
+    await remote.resetSettings();
+    expect(data.resets, 1);
   });
 
   test('reads chats, hosts and journal', () async {
@@ -647,6 +666,38 @@ void main() {
     final secondGap = attempts[2].difference(attempts[1]).inMilliseconds;
     expect(secondGap, greaterThan(firstGap));
   });
+}
+
+final class _FakeData implements DataApi {
+  int? clearedDays;
+  var resets = 0;
+
+  @override
+  Future<DataUsage> usage() async => const DataUsage(
+    chats: 2,
+    subagentChats: 1,
+    messages: 10,
+    toolRuns: 3,
+    scheduledTasks: 1,
+    completedTasks: 2,
+    failedTasks: 0,
+    cancelledTasks: 0,
+    chatFilesBytes: 1024,
+    databaseBytes: 2048,
+  );
+
+  @override
+  Future<HistoryClearResult> clearHistory({int? olderThanDays}) async {
+    clearedDays = olderThanDays;
+    return const HistoryClearResult(
+      deletedChats: 1,
+      freedBytes: 512,
+      compacted: false,
+    );
+  }
+
+  @override
+  Future<void> resetSettings() async => resets++;
 }
 
 final class _FakeAgent implements AgentApi {

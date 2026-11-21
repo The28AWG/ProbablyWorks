@@ -4,6 +4,7 @@ import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -20,6 +21,7 @@ class ProfileScope extends InheritedWidget {
     required this.profile,
     required this.agentApi,
     required this.chatApi,
+    required this.dataApi,
     required this.hostsApi,
     required this.projectsApi,
     required this.settingsApi,
@@ -34,6 +36,7 @@ class ProfileScope extends InheritedWidget {
   final AgentProfile profile;
   final AgentApi agentApi;
   final ChatApi chatApi;
+  final DataApi dataApi;
   final HostsApi hostsApi;
   final ProjectsApi projectsApi;
   final AgentSettingsApi settingsApi;
@@ -56,6 +59,7 @@ class ProfileScope extends InheritedWidget {
       profile.id != oldWidget.profile.id ||
       agentApi != oldWidget.agentApi ||
       chatApi != oldWidget.chatApi ||
+      dataApi != oldWidget.dataApi ||
       hostsApi != oldWidget.hostsApi ||
       projectsApi != oldWidget.projectsApi ||
       settingsApi != oldWidget.settingsApi ||

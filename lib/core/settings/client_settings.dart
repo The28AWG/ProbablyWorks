@@ -16,6 +16,16 @@ abstract final class ClientSettingsKeys {
 
   /// Одноразовый перенос секретов GUI в keyring локального демона.
   static const daemonSecretsMigrated = 'daemonSecretsMigrated';
+
+  /// Предпочтения интерфейса, которые возвращает к значениям по умолчанию
+  /// сброс настроек. Подключения к агентам и их токены сюда не входят.
+  static const interfacePreferences = <String>[
+    language,
+    themeMode,
+    sidebarWidth,
+    keybindings,
+    modelSort,
+  ];
 }
 
 /// Настройки интерфейса и клиентского состояния, не принадлежащие агенту.

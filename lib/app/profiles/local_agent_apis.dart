@@ -1,6 +1,7 @@
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -19,6 +20,7 @@ final class LocalAgentApis {
   const LocalAgentApis({
     required this.agent,
     required this.chat,
+    required this.data,
     required this.hosts,
     required this.projects,
     required this.settings,
@@ -31,6 +33,7 @@ final class LocalAgentApis {
 
   final AgentApi agent;
   final ChatApi chat;
+  final DataApi data;
   final HostsApi hosts;
   final ProjectsApi projects;
   final AgentSettingsApi settings;

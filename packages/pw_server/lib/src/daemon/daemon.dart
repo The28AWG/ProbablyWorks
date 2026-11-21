@@ -5,6 +5,7 @@ import 'package:plugin_declarative_commands_core/declarative_commands_plugin.dar
 import 'package:plugin_declarative_http_core/declarative_http_plugin.dart';
 import 'package:plugin_web_core/plugin_web_core.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -134,6 +135,7 @@ Future<int> runDaemon(List<String> args) async {
     address: options.bind,
     port: options.port,
     chat: backend,
+    dataApi: getIt<DataApi>(),
     hosts: getIt<HostsApi>(),
     projects: getIt<ProjectsApi>(),
     settingsApi: getIt<AgentSettingsApi>(),

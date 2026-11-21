@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -47,6 +48,7 @@ final class ApiServer {
     InternetAddress? address,
     this._port = 7787,
     ChatApi? chat,
+    this.dataApi,
     HostsApi? hosts,
     ProjectsApi? projects,
     this.settingsApi,
@@ -73,6 +75,7 @@ final class ApiServer {
 
   final AgentApi _backend;
   final ChatApi? _chatApi;
+  final DataApi? dataApi;
   final HostsApi? _hostsApi;
   final ProjectsApi? _projectsApi;
   final AgentSettingsApi? settingsApi;
@@ -541,6 +544,24 @@ final class ApiServer {
             await _requireProjectsApi().deletePolicyProfile(rest.first);
             return _json(request.response, HttpStatus.noContent, {});
           }
+        }
+      case 'data':
+        if (rest.length == 1 &&
+            rest.first == 'usage' &&
+            request.method == 'GET') {
+          return _dataUsage(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'history' &&
+            rest[1] == 'clear' &&
+            request.method == 'POST') {
+          return _clearHistory(request);
+        }
+        if (rest.length == 2 &&
+            rest.first == 'settings' &&
+            rest[1] == 'reset' &&
+            request.method == 'POST') {
+          return _resetSettings(request);
         }
       case 'settings':
         if (rest.isEmpty && request.method == 'GET') return _settings(request);
@@ -1387,6 +1408,49 @@ final class ApiServer {
       );
     }
     return settings;
+  }
+
+  DataApi _requireDataApi() {
+    final data = dataApi;
+    if (data == null) {
+      throw const AgentApiException(
+        HttpStatus.notImplemented,
+        'not_supported',
+        'data API is not available',
+      );
+    }
+    return data;
+  }
+
+  Future<void> _dataUsage(HttpRequest request) async {
+    final usage = await _requireDataApi().usage();
+    _json(request.response, HttpStatus.ok, usage.toJson());
+  }
+
+  Future<void> _clearHistory(HttpRequest request) async {
+    final body = await _body(request);
+    final raw = body['olderThanDays'];
+    final int? olderThanDays;
+    if (raw == null) {
+      olderThanDays = null;
+    } else if (raw is num && raw.isFinite && raw >= 1 && raw % 1 == 0) {
+      olderThanDays = raw.toInt();
+    } else {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_request',
+        'olderThanDays must be a positive number',
+      );
+    }
+    final result = await _requireDataApi().clearHistory(
+      olderThanDays: olderThanDays,
+    );
+    _json(request.response, HttpStatus.ok, result.toJson());
+  }
+
+  Future<void> _resetSettings(HttpRequest request) async {
+    await _requireDataApi().resetSettings();
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Future<void> _settings(HttpRequest request) async {

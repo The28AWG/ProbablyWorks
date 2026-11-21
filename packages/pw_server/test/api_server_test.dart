@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -45,6 +46,7 @@ void main() {
   late _FakeSecurityAudit securityAudit;
   late _FakePush push;
   late _FakeProjects projectsApi;
+  late _FakeData dataApi;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -56,11 +58,13 @@ void main() {
     securityAudit = _FakeSecurityAudit();
     push = _FakePush();
     projectsApi = _FakeProjects();
+    dataApi = _FakeData();
     server = ApiServer(
       backend,
       _token,
       port: 0,
       projects: projectsApi,
+      dataApi: dataApi,
       mcpApi: mcp,
       pluginApi: pluginApi,
       securityAuditApi: securityAudit,
@@ -95,6 +99,40 @@ void main() {
 
     expect(await originHeader(client, 'http://localhost:8080'), isNotNull);
     expect(await originHeader(client, 'http://evil.test'), isNull);
+  });
+
+  test('validates data cleanup parameters', () async {
+    final (badStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/data/history/clear',
+      token: _token,
+      body: {'olderThanDays': 0.5},
+    );
+    expect(badStatus, HttpStatus.badRequest);
+    expect(dataApi.clearCalls, 0);
+
+    final (okStatus, _) = await _request(
+      client,
+      base,
+      'POST',
+      '/api/v1/data/history/clear',
+      token: _token,
+      body: {'olderThanDays': 30},
+    );
+    expect(okStatus, HttpStatus.ok);
+    expect(dataApi.lastDays, 30);
+
+    final (usageStatus, usageBody) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/data/usage',
+      token: _token,
+    );
+    expect(usageStatus, HttpStatus.ok);
+    expect(jsonDecode(usageBody), containsPair('scheduledTasks', 1));
   });
 
   test('health is open and reports ok', () async {
@@ -2153,6 +2191,39 @@ final class _FakeDraftStore implements ChatStore {
     edits = value;
     return revision;
   }
+}
+
+final class _FakeData implements DataApi {
+  var clearCalls = 0;
+  int? lastDays;
+
+  @override
+  Future<DataUsage> usage() async => const DataUsage(
+    chats: 1,
+    subagentChats: 0,
+    messages: 2,
+    toolRuns: 3,
+    scheduledTasks: 1,
+    completedTasks: 4,
+    failedTasks: 0,
+    cancelledTasks: 0,
+    chatFilesBytes: 10,
+    databaseBytes: 20,
+  );
+
+  @override
+  Future<HistoryClearResult> clearHistory({int? olderThanDays}) async {
+    clearCalls++;
+    lastDays = olderThanDays;
+    return const HistoryClearResult(
+      deletedChats: 1,
+      freedBytes: 10,
+      compacted: false,
+    );
+  }
+
+  @override
+  Future<void> resetSettings() => Future<void>.value();
 }
 
 final class _FakeMcp implements McpApi {

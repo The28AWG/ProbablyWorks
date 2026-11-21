@@ -601,6 +601,23 @@ class SettingsCubit extends Cubit<SettingsState> {
     }
   }
 
+  /// Возвращает клиентские предпочтения к значениям по умолчанию.
+  ///
+  /// Язык и тема применяются сразу. Ширину панели и горячие клавиши в памяти
+  /// сбрасывает экран: у них свои владельцы состояния. Подключения к агентам
+  /// и их токены не затрагиваются.
+  Future<void> resetClientPreferences() async {
+    for (final key in ClientSettingsKeys.interfacePreferences) {
+      await _settings.write(key, null);
+    }
+    _locale.apply(null);
+    _theme.apply(ThemeMode.system);
+    emit(state.copyWith(language: 'system', themeMode: ThemeMode.system));
+  }
+
+  /// Перечитывает настройки после сброса на стороне агента.
+  Future<void> reload() => load();
+
   static String _messageOf(Object error) =>
       error is AppFailure ? error.message : '$error';
 }

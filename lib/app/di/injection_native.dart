@@ -6,6 +6,7 @@ import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/core/storage/background_local_storage.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
 import 'package:pw_agent/agent/api/local_chat_api.dart';
@@ -62,6 +63,7 @@ Future<void> configureEmbeddedAgentDependencies() async {
     LocalAgentApis(
       agent: getIt<LocalAgentApi>(),
       chat: getIt<LocalChatApi>(),
+      data: getIt<DataApi>(),
       hosts: getIt<HostsApi>(),
       projects: getIt<ProjectsApi>(),
       settings: getIt<AgentSettingsApi>(),

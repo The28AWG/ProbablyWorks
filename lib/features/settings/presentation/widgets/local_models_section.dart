@@ -7,6 +7,7 @@ import 'package:probably_works/features/models/presentation/model_runtime_labels
 import 'package:probably_works/features/settings/presentation/bloc/local_models_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/local_model_dialogs.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/core/util/byte_size.dart';
 import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 
@@ -216,7 +217,7 @@ class _StorageCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   l10n.localModelsStorage(
-                    _formatBytes(state.models.totalBytes),
+                    formatByteSize(state.models.totalBytes),
                   ),
                   style: theme.textTheme.titleSmall,
                 ),
@@ -339,8 +340,8 @@ class _DownloadCard extends StatelessWidget {
             download.receivedBytes == null || download.totalBytes == null
                 ? l10n.localModelsDownloadPreparing
                 : l10n.localModelsDownloadProgress(
-                    _formatBytes(download.receivedBytes!),
-                    _formatBytes(download.totalBytes!),
+                    formatByteSize(download.receivedBytes!),
+                    formatByteSize(download.totalBytes!),
                   ),
             style: theme.textTheme.bodySmall,
           ),
@@ -418,7 +419,7 @@ class _ModelCard extends StatelessWidget {
                 ),
               ),
               Text(
-                _formatBytes(model.sizeBytes ?? 0),
+                formatByteSize(model.sizeBytes ?? 0),
                 style: theme.textTheme.bodySmall,
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -533,19 +534,4 @@ class _MetaChip extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Размер в человекочитаемом виде: `1.5 GB`, `420 MB`.
-String _formatBytes(int bytes) {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  var value = bytes.toDouble();
-  var unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit++;
-  }
-  final text = unit == 0
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(value >= 100 ? 0 : 1);
-  return '$text ${units[unit]}';
 }

@@ -9,6 +9,7 @@ import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -129,6 +130,9 @@ class ProfileService {
 
   ChatApi chatApiFor(AgentProfile profile) =>
       profile.isLocal ? _local.value.chat : _remoteFor(profile);
+
+  DataApi dataApiFor(AgentProfile profile) =>
+      profile.isLocal ? _local.value.data : _remoteFor(profile);
 
   HostsApi hostsApiFor(AgentProfile profile) =>
       profile.isLocal ? _local.value.hosts : _remoteFor(profile);

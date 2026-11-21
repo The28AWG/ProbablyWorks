@@ -260,4 +260,30 @@ void main() {
     await reopened.load();
     expect(reopened.state.themeMode, ThemeMode.dark);
   });
+  test(
+    'resetClientPreferences clears interface keys and applies defaults',
+    () async {
+      clientSettings.values.addAll({
+        ClientSettingsKeys.language: 'ru',
+        ClientSettingsKeys.themeMode: 'dark',
+        ClientSettingsKeys.sidebarWidth: '320',
+        ClientSettingsKeys.keybindings: '{"chat.new":"ctrl+n"}',
+        ClientSettingsKeys.modelSort: 'price',
+        ClientSettingsKeys.agentProfiles: '[]',
+      });
+      await cubit.load();
+
+      await cubit.resetClientPreferences();
+
+      for (final key in ClientSettingsKeys.interfacePreferences) {
+        expect(await clientSettings.read(key), isNull, reason: key);
+      }
+      expect(cubit.state.language, 'system');
+      expect(cubit.state.themeMode, ThemeMode.system);
+      // Сброс не должен выглядеть как сохранение и вызывать чужой снекбар.
+      expect(cubit.state.saved, 0);
+      expect(theme.value, ThemeMode.system);
+      expect(await clientSettings.read(ClientSettingsKeys.agentProfiles), '[]');
+    },
+  );
 }
