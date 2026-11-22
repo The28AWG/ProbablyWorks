@@ -392,6 +392,21 @@ void _liveGroup() {
     expect(_lines(tester), ['hello']);
   });
 
+  testWidgets('a clipboard query from the command gets no answer', (
+    tester,
+  ) async {
+    // OSC 52 с `?` просит прислать буфер обмена. Программа не должна получать
+    // его без явного согласия: ответ ушёл бы в PTY как обычный ввод.
+    final host = _FakeHostTerminal();
+    await tester.pumpWidget(
+      _TestHost(CommandOutput(text: '', active: true, terminal: host)),
+    );
+    host.print('\x1b]52;c;?\x07');
+    await tester.pump();
+    expect(_terminalOf(tester).onClipboardQuery, isNull);
+    expect(host.input, isEmpty);
+  });
+
   testWidgets('live terminal shows the command before PTY output', (
     tester,
   ) async {
