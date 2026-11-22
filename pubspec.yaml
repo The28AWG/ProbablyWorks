@@ -63,8 +63,8 @@ dependencies:
     git:
       url: https://github.com/The28AWG/openrouter.git
       # В main нет сгенерированных файлов: фиксируем commit из тега
-      # dist-v1.0.1, где пакет собирается и содержит нужный код.
-      ref: 54be90547727663313ae933ce2f10ee36cb9ec0f
+      # dist-v1.0.2, где пакет собирается и содержит нужный код.
+      ref: 4ca78e4714c53d6310fa7c8cbe40ccd739facfc2
   package_info_plus: ^10.2.2
   path: ^1.9.1
   path_provider: ^2.1.6

@@ -49,8 +49,8 @@ class OpenRouterLlmProvider implements LlmProvider {
     return OpenRouter(
       apiKey: key,
       baseUrl: config.baseUrl,
-      xOpenrouterTitle: _appTitle,
-      xOpenrouterCategories: 'cli-agent',
+      appTitle: _appTitle,
+      appCategories: 'cli-agent',
     );
   }
 
