@@ -203,6 +203,64 @@ void main() {
     expect(drafts.conflictFor('c1'), isNull);
   });
 
+  test(
+    'remote message edits apply while the composer draft is dirty',
+    () async {
+      final base = (await chats.chat('c1'))!;
+      drafts
+        ..prime('c1', base)
+        ..update('c1', const ChatDraft(text: 'local draft'));
+
+      final remote = base.copyWith(
+        messageEditsRevision: 1,
+        messageEdits: {'m1': const ChatDraft(text: 'remote edit')},
+      );
+
+      expect(drafts.applyRemote('c1', remote), isTrue);
+      expect(drafts.of('c1').text, 'local draft');
+      expect(drafts.editOf('c1', 'm1')?.text, 'remote edit');
+    },
+  );
+
+  test('remote draft applies while message edits are dirty', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts
+      ..prime('c1', base)
+      ..updateEdit('c1', 'm1', const ChatDraft(text: 'local edit'));
+
+    final remote = base.copyWith(
+      draftRevision: 1,
+      draft: const ChatDraft(text: 'remote draft'),
+    );
+
+    expect(drafts.applyRemote('c1', remote), isTrue);
+    expect(drafts.of('c1').text, 'remote draft');
+    expect(drafts.editOf('c1', 'm1')?.text, 'local edit');
+  });
+
+  test('a draft and a message-edit conflict are both kept', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+    final other = ChatDraftStore(chats)..prime('c1', base);
+
+    drafts
+      ..update('c1', const ChatDraft(text: 'local draft'))
+      ..updateEdit('c1', 'm1', const ChatDraft(text: 'local edit'));
+    other
+      ..update('c1', const ChatDraft(text: 'remote draft'))
+      ..updateEdit('c1', 'm1', const ChatDraft(text: 'remote edit'));
+    await other.flush();
+    await drafts.flush();
+
+    expect(drafts.conflictFor('c1')?.kind, DraftConflictKind.draft);
+    drafts.acceptRemote('c1', kind: DraftConflictKind.draft);
+    expect(drafts.conflictFor('c1')?.kind, DraftConflictKind.messageEdits);
+    drafts.acceptRemote('c1', kind: DraftConflictKind.messageEdits);
+    expect(drafts.conflictFor('c1'), isNull);
+    expect(drafts.of('c1').text, 'remote draft');
+    expect(drafts.editOf('c1', 'm1')?.text, 'remote edit');
+  });
+
   test('a message edit conflict keeps both maps separately', () async {
     final base = (await chats.chat('c1'))!;
     drafts.prime('c1', base);

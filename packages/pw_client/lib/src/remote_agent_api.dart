@@ -594,14 +594,18 @@ class RemoteAgentApi
     try {
       _globalSettings = await _get('/settings');
       if (!_settingsChanges.isClosed) _settingsChanges.add(null);
-    } on AgentApiException {
+    } on Object {
       // Следующее событие или открытие настроек попробует снова.
     }
   }
 
   Future<void> _refreshModelsFromRemote() async {
-    await _loadModels();
-    await _loadRuntime();
+    try {
+      await _loadModels();
+      await _loadRuntime();
+    } on Object {
+      // Следующее событие или открытие моделей попробует снова.
+    }
   }
 
   void _publishSettings([Map<String, dynamic>? patch]) {
@@ -690,7 +694,7 @@ class RemoteAgentApi
   Future<void> _trySyncSession(String chatId) async {
     try {
       await _syncSession(chatId);
-    } on AgentApiException {
+    } on Object {
       // Очередь — дополнительная информация; без неё чат всё равно работает.
     }
   }

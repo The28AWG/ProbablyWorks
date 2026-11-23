@@ -51,13 +51,34 @@ class ChatDraftStore {
   final _editRevisions = <String, int>{};
   final _dirty = <String>{};
   final _editsDirty = <String>{};
-  final _conflicts = <String, DraftConflict>{};
+  final _conflicts = <String, List<DraftConflict>>{};
   final _conflictChanges = StreamController<DraftConflict>.broadcast();
 
-  /// Конфликты, которые ждут решения пользователя. Ключ — id чата.
+  /// Конфликты, которые ждут решения пользователя. У чата может быть
+  /// одновременно конфликт черновика и конфликт правок сообщений.
   Stream<DraftConflict> get conflicts => _conflictChanges.stream;
 
-  DraftConflict? conflictFor(String chatId) => _conflicts[chatId];
+  /// Первый нерешённый конфликт чата (сначала черновик, затем правки).
+  DraftConflict? conflictFor(String chatId) {
+    final conflicts = _conflicts[chatId];
+    return conflicts == null || conflicts.isEmpty ? null : conflicts.first;
+  }
+
+  DraftConflict? _conflictFor(String chatId, DraftConflictKind kind) {
+    final conflicts = _conflicts[chatId];
+    if (conflicts == null) return null;
+    for (final conflict in conflicts) {
+      if (conflict.kind == kind) return conflict;
+    }
+    return null;
+  }
+
+  void _removeConflict(String chatId, DraftConflictKind kind) {
+    final conflicts = _conflicts[chatId];
+    if (conflicts == null) return;
+    conflicts.removeWhere((conflict) => conflict.kind == kind);
+    if (conflicts.isEmpty) _conflicts.remove(chatId);
+  }
 
   /// Привязывает хранилище к backend'у профиля: локальной БД или HTTP API.
   ///
@@ -187,9 +208,7 @@ class ChatDraftStore {
         _drafts[id] ?? ChatDraft.empty,
         expectedRevision: _draftRevisions[id],
       );
-      if (_conflicts[id]?.kind == DraftConflictKind.draft) {
-        _conflicts.remove(id);
-      }
+      _removeConflict(id, DraftConflictKind.draft);
     } on AgentApiException catch (error) {
       if (error.code == 'draft_conflict') {
         await _rememberConflict(id, backend, DraftConflictKind.draft);
@@ -206,9 +225,7 @@ class ChatDraftStore {
         _edits[id] ?? const {},
         expectedRevision: _editRevisions[id],
       );
-      if (_conflicts[id]?.kind == DraftConflictKind.messageEdits) {
-        _conflicts.remove(id);
-      }
+      _removeConflict(id, DraftConflictKind.messageEdits);
     } on AgentApiException catch (error) {
       if (error.code == 'draft_conflict') {
         await _rememberConflict(id, backend, DraftConflictKind.messageEdits);
@@ -223,14 +240,12 @@ class ChatDraftStore {
     DraftPersistence backend,
     DraftConflictKind kind,
   ) async {
-    if (kind == DraftConflictKind.draft) {
-      _dirty.remove(id);
-    } else {
-      _editsDirty.remove(id);
-    }
     try {
       final chat = await backend.chat(id);
-      if (chat == null) return;
+      if (chat == null) {
+        _markDirty(id, kind);
+        return;
+      }
       final conflict = kind == DraftConflictKind.draft
           ? DraftConflict(
               chatId: id,
@@ -246,29 +261,37 @@ class ChatDraftStore {
               localEdits: _edits[id] ?? const {},
               remoteEdits: chat.messageEdits,
             );
-      _conflicts[id] = conflict;
+      _conflicts.putIfAbsent(id, () => [])
+        ..removeWhere((item) => item.kind == kind)
+        ..add(conflict);
+      // Новые правки, появившиеся во время загрузки серверного снимка,
+      // остаются грязными и будут отправлены следующим flush.
       if (!_conflictChanges.isClosed) _conflictChanges.add(conflict);
     } on Object {
-      // Следующее открытие или SSE попробует снова.
+      // Оставляем изменение грязным: следующая запись повторит попытку.
+      _markDirty(id, kind);
+    }
+  }
+
+  void _markDirty(String id, DraftConflictKind kind) {
+    if (kind == DraftConflictKind.draft) {
+      _dirty.add(id);
+    } else {
+      _editsDirty.add(id);
     }
   }
 
   /// Принимает версию чата с сервера: например, после SSE о чужом изменении.
   /// Возвращает true, если версия действительно новее локальной.
   bool applyRemote(String chatId, Chat chat) {
-    // Пока пользователь печатает или ждёт решения конфликта, его вариант
-    // не затирается чужим SSE.
-    if (_conflicts.containsKey(chatId) ||
-        _dirty.contains(chatId) ||
-        _editsDirty.contains(chatId)) {
-      return false;
-    }
     final draftRevision = _draftRevisions[chatId];
     final editRevision = _editRevisions[chatId];
     final draftChanged =
+        _conflictFor(chatId, DraftConflictKind.draft) == null &&
         !_dirty.contains(chatId) &&
         (draftRevision == null || chat.draftRevision > draftRevision);
     final editsChanged =
+        _conflictFor(chatId, DraftConflictKind.messageEdits) == null &&
         !_editsDirty.contains(chatId) &&
         (editRevision == null || chat.messageEditsRevision > editRevision);
     if (!draftChanged && !editsChanged) return false;
@@ -285,9 +308,12 @@ class ChatDraftStore {
 
   /// Оставляет локальный вариант и повторяет сохранение с ревизией,
   /// которую сервер считал актуальной на момент конфликта.
-  Future<void> keepLocal(String chatId) async {
-    final conflict = _conflicts.remove(chatId);
+  Future<void> keepLocal(String chatId, {DraftConflictKind? kind}) async {
+    final conflict = kind == null
+        ? conflictFor(chatId)
+        : _conflictFor(chatId, kind);
     if (conflict == null) return;
+    _removeConflict(chatId, conflict.kind);
     if (conflict.kind == DraftConflictKind.draft) {
       _drafts[chatId] = conflict.local ?? ChatDraft.empty;
       _draftRevisions[chatId] = conflict.remoteRevision;
@@ -301,9 +327,12 @@ class ChatDraftStore {
   }
 
   /// Принимает серверный вариант и снимает конфликт.
-  void acceptRemote(String chatId) {
-    final conflict = _conflicts.remove(chatId);
+  void acceptRemote(String chatId, {DraftConflictKind? kind}) {
+    final conflict = kind == null
+        ? conflictFor(chatId)
+        : _conflictFor(chatId, kind);
     if (conflict == null) return;
+    _removeConflict(chatId, conflict.kind);
     if (conflict.kind == DraftConflictKind.draft) {
       _drafts[chatId] = conflict.remote ?? ChatDraft.empty;
       _draftRevisions[chatId] = conflict.remoteRevision;

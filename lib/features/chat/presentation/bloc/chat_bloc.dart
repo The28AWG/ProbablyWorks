@@ -359,9 +359,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     if (chatId != state.chatId) return;
     final chat = await _hub.chatStore.chat(chatId);
     if (chat == null || isClosed) return;
+    final before = _drafts.of(chatId);
     if (!_drafts.applyRemote(chatId, chat)) return;
+    final after = _drafts.of(chatId);
+    // Изменение только в правках сообщений не должно переписывать поле
+    // ввода и сбрасывать курсор.
+    if (after == before) return;
     // ignore: invalid_use_of_visible_for_testing_member, состояние меняет внешний SSE-поток
-    emit(_pushDraft(state, chat.draft));
+    emit(_pushDraft(state, after));
   }
 
   /// Снимает подписки на сессию чата, если они были.
@@ -1108,8 +1113,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     final chatId = state.chatId;
     if (chatId == null) return;
-    await _drafts.keepLocal(chatId);
-    emit(state.copyWith(clearDraftConflict: true));
+    await _drafts.keepLocal(chatId, kind: state.draftConflict?.kind);
+    final next = _drafts.conflictFor(chatId);
+    emit(state.copyWith(draftConflict: next, clearDraftConflict: next == null));
   }
 
   void _onConflictAcceptRemote(
@@ -1119,23 +1125,26 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chatId = state.chatId;
     if (chatId == null) return;
     final conflict = state.draftConflict;
-    _drafts.acceptRemote(chatId);
+    _drafts.acceptRemote(chatId, kind: conflict?.kind);
+    final next = _drafts.conflictFor(chatId);
     // Для черновика композера сразу показываем серверный текст. Для правок
     // сообщений источник — хранилище; достаточно убрать баннер и перерисовать.
     if (conflict?.kind == DraftConflictKind.draft) {
-      emit(
-        _pushDraft(
-          state.copyWith(clearDraftConflict: true),
-          _drafts.of(chatId),
-        ),
+      final base = state.copyWith(
+        draftConflict: next,
+        clearDraftConflict: next == null,
       );
+      emit(_pushDraft(base, _drafts.of(chatId)));
     } else {
-      emit(state.copyWith(clearDraftConflict: true));
+      emit(
+        state.copyWith(draftConflict: next, clearDraftConflict: next == null),
+      );
     }
   }
 
   void _onConflictChanged(_ConflictChanged event, Emitter<ChatState> emit) {
-    emit(state.copyWith(draftConflict: event.conflict));
+    final next = _drafts.conflictFor(event.conflict.chatId);
+    emit(state.copyWith(draftConflict: next, clearDraftConflict: next == null));
   }
 
   ClientSessionApi? get _sessions {
