@@ -96,6 +96,8 @@ dependencies:
     path: packages/virtual_git
   virtual_host:
     path: packages/virtual_host
+  # Web API: sessionStorage и BroadcastChannel для web-клиента.
+  web: ^1.1.2
   # Фоновый запуск планировщика задач на Android (WorkManager) и iOS
   # (BGTaskScheduler). На desktop не используется: там планировщик ведёт демон.
   workmanager: ^0.10.10

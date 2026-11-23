@@ -14,6 +14,8 @@ import 'package:probably_works/app/theme/theme_controller.dart';
 import 'package:probably_works/core/notify/web_app_notifier.dart';
 import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/security/secret_store_plugin.dart';
+import 'package:probably_works/core/session/client_session_channel.dart';
+import 'package:probably_works/core/session/client_session_store.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/palette/domain/command_plugin_registry.dart';
@@ -42,6 +44,8 @@ Future<void> bootstrapWeb({bool hosted = false}) async {
     clientInfo,
     const WebAppNotifier(),
     includeLocal: false,
+    clientSessionStore: PlatformClientSessionStore(),
+    clientSessionChannel: PlatformClientSessionChannel(),
   );
   final locale = LocaleController();
   final theme = ThemeController();

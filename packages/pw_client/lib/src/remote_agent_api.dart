@@ -38,6 +38,7 @@ import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/local_models.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
+import 'package:pw_client/src/client_session.dart';
 import 'package:uuid/uuid.dart';
 
 /// [AgentApi] поверх HTTP/SSE.
@@ -65,7 +66,12 @@ class RemoteAgentApi
     this.reconnectBaseDelay = const Duration(seconds: 3),
     this.reconnectMaxDelay = const Duration(seconds: 60),
     this.reconnectJitter = 0.2,
-  }) : _client = client ?? http.Client() {
+    ClientSessionStore? sessionStore,
+    ClientSessionChannel? sessionChannel,
+    this.sessionKey = 'default',
+  }) : _client = client ?? http.Client(),
+       _sessionStore = sessionStore ?? MemoryClientSessionStore(),
+       _sessionChannel = sessionChannel ?? const NoopClientSessionChannel() {
     assert(
       reconnectBaseDelay > Duration.zero,
       'reconnectBaseDelay must be positive',
@@ -103,6 +109,42 @@ class RemoteAgentApi
 
   final http.Client _client;
   final _random = Random();
+
+  /// Ключ профиля в [ClientSessionStore]. По нему один профиль не путает
+  /// свою сессию с сессией другого сервера.
+  final String sessionKey;
+  final ClientSessionStore _sessionStore;
+  final ClientSessionChannel _sessionChannel;
+
+  String? _sessionId;
+  String? _instanceId;
+  Future<void>? _sessionInFlight;
+  Timer? _heartbeatTimer;
+  Duration _heartbeatInterval = const Duration(seconds: 20);
+  bool _focused = false;
+  String? _activeChatId;
+
+  static const _clientSessionHeader = 'x-client-session';
+
+  /// Сессия текущего клиента. null — рукопожатие ещё не выполнено.
+  String? get sessionId => _sessionId;
+
+  /// Идентификатор запущенного сервера из последнего `/health` или handshake.
+  String? get instanceId => _instanceId;
+
+  /// Обновляет присутствие. Следующий heartbeat отправит изменения.
+  void setPresence({
+    bool? focused,
+    String? activeChatId,
+    bool clearActiveChat = false,
+  }) {
+    if (focused != null) _focused = focused;
+    if (clearActiveChat) {
+      _activeChatId = null;
+    } else if (activeChatId != null) {
+      _activeChatId = activeChatId;
+    }
+  }
 
   /// Текущая пауза перед следующей попыткой; после успеха сбрасывается.
   late Duration _reconnectDelay;
@@ -161,6 +203,16 @@ class RemoteAgentApi
           )
           .timeout(const Duration(seconds: 5));
       final online = response.statusCode == 200;
+      if (online && response.body.isNotEmpty) {
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['instanceId'] is String) {
+            _instanceId = body['instanceId'] as String;
+          }
+        } on FormatException {
+          // Health может быть от старого сервера без instanceId.
+        }
+      }
       _setStatus(online ? AgentStatus.online : AgentStatus.offline);
       return online;
     } on Object {
@@ -253,6 +305,8 @@ class RemoteAgentApi
 
   Future<void> dispose() async {
     _disposed = true;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     await _statusChanges.close();
     await _events.close();
     await _approvals.close();
@@ -1216,11 +1270,54 @@ class RemoteAgentApi
       _asMap(await _send('GET', path));
 
   Future<Object?> _send(String method, String path, {Object? body}) async {
+    await _ensureSession();
+    final session = _sessionId;
+    if (session == null) {
+      throw const AgentApiException(
+        503,
+        'session_unavailable',
+        'client session is not available',
+      );
+    }
+    try {
+      return await _sendRaw(method, path, body: body, session: session);
+    } on AgentApiException catch (error) {
+      // Оба кода сервер возвращает до маршрута: запрос не выполнен, повтор
+      // безопасен. session_required может появиться из-за гонки с другим
+      // запросом, который уже сбросил сессию.
+      if (error.code != 'session_expired' && error.code != 'session_required') {
+        rethrow;
+      }
+      if (_sessionId == session) _sessionId = null;
+      await _ensureSession();
+      final next = _sessionId;
+      if (next == null) {
+        return Future<Object?>.error(
+          const AgentApiException(
+            503,
+            'session_unavailable',
+            'client session is not available',
+          ),
+        );
+      }
+      return _sendRaw(method, path, body: body, session: next);
+    }
+  }
+
+  Future<Object?> _sendRaw(
+    String method,
+    String path, {
+    Object? body,
+    required String? session,
+  }) async {
     final request = http.Request(method, _url(path));
     request.headers['Authorization'] = 'Bearer $token';
     request.headers['Accept'] = 'application/json';
     for (final entry in clientHeaders.entries) {
       request.headers[entry.key] = entry.value;
+    }
+    if (session != null) {
+      request.headers[_clientSessionHeader] = session;
     }
     request.headers['x-request-id'] = _uuid.v4();
     if (body != null) {
@@ -1238,12 +1335,89 @@ class RemoteAgentApi
       _setStatus(AgentStatus.offline);
       rethrow;
     }
-    _setStatus(AgentStatus.online);
+    _setStatus(
+      response.statusCode == 401 ? AgentStatus.offline : AgentStatus.online,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _error(response);
     }
     if (response.body.isEmpty) return null;
     return jsonDecode(response.body);
+  }
+
+  /// Рукопожатие ровно один раз на клиент, даже при параллельных запросах.
+  Future<void> _ensureSession() {
+    if (_disposed) return Future<void>.value();
+    if (_sessionId != null) return Future<void>.value();
+    return _sessionInFlight ??= _handshake().whenComplete(
+      () => _sessionInFlight = null,
+    );
+  }
+
+  Future<void> _handshake() async {
+    var previous = _sessionStore.read(sessionKey);
+    if (previous != null && previous.isNotEmpty) {
+      var active = false;
+      try {
+        active = await _sessionChannel.isActive(previous);
+      } on Object {
+        // Хранилище вкладок необязательно: сервер всё равно проверит id.
+      }
+      if (active) {
+        _sessionStore.delete(sessionKey);
+        previous = null;
+      }
+    }
+    final json = await _sendRaw(
+      'POST',
+      '/client/handshake',
+      body: {'protocol': 1, 'previousSessionId': ?previous},
+      session: null,
+    );
+    if (_disposed) return;
+    final map = _asMap(json);
+    final sessionId = map['sessionId'];
+    if (sessionId is! String || sessionId.isEmpty) {
+      throw const AgentApiException(
+        500,
+        'bad_response',
+        'sessionId is missing in handshake response',
+      );
+    }
+    _sessionId = sessionId;
+    _sessionStore.write(sessionKey, sessionId);
+    if (map['instanceId'] is String) {
+      final instanceId = map['instanceId'] as String;
+      if (instanceId.isNotEmpty) _instanceId = instanceId;
+    }
+    final heartbeat = map['heartbeatIntervalMs'];
+    if (heartbeat is num && heartbeat > 0) {
+      _heartbeatInterval = Duration(
+        milliseconds: heartbeat.clamp(5000, 60000).toInt(),
+      );
+    }
+    _startHeartbeat();
+  }
+
+  void _startHeartbeat() {
+    if (_disposed) return;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      unawaited(_sendHeartbeat());
+    });
+  }
+
+  Future<void> _sendHeartbeat() async {
+    if (_disposed || _sessionId == null) return;
+    try {
+      await _send(
+        'PUT',
+        '/client/session',
+        body: {'focused': _focused, 'activeChatId': _activeChatId},
+      );
+    } on Object {
+      // Следующий запрос или SSE-переподключение восстановит сессию.
+    }
   }
 
   Future<Map<String, dynamic>> getJson(String path) => _get(path);
@@ -1312,12 +1486,22 @@ class RemoteAgentApi
   Future<void> _listen() async {
     while (!_disposed) {
       try {
+        await _ensureSession();
+        final session = _sessionId;
+        if (session == null) {
+          throw const AgentApiException(
+            502,
+            'session_unavailable',
+            'client session is not available',
+          );
+        }
         final request = http.Request('GET', _url('/events'));
         request.headers['Authorization'] = 'Bearer $token';
         request.headers['Accept'] = 'text/event-stream';
         for (final entry in clientHeaders.entries) {
           request.headers[entry.key] = entry.value;
         }
+        request.headers[_clientSessionHeader] = session;
         request.headers['x-request-id'] = _uuid.v4();
         final response = await _client.send(request);
         if (response.statusCode == 401) {
@@ -1325,6 +1509,12 @@ class RemoteAgentApi
           // цикл, иначе клиент будет долбить сервер каждые несколько секунд.
           _setStatus(AgentStatus.offline);
           return;
+        }
+        if (response.statusCode == 410 && _sessionId == session) {
+          // Сессия истекла или сервер перезапустился. Следующая попытка
+          // сначала пройдёт рукопожатие; повтор запроса безопасен. Если
+          // параллельный запрос уже получил новую сессию, её не трогаем.
+          _sessionId = null;
         }
         if (response.statusCode != 200) {
           throw AgentApiException(
@@ -1337,6 +1527,9 @@ class RemoteAgentApi
         _reconnectDelay = reconnectBaseDelay;
         if (!_eventsReady.isCompleted) _eventsReady.complete();
         await _consume(response.stream);
+      } on AgentApiException catch (error) {
+        _setStatus(AgentStatus.offline);
+        if (error.status == 401) return;
       } on Object {
         _setStatus(AgentStatus.offline);
         // Ниже пауза и повторное подключение.

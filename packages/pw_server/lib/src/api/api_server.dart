@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
@@ -34,6 +35,8 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_rate_limiter.dart';
+import 'package:pw_server/src/api/api_token.dart';
+import 'package:pw_server/src/api/client_session.dart';
 import 'package:pw_server/src/web/static_web.dart';
 
 /// Локальный HTTP API поверх агента.
@@ -59,14 +62,19 @@ final class ApiServer {
     this.accessLog,
     this.web,
     this.allowedOrigins = const {},
+    this.requireSession = true,
     this.maxConcurrentRequests = 32,
     this.requestTimeout = const Duration(minutes: 5),
     ApiRateLimiter? rateLimiter,
+    ClientSessionRegistry? clientSessions,
+    String? instanceId,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
        _hostsApi = hosts,
        _projectsApi = projects,
        _rateLimiter = rateLimiter ?? ApiRateLimiter(),
+       _clientSessions = clientSessions ?? ClientSessionRegistry(),
+       instanceId = instanceId ?? ApiTokenStore.generateApiToken(),
        assert(maxConcurrentRequests > 0),
        assert(requestTimeout > Duration.zero);
 
@@ -91,6 +99,22 @@ final class ApiServer {
   final InternetAddress _address;
   final int _port;
   final Set<String> allowedOrigins;
+
+  /// Требовать ли `X-Client-Session` для API, кроме health и handshake.
+  ///
+  /// Боевой демон работает с `true`: так сервер всегда знает, какое рабочее
+  /// место сделало запрос. Тестовые фикстуры старых маршрутов могут явно
+  /// отключить требование, но клиент всё равно шлёт сессию.
+  final bool requireSession;
+
+  /// Идентификатор этого запуска сервера. Новый процесс — новый id.
+  ///
+  /// Не переживает перезапуск: по нему клиент отличает «тот же экземпляр»
+  /// от «сервер поднялся заново». Сессии живут только в памяти и связаны
+  /// именно с этим запуском.
+  final String instanceId;
+
+  final ClientSessionRegistry _clientSessions;
 
   /// Одновременные запросы ограничены, чтобы зависший backend не копил
   /// неограниченное число соединений.
@@ -124,6 +148,7 @@ final class ApiServer {
       await response.close();
     }
     _clients.clear();
+    _clientSessions.dispose();
     await _server?.close(force: true);
     _server = null;
   }
@@ -136,6 +161,7 @@ final class ApiServer {
     var audit = true;
     var auth = 'ok';
     String? token;
+    String? clientSession;
     String? errorCode;
     var sse = false;
     try {
@@ -169,7 +195,11 @@ final class ApiServer {
 
       if (request.method == 'GET' && request.uri.path == '/api/v1/health') {
         audit = false;
-        _json(response, HttpStatus.ok, {'ok': true, 'version': '1'});
+        _json(response, HttpStatus.ok, {
+          'ok': true,
+          'version': '1',
+          'instanceId': instanceId,
+        });
         return;
       }
 
@@ -208,6 +238,37 @@ final class ApiServer {
           );
           return;
         }
+        final sessionHeader = request.headers.value(_clientSessionHeader);
+        if (!_sessionExempt(request)) {
+          if (sessionHeader == null || sessionHeader.isEmpty) {
+            if (requireSession) {
+              errorCode = 'session_required';
+              _error(
+                response,
+                HttpStatus.badRequest,
+                'session_required',
+                'X-Client-Session is required',
+                requestId: requestId,
+              );
+              return;
+            }
+          } else {
+            final lookup = _clientSessions.touch(sessionHeader);
+            if (lookup.session case final session?) {
+              clientSession = session.id;
+            } else {
+              errorCode = 'session_expired';
+              _error(
+                response,
+                HttpStatus.gone,
+                errorCode,
+                'session is unknown or expired',
+                requestId: requestId,
+              );
+              return;
+            }
+          }
+        }
         sse = request.method == 'GET' && request.uri.path == '/api/v1/events';
         if (sse) {
           _writeAccess(
@@ -216,6 +277,7 @@ final class ApiServer {
             event: 'api.sse.open',
             auth: auth,
             token: token,
+            clientSession: clientSession,
             status: HttpStatus.ok,
             durationMs: 0,
           );
@@ -275,6 +337,7 @@ final class ApiServer {
           event: sse ? 'api.sse.close' : 'api.request',
           auth: auth,
           token: token,
+          clientSession: clientSession,
           error: errorCode,
           status: response.statusCode,
           durationMs: stopwatch.elapsedMilliseconds,
@@ -321,7 +384,7 @@ final class ApiServer {
         'Access-Control-Allow-Headers',
         'Authorization, Content-Type, x-request-id, '
             'x-client-app, x-client-package, x-client-version, x-client-build, '
-            'x-client-platform',
+            'x-client-platform, x-client-session',
       )
       ..set('Access-Control-Max-Age', '600');
     if (request.method != 'OPTIONS') return false;
@@ -361,6 +424,7 @@ final class ApiServer {
     required int status,
     required int durationMs,
     String? token,
+    String? clientSession,
     String? error,
   }) {
     final log = accessLog;
@@ -379,11 +443,51 @@ final class ApiServer {
       'clientVersion': _clientHeader(request, 'x-client-version'),
       'clientBuild': _clientHeader(request, 'x-client-build'),
       'clientPlatform': _clientHeader(request, 'x-client-platform'),
+      'instanceId': instanceId,
+      'deviceId': _deviceId(request),
+      'clientSession': clientSession == null
+          ? null
+          : ApiAccessLog.fingerprint(clientSession),
       'auth': auth,
       'token': token,
       'error': error,
     });
   }
+
+  static const _clientSessionHeader = 'x-client-session';
+
+  /// Health и рукопожатие не могут требовать сессию: её ещё нет.
+  bool _sessionExempt(HttpRequest request) =>
+      (request.method == 'GET' && request.uri.path == '/api/v1/health') ||
+      (request.method == 'POST' &&
+          request.uri.path == '/api/v1/client/handshake');
+
+  /// Короткий отпечаток `X-Client-*`.
+  ///
+  /// Это не стабильный идентификатор устройства: две вкладки одного браузера
+  /// обычно дают один отпечаток, а обновление приложения его меняет. Нужен
+  /// только для группировки сессий и журнала.
+  static String _deviceId(HttpRequest request) {
+    final parts = [
+      _clientHeader(request, 'x-client-app') ?? '',
+      _clientHeader(request, 'x-client-package') ?? '',
+      _clientHeader(request, 'x-client-version') ?? '',
+      _clientHeader(request, 'x-client-build') ?? '',
+      _clientHeader(request, 'x-client-platform') ?? '',
+    ];
+    final digest = sha256.convert(utf8.encode(parts.join('\u001f')));
+    return String.fromCharCodes(digest.toString().codeUnits.take(16));
+  }
+
+  static ClientSessionInfo _clientInfo(HttpRequest request) =>
+      ClientSessionInfo(
+        deviceId: _deviceId(request),
+        app: _clientHeader(request, 'x-client-app') ?? '',
+        package: _clientHeader(request, 'x-client-package') ?? '',
+        version: _clientHeader(request, 'x-client-version') ?? '',
+        build: _clientHeader(request, 'x-client-build') ?? '',
+        platform: _clientHeader(request, 'x-client-platform') ?? '',
+      );
 
   /// Сообщает SSE-клиентам, какие списки могли измениться после запроса.
   void _publishState(HttpRequest request) {
@@ -668,6 +772,8 @@ final class ApiServer {
             return _deleteModelFile(request, rest[1]);
           }
         }
+      case 'client':
+        return _routeClient(request, rest);
       case 'search':
         if (rest.isEmpty && request.method == 'GET') return _search(request);
       case 'chats':
@@ -699,6 +805,143 @@ final class ApiServer {
       'unknown endpoint',
     );
   }
+
+  Future<void> _routeClient(HttpRequest request, List<String> rest) async {
+    if (rest.length == 1 &&
+        rest.first == 'handshake' &&
+        request.method == 'POST') {
+      return _handshake(request);
+    }
+    if (rest.length == 1 &&
+        rest.first == 'session' &&
+        request.method == 'PUT') {
+      return _heartbeat(request);
+    }
+    if (rest.length == 1 &&
+        rest.first == 'session' &&
+        request.method == 'DELETE') {
+      return _deleteSession(request);
+    }
+    if (rest.length == 1 &&
+        rest.first == 'sessions' &&
+        request.method == 'GET') {
+      return _clientSessionList(request);
+    }
+    throw const AgentApiException(
+      HttpStatus.notFound,
+      'not_found',
+      'unknown client endpoint',
+    );
+  }
+
+  /// Рукопожатие: сервер сам выдаёт сессию, клиент её только сохраняет.
+  ///
+  /// `previousSessionId` — подсказка для непрерывности после reload, а не
+  /// доказательство. Авторизация уже прошла по Bearer-токену.
+  Future<void> _handshake(HttpRequest request) async {
+    final body = await _body(request);
+    final protocol = body['protocol'] is num
+        ? (body['protocol'] as num).toInt()
+        : 1;
+    if (protocol != 1) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'unsupported_protocol',
+        'unsupported client protocol',
+      );
+    }
+    final previous = body['previousSessionId'] is String
+        ? body['previousSessionId'] as String
+        : null;
+    final session = _clientSessions.handshake(
+      info: _clientInfo(request),
+      previousSessionId: previous,
+    );
+    _json(request.response, HttpStatus.ok, {
+      'sessionId': session.id,
+      'instanceId': instanceId,
+      'deviceId': session.deviceId,
+      'protocol': 1,
+      'expiresAt': session.expiresAt.toUtc().toIso8601String(),
+      'heartbeatIntervalMs': _clientSessions.heartbeatInterval.inMilliseconds,
+    });
+  }
+
+  /// Heartbeat и необязательное присутствие: фокус и открытый чат.
+  Future<void> _heartbeat(HttpRequest request) async {
+    final sessionId = request.headers.value(_clientSessionHeader);
+    if (sessionId == null || sessionId.isEmpty) {
+      throw const AgentApiException(
+        HttpStatus.gone,
+        'session_expired',
+        'session is unknown or expired',
+      );
+    }
+    final body = await _body(request);
+    final session = _clientSessions.updatePresence(
+      sessionId,
+      focused: body['focused'] == true,
+      activeChatId: body['activeChatId'] is String
+          ? body['activeChatId'] as String
+          : null,
+    );
+    if (session == null) {
+      throw const AgentApiException(
+        HttpStatus.gone,
+        'session_expired',
+        'session is unknown or expired',
+      );
+    }
+    _json(request.response, HttpStatus.ok, {
+      'expiresAt': session.expiresAt.toUtc().toIso8601String(),
+    });
+  }
+
+  Future<void> _deleteSession(HttpRequest request) {
+    final sessionId = request.headers.value(_clientSessionHeader);
+    if (sessionId != null && sessionId.isNotEmpty) {
+      _clientSessions.remove(sessionId);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+    return Future<void>.value();
+  }
+
+  /// Снимок клиентских сессий для диагностики и будущего UI.
+  Future<void> _clientSessionList(HttpRequest request) {
+    final current = request.headers.value(_clientSessionHeader);
+    final at = _clientSessions.now;
+    final sessions = _clientSessions.list();
+    _json(request.response, HttpStatus.ok, {
+      'currentSessionId': current,
+      'instanceId': instanceId,
+      'sessions': [
+        for (final session in sessions)
+          _clientSessionJson(session, current: session.id == current, now: at),
+      ],
+    });
+    return Future<void>.value();
+  }
+
+  Map<String, Object?> _clientSessionJson(
+    ClientSession session, {
+    required bool current,
+    required DateTime now,
+  }) => {
+    'id': session.id,
+    'deviceId': session.deviceId,
+    'clientApp': session.clientApp,
+    'clientPackage': session.clientPackage,
+    'clientVersion': session.clientVersion,
+    'clientBuild': session.clientBuild,
+    'clientPlatform': session.clientPlatform,
+    'createdAt': session.createdAt.toUtc().toIso8601String(),
+    'lastSeenAt': session.lastSeenAt.toUtc().toIso8601String(),
+    'expiresAt': session.expiresAt.toUtc().toIso8601String(),
+    'focused': session.focused,
+    'activeChatId': session.activeChatId,
+    'online': !session.isExpiredAt(now),
+    'current': current,
+  };
 
   Future<void> _routeChats(HttpRequest request, List<String> rest) async {
     if (rest.isEmpty && request.method == 'GET') return _chats(request);
@@ -2073,6 +2316,7 @@ final class ApiServer {
   /// SSE-поток всех событий или одного чата (`?chatId=`).
   Future<void> _events(HttpRequest request, {String? chatId}) async {
     final response = request.response;
+    final sessionId = request.headers.value(_clientSessionHeader);
     final filterChatId = chatId ?? request.uri.queryParameters['chatId'];
     if (filterChatId != null && await _backend.chat(filterChatId) == null) {
       throw AgentApiException(
@@ -2092,6 +2336,9 @@ final class ApiServer {
       ..headers.set(HttpHeaders.cacheControlHeader, 'no-cache')
       ..headers.set(HttpHeaders.connectionHeader, 'keep-alive');
     _clients.add(response);
+    if (sessionId != null && sessionId.isNotEmpty) {
+      _clientSessions.attach(sessionId, response);
+    }
     response.write(': connected\n\n');
     await response.flush();
     // Подписку ставим после flush: runtime может прислать снимок сразу,
@@ -2114,6 +2361,9 @@ final class ApiServer {
       heartbeat.cancel();
       await subscription.cancel();
       _clients.remove(response);
+      if (sessionId != null && sessionId.isNotEmpty) {
+        _clientSessions.detach(sessionId, response);
+      }
     }
   }
 

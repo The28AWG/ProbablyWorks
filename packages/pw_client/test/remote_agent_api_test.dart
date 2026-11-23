@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:plugin_api/plugin_api.dart' as plugins;
@@ -671,6 +672,133 @@ void main() {
     final firstGap = attempts[1].difference(attempts.first).inMilliseconds;
     final secondGap = attempts[2].difference(attempts[1]).inMilliseconds;
     expect(secondGap, greaterThan(firstGap));
+  });
+
+  test('handshakes and exposes the session and instance ids', () async {
+    await remote.chats();
+
+    expect(remote.sessionId, isNotNull);
+    expect(remote.instanceId, isNotNull);
+  });
+
+  test('reuses the stored session for a new client instance', () async {
+    final store = MemoryClientSessionStore();
+    final first = RemoteAgentApi(
+      baseUri: remote.baseUri,
+      token: _token,
+      sessionStore: store,
+      sessionKey: 'profile-1',
+    );
+    addTearDown(first.dispose);
+    await first.chats();
+    final sessionId = first.sessionId;
+    expect(sessionId, isNotNull);
+
+    final second = RemoteAgentApi(
+      baseUri: remote.baseUri,
+      token: _token,
+      sessionStore: store,
+      sessionKey: 'profile-1',
+    );
+    addTearDown(second.dispose);
+    await second.chats();
+
+    expect(second.sessionId, sessionId);
+  });
+
+  test('re-handshakes after the server expires the session', () async {
+    final store = MemoryClientSessionStore();
+    var now = DateTime.utc(2026, 11, 24, 12);
+    final sessions = ClientSessionRegistry(
+      ttl: const Duration(seconds: 60),
+      sweepInterval: const Duration(hours: 1),
+      now: () => now,
+    );
+    addTearDown(sessions.dispose);
+    final expiringServer = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      chat: _FakeDraftChatApi(store: _FakeDraftStore()),
+      clientSessions: sessions,
+    );
+    final port = await expiringServer.start();
+    addTearDown(expiringServer.stop);
+    final expiring = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:$port'),
+      token: _token,
+      sessionStore: store,
+      sessionKey: 'profile-expiring',
+    );
+    addTearDown(expiring.dispose);
+
+    await expiring.chats();
+    final firstSession = expiring.sessionId;
+    expect(firstSession, isNotNull);
+
+    now = now.add(const Duration(seconds: 61));
+    await expiring.chats();
+
+    expect(expiring.sessionId, isNot(firstSession));
+  });
+
+  test('retries a request that lost the session before the route', () async {
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var handshakes = 0;
+    var chats = 0;
+    httpServer.listen((request) async {
+      await request.drain<void>();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      if (request.uri.path == '/api/v1/client/handshake') {
+        handshakes++;
+        response.write(
+          jsonEncode({
+            'sessionId': 's$handshakes',
+            'instanceId': 'instance-1',
+            'deviceId': 'device-1',
+            'protocol': 1,
+            'expiresAt': DateTime.now()
+                .toUtc()
+                .add(const Duration(minutes: 1))
+                .toIso8601String(),
+            'heartbeatIntervalMs': 60000,
+          }),
+        );
+      } else if (request.uri.path == '/api/v1/chats') {
+        chats++;
+        final session = request.headers.value('x-client-session');
+        if (session == 's1') {
+          response
+            ..statusCode = HttpStatus.badRequest
+            ..write(
+              jsonEncode({
+                'error': {
+                  'code': 'session_required',
+                  'message': 'session is required',
+                },
+                'requestId': 'test',
+              }),
+            );
+        } else {
+          response.write(jsonEncode({'chats': []}));
+        }
+      } else {
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+
+    final remote = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(remote.dispose);
+
+    expect(await remote.chats(), isEmpty);
+    expect(handshakes, 2);
+    expect(chats, 2);
   });
 }
 

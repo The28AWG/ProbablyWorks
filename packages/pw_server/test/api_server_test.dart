@@ -63,6 +63,7 @@ void main() {
       backend,
       _token,
       port: 0,
+      requireSession: false,
       projects: projectsApi,
       dataApi: dataApi,
       mcpApi: mcp,
@@ -155,6 +156,7 @@ void main() {
       backend,
       _token,
       port: 0,
+      requireSession: false,
       web: StaticWeb.open(temp.path),
     );
     final webPort = await webServer.start();
@@ -186,6 +188,7 @@ void main() {
       limitedBackend,
       _token,
       port: 0,
+      requireSession: false,
       rateLimiter: ApiRateLimiter(
         maxRequests: 2,
         window: const Duration(minutes: 1),
@@ -230,6 +233,7 @@ void main() {
       backend,
       _token,
       port: 0,
+      requireSession: false,
       maxConcurrentRequests: 1,
       requestTimeout: const Duration(seconds: 10),
     );
@@ -273,6 +277,7 @@ void main() {
       backend,
       _token,
       port: 0,
+      requireSession: false,
       requestTimeout: const Duration(milliseconds: 50),
     );
     final port = await limited.start();
@@ -1159,6 +1164,7 @@ void main() {
         backend,
         _token,
         port: 0,
+        requireSession: false,
         settingsApi: settings,
       );
       final port = await settingsServer.start();
@@ -1525,7 +1531,13 @@ void main() {
     setUp(() async {
       temp = Directory.systemTemp.createTempSync('pw_api_access');
       accessLog = ApiAccessLog(temp);
-      logServer = ApiServer(backend, _token, port: 0, accessLog: accessLog);
+      logServer = ApiServer(
+        backend,
+        _token,
+        port: 0,
+        requireSession: false,
+        accessLog: accessLog,
+      );
       final port = await logServer.start();
       logBase = 'http://127.0.0.1:$port';
     });
@@ -1656,7 +1668,13 @@ void main() {
     setUp(() async {
       store = _FakeDraftStore();
       chatApi = _FakeDraftChatApi(store);
-      draftServer = ApiServer(backend, _token, port: 0, chat: chatApi);
+      draftServer = ApiServer(
+        backend,
+        _token,
+        port: 0,
+        requireSession: false,
+        chat: chatApi,
+      );
       final port = await draftServer.start();
       draftBase = 'http://127.0.0.1:$port';
     });
@@ -1715,6 +1733,223 @@ void main() {
       expect(store.edits['m1']?.text, 'edited');
     });
   });
+
+  group('client sessions', () {
+    const clientHeaders = {
+      'x-client-app': 'ProbablyWorks',
+      'x-client-package': 'probably_works',
+      'x-client-version': '1.0.0',
+      'x-client-build': '1',
+      'x-client-platform': 'linux',
+    };
+
+    late ApiServer sessionServer;
+    late String sessionBase;
+    late DateTime sessionNow;
+    late String sessionId;
+    late String instanceId;
+    late String deviceId;
+
+    setUp(() async {
+      sessionNow = DateTime.utc(2026, 11, 24, 12);
+      sessionServer = ApiServer(
+        backend,
+        _token,
+        port: 0,
+        clientSessions: ClientSessionRegistry(
+          ttl: const Duration(seconds: 60),
+          sweepInterval: const Duration(hours: 1),
+          now: () => sessionNow,
+        ),
+      );
+      final port = await sessionServer.start();
+      sessionBase = 'http://127.0.0.1:$port';
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: clientHeaders,
+        body: {'protocol': 1},
+      );
+      expect(status, HttpStatus.ok);
+      final json = jsonDecode(body) as Map;
+      sessionId = json['sessionId'] as String;
+      instanceId = json['instanceId'] as String;
+      deviceId = json['deviceId'] as String;
+    });
+
+    tearDown(() => sessionServer.stop());
+
+    test('health exposes the running instance id', () async {
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/health',
+      );
+
+      expect(status, HttpStatus.ok);
+      expect(jsonDecode(body), containsPair('instanceId', instanceId));
+    });
+
+    test('requires a session after handshake', () async {
+      final (without, _) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/chats',
+        token: _token,
+      );
+      expect(without, HttpStatus.badRequest);
+
+      final (withSession, _) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/chats',
+        token: _token,
+        session: sessionId,
+      );
+      expect(withSession, HttpStatus.ok);
+    });
+
+    test('two handshakes are two sessions with the same device id', () async {
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: clientHeaders,
+        body: {'protocol': 1},
+      );
+      expect(status, HttpStatus.ok);
+      final json = jsonDecode(body) as Map;
+
+      expect(json['sessionId'], isNot(sessionId));
+      expect(json['deviceId'], deviceId);
+      expect(json['instanceId'], instanceId);
+
+      final (listStatus, listBody) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/client/sessions',
+        token: _token,
+        session: sessionId,
+      );
+      expect(listStatus, HttpStatus.ok);
+      final sessions = (jsonDecode(listBody) as Map)['sessions'] as List;
+      expect(sessions, hasLength(2));
+      expect(
+        sessions.map((entry) => (entry as Map)['deviceId']),
+        everyElement(deviceId),
+      );
+    });
+
+    test('previous session id is reused while alive', () async {
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: clientHeaders,
+        body: {'protocol': 1, 'previousSessionId': sessionId},
+      );
+
+      expect(status, HttpStatus.ok);
+      expect((jsonDecode(body) as Map)['sessionId'], sessionId);
+    });
+
+    test('heartbeat keeps the session and reports presence', () async {
+      sessionNow = sessionNow.add(const Duration(seconds: 30));
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {'focused': true, 'activeChatId': 'c1'},
+      );
+      expect(status, HttpStatus.ok);
+
+      final (listStatus, body) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/client/sessions',
+        token: _token,
+        session: sessionId,
+      );
+      expect(listStatus, HttpStatus.ok);
+      final sessions = (jsonDecode(body) as Map)['sessions'] as List;
+      final current = sessions.cast<Map>().firstWhere(
+        (entry) => entry['id'] == sessionId,
+      );
+      expect(current['focused'], isTrue);
+      expect(current['activeChatId'], 'c1');
+      expect(current['current'], isTrue);
+      expect(current['online'], isTrue);
+    });
+
+    test(
+      'expired session gets 410 and a new handshake gets a new id',
+      () async {
+        sessionNow = sessionNow.add(const Duration(seconds: 61));
+
+        final (status, body) = await _request(
+          client,
+          sessionBase,
+          'GET',
+          '/api/v1/chats',
+          token: _token,
+          session: sessionId,
+        );
+        expect(status, HttpStatus.gone);
+        expect((jsonDecode(body) as Map)['error']['code'], 'session_expired');
+
+        final (handshakeStatus, handshakeBody) = await _request(
+          client,
+          sessionBase,
+          'POST',
+          '/api/v1/client/handshake',
+          token: _token,
+          headers: clientHeaders,
+          body: {'protocol': 1, 'previousSessionId': sessionId},
+        );
+        expect(handshakeStatus, HttpStatus.ok);
+        final json = jsonDecode(handshakeBody) as Map;
+        expect(json['sessionId'], isNot(sessionId));
+        expect(json['instanceId'], instanceId);
+      },
+    );
+
+    test('delete closes the session', () async {
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'DELETE',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+      );
+      expect(status, HttpStatus.noContent);
+
+      final (after, _) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/chats',
+        token: _token,
+        session: sessionId,
+      );
+      expect(after, HttpStatus.gone);
+    });
+  });
 }
 
 Future<(int, String)> _request(
@@ -1723,11 +1958,19 @@ Future<(int, String)> _request(
   String method,
   String path, {
   String? token,
+  String? session,
+  Map<String, String>? headers,
   Object? body,
 }) async {
   final request = await client.openUrl(method, Uri.parse('$base$path'));
   if (token != null) {
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+  }
+  if (session != null) {
+    request.headers.set('x-client-session', session);
+  }
+  for (final entry in headers?.entries ?? const <MapEntry<String, String>>[]) {
+    request.headers.set(entry.key, entry.value);
   }
   if (body != null) {
     request.headers.contentType = ContentType.json;

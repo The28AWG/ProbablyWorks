@@ -39,7 +39,11 @@ class ProfileService {
     this._clientInfo,
     this._notifier, {
     @ignoreParam this.includeLocal = true,
-  });
+    @ignoreParam ClientSessionStore? clientSessionStore,
+    @ignoreParam ClientSessionChannel? clientSessionChannel,
+  }) : _clientSessionStore = clientSessionStore ?? MemoryClientSessionStore(),
+       _clientSessionChannel =
+           clientSessionChannel ?? const NoopClientSessionChannel();
 
   static const _uuid = Uuid();
 
@@ -49,6 +53,11 @@ class ProfileService {
   final ClientInfo _clientInfo;
   final AppNotifier _notifier;
   final bool includeLocal;
+
+  /// Сессии выдаёт сервер; клиент только хранит id. На web это
+  /// `sessionStorage` + `BroadcastChannel`, на остальных платформах — память.
+  final ClientSessionStore _clientSessionStore;
+  final ClientSessionChannel _clientSessionChannel;
 
   final _changes = StreamController<void>.broadcast();
   final _remote = <String, RemoteAgentApi>{};
@@ -217,6 +226,7 @@ class ProfileService {
     _tokens.remove(id);
     await _secrets.delete(agentProfileTokenKey(id));
     await _disposeRemote(id);
+    _clientSessionStore.delete(id);
     await _persist();
     _changes.add(null);
   }
@@ -311,6 +321,7 @@ class ProfileService {
       await _disposeRemote(id);
     }
     _remote.clear();
+    _clientSessionChannel.close();
     await _changes.close();
   }
 
@@ -332,6 +343,9 @@ class ProfileService {
       baseUri: baseUri,
       token: _tokens[profile.id] ?? '',
       clientHeaders: _clientInfo.headers,
+      sessionStore: _clientSessionStore,
+      sessionChannel: _clientSessionChannel,
+      sessionKey: profile.id,
     )..startEvents();
     _remote[profile.id] = api;
     _listeners[profile.id] = _listenNotices(api, profile.id);
