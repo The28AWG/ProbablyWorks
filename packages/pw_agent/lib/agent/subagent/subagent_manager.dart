@@ -5,12 +5,25 @@ import 'package:logging/logging.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/chat_session.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
+import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
-import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 import 'package:uuid/uuid.dart';
+
+/// Зависимости субагентов, которые им действительно нужны.
+///
+/// Менеджер не держит весь `AgentHub`: ему нужны строки чатов, настройки,
+/// каталог моделей и фабрика сессий. Узкий контракт разрывает циклическую
+/// зависимость хаба и менеджера и позволяет тестировать субагентов отдельно.
+abstract interface class SubagentHost {
+  ChatRepository get chats;
+  SettingsRepository get settings;
+  ModelCatalogService get models;
+  ChatSession session(String chatId);
+}
 
 /// Состояние фонового субагента.
 enum SubagentStatus { running, completed, failed, stopped }
@@ -59,13 +72,13 @@ final class SubagentResult {
 
 /// Запускает скрытые чаты субагентов и ждёт их результатов.
 final class SubagentManager {
-  SubagentManager(this._hub);
+  SubagentManager(this._host);
 
   static const _maxDepth = 8;
   static final _uuid = Uuid();
   static final _log = Logger('SubagentManager');
 
-  final AgentHub _hub;
+  final SubagentHost _host;
   final _runs = <String, SubagentRun>{};
   final _subscriptions = <String, StreamSubscription<AgentEvent>>{};
 
@@ -84,10 +97,10 @@ final class SubagentManager {
 
   /// Поднимает незавершённых и недоставленных субагентов после перезапуска.
   Future<void> restore() async {
-    final chats = await _hub.chats.allChats();
+    final chats = await _host.chats.allChats();
     for (final chat in chats) {
       if (!chat.isSubagent || _runs.containsKey(chat.id)) continue;
-      if (await _hub.settings.read(_deliveredKey(chat.id)) == 'yes') continue;
+      if (await _host.settings.read(_deliveredKey(chat.id)) == 'yes') continue;
       final run = SubagentRun(
         id: chat.id,
         parentChatId: chat.parentChatId ?? chat.id,
@@ -97,12 +110,12 @@ final class SubagentManager {
         model: chat.model ?? '',
       );
       _runs[chat.id] = run;
-      _subscriptions[chat.id] = _hub.session(chat.id).events.listen((event) {
+      _subscriptions[chat.id] = _host.session(chat.id).events.listen((event) {
         if (event is AgentTurnFinished && event.chatId == chat.id) {
           unawaited(_complete(run, event.end));
         }
       });
-      if (!await ChatSession.hasUnfinishedStep(_hub.chats, chat.id)) {
+      if (!await ChatSession.hasUnfinishedStep(_host.chats, chat.id)) {
         await _complete(run, TurnEnd.completed);
       }
     }
@@ -140,7 +153,7 @@ final class SubagentManager {
     final reasoning = await _reasoningFor(parent, model);
     final id = _uuid.v4();
     final now = DateTime.now();
-    await _hub.chats.saveChat(
+    await _host.chats.saveChat(
       Chat(
         id: id,
         hostId: parent.hostId,
@@ -168,7 +181,7 @@ final class SubagentManager {
       model: model,
     );
     _runs[id] = run;
-    final session = _hub.session(id);
+    final session = _host.session(id);
     _subscriptions[id] = session.events.listen((event) {
       if (event is AgentTurnFinished && event.chatId == id) {
         unawaited(_complete(run, event.end));
@@ -197,13 +210,13 @@ final class SubagentManager {
   Future<void> stop(String runId) async {
     final run = _runs[runId];
     if (run == null) return;
-    await _hub.session(runId).stop();
+    await _host.session(runId).stop();
   }
 
   /// Останавливает всех активных детей [chatId]. Вызывается при Stop родителя.
   Future<void> stopChildren(String chatId) async {
     for (final run in activeFor(chatId)) {
-      await _hub.session(run.id).stop();
+      await _host.session(run.id).stop();
     }
   }
 
@@ -211,9 +224,9 @@ final class SubagentManager {
   /// наследует его уровень.
   Future<ReasoningPreference> _reasoningFor(Chat parent, String model) async {
     final configured =
-        await _hub.settings.read(SettingsRepository.keySubagentModel) ?? '';
+        await _host.settings.read(SettingsRepository.keySubagentModel) ?? '';
     if (configured.isNotEmpty && model != parent.model) {
-      return _hub.settings.readReasoning(
+      return _host.settings.readReasoning(
         SettingsRepository.keySubagentReasoning,
       );
     }
@@ -228,20 +241,20 @@ final class SubagentManager {
       throw StateError('subagent model must be parent or default');
     }
     final defaultModel =
-        await _hub.settings.read(SettingsRepository.keyDefaultModel) ?? '';
+        await _host.settings.read(SettingsRepository.keyDefaultModel) ?? '';
     final parentModel = parent.model?.isNotEmpty == true
         ? parent.model!
         : defaultModel;
     final configured =
-        await _hub.settings.read(SettingsRepository.keySubagentModel) ?? '';
+        await _host.settings.read(SettingsRepository.keySubagentModel) ?? '';
     final chosen = strategy == 'parent'
         ? parentModel
         : configured.isNotEmpty
         ? configured
         : parentModel;
     if (chosen.isEmpty) throw StateError('subagent model is not set');
-    final live = _hub.models.state.modelOf(chosen);
-    final saved = _hub.models.state.saved[chosen];
+    final live = _host.models.state.modelOf(chosen);
+    final saved = _host.models.state.saved[chosen];
     if (live == null && saved == null) {
       throw StateError('subagent model is unavailable: $chosen');
     }
@@ -275,13 +288,13 @@ final class SubagentManager {
     await _aggregateUsage(run);
     if (!run.awaited && !run.delivered) {
       run.delivered = true;
-      await _hub.session(run.rootChatId).deliverEvent(_eventText(run, result));
+      await _host.session(run.rootChatId).deliverEvent(_eventText(run, result));
     }
     await _markDelivered(run);
   }
 
   Future<String?> _firstUserText(String chatId) async {
-    final messages = await _hub.chats.messages(chatId);
+    final messages = await _host.chats.messages(chatId);
     for (final message in messages) {
       if (message.role == MessageRole.user && message.text.trim().isNotEmpty) {
         return message.text.trim();
@@ -293,10 +306,10 @@ final class SubagentManager {
   static String _deliveredKey(String id) => 'subagent.$id.delivered';
 
   Future<void> _markDelivered(SubagentRun run) =>
-      _hub.settings.write(_deliveredKey(run.id), 'yes');
+      _host.settings.write(_deliveredKey(run.id), 'yes');
 
   Future<String> _lastAssistantText(String chatId) async {
-    final messages = await _hub.chats.messages(chatId);
+    final messages = await _host.chats.messages(chatId);
     for (var i = messages.length - 1; i >= 0; i--) {
       final message = messages[i];
       if (message.role == MessageRole.assistant &&
@@ -309,9 +322,9 @@ final class SubagentManager {
 
   Future<void> _aggregateUsage(SubagentRun run) async {
     try {
-      final usage = await _hub.settings.readDailyUsage(run.id);
+      final usage = await _host.settings.readDailyUsage(run.id);
       if (usage.requests == 0) return;
-      await _hub.settings.addDailyUsage(
+      await _host.settings.addDailyUsage(
         run.rootChatId,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,

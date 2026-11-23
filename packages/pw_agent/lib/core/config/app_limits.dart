@@ -29,6 +29,8 @@ class AppLimits {
     this.hardContextRatio = 0.9,
     this.contextReserveTokens = 8000,
     this.recentWindowMessages = 40,
+    this.toolOutputKeepSteps = 6,
+    this.toolOutputPreviewChars = 200,
   });
 
   /// Строгий разбор для Settings: неизвестные ключи игнорируются, неверные значения — FormatException.
@@ -134,6 +136,11 @@ class AppLimits {
           nonNegativeIntOf('contextReserveTokens') ?? d.contextReserveTokens,
       recentWindowMessages:
           intOf('recentWindowMessages') ?? d.recentWindowMessages,
+      toolOutputKeepSteps:
+          nonNegativeIntOf('toolOutputKeepSteps') ?? d.toolOutputKeepSteps,
+      toolOutputPreviewChars:
+          nonNegativeIntOf('toolOutputPreviewChars') ??
+          d.toolOutputPreviewChars,
     );
   }
 
@@ -205,6 +212,20 @@ class AppLimits {
   /// половину свободного бюджета окна.
   final int recentWindowMessages;
 
+  /// Сколько последних шагов модели (ответов ассистента) держат результаты
+  /// инструментов целиком. Более старые результаты маскируются: вызов и его
+  /// аргументы остаются, а тело заменяется короткой выжимкой с указанием, что
+  /// данные можно перечитать инструментом. Ноль отключает маскировку.
+  ///
+  /// Маскировка монотонна: она зависит от позиции в истории, а не от времени,
+  /// поэтому результат, скрытый на одном шаге, остаётся скрытым и дальше и не
+  /// сбивает кэш префикса.
+  final int toolOutputKeepSteps;
+
+  /// Сколько символов начала маскированного результата остаётся модели как
+  /// подсказка о содержимом. Ноль — только маркер.
+  final int toolOutputPreviewChars;
+
   AppLimits copyWith({
     Duration? foregroundExecTimeout,
     Duration? backgroundMaxRuntime,
@@ -231,6 +252,8 @@ class AppLimits {
     double? hardContextRatio,
     int? contextReserveTokens,
     int? recentWindowMessages,
+    int? toolOutputKeepSteps,
+    int? toolOutputPreviewChars,
   }) => AppLimits(
     foregroundExecTimeout: foregroundExecTimeout ?? this.foregroundExecTimeout,
     backgroundMaxRuntime: backgroundMaxRuntime ?? this.backgroundMaxRuntime,
@@ -260,6 +283,9 @@ class AppLimits {
     hardContextRatio: hardContextRatio ?? this.hardContextRatio,
     contextReserveTokens: contextReserveTokens ?? this.contextReserveTokens,
     recentWindowMessages: recentWindowMessages ?? this.recentWindowMessages,
+    toolOutputKeepSteps: toolOutputKeepSteps ?? this.toolOutputKeepSteps,
+    toolOutputPreviewChars:
+        toolOutputPreviewChars ?? this.toolOutputPreviewChars,
   );
 
   /// Переопределяемые значения для JSON в Settings. Длительности — в секундах.
@@ -289,6 +315,8 @@ class AppLimits {
     'hardContextRatio': hardContextRatio,
     'contextReserveTokens': contextReserveTokens,
     'recentWindowMessages': recentWindowMessages,
+    'toolOutputKeepSteps': toolOutputKeepSteps,
+    'toolOutputPreviewChars': toolOutputPreviewChars,
   };
 
   String toJson() => jsonEncode(toMap());

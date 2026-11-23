@@ -5,6 +5,7 @@ import 'package:logging/logging.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
+import 'package:pw_agent/agent/context/utility_model.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
@@ -22,8 +23,10 @@ import 'package:pw_agent/agent/policy/policy_engine.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task_repository.dart';
 import 'package:pw_agent/agent/subagent/subagent_manager.dart';
+import 'package:pw_agent/agent/tools/tool_catalog.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/agent/turn/turn_changeset_logic.dart';
+import 'package:pw_agent/agent/workspace/workspace_context_loader.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
@@ -159,6 +162,23 @@ class ChatSession {
   /// Идёт ход, в котором разрешён кэш [_turnHistory].
   bool _historyWarm = false;
 
+  /// Снимок workspace (AGENTS.md, skills) на текущий ход. Сканирование каталогов
+  /// — это операции на Host, для SSH несколько сетевых round-trip на шаг.
+  /// Сбрасывается в начале хода и после инструмента, который мог изменить файлы.
+  WorkspaceSnapshot? _workspaceSnapshot;
+
+  /// Снимок нужно перечитать: ход начался или файлы могли измениться.
+  bool _workspaceDirty = true;
+
+  /// MCP и плагины подключаются один раз за ход, а не на каждом шаге: их набор
+  /// схем меняется только при смене настроек, а подготовка стоит времени.
+  bool _servicesReadyForTurn = false;
+
+  /// Кэш канонических путей на текущий ход. Планировщик канонизирует один и тот
+  /// же путь несколько раз (проверка границ, ключ файла), а для SSH это лишние
+  /// сетевые вызовы. Сбрасывается в начале хода.
+  final Map<String, String?> _canonicalPathCache = {};
+
   Stream<AgentEvent> get events => _events.stream;
 
   bool get isRunning => _running;
@@ -171,6 +191,11 @@ class ChatSession {
   void _beginTurn() {
     _running = true;
     _idleTurn ??= Completer<void>();
+    // Новый ход — свежие снимки: файлы могли измениться между ходами, а
+    // подключения MCP и плагинов перечитываются один раз на ход.
+    _workspaceDirty = true;
+    _servicesReadyForTurn = false;
+    _canonicalPathCache.clear();
   }
 
   List<QueuedPrompt> get queue => _queue.items;
@@ -260,6 +285,10 @@ class ChatSession {
   Future<void> compactNow({bool force = false}) async {
     if (_running) throw StateError('cannot compact while the agent is running');
     try {
+      // Ручное сжатие вне хода: файлы могли измениться после прошлого хода,
+      // поэтому снимок workspace и подключения перечитываются заново.
+      _workspaceDirty = true;
+      _servicesReadyForTurn = false;
       await _prepare(
         await _hub.limits(),
         forceReason: force ? CompactionReason.manual : null,

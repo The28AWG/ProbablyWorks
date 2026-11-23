@@ -207,6 +207,11 @@ void main() {
     expect(names, isNot(contains(ToolNames.scheduleTask)));
     expect(names, isNot(contains(ToolNames.listScheduledTasks)));
     expect(names, isNot(contains(ToolNames.cancelScheduledTask)));
+    // Делегирование и управление приложением — тоже только для главного чата.
+    expect(names, isNot(contains(ToolNames.delegateTask)));
+    expect(names, isNot(contains(ToolNames.waitSubagent)));
+    expect(names, isNot(contains(ToolNames.hostAdd)));
+    expect(names, isNot(contains(ToolNames.settingsUpdate)));
     // В обычном чате инструменты на месте.
     expect([
       for (final spec in tools.specsFor(ctx.chat)) spec.name,

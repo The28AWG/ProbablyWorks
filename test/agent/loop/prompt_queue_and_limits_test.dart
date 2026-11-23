@@ -64,6 +64,31 @@ void main() {
         AppLimits.defaults.progressRepeatLimit,
       );
       expect(parsed.logOutputDbBytes, AppLimits.defaults.logOutputDbBytes);
+      expect(
+        parsed.toolOutputKeepSteps,
+        AppLimits.defaults.toolOutputKeepSteps,
+      );
+      expect(
+        parsed.toolOutputPreviewChars,
+        AppLimits.defaults.toolOutputPreviewChars,
+      );
+    });
+
+    test('tool output masking limits survive JSON and reject negatives', () {
+      final parsed = AppLimits.parse(
+        '{"toolOutputKeepSteps": 2, "toolOutputPreviewChars": 0}',
+      );
+      expect(parsed.toolOutputKeepSteps, 2);
+      // Ноль допустим: он оставляет только маркер без начала вывода.
+      expect(parsed.toolOutputPreviewChars, 0);
+      expect(
+        () => AppLimits.parse('{"toolOutputKeepSteps": -1}'),
+        throwsFormatException,
+      );
+      expect(
+        () => AppLimits.parse('{"toolOutputPreviewChars": -1}'),
+        throwsFormatException,
+      );
     });
 
     test('overrides apply and unknown keys are ignored', () {

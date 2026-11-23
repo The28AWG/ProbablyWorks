@@ -21,12 +21,21 @@ extension _ChatSessionContext on ChatSession {
     final trustedSkills = project == null
         ? const <String>{}
         : await _hub.projectStore.trustedSkillNames(project.id);
-    final snapshot = await _hub.workspace.load(
-      chat,
-      runtime,
-      project: project,
-      trustedSkills: trustedSkills,
-    );
+    // Снимок workspace переиспользуется в пределах хода: сканирование skills и
+    // поиск AGENTS.md — это операции на Host. После инструмента, который мог
+    // изменить файлы, снимок помечен грязным и читается заново.
+    final snapshot = _workspaceDirty || _workspaceSnapshot == null
+        ? await _hub.workspace.load(
+            chat,
+            runtime,
+            project: project,
+            trustedSkills: trustedSkills,
+          )
+        : _workspaceSnapshot!;
+    _workspaceSnapshot = snapshot;
+    // Пока каталог не доверен, снимок перечитывается на каждом шаге: доверие
+    // могут выдать прямо во время хода, и тогда AGENTS.md должен появиться.
+    _workspaceDirty = snapshot.needsTrust;
     // Новые skills появляются недоверенными: доверие выдаёт пользователь, а не содержимое папки.
     final foundSkills = [
       for (final skill in [...snapshot.skills, ...snapshot.untrustedSkills])
@@ -79,18 +88,28 @@ extension _ChatSessionContext on ChatSession {
     }
     // MCP и плагины подключаются до сборки: их схемы инструментов входят в
     // запрос, а значит и в оценку бюджета. Иначе сжатие срабатывало бы позже
-    // фактического заполнения окна.
-    await _hub.mcp.ensureReady();
-    await _hub.plugins.ensureReady();
+    // фактического заполнения окна. Подготовка идемпотентна, поэтому в пределах
+    // хода достаточно одного раза.
+    if (!_servicesReadyForTurn) {
+      await _hub.mcp.ensureReady();
+      await _hub.plugins.ensureReady();
+      _servicesReadyForTurn = true;
+    }
     // В скрытом чате субагента нет инструментов расписания: их не показываем.
     final tools = _hub.tools.specsFor(chat);
     // Окно берём у фактически используемой модели, а не только из поля чата:
-    // чат с моделью по умолчанию своего окна не хранит.
-    final limit =
+    // чат с моделью по умолчанию своего окна не хранит. Если размер неизвестен
+    // ни каталогу, ни чату, не выдаём 128k за факт: работаем от консервативного
+    // значения и показываем пометку, иначе сжатие сработает уже после отказа.
+    final knownLimit =
         _hub.models.state.modelOf(model)?.contextLength ??
         _hub.models.state.saved[model]?.contextLength ??
-        chat.contextLength ??
-        ContextCompactor.defaultContextLength;
+        chat.contextLength;
+    final contextWindowKnown = knownLimit != null;
+    final limit = knownLimit ?? ContextCompactor.defaultContextLength;
+    if (!contextWindowKnown) {
+      _log.warning('context window unknown for $model; assuming $limit tokens');
+    }
     ContextInput inputFor(
       Chat current, {
       Map<String, List<LlmFilePart>> files = const {},
@@ -108,15 +127,19 @@ extension _ChatSessionContext on ChatSession {
       inlineFiles: files,
       tools: tools,
       projectMemory: projectMemory,
-      now: DateTime.now(),
     );
     // Вложения текущего запроса входят в бюджет: решение о сжатии должно
     // видеть тот же запрос, который уйдёт провайдеру.
     final inline = Map.of(_inlineFiles);
+    // Сжатие — служебный проход: дорогая модель чата для него не нужна.
+    // Берём модель памяти (она же «служебная»), иначе модель чата.
+    final summaryModel = await _utilityModel(model);
     final compaction = await _hub.compactor.compactIfNeeded(
       inputFor(chat, files: inline),
-      summaryModel: model,
-      summaryReasoning: resolveUtilityReasoning(_reasoningCapabilityOf(model)),
+      summaryModel: summaryModel,
+      summaryReasoning: resolveUtilityReasoning(
+        _reasoningCapabilityOf(summaryModel),
+      ),
       forceReason: forceReason,
       limits: limits,
     );
@@ -138,7 +161,7 @@ extension _ChatSessionContext on ChatSession {
     if (compaction.usage case final usage?) {
       // Сводка — такой же расход, как ответ модели, но не последний размер
       // контекста: в чипе и в lastPromptTokens она не участвует.
-      await _recordUtilityUsage(model, usage);
+      await _recordUtilityUsage(summaryModel, usage);
       daily = await _hub.settings.readDailyUsage(chatId);
     }
     _checkFilesAccepted(model, inline);
@@ -147,6 +170,7 @@ extension _ChatSessionContext on ChatSession {
     if (activeSubagents.isNotEmpty) {
       llmMessages.add(LlmMessage.system(_subagentContext(activeSubagents)));
     }
+    _logContextMetrics(llmMessages: llmMessages, tools: tools, limit: limit);
     // Если провайдер уже присылал точный usage в этом ходе, оценка не нужна:
     // она только давала бы скачки в чипе. Пока точного значения нет — это
     // единственный доступный источник.
@@ -157,6 +181,7 @@ extension _ChatSessionContext on ChatSession {
           ContextCompactor.estimate(llmMessages, tools: tools),
           limit,
           estimated: true,
+          contextWindowKnown: contextWindowKnown,
           breakdown: ContextBreakdown.of(llmMessages, tools: tools),
           dailyCostUsd: daily.costUsd,
           dailyBudgetUsd: budget,
@@ -171,6 +196,7 @@ extension _ChatSessionContext on ChatSession {
       runtime: runtime,
       policy: policy,
       limit: limit,
+      contextWindowKnown: contextWindowKnown,
       model: model,
       inlineIds: inline.keys.toList(),
       project: project,
@@ -179,6 +205,10 @@ extension _ChatSessionContext on ChatSession {
         messages: llmMessages,
         tools: tools,
         reasoning: reasoning,
+        // Просим кэш префикса. Пока время меняется в конце запроса, попаданий
+        // между шагами нет (см. LLM_PROVIDERS.md); флаг остаётся, чтобы
+        // исправление схемы не требовало менять путь вызова.
+        promptCaching: true,
       ),
     );
   }
@@ -188,6 +218,44 @@ extension _ChatSessionContext on ChatSession {
   LlmReasoningCapability? _reasoningCapabilityOf(String model) =>
       _hub.models.state.modelOf(model)?.reasoning ??
       _hub.models.state.saved[model]?.reasoning;
+
+  /// Модель для служебных проходов (сжатие истории).
+  ///
+  /// Цепочка: модель памяти, затем модель заголовков, затем модель чата. Первая
+  /// заданная и известная каталогу модель выигрывает; если она совпадает с
+  /// моделью чата, возвращается она же. Недоступная модель не должна ломать ход:
+  /// сжатие важнее экономии, поэтому при неизвестном id выбирается следующая
+  /// ступень, а не ошибка.
+  Future<String> _utilityModel(String fallback) async {
+    final resolved = await resolveUtilityModel(
+      settings: _hub.settings,
+      fallback: fallback,
+      isKnown: (model) =>
+          _hub.models.state.modelOf(model) != null ||
+          _hub.models.state.saved[model] != null,
+    );
+    return resolved ?? fallback;
+  }
+
+  /// Размер собранного запроса по частям. Пишется на уровне fine: это опора для
+  /// замеров стоимости шага и проверки, что кэш-префикс не раздувается.
+  void _logContextMetrics({
+    required List<LlmMessage> llmMessages,
+    required List<LlmToolSpec> tools,
+    required int limit,
+  }) {
+    if (!_log.isLoggable(Level.FINE)) return;
+    final breakdown = ContextBreakdown.of(llmMessages, tools: tools);
+    _log.fine(
+      'context: system=${breakdown.systemBytes}B '
+      'history=${breakdown.historyBytes}B '
+      'toolResults=${breakdown.toolResultBytes}B '
+      'toolSchemas=${breakdown.toolSchemaBytes}B '
+      'messages=${llmMessages.length} tools=${tools.length} '
+      'estimated=${ContextCompactor.estimate(llmMessages, tools: tools)} '
+      'limit=$limit',
+    );
+  }
 
   static String _subagentContext(List<SubagentRun> runs) {
     final buffer = StringBuffer('Active subagents started in this chat:');
@@ -309,6 +377,8 @@ extension _ChatSessionContext on ChatSession {
       capability: _reasoningCapabilityOf(model),
       preference: ReasoningPreference.fromEffort(request.reasoning),
     ),
+    // Кэш префикса не зависит от модели: смена модели не должна его отключать.
+    promptCaching: request.promptCaching,
   );
 
   Future<StepResult> _streamOnce(

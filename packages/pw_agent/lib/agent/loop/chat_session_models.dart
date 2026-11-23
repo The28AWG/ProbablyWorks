@@ -42,6 +42,7 @@ class _Prepared {
     required this.runtime,
     required this.policy,
     required this.limit,
+    required this.contextWindowKnown,
     required this.model,
     required this.inlineIds,
     required this.request,
@@ -53,6 +54,10 @@ class _Prepared {
   final HostRuntime runtime;
   final PolicyEngine policy;
   final int limit;
+
+  /// Известен ли размер окна модели. false — [limit] подставлен консервативно,
+  /// и интерфейс должен предупредить, что предел может быть неточным.
+  final bool contextWindowKnown;
   final String model;
 
   /// Проект чата. Null, пока у чата нет явной папки: дом общим проектом не становится.

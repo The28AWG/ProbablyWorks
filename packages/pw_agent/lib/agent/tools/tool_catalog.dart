@@ -361,7 +361,8 @@ abstract final class ToolCatalog {
           'reminded or to run something after a delay. The prompt is the full instruction '
           'the agent will receive at that time, so make it self-contained. Give either '
           'delay_seconds (relative, preferred for "in N minutes") or due_at (ISO-8601 local '
-          'time). The current local time is in the environment section. '
+          'time). Each user message ends with "[sent at: ...]": compute an absolute due_at '
+          'from that time, not from the current clock. '
           'Available only in a user chat: subagents report reminders to the parent instead.',
       parameters: {
         'type': 'object',

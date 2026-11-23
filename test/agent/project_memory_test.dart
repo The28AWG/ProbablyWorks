@@ -97,6 +97,15 @@ void main() {
     expect(await projects.memory(project.id), isNull);
   });
 
+  test('title model is used when the memory model is empty', () async {
+    await settings.write(SettingsRepository.keyTitleModel, 'title/model');
+    llm.script.add([const LlmCompleted()]);
+
+    await memory.revise(project: project, instruction: 'nothing durable here');
+
+    expect(llm.requests.single.model, 'title/model');
+  });
+
   test('replace requires the old text to occur exactly once', () async {
     await projects.saveMemory(
       ProjectMemory(

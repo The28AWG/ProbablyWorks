@@ -934,6 +934,7 @@ class _ChatBodyState extends State<ChatBody> {
         builder: (dialogContext, state) => ChatContextDialog(
           used: state.promptTokens,
           usedEstimated: state.promptTokensEstimated,
+          contextWindowKnown: state.contextWindowKnown,
           limit: state.contextLimit ?? ContextCompactor.defaultContextLength,
           running: state.isRunning,
           breakdown: state.contextBreakdown,

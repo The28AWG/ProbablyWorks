@@ -12,6 +12,7 @@ Future<void> _open(
   WidgetTester tester, {
   int? used,
   bool usedEstimated = false,
+  bool contextWindowKnown = true,
   bool running = false,
   ContextBreakdown? breakdown,
   double? lastRequestCostUsd,
@@ -37,6 +38,7 @@ Future<void> _open(
                 builder: (_) => ChatContextDialog(
                   used: used,
                   usedEstimated: usedEstimated,
+                  contextWindowKnown: contextWindowKnown,
                   limit: 128000,
                   running: running,
                   breakdown: breakdown,
@@ -84,6 +86,21 @@ void main() {
       },
     );
     expect(find.text('Context ≈96 000 / 128 000 tokens'), findsOneWidget);
+  });
+
+  testWidgets('an unknown window is called out', (tester) async {
+    await _open(
+      tester,
+      used: 96000,
+      contextWindowKnown: false,
+      onCompact: () {
+        return;
+      },
+    );
+    expect(
+      find.textContaining("The model's context window is unknown"),
+      findsOneWidget,
+    );
   });
 
   testWidgets('no data yet: compaction is unavailable', (tester) async {

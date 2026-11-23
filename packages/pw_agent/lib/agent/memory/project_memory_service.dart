@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
 import 'package:pw_agent/agent/context/untrusted.dart';
+import 'package:pw_agent/agent/context/utility_model.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
@@ -117,16 +118,19 @@ class ProjectMemoryService {
     );
   }
 
-  /// Модель памяти: отдельная из настроек, иначе модель чата, иначе модель по умолчанию.
+  /// Модель памяти: служебная цепочка из настроек, иначе модель чата, иначе
+  /// модель по умолчанию.
+  ///
+  /// Цепочка совпадает со сжатием истории: память проекта — тоже служебный
+  /// проход, и дорогая модель чата для него не нужна. Если каталога моделей
+  /// здесь нет, проверка известности остаётся на провайдере.
   Future<String?> _modelFor(Chat? chat) async {
-    final memoryModel = await _settings.read(SettingsRepository.keyMemoryModel);
-    if (memoryModel != null && memoryModel.isNotEmpty) return memoryModel;
     final chatModel = chat?.model;
-    if (chatModel != null && chatModel.isNotEmpty) return chatModel;
-    final defaultModel = await _settings.read(
-      SettingsRepository.keyDefaultModel,
-    );
-    return defaultModel == null || defaultModel.isEmpty ? null : defaultModel;
+    final fallback = chatModel != null && chatModel.isNotEmpty
+        ? chatModel
+        : await _settings.read(SettingsRepository.keyDefaultModel);
+    if (fallback == null || fallback.isEmpty) return null;
+    return resolveUtilityModel(settings: _settings, fallback: fallback);
   }
 
   /// Уровень рассуждений для memory-цикла.

@@ -138,6 +138,9 @@ class OpenRouterLlmProvider implements LlmProvider {
           usage = LlmUsage(
             promptTokens: usageValue.promptTokens,
             completionTokens: usageValue.completionTokens,
+            cachedPromptTokens: usageValue.promptTokensDetails?.cachedTokens,
+            cacheWritePromptTokens:
+                usageValue.promptTokensDetails?.cacheWriteTokens,
           );
         }
         for (final choice in chunk.choices) {
@@ -239,6 +242,15 @@ class OpenRouterLlmProvider implements LlmProvider {
 
   ChatRequest _toRequest(LlmRequest request) => ChatRequest(
     model: request.model,
+    // Request-level cache_control: OpenRouter ставит breakpoint на последний
+    // блок запроса. Замер (test/live/openrouter_cache_live_test.dart) показал,
+    // что попадания между шагами есть только тогда, когда последний блок
+    // предыдущего шага совпадает с префиксом следующего.
+    cacheControl: request.promptCaching
+        ? const AnthropicCacheControlDirective(
+            type: AnthropicCacheControlDirectiveTypeValue.ephemeral,
+          )
+        : null,
     messages: [for (final m in request.messages) openRouterMessageOf(m)],
     tools: request.tools.isEmpty
         ? null

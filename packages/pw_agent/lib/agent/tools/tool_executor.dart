@@ -218,20 +218,36 @@ class ToolExecutor {
   /// Описания всех доступных инструментов: встроенные и внешние источники.
   List<LlmToolSpec> get specs => _registry.specs;
 
-  /// То же для конкретного чата. Субагент работает в скрытом чате: инструменты
-  /// расписания ему недоступны, и предлагать их модели незачем — иначе она
-  /// тратит шаг на вызов, который заведомо отклонят.
+  /// То же для конкретного чата. Субагент работает в скрытом чате: ему
+  /// недоступны инструменты расписания, делегирования и управления приложением
+  /// (хосты, настройки). Предлагать их модели незачем — иначе она тратит шаг
+  /// на вызов, который заведомо отклонят.
   List<LlmToolSpec> specsFor(Chat chat) => chat.kind == ChatKind.main
       ? specs
       : [
           for (final spec in specs)
-            if (!_scheduleToolNames.contains(spec.name)) spec,
+            if (!_hiddenChatToolNames.contains(spec.name)) spec,
         ];
 
   static const _scheduleToolNames = {
     ToolNames.scheduleTask,
     ToolNames.listScheduledTasks,
     ToolNames.cancelScheduledTask,
+  };
+
+  /// Инструменты, которые не показываются скрытым чатам (субагентам).
+  static const _hiddenChatToolNames = {
+    ..._scheduleToolNames,
+    ToolNames.delegateTask,
+    ToolNames.waitSubagent,
+    ToolNames.readSubagentReport,
+    ToolNames.hostList,
+    ToolNames.hostAdd,
+    ToolNames.hostUpdate,
+    ToolNames.hostTest,
+    ToolNames.hostDiagnose,
+    ToolNames.settingsRead,
+    ToolNames.settingsUpdate,
   };
 
   /// Подключает внешний источник инструментов. Дубликаты имён запрещены.

@@ -34,7 +34,6 @@ class ContextInput {
     this.inlineFiles = const {},
     this.tools = const [],
     this.projectMemory,
-    this.now,
   });
 
   final Chat chat;
@@ -76,10 +75,6 @@ class ContextInput {
   /// Схемы инструментов, которые уйдут в этом запросе. Нужны оценке токенов:
   /// они занимают окно наравне с сообщениями и не сокращаются сжатием.
   final List<LlmToolSpec> tools;
-
-  /// Текущее локальное время для планирования задач. Null в тестах: тогда
-  /// строка времени в системной подсказке не появляется и вывод детерминирован.
-  final DateTime? now;
 }
 
 /// Собирает system-промпт и историю для модели. Не делает I/O.
@@ -115,6 +110,57 @@ class ContextBuilder {
       name.startsWith('plugin_') ||
       name.startsWith('mcp_');
 
+  /// Результаты этих инструментов не маскируются: это не объёмный вывод, а
+  /// подтверждение изменения состояния. Потеря такой строки сбивает модель с
+  /// толку сильнее, чем экономит токены.
+  static const _stateConfirmingTools = {
+    ToolNames.writeFile,
+    ToolNames.editFile,
+    ToolNames.applyPatch,
+    ToolNames.deleteFile,
+    ToolNames.movePath,
+    ToolNames.copyPath,
+    ToolNames.makeDir,
+    ToolNames.setGoal,
+    ToolNames.updatePlan,
+    ToolNames.pinFact,
+    ToolNames.unpinFact,
+    ToolNames.scheduleTask,
+    ToolNames.cancelScheduledTask,
+    ToolNames.finish,
+  };
+
+  /// Позиция, до которой результаты инструментов маскируются.
+  ///
+  /// [keepSteps] — сколько последних ответов ассистента (шагов модели) держать
+  /// целиком. Граница — seq самого старого из этих шагов: всё, что раньше,
+  /// считается отработанным. Текущий ход пользователя не маскируется даже при
+  /// длинной цепочке шагов: модель ещё работает с этими результатами. Ноль
+  /// отключает маскировку.
+  static int maskBeforeSeq(List<ChatMessage> history, int keepSteps) {
+    if (keepSteps <= 0) return 0;
+    var seen = 0;
+    var boundary = 0;
+    var lastUserSeq = 0;
+    for (var i = history.length - 1; i >= 0; i--) {
+      final message = history[i];
+      if (message.role == MessageRole.user && lastUserSeq == 0) {
+        lastUserSeq = message.seq;
+      }
+      if (message.role != MessageRole.assistant) continue;
+      seen++;
+      if (seen >= keepSteps && boundary == 0) boundary = message.seq;
+    }
+    if (boundary == 0) return 0;
+    // Результаты после последнего сообщения пользователя относятся к текущему
+    // ходу: их не скрываем, даже если шагов уже больше keepSteps. Если
+    // пользовательских сообщений нет (например, чат запущен событием), граница
+    // остаётся по шагам.
+    if (lastUserSeq == 0) return boundary;
+    final currentTurnStart = lastUserSeq + 1;
+    return boundary < currentTurnStart ? boundary : currentTurnStart;
+  }
+
   List<LlmMessage> build(ContextInput input) {
     final system = _systemPrompt(input);
     final history = input.messages
@@ -133,6 +179,13 @@ class ContextBuilder {
         if (message.role == MessageRole.tool && message.toolCallId != null)
           message.toolCallId!: message,
     };
+    // Граница маскировки считается по полной истории, а не по окну: она должна
+    // зависеть от числа пройденных шагов, иначе укорачивание окна сжатием
+    // открывало бы старые результаты заново.
+    final maskBefore = maskBeforeSeq(
+      input.messages,
+      input.limits.toolOutputKeepSteps,
+    );
 
     /// Один проход сборки. Набор «результат уже подтянут» создаётся внутри:
     /// проходов может быть несколько, и они не должны видеть чужое состояние.
@@ -148,6 +201,8 @@ class ContextBuilder {
             toolResults,
             previewChars,
             pulled,
+            maskBefore: maskBefore,
+            limits: input.limits,
           ),
       ];
     }
@@ -186,15 +241,24 @@ class ContextBuilder {
     Map<String, List<LlmFilePart>> inlineFiles,
     Map<String, ChatMessage> toolResults,
     int previewChars,
-    Set<String> pulled,
-  ) {
+    Set<String> pulled, {
+    required int maskBefore,
+    required AppLimits limits,
+  }) {
     final callId = message.toolCallId;
     if (message.role == MessageRole.tool &&
         callId != null &&
         pulled.contains(callId)) {
       return const [];
     }
-    final own = _toLlm(message, calls, inlineFiles, previewChars);
+    final own = _toLlm(
+      message,
+      calls,
+      inlineFiles,
+      previewChars,
+      maskBefore: maskBefore,
+      limits: limits,
+    );
     if (message.role != MessageRole.assistant || message.toolCalls.isEmpty) {
       return own;
     }
@@ -203,7 +267,16 @@ class ContextBuilder {
       final tool = toolResults[call.id];
       if (tool == null || tool.seq <= message.seq) continue;
       pulled.add(call.id);
-      results.addAll(_toLlm(tool, calls, inlineFiles, previewChars));
+      results.addAll(
+        _toLlm(
+          tool,
+          calls,
+          inlineFiles,
+          previewChars,
+          maskBefore: maskBefore,
+          limits: limits,
+        ),
+      );
     }
     return [...own, ...results];
   }
@@ -243,19 +316,23 @@ class ContextBuilder {
     ChatMessage message,
     Map<String, ToolCallRef> calls,
     Map<String, List<LlmFilePart>> inlineFiles,
-    int previewChars,
-  ) {
+    int previewChars, {
+    required int maskBefore,
+    required AppLimits limits,
+  }) {
     switch (message.role) {
       case MessageRole.user:
         final files = inlineFiles[message.id] ?? const <LlmFilePart>[];
+        // Время отправки — часть самого сообщения, а не хвост запроса: оно не
+        // меняется между шагами и не сдвигает кэш. Модель видит, когда пришла
+        // реплика, и считает от неё относительное время.
+        final sent = message.createdAt.toLocal().toIso8601String();
         return [
           LlmMessage(
             role: LlmRole.user,
-            content: _userText(
-              message,
-              inlineNames: {for (final f in files) f.name},
-              previewChars: previewChars,
-            ),
+            content:
+                '${_userText(message, inlineNames: {for (final f in files) f.name}, previewChars: previewChars)}'
+                '\n[sent at: $sent]',
             files: files,
           ),
         ];
@@ -275,12 +352,24 @@ class ContextBuilder {
       case MessageRole.tool:
         final call = calls[message.toolCallId];
         final redacted = Redactor.redact(message.text);
+        // Старый объёмный вывод заменяется выжимкой: вызов и аргументы остаются,
+        // поэтому модель знает, что происходило, но не платит за весь текст.
+        final masked =
+            maskBefore > 0 &&
+                message.seq < maskBefore &&
+                !(call != null && _stateConfirmingTools.contains(call.name))
+            ? _maskedToolOutput(
+                redacted,
+                call?.name ?? 'tool',
+                previewChars: limits.toolOutputPreviewChars,
+              )
+            : redacted;
         final content =
             call != null &&
                 isUntrustedTool(call.name) &&
                 !_isBuiltinSkillLoad(call)
-            ? Untrusted.wrap('tool:${call.name}', redacted)
-            : redacted;
+            ? Untrusted.wrap('tool:${call.name}', masked)
+            : masked;
         return [
           LlmMessage(
             role: LlmRole.tool,
@@ -291,6 +380,28 @@ class ContextBuilder {
       case MessageRole.event:
         return [LlmMessage.user('[event] ${message.text}')];
     }
+  }
+
+  /// Выжимка вместо полного вывода старого шага. Заголовок говорит модели, что
+  /// данные урезаны, а короткое начало сохраняет контекст: имя файла, первую
+  /// строку, код ошибки.
+  ///
+  /// Короткий вывод не получает заголовок: иначе маркер добавлял бы больше
+  /// текста, чем экономил. Для команд повторный запуск может быть опасен,
+  /// поэтому подсказка сначала предлагает перечитать сохранённый вывод, и
+  /// только потом — повторить вызов, если это безопасно.
+  static String _maskedToolOutput(
+    String text,
+    String toolName, {
+    required int previewChars,
+  }) {
+    final total = text.characters.length;
+    if (total <= previewChars) return text;
+    final head = previewChars <= 0 ? '' : charPrefix(text, previewChars);
+    final suffix = total > previewChars ? '…' : '';
+    return '[elided: $total chars of output from $toolName; '
+        're-read the stored output if available, or call the tool again only '
+        'if it is safe and necessary]\n$head$suffix';
   }
 
   /// Тело встроенного скилла написано нами, а не взято из workspace, поэтому не помечается как недоверенное.
@@ -417,10 +528,9 @@ class ContextBuilder {
         'workspace: ${input.workspace.workspace ?? chat.workspace ?? '(not set, use absolute paths)'}',
       )
       ..writeln('policy: ${chat.policyMode.name}');
-    // Локальное время нужно, чтобы посчитать абсолютное due_at для schedule_task.
-    if (input.now != null) {
-      buffer.writeln('now: ${input.now!.toIso8601String()}');
-    }
+    // Время намеренно не входит в system-промпт: оно меняется на каждом шаге
+    // и сдвигало бы префикс, который провайдер может кэшировать. Время
+    // отправки каждого сообщения пишется в его текст (см. _toLlm).
 
     if (input.hostStub != null) {
       buffer.writeln(Untrusted.wrap('host_info', input.hostStub!));
@@ -456,9 +566,12 @@ class ContextBuilder {
           ),
         );
     }
+    // Сводка собрана из истории, а в истории бывает вывод команд и файлов.
+    // Поэтому в system-промпте она идёт как данные, а не как инструкции.
     if (chat.compactionSummary != null) {
       buffer.writeln(
-        '\n## Earlier conversation summary\n${chat.compactionSummary}',
+        '\n## Earlier conversation summary\n'
+        '${Untrusted.wrap('earlier conversation summary', chat.compactionSummary!)}',
       );
     }
     if (input.backgroundNotes.isNotEmpty) {
@@ -476,9 +589,11 @@ class ContextBuilder {
     }
     final skills = BuiltinSkills.catalog(input.workspace.skills);
     buffer.writeln('\n## Available skills (use load_skill)');
-    final catalog = [
+    // Строки сортируются по имени: порядок сканирования каталога не должен
+    // менять system-промпт, иначе кэш префикса промахивается.
+    final catalog = ([
       for (final skill in skills) '- ${skill.name}: ${skill.description}',
-    ].join('\n');
+    ]..sort()).join('\n');
     buffer.writeln(Untrusted.wrap('skills catalog', catalog));
     return buffer.toString();
   }

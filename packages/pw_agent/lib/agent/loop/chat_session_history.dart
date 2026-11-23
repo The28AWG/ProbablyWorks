@@ -111,6 +111,7 @@ extension _ChatSessionHistory on ChatSession {
     String model,
     LlmUsage usage,
     int limit, {
+    required bool contextWindowKnown,
     ContextBreakdown? breakdown,
   }) async {
     final cost = _costOf(model, usage);
@@ -137,6 +138,7 @@ extension _ChatSessionHistory on ChatSession {
         chatId,
         usage.promptTokens,
         limit,
+        contextWindowKnown: contextWindowKnown,
         breakdown: breakdown,
         dailyCostUsd: daily.costUsd,
         dailyBudgetUsd: budget,

@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
+import 'package:probably_works/features/chat/presentation/bloc/chat_list_updates.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -91,20 +92,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<_StepsChanged>(_onStepsChanged);
     on<_PinnedChanged>(_onPinnedChanged);
     on<_DefaultModelChanged>(_onDefaultModelChanged);
-    on<_CatalogChanged>(
-      (event, emit) => emit(
+    on<_CatalogChanged>((event, emit) {
+      final limit = _contextLimitOf(
+        state.chat,
+        event.catalog,
+        state.defaultModelId,
+      );
+      emit(
         state.copyWith(
           catalog: event.catalog,
-          contextLimit:
-              _contextLimitOf(
-                state.chat,
-                event.catalog,
-                state.defaultModelId,
-              ) ??
-              state.contextLimit,
+          contextLimit: limit,
+          clearContextLimit: limit == null,
+          contextWindowKnown: limit != null,
         ),
-      ),
-    );
+      );
+    });
     on<_HostsChanged>(
       (event, emit) => emit(state.copyWith(hosts: event.hosts)),
     );
@@ -166,6 +168,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ChatState _switchState(ChatOpened event) {
     // Черновик нового чата берём из памяти или из списка: поле ввода сразу показывает его текст.
     _drafts.prime(event.chatId, event.seedChat);
+    final limit = _contextLimitOf(
+      event.seedChat,
+      state.catalog,
+      state.defaultModelId,
+    );
     return _pushDraft(
       ChatState(
         chatId: event.chatId,
@@ -180,11 +187,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         defaultReasoning: state.defaultReasoning,
         // Лимит предыдущего чата к новому не относится: его посчитает
         // _onOpened по загруженному чату и каталогу.
-        contextLimit: _contextLimitOf(
-          event.seedChat,
-          state.catalog,
-          state.defaultModelId,
-        ),
+        contextLimit: limit,
+        contextWindowKnown: limit != null,
         draftId: state.draftId,
         isRunning: _session?.isRunning ?? false,
         queue: _queueTexts(),
@@ -236,6 +240,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     drafts.prime(chat.id, chat);
     final draft = drafts.of(chat.id);
     final session = hub.session(chat.id);
+    final limit = _contextLimitOf(
+      chat,
+      hub.models.state,
+      hub.settings.cached(SettingsRepository.keyDefaultModel),
+    );
     return ChatState(
       chatId: chat.id,
       chat: chat,
@@ -244,11 +253,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       // Последний точный размер контекста из БД: чип виден сразу после
       // открытия чата, не дожидаясь нового запроса.
       promptTokens: chat.lastPromptTokens,
-      contextLimit: _contextLimitOf(
-        chat,
-        hub.models.state,
-        hub.settings.cached(SettingsRepository.keyDefaultModel),
-      ),
+      contextLimit: limit,
+      contextWindowKnown: limit != null,
       defaultReasoning: hub.settings.cachedReasoning(
         SettingsRepository.keyDefaultReasoning,
       ),
@@ -395,6 +401,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Последний точный usage из БД важнее оценки, которая могла остаться в
     // состоянии от предыдущего кадра.
     final restoredTokens = snapshot.chat?.lastPromptTokens;
+    final knownLimit = _contextLimitOf(
+      snapshot.chat,
+      _hub.models.state,
+      shared.defaultModel,
+    );
     // Один emit на открытие: каждый промежуточный emit перестраивает весь экран чата на UI-потоке.
     final loaded = state.copyWith(
       hosts: shared.hosts,
@@ -416,13 +427,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       promptTokens: restoredTokens ?? state.promptTokens,
       promptTokensEstimated:
           restoredTokens == null && state.promptTokensEstimated,
-      contextLimit:
-          _contextLimitOf(
-            snapshot.chat,
-            _hub.models.state,
-            shared.defaultModel,
-          ) ??
-          state.contextLimit,
+      contextLimit: knownLimit,
+      clearContextLimit: knownLimit == null,
+      contextWindowKnown: knownLimit != null,
       dailyCostUsd: usage.usage.costUsd,
       dailyBudgetUsd: usage.budget,
       clearDailyBudget: usage.budget == null,
@@ -504,6 +511,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final host = hosts.where((h) => h.id == hostId).firstOrNull;
     final chat = hub.draftChat(hostId: hostId, host: host);
     final defaultModelId = settings.cached(SettingsRepository.keyDefaultModel);
+    final limit = _contextLimitOf(chat, hub.models.state, defaultModelId);
     return ChatState(
       hosts: hosts,
       limits: settings.cachedLimits(),
@@ -514,7 +522,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       defaultReasoning: settings.cachedReasoning(
         SettingsRepository.keyDefaultReasoning,
       ),
-      contextLimit: _contextLimitOf(chat, hub.models.state, defaultModelId),
+      contextLimit: limit,
+      contextWindowKnown: limit != null,
       draftId: draftId,
       chatId: chat.id,
       chat: chat,
@@ -747,8 +756,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
     await _hub.models.remember([event.model.id]);
     await _persistChat(updated);
+    final limit = _contextLimitOf(updated, state.catalog, state.defaultModelId);
     emit(
-      state.copyWith(chat: updated, contextLimit: event.model.contextLength),
+      state.copyWith(
+        chat: updated,
+        contextLimit: limit,
+        clearContextLimit: limit == null,
+        contextWindowKnown: limit != null,
+      ),
     );
     // Новое окно модели может быть меньше: проверяем бюджет сразу, не дожидаясь следующего хода.
     // Смена только уровня рассуждений окно не меняет.
@@ -955,11 +970,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           state.copyWith(
             streamText: isAssistant ? '' : state.streamText,
             streamReasoning: isAssistant ? '' : state.streamReasoning,
+            messages: withMessage(state.messages, message),
           ),
         );
-        await _reload(emit);
-      case AgentRunChanged():
-        await _reload(emit);
+      case AgentRunChanged(:final run):
+        emit(
+          state.copyWith(
+            runs: withRun(state.runs, run),
+            live: liveWithRuns(state.live, state.runs, run),
+          ),
+        );
       case AgentTurnChangesetChanged():
         break;
       case AgentQueueChanged():
@@ -976,6 +996,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       case AgentUsageUpdated(
         :final promptTokens,
         :final estimated,
+        :final contextWindowKnown,
         :final limit,
         :final breakdown,
         :final dailyCostUsd,
@@ -985,6 +1006,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           state.copyWith(
             promptTokens: promptTokens,
             promptTokensEstimated: estimated,
+            contextWindowKnown: contextWindowKnown,
             contextLimit: limit,
             contextBreakdown: breakdown,
             dailyCostUsd: dailyCostUsd,
@@ -1042,13 +1064,18 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // меняется и окно контекста.
     final own = state.chat?.model;
     final followsDefault = own == null || own.isEmpty;
+    final limit = followsDefault
+        ? _contextLimitOf(state.chat, state.catalog, model)
+        : state.contextLimit;
     emit(
       state.copyWith(
         defaultModelId: model,
         defaultReasoning: reasoning,
-        contextLimit: followsDefault
-            ? _contextLimitOf(state.chat, state.catalog, model)
-            : state.contextLimit,
+        contextLimit: limit,
+        clearContextLimit: followsDefault && limit == null,
+        contextWindowKnown: followsDefault
+            ? limit != null
+            : state.contextWindowKnown,
       ),
     );
   }
@@ -1087,6 +1114,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       for (final entry in state.live.entries)
         if (activeIds.contains(entry.key)) entry.key: entry.value,
     };
+    final limit = _contextLimitOf(
+      snapshot.chat,
+      state.catalog,
+      state.defaultModelId,
+    );
     emit(
       state.copyWith(
         chat: snapshot.chat,
@@ -1097,13 +1129,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         questions: _hub.broker.pendingQuestions(chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
-        contextLimit:
-            _contextLimitOf(
-              snapshot.chat,
-              state.catalog,
-              state.defaultModelId,
-            ) ??
-            state.contextLimit,
+        contextLimit: limit,
+        clearContextLimit: limit == null,
+        contextWindowKnown: limit != null,
         dailyCostUsd: usage.usage.costUsd,
         dailyBudgetUsd: usage.budget,
         clearDailyBudget: usage.budget == null,

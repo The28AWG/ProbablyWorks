@@ -39,7 +39,7 @@ import 'package:uuid/uuid.dart';
 /// Точка входа агента: зависимости хода и одна сессия на чат.
 /// Сессии живут, пока работает приложение: фоновые команды доставляют результаты в свой чат.
 @singleton
-class AgentHub implements ChatRunStopper {
+class AgentHub implements ChatRunStopper, SubagentHost {
   AgentHub(
     this.chats,
     this.settings,
@@ -72,11 +72,14 @@ class AgentHub implements ChatRunStopper {
       ..registerToolSource(WaitSubagentToolSource(manager));
   }
 
+  @override
   final ChatRepository chats;
+  @override
   final SettingsRepository settings;
   final HostRepository hosts;
   final HostRuntimeFactory runtimes;
   final LlmProvider llm;
+  @override
   final ModelCatalogService models;
   final ContextBuilder builder;
   final ContextCompactor compactor;
@@ -164,6 +167,7 @@ class AgentHub implements ChatRunStopper {
 
   /// Возвращает сессию чата, создавая её при необходимости. Повторное открытие
   /// того же чата получает прежний экземпляр, пока его не вытеснили.
+  @override
   ChatSession session(String chatId) {
     final existing = _sessions[chatId];
     if (existing != null) {

@@ -31,6 +31,7 @@ class ChatState extends Equatable {
     this.failureModelMissing = false,
     this.promptTokens,
     this.promptTokensEstimated = false,
+    this.contextWindowKnown = true,
     this.contextLimit,
     this.contextBreakdown,
     this.dailyCostUsd = 0,
@@ -162,6 +163,10 @@ class ChatState extends Equatable {
   /// [promptTokens] — оценка, а не точное значение провайдера. Показывается
   /// с «≈» в диалоге; после первого точного usage оценка не используется.
   final bool promptTokensEstimated;
+
+  /// Размер окна модели известен. false — предел подставлен консервативно,
+  /// и диалог контекста предупреждает, что он может быть неточным.
+  final bool contextWindowKnown;
   final int? contextLimit;
   final ContextBreakdown? contextBreakdown;
   final double dailyCostUsd;
@@ -228,7 +233,9 @@ class ChatState extends Equatable {
     bool clearFailure = false,
     int? promptTokens,
     bool? promptTokensEstimated,
+    bool? contextWindowKnown,
     int? contextLimit,
+    bool clearContextLimit = false,
     ContextBreakdown? contextBreakdown,
     double? dailyCostUsd,
     double? dailyBudgetUsd,
@@ -270,7 +277,10 @@ class ChatState extends Equatable {
     failureModelMissing: failureModelMissing ?? this.failureModelMissing,
     promptTokens: promptTokens ?? this.promptTokens,
     promptTokensEstimated: promptTokensEstimated ?? this.promptTokensEstimated,
-    contextLimit: contextLimit ?? this.contextLimit,
+    contextWindowKnown: contextWindowKnown ?? this.contextWindowKnown,
+    contextLimit: clearContextLimit
+        ? null
+        : (contextLimit ?? this.contextLimit),
     contextBreakdown: contextBreakdown ?? this.contextBreakdown,
     dailyCostUsd: dailyCostUsd ?? this.dailyCostUsd,
     dailyBudgetUsd: clearDailyBudget
@@ -317,6 +327,7 @@ class ChatState extends Equatable {
     failureModelMissing,
     promptTokens,
     promptTokensEstimated,
+    contextWindowKnown,
     contextLimit,
     contextBreakdown,
     dailyCostUsd,

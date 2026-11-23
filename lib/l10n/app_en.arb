@@ -625,7 +625,7 @@
   "@settingsMemoryModel": {
     "description": "Setting: model that maintains the project memory summary."
   },
-  "settingsMemoryModelHint": "Empty means the chat model, then the default model.",
+  "settingsMemoryModelHint": "Used for the project memory pass and for history compaction. Empty means the chat model, then the default model; compaction also tries the title model before the chat model.",
   "@settingsMemoryModelHint": {
     "description": "Hint under the memory model setting."
   },
@@ -2572,6 +2572,10 @@
   "contextNoData": "No data yet. It appears after the model's first reply.",
   "@contextNoData": {
     "description": "Text in the context dialog before the first model reply."
+  },
+  "contextWindowUnknown": "The model's context window is unknown, so a conservative limit is used. Compaction may happen earlier than necessary; set the window in the model settings if you know it.",
+  "@contextWindowUnknown": {
+    "description": "Warning in the context dialog when the model's context window size is not known."
   },
   "contextBreakdownTitle": "Request breakdown",
   "@contextBreakdownTitle": {

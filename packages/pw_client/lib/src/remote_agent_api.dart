@@ -1493,6 +1493,7 @@ class RemoteAgentApi
             _int(json, 'promptTokens'),
             _int(json, 'limit'),
             estimated: json['estimated'] == true,
+            contextWindowKnown: json['contextWindowKnown'] as bool? ?? true,
             dailyCostUsd: _double(json['dailyCostUsd']),
             dailyBudgetUsd: _double(json['dailyBudgetUsd']),
           ),

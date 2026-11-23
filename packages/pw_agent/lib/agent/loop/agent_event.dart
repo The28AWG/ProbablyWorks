@@ -87,6 +87,7 @@ final class AgentUsageUpdated extends AgentEvent {
     this.promptTokens,
     this.limit, {
     this.estimated = false,
+    this.contextWindowKnown = true,
     this.breakdown,
     this.dailyCostUsd,
     this.dailyBudgetUsd,
@@ -98,6 +99,10 @@ final class AgentUsageUpdated extends AgentEvent {
   /// Значение — оценка до первого точного usage от провайдера. Если провайдер
   /// уже присылал точное значение в этом ходе, оценка не отправляется вовсе.
   final bool estimated;
+
+  /// Известен ли размер окна модели. false — [limit] подставлен консервативно,
+  /// и интерфейс должен предупредить, что он может быть неточным.
+  final bool contextWindowKnown;
   final ContextBreakdown? breakdown;
   final double? dailyCostUsd;
   final double? dailyBudgetUsd;

@@ -10,6 +10,7 @@ import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_agent/core/util/redactor.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 
 /// Ответы сводки по очереди; запросы сохраняются для проверки.
@@ -166,7 +167,7 @@ void main() {
       forceReason: CompactionReason.manual,
     );
 
-    expect(result.chat.compactionSummary, 'SAFE');
+    expect(result.chat.compactionSummary, startsWith('SAFE'));
     // Оставляем assistant и оба его результата: вызов и ответы не разрываются.
     expect(result.chat.compactedUntilSeq, 1);
     expect(result.reason, CompactionReason.manual);
@@ -186,14 +187,16 @@ void main() {
       forceReason: CompactionReason.manual,
     );
 
-    expect(result.chat.compactionSummary, 'SUMMARY');
+    expect(result.chat.compactionSummary, startsWith('SUMMARY'));
+    // Время записи нужно модели, если реплика пользователя уже в сводке.
+    expect(result.chat.compactionSummary, contains('[written at: '));
     expect(result.chat.compactedUntilSeq, lessThan(12));
     expect(result.reason, CompactionReason.manual);
     // Расход сводки возвращается наружу: он не должен теряться в учёте.
     expect(result.usage?.promptTokens, 123);
     expect(result.usage?.completionTokens, 7);
     expect(llm.requests, hasLength(1));
-    expect((await chats.chat('c1'))!.compactionSummary, 'SUMMARY');
+    expect((await chats.chat('c1'))!.compactionSummary, startsWith('SUMMARY'));
   });
 
   test('many tool results below the budget do not compact', () async {
@@ -317,6 +320,177 @@ void main() {
       expect(identical(result.chat, chat), isTrue);
       expect(result.compacted, isFalse);
       expect(llm.requests, isEmpty);
+    },
+  );
+
+  test('a repeated compaction keeps the previous summary', () async {
+    chat = chat.copyWith(
+      compactionSummary: 'Goal: keep the build green',
+      compactedUntilSeq: 2,
+    );
+    await chats.saveChat(chat);
+    llm.replies.add('SUMMARY');
+    final messages = [
+      message(3, MessageRole.user),
+      message(4, MessageRole.assistant),
+      message(5, MessageRole.user),
+      message(6, MessageRole.assistant),
+    ];
+
+    await compactor.compactIfNeeded(
+      input(messages, recentWindow: 2),
+      summaryModel: 'fake/model',
+      forceReason: CompactionReason.manual,
+    );
+
+    final request = llm.requests.single;
+    expect(
+      request.messages.last.content,
+      contains('Goal: keep the build green'),
+    );
+  });
+
+  test('the summary transcript keeps tool calls and their arguments', () async {
+    llm.replies.add('SUMMARY');
+    final messages = [
+      message(1, MessageRole.user),
+      ChatMessage(
+        id: 'm2',
+        chatId: 'c1',
+        seq: 2,
+        role: MessageRole.assistant,
+        createdAt: now,
+        toolCalls: const [
+          ToolCallRef(
+            id: 'c1',
+            name: 'run_command',
+            arguments: '{"command":"flutter test"}',
+          ),
+        ],
+      ),
+      ChatMessage(
+        id: 'm3',
+        chatId: 'c1',
+        seq: 3,
+        role: MessageRole.tool,
+        createdAt: now,
+        text: 'All tests passed',
+        toolCallId: 'c1',
+      ),
+      message(4, MessageRole.assistant),
+    ];
+
+    await compactor.compactIfNeeded(
+      input(messages, recentWindow: 2),
+      summaryModel: 'fake/model',
+      forceReason: CompactionReason.manual,
+    );
+
+    final transcript = llm.requests.single.messages.last.content;
+    expect(transcript, contains('run_command'));
+    expect(transcript, contains('flutter test'));
+    expect(transcript, contains('All tests passed'));
+  });
+
+  test(
+    'the summary transcript redacts secrets and marks it untrusted',
+    () async {
+      const secret = 'super-secret-value';
+      Redactor.registerSecret(secret);
+      addTearDown(Redactor.clearRegisteredSecrets);
+
+      llm.replies.add('SUMMARY');
+      final messages = [
+        ChatMessage(
+          id: 'm1',
+          chatId: 'c1',
+          seq: 1,
+          role: MessageRole.user,
+          createdAt: now,
+          text: 'token is $secret',
+        ),
+        ChatMessage(
+          id: 'm2',
+          chatId: 'c1',
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: now,
+          toolCalls: const [
+            ToolCallRef(
+              id: 'c1',
+              name: 'run_command',
+              arguments: '{"command":"echo super-secret-value"}',
+            ),
+          ],
+        ),
+        ChatMessage(
+          id: 'm3',
+          chatId: 'c1',
+          seq: 3,
+          role: MessageRole.tool,
+          createdAt: now,
+          text: 'output $secret',
+          toolCallId: 'c1',
+        ),
+        message(4, MessageRole.assistant),
+      ];
+
+      await compactor.compactIfNeeded(
+        input(messages, recentWindow: 2),
+        summaryModel: 'fake/model',
+        forceReason: CompactionReason.manual,
+      );
+
+      final transcript = llm.requests.single.messages.last.content;
+      expect(transcript, isNot(contains(secret)));
+      expect(
+        transcript,
+        contains('<untrusted source="conversation transcript">'),
+      );
+      expect(transcript, contains('</untrusted>'));
+    },
+  );
+
+  test(
+    'the heuristic fallback keeps tool results when the model fails',
+    () async {
+      // Пустой ответ модели: _summarize уходит в эвристику.
+      final messages = [
+        message(1, MessageRole.user),
+        ChatMessage(
+          id: 'm2',
+          chatId: 'c1',
+          seq: 2,
+          role: MessageRole.assistant,
+          createdAt: now,
+          toolCalls: const [
+            ToolCallRef(
+              id: 'c1',
+              name: 'run_command',
+              arguments: '{"command":"flutter test"}',
+            ),
+          ],
+        ),
+        ChatMessage(
+          id: 'm3',
+          chatId: 'c1',
+          seq: 3,
+          role: MessageRole.tool,
+          createdAt: now,
+          text: 'All tests passed',
+          toolCallId: 'c1',
+        ),
+        message(4, MessageRole.assistant),
+      ];
+
+      final result = await compactor.compactIfNeeded(
+        input(messages, recentWindow: 2),
+        summaryModel: 'fake/model',
+        forceReason: CompactionReason.manual,
+      );
+
+      expect(result.chat.compactionSummary, contains('run_command'));
+      expect(result.chat.compactionSummary, contains('All tests passed'));
     },
   );
 }

@@ -14,6 +14,7 @@ class ChatContextDialog extends StatelessWidget {
     required this.running,
     required this.onCompact,
     this.usedEstimated = false,
+    this.contextWindowKnown = true,
     this.breakdown,
     this.lastRequestCostUsd,
     this.dailyCostUsd = 0,
@@ -28,6 +29,10 @@ class ChatContextDialog extends StatelessWidget {
 
   /// [used] — оценка: провайдер ещё не присылал точное значение в этом ходе.
   final bool usedEstimated;
+
+  /// Размер окна модели известен. false — [limit] подставлен консервативно,
+  /// и пользователь видит предупреждение, что предел может быть неточным.
+  final bool contextWindowKnown;
   final int limit;
   final bool running;
   final VoidCallback onCompact;
@@ -84,6 +89,15 @@ class ChatContextDialog extends StatelessWidget {
                       ? 0
                       : (used / limit).clamp(0, 1).toDouble(),
                 ),
+              if (!contextWindowKnown) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  l10n.contextWindowUnknown,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ],
               if (breakdown != null) ...[
                 const SizedBox(height: AppSpacing.lg),
                 Text(

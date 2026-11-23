@@ -86,6 +86,7 @@ class LlmRequest {
     this.maxTokens,
     this.temperature,
     this.reasoning,
+    this.promptCaching = false,
   });
 
   final String model;
@@ -97,13 +98,31 @@ class LlmRequest {
   /// Уровень рассуждений после разрешения. Null — поле не отправляется,
   /// провайдер решает сам.
   final ReasoningEffort? reasoning;
+
+  /// Просить провайдера кэшировать общий префикс запроса. Имеет смысл только
+  /// для запросов хода агента: system-промпт и старая история между шагами
+  /// не меняются, а служебные запросы (сводка, заголовок) одноразовые.
+  final bool promptCaching;
 }
 
 class LlmUsage {
-  const LlmUsage({required this.promptTokens, required this.completionTokens});
+  const LlmUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+    this.cachedPromptTokens,
+    this.cacheWritePromptTokens,
+  });
 
   final int promptTokens;
   final int completionTokens;
+
+  /// Сколько токенов запроса провайдер взял из кэша префикса. Null — провайдер
+  /// не сообщил это поле: тогда нельзя отличить «кэша нет» от «не сообщено».
+  final int? cachedPromptTokens;
+
+  /// Сколько токенов запроса записано в кэш на этом шаге. Вместе с
+  /// [cachedPromptTokens] показывает, записался ли префикс и был ли он прочитан.
+  final int? cacheWritePromptTokens;
 }
 
 sealed class LlmEvent {

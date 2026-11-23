@@ -988,6 +988,96 @@ void main() {
     expect(info.summaryChars, updated.compactionSummary?.length);
   });
 
+  /// Готовит чат с историей, которую можно сжать, и возвращает её id.
+  Future<String> chatReadyForCompaction() async {
+    final chatId = await createChat();
+    final now = DateTime.now();
+    for (var seq = 1; seq <= 4; seq++) {
+      await hub.chats.insertMessage(
+        ChatMessage(
+          id: 'm$seq',
+          chatId: chatId,
+          seq: seq,
+          role: seq.isOdd ? MessageRole.user : MessageRole.assistant,
+          createdAt: now,
+          text: 'message $seq',
+        ),
+      );
+    }
+    return chatId;
+  }
+
+  /// Добавляет модели в каталог, чтобы они считались известными.
+  Future<void> knowModels(List<String> ids) async {
+    llm.models = [
+      for (final id in ids) LlmModelInfo(id: id, name: id, supportsTools: true),
+    ];
+    await hub.models.refresh();
+  }
+
+  test('compaction prefers the memory model when it is known', () async {
+    await knowModels(['memory/model', 'title/model']);
+    await hub.settings.write(SettingsRepository.keyMemoryModel, 'memory/model');
+    await hub.settings.write(SettingsRepository.keyTitleModel, 'title/model');
+    final chatId = await chatReadyForCompaction();
+    llm.script.add([const LlmTextDelta('summary'), const LlmCompleted()]);
+
+    await hub.session(chatId).compactNow(force: true);
+
+    expect(llm.requests.last.model, 'memory/model');
+  });
+
+  test(
+    'compaction falls back to the title model when memory is unknown',
+    () async {
+      await knowModels(['title/model']);
+      await hub.settings.write(
+        SettingsRepository.keyMemoryModel,
+        'missing/model',
+      );
+      await hub.settings.write(SettingsRepository.keyTitleModel, 'title/model');
+      final chatId = await chatReadyForCompaction();
+      llm.script.add([const LlmTextDelta('summary'), const LlmCompleted()]);
+
+      await hub.session(chatId).compactNow(force: true);
+
+      expect(llm.requests.last.model, 'title/model');
+    },
+  );
+
+  test('compaction keeps an explicit chat-model choice for memory', () async {
+    await knowModels(['title/model']);
+    await hub.settings.write(SettingsRepository.keyMemoryModel, 'fake/model');
+    await hub.settings.write(SettingsRepository.keyTitleModel, 'title/model');
+    final chatId = await chatReadyForCompaction();
+    llm.script.add([const LlmTextDelta('summary'), const LlmCompleted()]);
+
+    await hub.session(chatId).compactNow(force: true);
+
+    expect(llm.requests.last.model, 'fake/model');
+  });
+
+  test(
+    'compaction uses the chat model when utility models are unknown',
+    () async {
+      await knowModels(['title/model']);
+      await hub.settings.write(
+        SettingsRepository.keyMemoryModel,
+        'missing/model',
+      );
+      await hub.settings.write(
+        SettingsRepository.keyTitleModel,
+        'missing/title',
+      );
+      final chatId = await chatReadyForCompaction();
+      llm.script.add([const LlmTextDelta('summary'), const LlmCompleted()]);
+
+      await hub.session(chatId).compactNow(force: true);
+
+      expect(llm.requests.last.model, 'fake/model');
+    },
+  );
+
   Future<void> waitUntil(bool Function() ready) async {
     final deadline = DateTime.now().add(const Duration(seconds: 2));
     while (!ready() && DateTime.now().isBefore(deadline)) {

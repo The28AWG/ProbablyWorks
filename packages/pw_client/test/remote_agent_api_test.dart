@@ -597,6 +597,9 @@ void main() {
     backend
       ..emit(const AgentTurnStarted('c1'))
       ..emit(
+        const AgentUsageUpdated('c1', 123, 32000, contextWindowKnown: false),
+      )
+      ..emit(
         const ApprovalRequest(
           id: 'a1',
           chatId: 'c1',
@@ -607,7 +610,10 @@ void main() {
       );
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    expect(events.single, isA<AgentTurnStarted>());
+    expect(events, hasLength(2));
+    expect(events.first, isA<AgentTurnStarted>());
+    final usage = events.last as AgentUsageUpdated;
+    expect(usage.contextWindowKnown, false);
     expect(approvals.single.id, 'a1');
   });
 

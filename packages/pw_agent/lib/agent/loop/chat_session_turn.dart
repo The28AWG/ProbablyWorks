@@ -404,6 +404,7 @@ extension _ChatSessionTurn on ChatSession {
           model,
           usage,
           prepared.limit,
+          contextWindowKnown: prepared.contextWindowKnown,
           breakdown: ContextBreakdown.of(
             prepared.request.messages,
             tools: prepared.request.tools,
@@ -545,6 +546,13 @@ extension _ChatSessionTurn on ChatSession {
       execute: (call) => _hub.tools.execute(call, ctx),
       commit: (call, result) async {
         await _appendTool(call.id, result);
+        // Инструмент мог изменить AGENTS.md или skills: снимок workspace
+        // перечитается на следующем шаге, а не останется устаревшим.
+        if (_mayChangeWorkspace(call.name)) {
+          _workspaceDirty = true;
+          // Путь мог быть перемещён или удалён: канонические ключи устарели.
+          _canonicalPathCache.clear();
+        }
         onCommitted?.call(call, result);
       },
     );
@@ -557,20 +565,39 @@ extension _ChatSessionTurn on ChatSession {
 
   /// Ключ файла на этом Host: `~` и симлинки раскрыты. null — планировщик
   /// не отличает путь от остальных файлов и не пускает запись рядом с ним.
+  ///
+  /// Ответ кэшируется на ход: один и тот же путь планировщик проверяет
+  /// несколько раз, а для SSH каждый вызов — сетевой round-trip. Кэш
+  /// сбрасывается в [_beginTurn], потому что файлы между ходами могли измениться.
   Future<String?> _canonicalToolPath(
     HostRuntime runtime,
     String path, {
     required String cwd,
   }) async {
+    final key = '$cwd\u0000$path';
+    if (_canonicalPathCache.containsKey(key)) {
+      return _canonicalPathCache[key];
+    }
+    String? canonical;
     try {
       final run = await captureOp(runtime, CanonicalPathOp(path), cwd: cwd);
-      if (!run.ok) return null;
-      final text = run.stdout.trim();
-      if (text.isEmpty || text.contains('\n')) return null;
-      return text;
+      canonical = run.ok ? _singleLine(run.stdout) : null;
     } on Object {
-      return null;
+      canonical = null;
     }
+    // Ошибку и пустой ответ не кэшируем: следующий вызов может пройти после
+    // временного сбоя Host, а закэшированный null навсегда сделал бы путь
+    // неоднозначным до конца хода.
+    if (canonical != null) _canonicalPathCache[key] = canonical;
+    return canonical;
+  }
+
+  /// Одна непустая строка из вывода или null. Многострочный ответ не годится
+  /// в ключ файла: планировщик не сможет отличить путь от остальных.
+  static String? _singleLine(String stdout) {
+    final text = stdout.trim();
+    if (text.isEmpty || text.contains('\n')) return null;
+    return text;
   }
 
   Future<void> _appendTool(String callId, ToolResult result) => _append(
@@ -578,4 +605,33 @@ extension _ChatSessionTurn on ChatSession {
     text: Redactor.redact(result.text),
     toolCallId: callId,
   );
+
+  /// Может ли вызов изменить файлы workspace: AGENTS.md, skills или другие
+  /// файлы, которые попадают в снимок контекста.
+  ///
+  /// Плагины и MCP — внешний код, поэтому их вызовы инвалидируют снимок
+  /// консервативно: даже если конкретный инструмент только читает, лишнее
+  /// перечитывание дешевле, чем устаревшие инструкции. Субагент тоже может
+  /// менять файлы, поэтому `delegate_task` и `wait_subagent` входят в список.
+  static bool _mayChangeWorkspace(String name) =>
+      _mutatingTools.contains(name) ||
+      name.startsWith('plugin_') ||
+      name.startsWith('mcp_');
+
+  /// Инструменты, после которых снимок workspace (AGENTS.md, skills) может
+  /// устареть. Список намеренно шире точного: лишнее перечитывание снимка
+  /// дешевле, чем устаревшие инструкции в контексте.
+  static const _mutatingTools = {
+    ToolNames.writeFile,
+    ToolNames.editFile,
+    ToolNames.applyPatch,
+    ToolNames.deleteFile,
+    ToolNames.movePath,
+    ToolNames.copyPath,
+    ToolNames.makeDir,
+    ToolNames.runCommand,
+    ToolNames.stopRun,
+    ToolNames.delegateTask,
+    ToolNames.waitSubagent,
+  };
 }

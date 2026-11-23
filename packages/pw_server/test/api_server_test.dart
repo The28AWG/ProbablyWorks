@@ -1117,6 +1117,37 @@ void main() {
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
   });
 
+  test('streams unknown context window in usage events', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+    backend.emit(
+      const AgentUsageUpdated('c1', 123, 32000, contextWindowKnown: false),
+    );
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: usage');
+    final json = jsonDecode(data!.replaceFirst('data: ', '')) as Map;
+    expect(json['contextWindowKnown'], false);
+  });
+
   group('settings api', () {
     late _FakeSettings settings;
     late ApiServer settingsServer;
