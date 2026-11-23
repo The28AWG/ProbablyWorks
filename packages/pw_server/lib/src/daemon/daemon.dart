@@ -39,6 +39,7 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_server/src/api/api_access_log.dart';
 import 'package:pw_server/src/api/api_server.dart';
 import 'package:pw_server/src/api/api_token.dart';
+import 'package:pw_server/src/api/client_session.dart';
 import 'package:pw_server/src/daemon/daemon_options.dart';
 import 'package:pw_server/src/daemon/daemon_paths.dart';
 import 'package:pw_server/src/daemon/noop_appearance.dart';
@@ -83,11 +84,15 @@ Future<int> runDaemon(List<String> args) async {
     support: paths.support,
     environment: Platform.environment,
   );
+  final clientSessions = ClientSessionRegistry();
   getIt
     ..registerSingleton<AppPaths>(paths)
     ..registerSingleton<SecretStore>(secrets)
     ..registerSingleton<AppNotifier>(
-      PushAppNotifier(() => getIt<PushService>()),
+      PushAppNotifier(
+        () => getIt<PushService>(),
+        clientSessions: clientSessions,
+      ),
     )
     ..registerSingleton<AppearancePort>(const NoopAppearance())
     ..registerSingleton<ExternalUrlOpener>(const ProcessUrlOpener())
@@ -146,6 +151,7 @@ Future<int> runDaemon(List<String> args) async {
     accessLog: accessLog,
     web: web,
     allowedOrigins: options.allowedOrigins.toSet(),
+    clientSessions: clientSessions,
   );
   final port = await server.start();
   // Токен в файле нужен только как fallback: если keyring сработал, GUI

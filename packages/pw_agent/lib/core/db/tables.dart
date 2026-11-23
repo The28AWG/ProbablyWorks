@@ -166,8 +166,15 @@ class Chats extends Table {
   /// Пишется отдельно от [draft], чтобы набор в ленте не затирал поле внизу.
   TextColumn get messageEdits => text().withDefault(const Constant('{}'))();
 
-  /// Версия черновика и правок. Нужна для разрешения конфликтов между клиентами.
+  /// Версия черновика композера. Нужна для разрешения конфликтов между клиентами.
   IntColumn get draftRevision => integer().withDefault(const Constant(0))();
+
+  /// Версия неотправленных правок сообщений. Отдельная от [draftRevision].
+  IntColumn get messageEditsRevision =>
+      integer().withDefault(const Constant(0))();
+
+  /// Версия метаданных чата для точечного PATCH.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

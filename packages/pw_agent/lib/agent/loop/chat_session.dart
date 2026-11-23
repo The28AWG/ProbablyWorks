@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:characters/characters.dart';
 import 'package:logging/logging.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
@@ -179,6 +180,15 @@ class ChatSession {
   /// сетевые вызовы. Сбрасывается в начале хода.
   final Map<String, String?> _canonicalPathCache = {};
 
+  /// Номер последнего изменения очереди. Клиент игнорирует устаревшие
+  /// снимки, пришедшие в ответе HTTP после более нового SSE-события.
+  int _queueRevision = 0;
+
+  /// Живой текст текущего шага. Нужен клиенту, который подключился после
+  /// начала ответа и не получил предыдущие дельты.
+  final _liveText = StringBuffer();
+  final _liveReasoning = StringBuffer();
+
   Stream<AgentEvent> get events => _events.stream;
 
   bool get isRunning => _running;
@@ -190,6 +200,8 @@ class ChatSession {
   /// чтобы [whenIdle] всегда знал, чего ждать.
   void _beginTurn() {
     _running = true;
+    _liveText.clear();
+    _liveReasoning.clear();
     _idleTurn ??= Completer<void>();
     // Новый ход — свежие снимки: файлы могли измениться между ходами, а
     // подключения MCP и плагинов перечитываются один раз на ход.
@@ -199,6 +211,15 @@ class ChatSession {
   }
 
   List<QueuedPrompt> get queue => _queue.items;
+
+  /// Ревизия очереди; растёт при каждом событии изменения.
+  int get queueRevision => _queueRevision;
+
+  TurnSnapshot get turnSnapshot => TurnSnapshot(
+    text: _liveText.toString(),
+    reasoning: _liveReasoning.toString(),
+    isRunning: _running,
+  );
 
   /// Есть ли подписчик на события этой сессии (локальный UI или API-адаптер).
   bool get hasEventListeners => _events.hasListener;

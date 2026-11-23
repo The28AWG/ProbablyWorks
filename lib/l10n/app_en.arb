@@ -232,6 +232,42 @@
       }
     }
   },
+  "chatConflictTitle": "Draft changed in another window",
+  "@chatConflictTitle": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictBody": "Your version was not saved. Keep it or accept the version from the other client.",
+  "@chatConflictBody": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictKeep": "Keep mine",
+  "@chatConflictKeep": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictAccept": "Use other",
+  "@chatConflictAccept": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatPresenceOpen": "Open on another device",
+  "@chatPresenceOpen": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceTitle": "Open clients",
+  "@chatPresenceTitle": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceBody": "This chat is open in other clients.",
+  "@chatPresenceBody": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceFocused": "Focused",
+  "@chatPresenceFocused": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceClose": "Close",
+  "@chatPresenceClose": {
+    "description": "Presence indicator and client list in the chat."
+  },
   "messageEditHint": "Editing restarts the turn",
   "@messageEditHint": {
     "description": "Placeholder in the inline editor that replaces a user message. Sending rewrites history from that message."

@@ -72,6 +72,11 @@ class ChatListCubit extends Cubit<ChatListState> {
         .listen((_) => _refreshActivity());
     _approvalSub = _api.approvals.listen((_) => _refreshActivity());
     _questionSub = _api.questions.listen((_) => _refreshActivity());
+    final Object api = _api;
+    final interactions = api is InteractionEventsApi ? api : null;
+    _resolutionSub = interactions?.resolutions.listen(
+      (_) => _refreshActivity(),
+    );
     _statusSub = _api.statusChanges.listen((status) {
       // При потере сервера не показываем устаревший список как живой.
       if (status == AgentStatus.offline && !isClosed) {
@@ -88,6 +93,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   late final StreamSubscription<AgentEvent> _activitySub;
   late final StreamSubscription<ApprovalRequest> _approvalSub;
   late final StreamSubscription<UserQuestion> _questionSub;
+  StreamSubscription<InteractionResolution>? _resolutionSub;
   late final StreamSubscription<AgentStatus> _statusSub;
 
   void _clear() {
@@ -157,6 +163,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _activitySub.cancel();
     await _approvalSub.cancel();
     await _questionSub.cancel();
+    await _resolutionSub?.cancel();
     await _statusSub.cancel();
     return super.close();
   }

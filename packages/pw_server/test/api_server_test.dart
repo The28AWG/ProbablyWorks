@@ -21,6 +21,7 @@ import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -1061,6 +1062,82 @@ void main() {
     expect(data, hasLength(2));
   });
 
+  test('streams chatChanged and full queue snapshots', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emit(
+      AgentQueueChanged('c1', [const QueuedPrompt.user('queued')], revision: 4),
+    );
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    expect(event, 'event: queueChanged');
+    final queue = jsonDecode(data!.replaceFirst('data: ', '')) as Map;
+    expect(queue['queueRevision'], 4);
+    expect((queue['items'] as List).single['text'], 'queued');
+
+    event = null;
+    data = null;
+    final (status, _) = await _request(
+      client,
+      base,
+      'PATCH',
+      '/api/v1/chats/c1',
+      token: _token,
+      body: {'title': 'Renamed'},
+    );
+    expect(status, HttpStatus.noContent);
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current;
+        continue;
+      }
+      if (lines.current.startsWith('data:')) {
+        data = lines.current;
+        if (event == 'event: chatChanged') break;
+      }
+    }
+    await lines.cancel();
+    expect(event, 'event: chatChanged');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
+  });
+
+  test('streams resolved cards over SSE', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emit(const ApprovalResolved(chatId: 'c1', requestId: 'a1'));
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: approvalResolved');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['requestId'], 'a1');
+  });
+
   test('publishes state changes after mutating requests', () async {
     final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
@@ -1980,11 +2057,12 @@ Future<(int, String)> _request(
   return (response.statusCode, await utf8.decoder.bind(response).join());
 }
 
-final class _FakeBackend implements AgentApi {
+final class _FakeBackend implements AgentApi, InteractionEventsApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
+  final _resolutions = StreamController<InteractionResolution>.broadcast();
   final sent = <(String, String, bool)>[];
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
@@ -2023,6 +2101,8 @@ final class _FakeBackend implements AgentApi {
         _questions.add(value);
       case EditFileChangesRequest value:
         _editChanges.add(value);
+      case InteractionResolution value:
+        _resolutions.add(value);
     }
   }
 
@@ -2031,6 +2111,7 @@ final class _FakeBackend implements AgentApi {
     await _approvals.close();
     await _questions.close();
     await _editChanges.close();
+    await _resolutions.close();
   }
 
   @override
@@ -2269,6 +2350,9 @@ final class _FakeBackend implements AgentApi {
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+
+  @override
+  Stream<InteractionResolution> get resolutions => _resolutions.stream;
 }
 
 final class _FakeSecurityAudit implements SecurityAuditApi {
@@ -2434,6 +2518,18 @@ final class _FakeDraftStore implements ChatStore {
 
   @override
   Future<void> saveChat(Chat chat) => Future<void>.value();
+
+  @override
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  }) async => throw UnimplementedError();
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();

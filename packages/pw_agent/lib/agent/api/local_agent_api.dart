@@ -7,7 +7,8 @@ import 'package:pw_agent/agent/api/local_chat_api.dart';
 /// Локальный [AgentApi] поверх встроенного агента. Для экрана чата достаточно
 /// [LocalChatApi]: счётчик задач и форк с выбором есть уже там.
 @lazySingleton
-final class LocalAgentApi extends LocalChatApi implements AgentApi {
+final class LocalAgentApi extends LocalChatApi
+    implements AgentApi, InteractionEventsApi {
   LocalAgentApi(super.hub, super.runtime);
 
   @override

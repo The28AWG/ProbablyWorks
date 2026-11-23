@@ -709,6 +709,24 @@ void main() {
     expect(columns.single.read<String>('dflt_value'), "'[]'");
   });
 
+  test('v23 → v25 adds separate edit and metadata revisions', () async {
+    final db = _openAtVersion(23);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name, dflt_value FROM pragma_table_info('chats') "
+          "WHERE name IN ('message_edits_revision', 'revision') "
+          'ORDER BY name',
+        )
+        .get();
+    expect(columns, hasLength(2));
+    expect(columns.first.read<String>('name'), 'message_edits_revision');
+    expect(columns.first.read<String>('dflt_value'), '0');
+    expect(columns.last.read<String>('name'), 'revision');
+    expect(columns.last.read<String>('dflt_value'), '0');
+  });
+
   test('v21 → v22 separates result errors from call failures', () async {
     final db = _openToolRunsV21();
     addTearDown(db.close);

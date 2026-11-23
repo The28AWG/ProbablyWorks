@@ -323,6 +323,8 @@ extension _ChatSessionContext on ChatSession {
             _log.warning(
               'switching to fallback model $fallback: ${failure.message}',
             );
+            _liveText.clear();
+            _liveReasoning.clear();
             _emit(AgentTextDelta(chatId, '', reset: true));
             _emit(AgentReasoningDelta(chatId, '', reset: true));
             _modelOverride = fallback;
@@ -337,6 +339,8 @@ extension _ChatSessionContext on ChatSession {
         _log.warning(
           'retrying model request (attempt $attempt): ${failure.message}',
         );
+        _liveText.clear();
+        _liveReasoning.clear();
         _emit(AgentTextDelta(chatId, '', reset: true));
         _emit(AgentReasoningDelta(chatId, '', reset: true));
         await Future.any<void>([
@@ -388,6 +392,9 @@ extension _ChatSessionContext on ChatSession {
   ) async {
     final step = CancelToken();
     _stepCancel = step;
+    // Новый шаг: снимок больше не должен содержать текст предыдущего.
+    _liveText.clear();
+    _liveReasoning.clear();
     final text = StringBuffer();
     final reasoning = StringBuffer();
     var toolCalls = <LlmToolCall>[];
@@ -417,9 +424,11 @@ extension _ChatSessionContext on ChatSession {
             switch (event) {
               case LlmReasoningDelta e:
                 reasoning.write(e.text);
+                _liveReasoning.write(e.text);
                 _emit(AgentReasoningDelta(chatId, e.text));
               case LlmTextDelta e:
                 text.write(e.text);
+                _liveText.write(e.text);
                 _emit(AgentTextDelta(chatId, e.text));
               case LlmCompleted e:
                 toolCalls = e.toolCalls;

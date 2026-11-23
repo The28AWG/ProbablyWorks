@@ -41,6 +41,14 @@ final class AgentApiException implements Exception {
 /// Локальная реализация вызывает [AgentHub] напрямую, без HTTP и JSON.
 /// Удалённая реализация ходит в `pw_server` по HTTP/SSE, но возвращает те же
 /// доменные модели и бросает тот же [AgentApiException].
+/// Дополнительный поток для клиентов, которым нужно знать о закрытии
+/// карточек. Не входит в [AgentApi], чтобы не расширять все тестовые
+/// реализации: поток нужен только удалённому транспорту и списку чатов.
+abstract interface class InteractionEventsApi {
+  /// Закрытые подтверждения, вопросы и выбор откатов.
+  Stream<InteractionResolution> get resolutions;
+}
+
 abstract interface class AgentApi {
   /// Текущее состояние соединения. Локальный агент всегда online.
   AgentStatus get status;

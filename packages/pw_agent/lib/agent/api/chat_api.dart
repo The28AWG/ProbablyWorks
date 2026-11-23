@@ -15,6 +15,22 @@ import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
+/// Состояние текущего шага, которое нужно клиенту, подключившемуся
+/// посреди ответа. Текст и рассуждения ещё не записаны в БД.
+final class TurnSnapshot {
+  const TurnSnapshot({
+    this.text = '',
+    this.reasoning = '',
+    this.isRunning = false,
+  });
+
+  final String text;
+  final String reasoning;
+  final bool isRunning;
+
+  bool get isEmpty => text.isEmpty && reasoning.isEmpty;
+}
+
 /// API, который нужен экрану одного чата.
 ///
 /// Это не HTTP-контракт: локальный адаптер реализует его поверх `AgentHub`,
@@ -60,6 +76,19 @@ abstract interface class ChatStore implements DraftPersistence {
   Future<void> createChat(Chat chat);
 
   Future<void> saveChat(Chat chat);
+
+  /// Точечно меняет метаданные чата. Реализации обязаны не переписывать
+  /// поля, которых нет в аргументах, и проверять [expectedRevision].
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  });
 
   /// Изменения черновиков, сделанные другим клиентом.
   Stream<String> watchDraftChanges();
@@ -133,6 +162,7 @@ abstract interface class InteractionsStore {
   Stream<ApprovalRequest> get approvalRequests;
   Stream<UserQuestion> get questions;
   Stream<EditFileChangesRequest> get editFileChangesRequests;
+  Stream<InteractionResolution> get resolutions;
   List<ApprovalRequest> pendingApprovals(String chatId);
   List<UserQuestion> pendingQuestions(String chatId);
   List<EditFileChangesRequest> pendingEditFileChanges(String chatId);
@@ -144,6 +174,11 @@ abstract interface class InteractionsStore {
 abstract interface class ChatSessionApi {
   bool get isRunning;
   List<QueuedPrompt> get queue;
+  int get queueRevision;
+
+  /// Текущий живой шаг. Пустой снимок, когда шаг не идёт.
+  TurnSnapshot get turnSnapshot;
+
   Stream<AgentEvent> get events;
 
   Future<void> submit(

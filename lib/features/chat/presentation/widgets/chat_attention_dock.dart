@@ -82,6 +82,34 @@ class _DockBody extends StatelessWidget {
             tone: AppTone.danger,
           ),
         ),
+      if (state.draftConflict != null)
+        _DockItem(
+          'chat-conflict',
+          AppBanner(
+            title: l10n.chatConflictTitle,
+            message: l10n.chatConflictBody,
+            icon: Icons.sync_problem,
+            tone: AppTone.warning,
+            action: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  onPressed: () => context.read<ChatBloc>().add(
+                    const ChatDraftConflictAcceptRemote(),
+                  ),
+                  child: Text(l10n.chatConflictAccept),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                FilledButton(
+                  onPressed: () => context.read<ChatBloc>().add(
+                    const ChatDraftConflictKeepLocal(),
+                  ),
+                  child: Text(l10n.chatConflictKeep),
+                ),
+              ],
+            ),
+          ),
+        ),
       if (state.modelProviderUnavailable)
         _DockItem(
           'provider-unavailable',

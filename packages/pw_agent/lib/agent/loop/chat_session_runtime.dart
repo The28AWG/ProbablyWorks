@@ -17,7 +17,10 @@ extension _ChatSessionRuntime on ChatSession {
     }
   }
 
-  void _emitQueue() => _emit(AgentQueueChanged(chatId, _queue.items.length));
+  void _emitQueue() {
+    _queueRevision++;
+    _emit(AgentQueueChanged(chatId, _queue.items, revision: _queueRevision));
+  }
 
   // ---- background --------------------------------------------------------
 

@@ -232,6 +232,42 @@
       }
     }
   },
+  "chatConflictTitle": "Черновик изменён в другом окне",
+  "@chatConflictTitle": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictBody": "Ваш вариант не сохранён. Оставьте его или примите версию из другого клиента.",
+  "@chatConflictBody": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictKeep": "Оставить моё",
+  "@chatConflictKeep": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatConflictAccept": "Взять другое",
+  "@chatConflictAccept": {
+    "description": "Draft conflict banner and actions."
+  },
+  "chatPresenceOpen": "Открыто на другом устройстве",
+  "@chatPresenceOpen": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceTitle": "Открытые клиенты",
+  "@chatPresenceTitle": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceBody": "Этот чат открыт в других клиентах.",
+  "@chatPresenceBody": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceFocused": "В фокусе",
+  "@chatPresenceFocused": {
+    "description": "Presence indicator and client list in the chat."
+  },
+  "chatPresenceClose": "Закрыть",
+  "@chatPresenceClose": {
+    "description": "Presence indicator and client list in the chat."
+  },
   "messageEditHint": "Правка запустит ход заново",
   "@messageEditHint": {
     "description": "Подсказка в поле правки сообщения. Отправка переписывает историю с этого сообщения."

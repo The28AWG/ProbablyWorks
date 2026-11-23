@@ -19,6 +19,7 @@ import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -49,6 +50,7 @@ void main() {
   late _FakeSecurityAudit securityAudit;
   late _FakePush push;
   late _FakeProjects projectsApi;
+  late _FakeDraftStore draftStore;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -61,6 +63,7 @@ void main() {
     securityAudit = _FakeSecurityAudit();
     push = _FakePush();
     projectsApi = _FakeProjects();
+    draftStore = _FakeDraftStore();
     server = ApiServer(
       backend,
       _token,
@@ -72,7 +75,7 @@ void main() {
       pluginApi: pluginsApi,
       securityAuditApi: securityAudit,
       pushApi: push,
-      chat: _FakeDraftChatApi(store: _FakeDraftStore()),
+      chat: _FakeDraftChatApi(store: draftStore),
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -218,7 +221,7 @@ void main() {
   test('updates chat fields through the remote API', () async {
     await remote.updateChat('c1', model: 'vendor/model');
 
-    expect(backend.updatedModel, 'vendor/model');
+    expect(draftStore.model, 'vendor/model');
   });
 
   test('reads pending tasks and passes the fork choice', () async {
@@ -618,6 +621,38 @@ void main() {
     expect(approvals.single.id, 'a1');
   });
 
+  test('applies queue and live turn snapshots from SSE', () async {
+    await remote.startEvents();
+    await remote.eventsReady;
+    final session = remote.session('c1');
+    final queueChanged = Completer<void>();
+    final snapshotSeen = Completer<void>();
+    final sub = session.events.listen((event) {
+      if (event is AgentQueueChanged && !queueChanged.isCompleted) {
+        queueChanged.complete();
+      }
+      if (event is AgentTurnSnapshot && !snapshotSeen.isCompleted) {
+        snapshotSeen.complete();
+      }
+    });
+    addTearDown(sub.cancel);
+
+    backend.emit(
+      AgentQueueChanged('c1', [const QueuedPrompt.user('queued')], revision: 3),
+    );
+    await queueChanged.future.timeout(const Duration(seconds: 3));
+    expect(session.queue.single.text, 'queued');
+    expect(session.queueRevision, 3);
+
+    backend.emit(
+      const AgentTurnSnapshot('c1', text: 'partial', reasoning: 'thinking'),
+    );
+    await snapshotSeen.future.timeout(const Duration(seconds: 3));
+    expect(session.turnSnapshot.text, 'partial');
+    expect(session.turnSnapshot.reasoning, 'thinking');
+    expect(session.isRunning, isTrue);
+  });
+
   test('stops SSE reconnects after an unauthorized response', () async {
     final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     var requests = 0;
@@ -672,6 +707,14 @@ void main() {
     final firstGap = attempts[1].difference(attempts.first).inMilliseconds;
     final secondGap = attempts[2].difference(attempts[1]).inMilliseconds;
     expect(secondGap, greaterThan(firstGap));
+  });
+
+  test('lists client sessions and keeps the current one marked', () async {
+    final sessions = await remote.refreshClientSessions();
+
+    expect(sessions, hasLength(1));
+    expect(sessions.single.current, isTrue);
+    expect(sessions.single.id, remote.sessionId);
   });
 
   test('handshakes and exposes the session and instance ids', () async {
@@ -1227,6 +1270,7 @@ final class _FakeDraftChatApi implements ChatApi {
 final class _FakeDraftStore implements ChatStore {
   var revision = 0;
   ChatDraft? draft;
+  String? model;
   Map<String, ChatDraft> edits = {};
 
   @override
@@ -1239,6 +1283,7 @@ final class _FakeDraftStore implements ChatStore {
     draft: draft ?? ChatDraft.empty,
     messageEdits: edits,
     draftRevision: revision,
+    model: model,
   );
 
   @override
@@ -1252,6 +1297,37 @@ final class _FakeDraftStore implements ChatStore {
 
   @override
   Future<void> saveChat(Chat chat) => Future<void>.value();
+
+  @override
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  }) async {
+    revision++;
+    this.model = model ?? this.model;
+    return Chat(
+      id: chatId,
+      hostId: 'local',
+      title: title ?? 'Chat',
+      model: model,
+      reasoning: reasoning ?? ReasoningPreference.inherit,
+      policyMode: policyMode ?? PolicyMode.ask,
+      workspace: workspace,
+      draft: draft ?? ChatDraft.empty,
+      messageEdits: edits,
+      draftRevision: revision,
+      messageEditsRevision: revision,
+      revision: revision,
+      createdAt: DateTime.utc(2026, 11, 11),
+      updatedAt: DateTime.utc(2026, 11, 11),
+    );
+  }
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();

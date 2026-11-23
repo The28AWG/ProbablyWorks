@@ -5,7 +5,9 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_list_updates.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -60,6 +62,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatAttachmentRemoved>(_onAttachmentRemoved);
     on<ChatSubmitted>(_onSubmitted);
     on<ChatStopped>((_, _) async => _session?.stop());
+    on<ChatDraftConflictKeepLocal>(_onConflictKeepLocal);
+    on<ChatDraftConflictAcceptRemote>(_onConflictAcceptRemote);
+    on<_ConflictChanged>(_onConflictChanged);
+    on<_SessionsChanged>(_onSessionsChanged);
     on<ChatContinued>((_, _) async => _session?.continueAfterStepLimit());
     on<ChatRegenerateRequested>((_, _) async {
       await _session?.regenerateLast();
@@ -136,6 +142,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   StreamSubscription<ApprovalRequest>? _approvalSub;
   StreamSubscription<UserQuestion>? _questionSub;
   StreamSubscription<EditFileChangesRequest>? _editFileChangesSub;
+  StreamSubscription<InteractionResolution>? _resolutionSub;
+  StreamSubscription<DraftConflict>? _conflictSub;
+  StreamSubscription<List<ClientSessionView>>? _sessionsSub;
+  List<ClientSessionView> _sessionsList = const [];
 
   /// Общие подписки блока (каталог, хосты, журнал шагов): живут, пока открыт блок, и не зависят от чата.
   var _sharedWatching = false;
@@ -195,6 +205,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         approvals: _hub.broker.pendingApprovals(event.chatId),
         questions: _hub.broker.pendingQuestions(event.chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
+        draftConflict: _drafts.conflictFor(event.chatId),
+        otherSessions: _otherSessions(event.chatId),
         loading: true,
       ),
       _drafts.of(event.chatId),
@@ -284,6 +296,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _approvalSub?.cancel();
     await _questionSub?.cancel();
     await _editFileChangesSub?.cancel();
+    await _resolutionSub?.cancel();
+    await _conflictSub?.cancel();
+    _sessions?.setPresence(clearActiveChat: true);
+    await _sessionsSub?.cancel();
     await _catalogSub?.cancel();
     await _hostsSub?.cancel();
     // Закрытие чата сохраняет его черновик сразу, не дожидаясь задержки записи.
@@ -360,6 +376,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _approvalSub = null;
     _questionSub = null;
     _editFileChangesSub = null;
+    _resolutionSub = null;
+    _conflictSub = null;
+    _sessions?.setPresence(clearActiveChat: true);
+    await _sessionsSub?.cancel();
+    _sessionsSub = null;
     _pendingLive.clear();
     _session = null;
   }
@@ -381,6 +402,20 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _editFileChangesSub = _hub.broker.editFileChangesRequests
         .where((request) => request.chatId == chatId)
         .listen((_) => add(const _Refresh()));
+    _resolutionSub = _hub.broker.resolutions
+        .where((resolution) => resolution.chatId == chatId)
+        .listen((_) => add(const _Refresh()));
+    _conflictSub = _drafts.conflicts
+        .where((conflict) => conflict.chatId == chatId)
+        .listen((conflict) => add(_ConflictChanged(conflict)));
+    final sessions = _sessions;
+    if (sessions != null) {
+      sessions.setPresence(activeChatId: chatId);
+      _sessionsSub = sessions.clientSessions.listen(
+        (items) => add(_SessionsChanged(items)),
+      );
+      unawaited(_refreshSessions(sessions));
+    }
   }
 
   Future<void> _onOpened(ChatOpened event, Emitter<ChatState> emit) async {
@@ -398,6 +433,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // Карточки этого чата — из базы, не при старте приложения.
     // Если ход уже продолжен после старта, здесь только показываем карточки.
     await _session?.restoreUnanswered();
+    final turn = _session?.turnSnapshot ?? const TurnSnapshot();
     // Последний точный usage из БД важнее оценки, которая могла остаться в
     // состоянии от предыдущего кадра.
     final restoredTokens = snapshot.chat?.lastPromptTokens;
@@ -422,6 +458,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       approvals: _hub.broker.pendingApprovals(event.chatId),
       questions: _hub.broker.pendingQuestions(event.chatId),
       editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
+      draftConflict: _drafts.conflictFor(event.chatId),
+      otherSessions: _otherSessions(event.chatId),
       // Последний точный usage и окно модели доступны до первого запроса:
       // чип не пропадает после перезапуска и не берёт лимит чужого чата.
       promptTokens: restoredTokens ?? state.promptTokens,
@@ -436,6 +474,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       compactionInfo: usage.compaction,
       clearCompactionInfo: usage.compaction == null,
       isRunning: _session?.isRunning ?? false,
+      streamText: turn.text,
+      streamReasoning: turn.reasoning,
       queue: _queueTexts(),
       loading: false,
       unsaved: false,
@@ -600,8 +640,39 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   /// Изменения настроек нового чата остаются в памяти: запись появится с первой отправкой.
-  Future<void> _persistChat(Chat chat) async {
-    if (!state.unsaved) await _hub.chatStore.saveChat(chat);
+  ///
+  /// Сохраняются только переданные поля. Полная запись строки затирала бы
+  /// заголовок или workspace, изменённые другим клиентом.
+  Future<Chat> _persistChat(
+    Chat chat, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+  }) async {
+    if (state.unsaved) return chat;
+    Future<Chat> send(int? expectedRevision) => _hub.chatStore.updateChat(
+      chat.id,
+      title: title,
+      model: model,
+      reasoning: reasoning,
+      policyMode: policyMode,
+      workspace: workspace,
+      workspaceSpecified: workspaceSpecified,
+      expectedRevision: expectedRevision,
+    );
+    try {
+      return await send(chat.revision);
+    } on AgentApiException catch (error) {
+      if (error.code != 'chat_conflict') rethrow;
+      // Пока мы собирали PATCH, другой клиент изменил чат. Перечитываем
+      // ревизию и повторяем только свои поля.
+      final fresh = await _hub.chatStore.chat(chat.id);
+      if (fresh == null) rethrow;
+      return send(fresh.revision);
+    }
   }
 
   void _onDraftEdited(ChatDraftEdited event, Emitter<ChatState> emit) {
@@ -755,11 +826,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       reasoning: event.reasoning,
     );
     await _hub.models.remember([event.model.id]);
-    await _persistChat(updated);
-    final limit = _contextLimitOf(updated, state.catalog, state.defaultModelId);
+    final saved = await _persistChat(
+      updated,
+      model: updated.model,
+      reasoning: updated.reasoning,
+    );
+    final shown = saved.copyWith(contextLength: updated.contextLength);
+    final limit = _contextLimitOf(shown, state.catalog, state.defaultModelId);
     emit(
       state.copyWith(
-        chat: updated,
+        chat: shown,
         contextLimit: limit,
         clearContextLimit: limit == null,
         contextWindowKnown: limit != null,
@@ -779,8 +855,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chat = state.chat;
     if (chat == null || chat.reasoning == event.reasoning) return;
     final updated = chat.copyWith(reasoning: event.reasoning);
-    await _persistChat(updated);
-    emit(state.copyWith(chat: updated));
+    final saved = await _persistChat(updated, reasoning: updated.reasoning);
+    emit(state.copyWith(chat: saved));
   }
 
   Future<void> _onModelPinToggled(
@@ -842,8 +918,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     final chat = state.chat;
     if (chat == null) return;
     final updated = chat.copyWith(policyMode: event.mode);
-    await _persistChat(updated);
-    emit(state.copyWith(chat: updated));
+    final saved = await _persistChat(updated, policyMode: updated.policyMode);
+    emit(state.copyWith(chat: saved));
   }
 
   Future<void> _onHostChanged(
@@ -956,6 +1032,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
           ),
         );
         await _reload(emit);
+      case AgentTurnSnapshot(:final text, :final reasoning, :final isRunning):
+        emit(
+          state.copyWith(
+            isRunning: isRunning,
+            streamText: text,
+            streamReasoning: reasoning,
+          ),
+        );
       case AgentTextDelta(:final text, :final reset):
         emit(state.copyWith(streamText: reset ? '' : state.streamText + text));
       case AgentReasoningDelta(:final text, :final reset):
@@ -1016,6 +1100,71 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       case AgentStateChanged():
         await _reload(emit);
     }
+  }
+
+  Future<void> _onConflictKeepLocal(
+    ChatDraftConflictKeepLocal event,
+    Emitter<ChatState> emit,
+  ) async {
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    await _drafts.keepLocal(chatId);
+    emit(state.copyWith(clearDraftConflict: true));
+  }
+
+  void _onConflictAcceptRemote(
+    ChatDraftConflictAcceptRemote event,
+    Emitter<ChatState> emit,
+  ) {
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    final conflict = state.draftConflict;
+    _drafts.acceptRemote(chatId);
+    // Для черновика композера сразу показываем серверный текст. Для правок
+    // сообщений источник — хранилище; достаточно убрать баннер и перерисовать.
+    if (conflict?.kind == DraftConflictKind.draft) {
+      emit(
+        _pushDraft(
+          state.copyWith(clearDraftConflict: true),
+          _drafts.of(chatId),
+        ),
+      );
+    } else {
+      emit(state.copyWith(clearDraftConflict: true));
+    }
+  }
+
+  void _onConflictChanged(_ConflictChanged event, Emitter<ChatState> emit) {
+    emit(state.copyWith(draftConflict: event.conflict));
+  }
+
+  ClientSessionApi? get _sessions {
+    final Object hub = _hub;
+    return hub is ClientSessionApi ? hub : null;
+  }
+
+  Future<void> _refreshSessions(ClientSessionApi sessions) async {
+    try {
+      await sessions.refreshClientSessions();
+    } on Object {
+      // Присутствие не критично для работы чата.
+    }
+  }
+
+  List<ClientSessionView> _otherSessions(String? chatId) {
+    if (chatId == null) return const [];
+    return [
+      for (final session in _sessionsList)
+        if (!session.current &&
+            session.activeChatId == chatId &&
+            session.online)
+          session,
+    ];
+  }
+
+  void _onSessionsChanged(_SessionsChanged event, Emitter<ChatState> emit) {
+    _sessionsList = event.sessions;
+    emit(state.copyWith(otherSessions: _otherSessions(state.chatId)));
   }
 
   void _onLiveChunk(_LiveChunk event, Emitter<ChatState> emit) {
@@ -1153,4 +1302,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   List<String> _queueTexts() => [
     for (final item in _session?.queue ?? const <QueuedPrompt>[]) item.text,
   ];
+}
+
+final class _ConflictChanged extends ChatEvent {
+  const _ConflictChanged(this.conflict);
+
+  final DraftConflict conflict;
+}
+
+final class _SessionsChanged extends ChatEvent {
+  const _SessionsChanged(this.sessions);
+
+  final List<ClientSessionView> sessions;
 }

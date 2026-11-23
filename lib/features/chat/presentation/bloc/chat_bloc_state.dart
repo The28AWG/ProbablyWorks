@@ -13,6 +13,8 @@ class ChatState extends Equatable {
     this.approvals = const [],
     this.questions = const [],
     this.editFileChanges = const [],
+    this.draftConflict,
+    this.otherSessions = const [],
     this.hosts = const [],
     this.catalog = const ModelCatalogState(),
     this.pinnedModels = const [],
@@ -61,6 +63,12 @@ class ChatState extends Equatable {
   final List<ApprovalRequest> approvals;
   final List<UserQuestion> questions;
   final List<EditFileChangesRequest> editFileChanges;
+
+  /// Конфликт черновика или правок, который ждёт решения пользователя.
+  final DraftConflict? draftConflict;
+
+  /// Другие клиенты, у которых открыт этот же чат.
+  final List<ClientSessionView> otherSessions;
   final List<Host> hosts;
 
   /// Каталог моделей: список, статус загрузки и сохранённые детали выбранных моделей.
@@ -214,6 +222,9 @@ class ChatState extends Equatable {
     List<ApprovalRequest>? approvals,
     List<UserQuestion>? questions,
     List<EditFileChangesRequest>? editFileChanges,
+    DraftConflict? draftConflict,
+    bool clearDraftConflict = false,
+    List<ClientSessionView>? otherSessions,
     List<Host>? hosts,
     ModelCatalogState? catalog,
     List<String>? pinnedModels,
@@ -259,6 +270,10 @@ class ChatState extends Equatable {
     approvals: approvals ?? this.approvals,
     questions: questions ?? this.questions,
     editFileChanges: editFileChanges ?? this.editFileChanges,
+    draftConflict: clearDraftConflict
+        ? null
+        : (draftConflict ?? this.draftConflict),
+    otherSessions: otherSessions ?? this.otherSessions,
     hosts: hosts ?? this.hosts,
     catalog: catalog ?? this.catalog,
     pinnedModels: pinnedModels ?? this.pinnedModels,
@@ -309,6 +324,8 @@ class ChatState extends Equatable {
     approvals,
     questions,
     editFileChanges,
+    draftConflict,
+    otherSessions,
     hosts,
     catalog,
     pinnedModels,

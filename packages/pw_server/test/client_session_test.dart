@@ -91,6 +91,21 @@ void main() {
     expect(sessions, hasLength(2));
   });
 
+  test('reports a focused chat and publishes presence changes', () async {
+    final session = registry.handshake(info: info);
+    final changes = <void>[];
+    final sub = registry.changes.listen(changes.add);
+    addTearDown(sub.cancel);
+
+    expect(registry.hasFocusedChat('c1'), isFalse);
+    registry.updatePresence(session.id, focused: true, activeChatId: 'c1');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(registry.hasFocusedChat('c1'), isTrue);
+    expect(registry.hasFocusedChat('c2'), isFalse);
+    expect(changes, isNotEmpty);
+  });
+
   test('sweep removes expired sessions', () {
     final session = registry.handshake(info: info);
     now = now.add(const Duration(seconds: 61));

@@ -102,6 +102,126 @@ void main() {
     );
   });
 
+  test('draft and message edits keep independent revisions', () async {
+    final draftRevision = await chats.saveDraft(
+      'c1',
+      const ChatDraft(text: 'one'),
+      expectedRevision: 0,
+    );
+    final editRevision = await chats.saveMessageEdits('c1', {
+      'm1': const ChatDraft(text: 'edit'),
+    }, expectedRevision: 0);
+
+    expect(draftRevision, 1);
+    expect(editRevision, 1);
+    final saved = (await chats.chat('c1'))!;
+    expect(saved.draftRevision, 1);
+    expect(saved.messageEditsRevision, 1);
+
+    await chats.saveDraft(
+      'c1',
+      const ChatDraft(text: 'two'),
+      expectedRevision: 1,
+    );
+    await chats.saveMessageEdits('c1', {
+      'm1': const ChatDraft(text: 'edit 2'),
+    }, expectedRevision: 1);
+    final after = (await chats.chat('c1'))!;
+    expect(after.draftRevision, 2);
+    expect(after.messageEditsRevision, 2);
+  });
+
+  test(
+    'updateChat changes only requested fields and checks revision',
+    () async {
+      final updated = await chats.updateChat(
+        'c1',
+        title: 'Новый',
+        expectedRevision: 0,
+      );
+      expect(updated.title, 'Новый');
+      expect(updated.revision, 1);
+
+      await expectLater(
+        chats.updateChat('c1', model: 'model/x', expectedRevision: 0),
+        throwsA(
+          isA<AgentApiException>().having(
+            (error) => error.code,
+            'code',
+            'chat_conflict',
+          ),
+        ),
+      );
+
+      final saved = await chats.updateChat(
+        'c1',
+        model: 'model/x',
+        expectedRevision: 1,
+      );
+      expect(saved.title, 'Новый');
+      expect(saved.model, 'model/x');
+      expect(saved.revision, 2);
+      expect(saved.draftRevision, 0);
+      expect(saved.messageEditsRevision, 0);
+    },
+  );
+
+  test('a draft conflict keeps local and remote versions', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+    final other = ChatDraftStore(chats)..prime('c1', base);
+
+    drafts.update('c1', const ChatDraft(text: 'local'));
+    other.update('c1', const ChatDraft(text: 'remote'));
+    await other.flush();
+    await drafts.flush();
+
+    final conflict = drafts.conflictFor('c1');
+    expect(conflict, isNotNull);
+    expect(conflict!.local?.text, 'local');
+    expect(conflict.remote?.text, 'remote');
+    expect(drafts.of('c1').text, 'local');
+
+    drafts.acceptRemote('c1');
+    expect(drafts.of('c1').text, 'remote');
+    expect(drafts.conflictFor('c1'), isNull);
+  });
+
+  test('keeping the local draft resolves the conflict', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+    final other = ChatDraftStore(chats)..prime('c1', base);
+
+    drafts.update('c1', const ChatDraft(text: 'local'));
+    other.update('c1', const ChatDraft(text: 'remote'));
+    await other.flush();
+    await drafts.flush();
+    expect(drafts.conflictFor('c1'), isNotNull);
+
+    await drafts.keepLocal('c1');
+    expect((await chats.chat('c1'))!.draft.text, 'local');
+    expect(drafts.conflictFor('c1'), isNull);
+  });
+
+  test('a message edit conflict keeps both maps separately', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+    final other = ChatDraftStore(chats)..prime('c1', base);
+
+    drafts.updateEdit('c1', 'm1', const ChatDraft(text: 'local'));
+    other.updateEdit('c1', 'm1', const ChatDraft(text: 'remote'));
+    await other.flush();
+    await drafts.flush();
+
+    final conflict = drafts.conflictFor('c1');
+    expect(conflict?.kind, DraftConflictKind.messageEdits);
+    expect(conflict?.localEdits?['m1']?.text, 'local');
+    expect(conflict?.remoteEdits?['m1']?.text, 'remote');
+
+    drafts.acceptRemote('c1');
+    expect(drafts.editOf('c1', 'm1')?.text, 'remote');
+  });
+
   test('attachments of a draft are stored redacted', () async {
     await drafts.flush();
     drafts.update(

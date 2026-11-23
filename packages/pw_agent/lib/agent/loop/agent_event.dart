@@ -1,5 +1,6 @@
 import 'package:pw_agent/agent/context/context_breakdown.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/turn/turn_changeset.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
@@ -49,6 +50,21 @@ final class AgentReasoningDelta extends AgentEvent {
 }
 
 /// Запись инструмента изменилась (статус, pid, результат).
+/// Снимок текущего живого шага. Приходит при открытии/переподключении SSE,
+/// чтобы клиент догнал уже накопленный текст.
+final class AgentTurnSnapshot extends AgentEvent {
+  const AgentTurnSnapshot(
+    super.chatId, {
+    this.text = '',
+    this.reasoning = '',
+    this.isRunning = true,
+  });
+
+  final String text;
+  final String reasoning;
+  final bool isRunning;
+}
+
 final class AgentRunChanged extends AgentEvent {
   const AgentRunChanged(super.chatId, this.run);
 
@@ -63,9 +79,17 @@ final class AgentTurnChangesetChanged extends AgentEvent {
 }
 
 final class AgentQueueChanged extends AgentEvent {
-  const AgentQueueChanged(super.chatId, this.size);
+  const AgentQueueChanged(super.chatId, this.queue, {this.revision = 0});
 
-  final int size;
+  /// Полная очередь на момент события. Размер отдельно не передаётся:
+  /// он всегда совпадает с длиной списка.
+  final List<QueuedPrompt> queue;
+
+  /// Растёт при каждом изменении очереди. Поздний снимок с меньшей
+  /// ревизией не должен перетирать более новый.
+  final int revision;
+
+  int get size => queue.length;
 }
 
 final class AgentFailureRaised extends AgentEvent {

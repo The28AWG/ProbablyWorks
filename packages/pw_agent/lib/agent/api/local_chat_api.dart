@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -30,7 +31,7 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// Никакого транспорта, сериализации и токенов. Используется встроенным
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
-class LocalChatApi implements ChatApi {
+class LocalChatApi implements ChatApi, ClientSessionApi {
   LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
     // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
@@ -101,6 +102,25 @@ class LocalChatApi implements ChatApi {
   Stream<EditFileChangesRequest> get editChanges =>
       _hub.broker.editFileChangesRequests;
 
+  Stream<InteractionResolution> get resolutions => _hub.broker.resolutions;
+
+  @override
+  Stream<List<ClientSessionView>> get clientSessions =>
+      const Stream<List<ClientSessionView>>.empty();
+
+  @override
+  Future<List<ClientSessionView>> refreshClientSessions() async => const [];
+
+  @override
+  void setPresence({
+    bool? focused,
+    String? activeChatId,
+    bool clearActiveChat = false,
+  }) {
+    // Встроенный агент не имеет внешних клиентских сессий.
+    return;
+  }
+
   Set<String> get runningChatIds => _hub.runningChatIds;
 
   Set<String> get waitingChatIds => _hub.waitingChatIds;
@@ -142,23 +162,14 @@ class LocalChatApi implements ChatApi {
     String? workspace,
     bool workspaceSpecified = false,
   }) async {
-    final chat = await _hub.chats.chat(chatId);
-    if (chat == null) {
-      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
-    }
-    final trimmed = title?.trim();
-    await _hub.chats.saveChat(
-      chat.copyWith(
-        title: trimmed == null || trimmed.isEmpty ? null : trimmed,
-        titleSource: trimmed == null || trimmed.isEmpty
-            ? null
-            : ChatTitleSource.user,
-        model: model,
-        reasoning: reasoning,
-        policyMode: policyMode,
-        workspace: workspaceSpecified ? workspace : null,
-        clearWorkspace: workspaceSpecified && workspace == null,
-      ),
+    await _hub.chats.updateChat(
+      chatId,
+      title: title,
+      model: model,
+      reasoning: reasoning,
+      policyMode: policyMode,
+      workspace: workspace,
+      workspaceSpecified: workspaceSpecified,
     );
   }
 
@@ -393,6 +404,27 @@ final class _LocalChatStore implements ChatStore {
   Future<void> saveChat(Chat chat) => _chats.saveChat(chat);
 
   @override
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  }) => _chats.updateChat(
+    chatId,
+    title: title,
+    model: model,
+    reasoning: reasoning,
+    policyMode: policyMode,
+    workspace: workspace,
+    workspaceSpecified: workspaceSpecified,
+    expectedRevision: expectedRevision,
+  );
+
+  @override
   Stream<String> watchDraftChanges() => const Stream.empty();
 
   @override
@@ -604,6 +636,9 @@ final class _LocalInteractions implements InteractionsStore {
       _broker.editFileChangesRequests;
 
   @override
+  Stream<InteractionResolution> get resolutions => _broker.resolutions;
+
+  @override
   List<ApprovalRequest> pendingApprovals(String chatId) =>
       _broker.pendingApprovals(chatId);
 
@@ -638,6 +673,12 @@ final class _LocalChatSession implements ChatSessionApi {
 
   @override
   List<QueuedPrompt> get queue => _session.queue;
+
+  @override
+  int get queueRevision => _session.queueRevision;
+
+  @override
+  TurnSnapshot get turnSnapshot => _session.turnSnapshot;
 
   @override
   Stream<AgentEvent> get events => _session.events;

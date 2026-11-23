@@ -50,6 +50,7 @@ class ChatRepository implements DraftPersistence {
     draftMentions: '[]',
     messageEdits: '{}',
     draftRevision: 0,
+    messageEditsRevision: 0,
   );
 
   /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
@@ -74,6 +75,7 @@ class ChatRepository implements DraftPersistence {
     chatId,
     ChatsCompanion(messageEdits: Value(encodeMessageEdits(edits))),
     expectedRevision,
+    edits: true,
   );
 
   /// Черновик пишется отдельно от записи чата: не трогает updatedAt, поэтому порядок списка не меняется.
@@ -102,20 +104,25 @@ class ChatRepository implements DraftPersistence {
   Future<int> _saveDraftFields(
     String chatId,
     ChatsCompanion fields,
-    int? expectedRevision,
-  ) => _db.transaction(() async {
+    int? expectedRevision, {
+    bool edits = false,
+  }) => _db.transaction(() async {
     final row = await (_db.select(
       _chatsTable,
     )..where((t) => t.id.equals(chatId))).getSingleOrNull();
     if (row == null) {
       throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
     }
-    if (expectedRevision != null && expectedRevision != row.draftRevision) {
+    final current = edits ? row.messageEditsRevision : row.draftRevision;
+    if (expectedRevision != null && expectedRevision != current) {
       throw AgentApiException(409, 'draft_conflict', 'draft revision changed');
     }
-    final next = row.draftRevision + 1;
+    final next = current + 1;
     await (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
-      fields.copyWith(draftRevision: Value(next)),
+      fields.copyWith(
+        draftRevision: edits ? null : Value(next),
+        messageEditsRevision: edits ? Value(next) : null,
+      ),
     );
     return next;
   });
@@ -198,6 +205,62 @@ class ChatRepository implements DraftPersistence {
           updatedAt: chat.updatedAt,
         ),
       );
+
+  /// Точечно меняет метаданные чата, не переписывая строку целиком.
+  ///
+  /// [expectedRevision] защищает от затирания полей, изменённых другим
+  /// клиентом. Отсутствие параметра означает «не проверять» и нужно старым
+  /// вызовам, которым ревизия ещё не передаётся.
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  }) => _db.transaction(() async {
+    final row = await (_db.select(
+      _chatsTable,
+    )..where((t) => t.id.equals(chatId))).getSingleOrNull();
+    if (row == null) {
+      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
+    }
+    if (expectedRevision != null && expectedRevision != row.revision) {
+      throw const AgentApiException(
+        409,
+        'chat_conflict',
+        'chat revision changed',
+      );
+    }
+    final next = row.revision + 1;
+    final trimmed = title?.trim();
+    await (_db.update(_chatsTable)..where((t) => t.id.equals(chatId))).write(
+      ChatsCompanion(
+        title: trimmed == null || trimmed.isEmpty
+            ? const Value.absent()
+            : Value(trimmed),
+        titleSource: trimmed == null || trimmed.isEmpty
+            ? const Value.absent()
+            : const Value('user'),
+        model: model == null ? const Value.absent() : Value(model),
+        reasoning: reasoning == null
+            ? const Value.absent()
+            : Value(reasoning.name),
+        policyMode: policyMode == null
+            ? const Value.absent()
+            : Value(policyMode.name),
+        workspace: workspaceSpecified ? Value(workspace) : const Value.absent(),
+        revision: Value(next),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+    final updated = await (_db.select(
+      _chatsTable,
+    )..where((t) => t.id.equals(chatId))).getSingle();
+    return _chat(updated);
+  });
 
   /// Удаляет чат и всех его скрытых потомков-субагентов.
   Future<void> deleteChat(String id) async {
@@ -548,6 +611,8 @@ class ChatRepository implements DraftPersistence {
     ),
     messageEdits: decodeMessageEdits(row.messageEdits),
     draftRevision: row.draftRevision,
+    messageEditsRevision: row.messageEditsRevision,
+    revision: row.revision,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );

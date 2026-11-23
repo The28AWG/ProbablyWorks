@@ -271,6 +271,8 @@ class Chat {
     this.draft = ChatDraft.empty,
     this.messageEdits = const {},
     this.draftRevision = 0,
+    this.messageEditsRevision = 0,
+    this.revision = 0,
   });
 
   final String id;
@@ -316,8 +318,16 @@ class Chat {
   /// пузырь показывает этот текст и окрашен, пока правку не отправят.
   final Map<String, ChatDraft> messageEdits;
 
-  /// Версия черновика и неотправленных правок. Растёт при каждом сохранении.
+  /// Версия черновика композера. Растёт при каждом сохранении.
   final int draftRevision;
+
+  /// Версия неотправленных правок сообщений. Отдельная от черновика:
+  /// правки и набор в поле ввода не должны конфликтовать без причины.
+  final int messageEditsRevision;
+
+  /// Версия метаданных чата (заголовок, модель, политика, workspace).
+  /// Нужна для точечного PATCH без затирания чужих изменений.
+  final int revision;
 
   Chat copyWith({
     String? id,
@@ -347,6 +357,8 @@ class Chat {
     ChatDraft? draft,
     Map<String, ChatDraft>? messageEdits,
     int? draftRevision,
+    int? messageEditsRevision,
+    int? revision,
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
@@ -374,6 +386,8 @@ class Chat {
     draft: draft ?? this.draft,
     messageEdits: messageEdits ?? this.messageEdits,
     draftRevision: draftRevision ?? this.draftRevision,
+    messageEditsRevision: messageEditsRevision ?? this.messageEditsRevision,
+    revision: revision ?? this.revision,
   );
 }
 

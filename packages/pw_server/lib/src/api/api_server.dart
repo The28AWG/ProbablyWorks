@@ -22,6 +22,7 @@ import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -509,11 +510,27 @@ final class ApiServer {
       case 'projects':
       case 'policy-profiles':
         _emitState('projects');
+      case 'settings':
+        _emitState('settings');
+      case 'models':
+      case 'providers':
+        _emitState('models');
     }
   }
 
   void _emitState(String area) {
     if (!_stateEvents.isClosed) _stateEvents.add(_StateChanged(area));
+  }
+
+  void _emitChatChanged(String chatId) {
+    if (!_stateEvents.isClosed) _stateEvents.add(_ChatChanged(chatId));
+  }
+
+  /// Откладывает `chatChanged` на микрозадачу: общий `stateAreaChanged`
+  /// должен уйти первым, чтобы существующие подписчики списков не меняли
+  /// порядок обработки.
+  void _scheduleChatChanged(String chatId) {
+    scheduleMicrotask(() => _emitChatChanged(chatId));
   }
 
   Future<void> _route(HttpRequest request) async {
@@ -1531,6 +1548,7 @@ final class ApiServer {
   Future<void> _saveChat(HttpRequest request, String id) async {
     final body = await _body(request);
     await _backend.saveChat(_chatFromJson(id, body));
+    _scheduleChatChanged(id);
     _json(request.response, HttpStatus.noContent, {});
   }
 
@@ -1549,17 +1567,35 @@ final class ApiServer {
     final reasoning = body['reasoning'] is String
         ? ReasoningPreference.parse(body['reasoning'] as String?)
         : null;
-    await _backend.updateChat(
-      id,
-      title: body['title'] is String ? body['title'] as String : null,
-      model: body['model'] is String ? body['model'] as String : null,
-      reasoning: reasoning,
-      policyMode: policy,
-      workspace: body['workspace'] is String
-          ? body['workspace'] as String
-          : null,
-      workspaceSpecified: body['workspaceSpecified'] == true,
-    );
+    final chatApi = _chatApi;
+    if (chatApi != null) {
+      await chatApi.chatStore.updateChat(
+        id,
+        title: body['title'] is String ? body['title'] as String : null,
+        model: body['model'] is String ? body['model'] as String : null,
+        reasoning: reasoning,
+        policyMode: policy,
+        workspace: body['workspace'] is String
+            ? body['workspace'] as String
+            : null,
+        workspaceSpecified: body['workspaceSpecified'] == true,
+        expectedRevision: _revisionOf(body),
+      );
+    } else {
+      // Тестовый backend без ChatApi: сохраняем прежний путь обновления.
+      await _backend.updateChat(
+        id,
+        title: body['title'] is String ? body['title'] as String : null,
+        model: body['model'] is String ? body['model'] as String : null,
+        reasoning: reasoning,
+        policyMode: policy,
+        workspace: body['workspace'] is String
+            ? body['workspace'] as String
+            : null,
+        workspaceSpecified: body['workspaceSpecified'] == true,
+      );
+    }
+    _scheduleChatChanged(id);
     _json(request.response, HttpStatus.noContent, {});
   }
 
@@ -2137,8 +2173,10 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, {'revision': revision});
   }
 
-  int? _revisionOf(Map<String, dynamic> body) =>
-      body['revision'] is num ? (body['revision'] as num).toInt() : null;
+  int? _revisionOf(Map<String, dynamic> body) {
+    final raw = body['expectedRevision'] ?? body['revision'];
+    return raw is num ? raw.toInt() : null;
+  }
 
   void _publishDraft(String chatId, int revision) {
     if (!_stateEvents.isClosed) {
@@ -2176,14 +2214,9 @@ final class ApiServer {
     final session = _session(chatId);
     _json(request.response, HttpStatus.ok, {
       'isRunning': session.isRunning,
-      'queue': [
-        for (final item in session.queue)
-          {
-            'text': item.text,
-            'isEvent': item.isEvent,
-            'mentions': [for (final mention in item.mentions) mention.toJson()],
-          },
-      ],
+      'queueRevision': session.queueRevision,
+      'queue': [for (final item in session.queue) _queueJson(item)],
+      'turnSnapshot': _turnSnapshotJson(session.turnSnapshot),
     });
     return Future<void>.value();
   }
@@ -2350,6 +2383,20 @@ final class ApiServer {
         'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
       );
     });
+    // Клиент, подключившийся посреди ответа, не получит уже отправленные
+    // дельты. Сразу отдаём снимок текущего шага.
+    final snapshotChats = filterChatId == null
+        ? _backend.runningChatIds
+        : {filterChatId};
+    for (final snapshotChatId in snapshotChats) {
+      final session = _chatApi?.session(snapshotChatId);
+      final snapshot = session?.turnSnapshot;
+      if (snapshot == null || !snapshot.isRunning || snapshot.isEmpty) continue;
+      response.write(
+        'event: turnSnapshot\n'
+        'data: ${jsonEncode({'chatId': snapshotChatId, ..._turnSnapshotJson(snapshot)})}\n\n',
+      );
+    }
     final heartbeat = Timer.periodic(_eventHeartbeat, (_) {
       response.write(': ping\n\n');
     });
@@ -2370,11 +2417,21 @@ final class ApiServer {
   /// Склеивает журнал и карточки в один поток для SSE.
   Stream<Object> _allEvents() {
     final controller = StreamController<Object>();
+    // Object, а не AgentApi: статический тип не знает о необязательном
+    // интерфейсе, который реализует локальный адаптер.
+    final Object backend = _backend;
     final subscriptions = <StreamSubscription<dynamic>>[
       _backend.events.listen(controller.add),
       _backend.approvals.listen(controller.add),
       _backend.questions.listen(controller.add),
       _backend.editChanges.listen(controller.add),
+      if (backend is InteractionEventsApi)
+        backend.resolutions.listen(controller.add),
+      _clientSessions.changes.listen((_) {
+        if (!_stateEvents.isClosed) {
+          _stateEvents.add(const _ClientSessionsChanged());
+        }
+      }),
       _stateEvents.stream.listen(controller.add),
       if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
@@ -2777,6 +2834,8 @@ Map<String, Object?> _chatJson(
   'draft': _draftJson(chat.draft),
   'messageEdits': encodeMessageEdits(chat.messageEdits),
   'draftRevision': chat.draftRevision,
+  'messageEditsRevision': chat.messageEditsRevision,
+  'revision': chat.revision,
   'createdAt': chat.createdAt.toUtc().toIso8601String(),
   'updatedAt': chat.updatedAt.toUtc().toIso8601String(),
 };
@@ -2842,6 +2901,28 @@ Map<String, Object?> _runJson(ToolRun run) => {
   'pendingCard': run.pendingCard == null ? null : jsonDecode(run.pendingCard!),
 };
 
+Map<String, Object?> _turnSnapshotJson(TurnSnapshot snapshot) => {
+  'text': snapshot.text,
+  'reasoning': snapshot.reasoning,
+  'isRunning': snapshot.isRunning,
+};
+
+Map<String, Object?> _queueJson(QueuedPrompt item) => {
+  'text': item.text,
+  'isEvent': item.isEvent,
+  'note': item.note,
+  'attachments': [
+    for (final attachment in item.attachments)
+      {
+        'name': attachment.name,
+        'mode': attachment.mode.name,
+        'mimeType': attachment.mimeType,
+        'sizeBytes': attachment.sizeBytes,
+      },
+  ],
+  'mentions': [for (final mention in item.mentions) mention.toJson()],
+};
+
 Map<String, Object?> _approvalJson(ApprovalRequest request) => {
   'id': request.id,
   'chatId': request.chatId,
@@ -2873,12 +2954,18 @@ Map<String, Object?> _editJson(EditFileChangesRequest request) => {
 
 bool _matchesChat(Object event, String? chatId) {
   // Runtime и файлы моделей — глобальное состояние, а не событие чата.
-  if (event is ModelRuntimeState || event is LocalModelsState) return true;
+  if (event is ModelRuntimeState ||
+      event is LocalModelsState ||
+      event is _ClientSessionsChanged) {
+    return true;
+  }
   final eventChatId = switch (event) {
     AgentEvent value => value.chatId,
     ApprovalRequest value => value.chatId,
     UserQuestion value => value.chatId,
     EditFileChangesRequest value => value.chatId,
+    InteractionResolution value => value.chatId,
+    _ChatChanged value => value.chatId,
     _ => null,
   };
   return chatId == null || eventChatId == chatId;
@@ -2902,13 +2989,27 @@ bool _matchesChat(Object event, String? chatId) {
     'reasoningDelta',
     {'chatId': value.chatId, 'text': value.text, 'reset': value.reset},
   ),
+  AgentTurnSnapshot value => (
+    'turnSnapshot',
+    {
+      'chatId': value.chatId,
+      'text': value.text,
+      'reasoning': value.reasoning,
+      'isRunning': value.isRunning,
+    },
+  ),
   AgentRunChanged value => (
     'runChanged',
     {'chatId': value.chatId, 'run': _runJson(value.run)},
   ),
   AgentQueueChanged value => (
     'queueChanged',
-    {'chatId': value.chatId, 'size': value.size},
+    {
+      'chatId': value.chatId,
+      'size': value.size,
+      'queueRevision': value.revision,
+      'items': [for (final item in value.queue) _queueJson(item)],
+    },
   ),
   AgentFailureRaised value => (
     'failure',
@@ -2934,8 +3035,25 @@ bool _matchesChat(Object event, String? chatId) {
   ApprovalRequest value => ('approval', _approvalJson(value)),
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
+  ApprovalResolved value => (
+    'approvalResolved',
+    {'chatId': value.chatId, 'requestId': value.requestId},
+  ),
+  QuestionResolved value => (
+    'questionResolved',
+    {'chatId': value.chatId, 'questionId': value.questionId},
+  ),
+  EditFileChangesResolved value => (
+    'editFileChangesResolved',
+    {'chatId': value.chatId, 'requestId': value.requestId},
+  ),
   ModelRuntimeState value => ('modelRuntime', {'runtime': value.toJson()}),
   LocalModelsState value => ('localModels', value.toJson()),
+  _ChatChanged value => ('chatChanged', {'chatId': value.chatId}),
+  _ClientSessionsChanged() => (
+    'clientSessionsChanged',
+    const <String, Object?>{},
+  ),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',
@@ -2943,6 +3061,16 @@ bool _matchesChat(Object event, String? chatId) {
   ),
   _ => ('unknown', {'type': event.runtimeType.toString()}),
 };
+
+final class _ChatChanged {
+  const _ChatChanged(this.chatId);
+
+  final String chatId;
+}
+
+final class _ClientSessionsChanged {
+  const _ClientSessionsChanged();
+}
 
 final class _StateChanged {
   const _StateChanged(this.area);

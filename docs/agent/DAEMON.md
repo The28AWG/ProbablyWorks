@@ -65,6 +65,8 @@ PUT    /api/v1/hosts/{id}/trust
 GET    /api/v1/chats
 POST   /api/v1/chats                 {"hostId": "local"}
 GET    /api/v1/chats/{id}
+PUT    /api/v1/chats/{id}
+PATCH  /api/v1/chats/{id}            точечные метаданные и expectedRevision
 
 PUT    /api/v1/chats/{id}/presence   зарегистрировать карточки после перезапуска
 PUT    /api/v1/chats/{id}/turn       продолжить ход после лимита шагов
@@ -76,7 +78,7 @@ PATCH  /api/v1/chats/{id}/messages/{messageId}
 DELETE /api/v1/chats/{id}/messages/{messageId}/following
 PUT    /api/v1/chats/{id}/draft            {"text": "...", "attachments": [...], "revision": 1}
 PUT    /api/v1/chats/{id}/message-edits    {"edits": {...}, "revision": 1}
-GET    /api/v1/chats/{id}/session
+GET    /api/v1/chats/{id}/session    очередь, ревизия и turnSnapshot
 PATCH  /api/v1/chats/{id}/queue/{index}
 DELETE /api/v1/chats/{id}/queue/{index}
 
@@ -185,10 +187,11 @@ Content-Type: application/json
   безопасно повторить после нового рукопожатия.
 - `400 session_required` — заголовка нет. Исключения: `/health` и
   `/client/handshake`.
-- `PUT /client/session` принимает `{"focused": true, "activeChatId": "..."}`
-  для будущего присутствия.
-- `GET /client/sessions` возвращает все клиентские сессии; `DELETE` закрывает
-  текущую и её SSE.
+- `PUT /client/session` принимает `{"focused": true, "activeChatId": "..."}`;
+  это присутствие, по которому видно, где открыт чат.
+- `GET /client/sessions` возвращает все клиентские сессии и помечает текущую;
+  `DELETE` закрывает текущую и её SSE. Изменения состава сессий приходят
+  событием `clientSessionsChanged`.
 - Один экземпляр сервера использует один API-токен. Токен — не пользователь и
   не делит сессии; несколько сессий — это окна/устройства, а не несколько
   пользователей.
@@ -212,15 +215,26 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 `DELETE /chats/{id}/turn` останавливает текущий ход; повторный вызов безопасен.
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
-`reasoningDelta`, `runChanged`, `queueChanged`, `failure`, `trustNeeded`,
-`usage`, `stateChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
-`question`, `editFileChanges`, `modelRuntime`. `modelRuntime` — глобальное
+`reasoningDelta`, `turnSnapshot`, `runChanged`, `queueChanged`, `failure`,
+`trustNeeded`, `usage`, `stateChanged`, `chatChanged`, `stateAreaChanged`,
+`draftChanged`, `approval`, `approvalResolved`, `question`,
+`questionResolved`, `editFileChanges`, `editFileChangesResolved`,
+`clientSessionsChanged`, `modelRuntime`. `modelRuntime` — глобальное
 состояние загрузки моделей, не привязанное к чату; оно приходит и в
-чат-фильтрованный SSE. `stateAreaChanged` сообщает, что после
-изменяющего запроса нужно перечитать список (`chats`, `projects` или
-`hosts`); клиент обновляет watcher без периодического polling-а.
-`draftChanged` сообщает, что черновик чата изменил другой клиент; поле ввода
-обновляется по `draftRevision`.
+чат-фильтрованный SSE.
+
+`stateAreaChanged` сообщает, что после изменяющего запроса нужно перечитать
+список (`chats`, `projects`, `hosts`, `settings` или `models`). `chatChanged`
+обновляет открытый чат; `queueChanged` несёт полную очередь и
+`queueRevision`; `turnSnapshot` позволяет догнать уже начатый ответ.
+`approvalResolved`, `questionResolved` и `editFileChangesResolved` убирают
+закрытые карточки у остальных клиентов. `draftChanged` сообщает, что черновик
+чата изменил другой клиент; поле ввода обновляется по `draftRevision`, а
+правки сообщений — по `messageEditsRevision`.
+
+`PATCH /chats/{id}` принимает `expectedRevision`. При несовпадении сервер
+возвращает `409 chat_conflict`; клиент перечитывает чат и повторяет только
+свои поля.
 
 ## Статическая web-сборка
 

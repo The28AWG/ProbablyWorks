@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -56,7 +57,9 @@ class RemoteAgentApi
         McpApi,
         PluginApi,
         SecurityAuditApi,
-        PushApi {
+        PushApi,
+        InteractionEventsApi,
+        ClientSessionApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -133,6 +136,7 @@ class RemoteAgentApi
   String? get instanceId => _instanceId;
 
   /// Обновляет присутствие. Следующий heartbeat отправит изменения.
+  @override
   void setPresence({
     bool? focused,
     String? activeChatId,
@@ -144,6 +148,7 @@ class RemoteAgentApi
     } else if (activeChatId != null) {
       _activeChatId = activeChatId;
     }
+    if (!_disposed) unawaited(_sendHeartbeat());
   }
 
   /// Текущая пауза перед следующей попыткой; после успеха сбрасывается.
@@ -157,6 +162,8 @@ class RemoteAgentApi
   final _questionChats = <String, String>{};
   final _editChats = <String, String>{};
   final _queues = <String, List<QueuedPrompt>>{};
+  final _queueRevisions = <String, int>{};
+  final _turnSnapshots = <String, TurnSnapshot>{};
   Map<String, dynamic>? _globalSettings;
   Future<void>? _settingsLoading;
   final _usageByChat = <String, Map<String, dynamic>>{};
@@ -171,6 +178,10 @@ class RemoteAgentApi
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
+  final _resolutions = StreamController<InteractionResolution>.broadcast();
+  final _clientSessionChanges =
+      StreamController<List<ClientSessionView>>.broadcast();
+  List<ClientSessionView> _clientSessions = const [];
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _runtimeChanges = StreamController<ModelRuntimeState>.broadcast();
   final _localModelsChanges = StreamController<LocalModelsState>.broadcast();
@@ -207,7 +218,7 @@ class RemoteAgentApi
         try {
           final body = jsonDecode(response.body);
           if (body is Map && body['instanceId'] is String) {
-            _instanceId = body['instanceId'] as String;
+            _trackInstance(body['instanceId'] as String);
           }
         } on FormatException {
           // Health может быть от старого сервера без instanceId.
@@ -238,6 +249,31 @@ class RemoteAgentApi
 
   @override
   Stream<EditFileChangesRequest> get editChanges => _editChanges.stream;
+
+  @override
+  Stream<InteractionResolution> get resolutions => _resolutions.stream;
+
+  @override
+  Stream<List<ClientSessionView>> get clientSessions =>
+      _clientSessionChanges.stream;
+
+  Future<void> _refreshClientSessionsQuietly() async {
+    try {
+      await refreshClientSessions();
+    } on Object {
+      // Следующее событие или открытие чата попробует снова.
+    }
+  }
+
+  @override
+  Future<List<ClientSessionView>> refreshClientSessions() async {
+    final json = await _get('/client/sessions');
+    _clientSessions = _clientSessionsFrom(json);
+    if (!_clientSessionChanges.isClosed) {
+      _clientSessionChanges.add(_clientSessions);
+    }
+    return _clientSessions;
+  }
 
   @override
   late final ChatStore chatStore = _RemoteChatStore(this);
@@ -312,6 +348,8 @@ class RemoteAgentApi
     await _approvals.close();
     await _questions.close();
     await _editChanges.close();
+    await _resolutions.close();
+    await _clientSessionChanges.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
     await _localModelsChanges.close();
@@ -549,6 +587,23 @@ class RemoteAgentApi
     }
   }
 
+  /// Перечитывает настройки после изменения в другом клиенте. Событие
+  /// отдаётся подписчикам только после успешного ответа: иначе UI увидел бы
+  /// null вместо прежнего значения при временной ошибке.
+  Future<void> _refreshSettingsFromRemote() async {
+    try {
+      _globalSettings = await _get('/settings');
+      if (!_settingsChanges.isClosed) _settingsChanges.add(null);
+    } on AgentApiException {
+      // Следующее событие или открытие настроек попробует снова.
+    }
+  }
+
+  Future<void> _refreshModelsFromRemote() async {
+    await _loadModels();
+    await _loadRuntime();
+  }
+
   void _publishSettings([Map<String, dynamic>? patch]) {
     if (patch != null) {
       _globalSettings = {...?_globalSettings, ...patch};
@@ -642,18 +697,25 @@ class RemoteAgentApi
 
   Future<void> _syncSession(String chatId) async {
     final json = await _get('/chats/$chatId/session');
+    final revision = _int(json, 'queueRevision');
+    final current = _queueRevisions[chatId] ?? 0;
+    if (revision < current) return;
+    _queueRevisions[chatId] = revision;
     _queues[chatId] = [
       for (final item in (json['queue'] as List? ?? const []))
-        if (item is Map)
-          QueuedPrompt.user(
-            '${item['text'] ?? ''}',
-            mentions: [
-              for (final mention in (item['mentions'] as List? ?? const []))
-                if (mention is Map)
-                  MentionRef.fromJson(Map<String, dynamic>.from(mention)),
-            ],
-          ),
+        if (item is Map) _queuedPrompt(Map<String, dynamic>.from(item)),
     ];
+    if (json['isRunning'] == true) {
+      _running.add(chatId);
+    } else {
+      _running.remove(chatId);
+    }
+    final turn = json['turnSnapshot'];
+    if (turn is Map) {
+      _turnSnapshots[chatId] = _turnSnapshot(Map<String, dynamic>.from(turn));
+    } else if (json['isRunning'] != true) {
+      _turnSnapshots.remove(chatId);
+    }
   }
 
   @override
@@ -1387,8 +1449,7 @@ class RemoteAgentApi
     _sessionId = sessionId;
     _sessionStore.write(sessionKey, sessionId);
     if (map['instanceId'] is String) {
-      final instanceId = map['instanceId'] as String;
-      if (instanceId.isNotEmpty) _instanceId = instanceId;
+      _trackInstance(map['instanceId'] as String);
     }
     final heartbeat = map['heartbeatIntervalMs'];
     if (heartbeat is num && heartbeat > 0) {
@@ -1397,6 +1458,21 @@ class RemoteAgentApi
       );
     }
     _startHeartbeat();
+  }
+
+  /// Запоминает instanceId и сбрасывает runtime-снимки при смене экземпляра.
+  void _trackInstance(String instanceId) {
+    if (instanceId.isEmpty) return;
+    if (_instanceId != null && _instanceId != instanceId) {
+      // Сервер перезапустился: ревизии очереди и снимки шага относятся к
+      // прошлому экземпляру и не должны перетирать новые данные.
+      _running.clear();
+      _waiting.clear();
+      _queues.clear();
+      _queueRevisions.clear();
+      _turnSnapshots.clear();
+    }
+    _instanceId = instanceId;
   }
 
   void _startHeartbeat() {
@@ -1408,8 +1484,12 @@ class RemoteAgentApi
   }
 
   Future<void> _sendHeartbeat() async {
-    if (_disposed || _sessionId == null) return;
+    if (_disposed) return;
     try {
+      // Присутствие должно дойти до сервера сразу, а не только со следующим
+      // периодическим heartbeat: иначе push может уйти в уже открытый чат.
+      await _ensureSession();
+      if (_disposed || _sessionId == null) return;
       await _send(
         'PUT',
         '/client/session',
@@ -1615,13 +1695,56 @@ class RemoteAgentApi
         _editsById[request.id] = request;
         _waiting.add(request.chatId);
         _editChanges.add(request);
+      case 'approvalResolved':
+        final chatId = _string(json, 'chatId');
+        final id = _string(json, 'requestId');
+        _approvalChats.remove(id);
+        _approvalsById.remove(id);
+        if (!_hasPending(chatId)) _waiting.remove(chatId);
+        _resolutions.add(ApprovalResolved(chatId: chatId, requestId: id));
+      case 'questionResolved':
+        final chatId = _string(json, 'chatId');
+        final id = _string(json, 'questionId');
+        _questionChats.remove(id);
+        _questionsById.remove(id);
+        if (!_hasPending(chatId)) _waiting.remove(chatId);
+        _resolutions.add(QuestionResolved(chatId: chatId, questionId: id));
+      case 'editFileChangesResolved':
+        final chatId = _string(json, 'chatId');
+        final id = _string(json, 'requestId');
+        _editChats.remove(id);
+        _editsById.remove(id);
+        if (!_hasPending(chatId)) _waiting.remove(chatId);
+        _resolutions.add(
+          EditFileChangesResolved(chatId: chatId, requestId: id),
+        );
+      case 'clientSessionsChanged':
+        unawaited(_refreshClientSessionsQuietly());
       case 'turnStarted':
         final chatId = _string(json, 'chatId');
         _running.add(chatId);
         _events.add(AgentTurnStarted(chatId));
+      case 'turnSnapshot':
+        final chatId = _string(json, 'chatId');
+        final snapshot = _turnSnapshot(json);
+        _turnSnapshots[chatId] = snapshot;
+        if (snapshot.isRunning) {
+          _running.add(chatId);
+        } else {
+          _running.remove(chatId);
+        }
+        _events.add(
+          AgentTurnSnapshot(
+            chatId,
+            text: snapshot.text,
+            reasoning: snapshot.reasoning,
+            isRunning: snapshot.isRunning,
+          ),
+        );
       case 'turnFinished':
         final chatId = _string(json, 'chatId');
         _running.remove(chatId);
+        _turnSnapshots.remove(chatId);
         _events.add(
           AgentTurnFinished(
             chatId,
@@ -1662,8 +1785,27 @@ class RemoteAgentApi
           ),
         );
       case 'queueChanged':
+        final chatId = _string(json, 'chatId');
+        final revision = _int(json, 'queueRevision');
+        final current = _queueRevisions[chatId] ?? 0;
+        if (revision < current) break;
+        final items = json['items'];
+        if (items is List) {
+          _queueRevisions[chatId] = revision;
+          _queues[chatId] = [
+            for (final item in items)
+              if (item is Map) _queuedPrompt(Map<String, dynamic>.from(item)),
+          ];
+        } else {
+          // Старый сервер присылал только size: догружаем снимок.
+          unawaited(_trySyncSession(chatId));
+        }
         _events.add(
-          AgentQueueChanged(_string(json, 'chatId'), _int(json, 'size')),
+          AgentQueueChanged(
+            chatId,
+            _queues[chatId] ?? const [],
+            revision: revision,
+          ),
         );
       case 'failure':
         _events.add(
@@ -1693,8 +1835,16 @@ class RemoteAgentApi
         );
       case 'stateChanged':
         _events.add(AgentStateChanged(_string(json, 'chatId')));
+      case 'chatChanged':
+        _events.add(AgentStateChanged(_string(json, 'chatId')));
       case 'stateAreaChanged':
-        _publishState(_string(json, 'area'));
+        final area = _string(json, 'area');
+        if (area == 'settings') {
+          unawaited(_refreshSettingsFromRemote());
+        } else if (area == 'models') {
+          unawaited(_refreshModelsFromRemote());
+        }
+        _publishState(area);
       case 'modelRuntime':
         _publishRuntime(ModelRuntimeState.fromJson(json['runtime']));
       case 'localModels':
@@ -1964,6 +2114,8 @@ Chat _chat(Map<String, dynamic> json) => Chat(
       : ChatDraft.empty,
   messageEdits: decodeMessageEdits('${json['messageEdits'] ?? ''}'),
   draftRevision: _int(json, 'draftRevision'),
+  messageEditsRevision: _int(json, 'messageEditsRevision'),
+  revision: _int(json, 'revision'),
   createdAt: _time(json, 'createdAt'),
   updatedAt: _time(json, 'updatedAt'),
 );
@@ -2021,6 +2173,34 @@ ChatMessage _message(Map<String, dynamic> json) => ChatMessage(
   createdAt: _time(json, 'createdAt'),
 );
 
+List<ClientSessionView> _clientSessionsFrom(Map<String, dynamic> json) => [
+  for (final item in (json['sessions'] as List? ?? const []))
+    if (item is Map) _clientSessionView(Map<String, dynamic>.from(item)),
+];
+
+ClientSessionView _clientSessionView(Map<String, dynamic> item) =>
+    ClientSessionView(
+      id: _string(item, 'id'),
+      deviceId: '${item['deviceId'] ?? ''}',
+      clientApp: '${item['clientApp'] ?? ''}',
+      clientVersion: '${item['clientVersion'] ?? ''}',
+      clientBuild: '${item['clientBuild'] ?? ''}',
+      clientPlatform: '${item['clientPlatform'] ?? ''}',
+      activeChatId: item['activeChatId'] as String?,
+      createdAt: _time(item, 'createdAt'),
+      lastSeenAt: _time(item, 'lastSeenAt'),
+      expiresAt: _time(item, 'expiresAt'),
+      focused: item['focused'] == true,
+      online: item['online'] != false,
+      current: item['current'] == true,
+    );
+
+TurnSnapshot _turnSnapshot(Map<String, dynamic> json) => TurnSnapshot(
+  text: '${json['text'] ?? ''}',
+  reasoning: '${json['reasoning'] ?? ''}',
+  isRunning: json['isRunning'] != false,
+);
+
 ToolRun _run(Map<String, dynamic> json) => ToolRun(
   id: _string(json, 'id'),
   chatId: _string(json, 'chatId'),
@@ -2044,6 +2224,25 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
       ? null
       : jsonEncode(json['pendingCard']),
 );
+
+QueuedPrompt _queuedPrompt(Map<String, dynamic> json) {
+  final text = '${json['text'] ?? ''}';
+  if (json['isEvent'] == true) return QueuedPrompt.event(text);
+  return QueuedPrompt.user(
+    text,
+    attachments: [
+      for (final item in (json['attachments'] as List? ?? const []))
+        if (item is Map)
+          AttachmentRef.fromJson(Map<String, dynamic>.from(item)),
+    ],
+    mentions: [
+      for (final mention in (json['mentions'] as List? ?? const []))
+        if (mention is Map)
+          MentionRef.fromJson(Map<String, dynamic>.from(mention)),
+    ],
+    note: json['note'] as String?,
+  );
+}
 
 Map<String, Object?> _attachmentBody(AttachmentRef attachment) => {
   'name': attachment.name,
@@ -2259,6 +2458,41 @@ final class _RemoteChatStore implements ChatStore {
         'workspace': chat.workspace,
       },
     );
+  }
+
+  @override
+  Future<Chat> updateChat(
+    String chatId, {
+    String? title,
+    String? model,
+    ReasoningPreference? reasoning,
+    PolicyMode? policyMode,
+    String? workspace,
+    bool workspaceSpecified = false,
+    int? expectedRevision,
+  }) async {
+    await _api.sendJson(
+      'PATCH',
+      '/chats/$chatId',
+      body: {
+        'title': ?title,
+        'model': ?model,
+        'reasoning': ?reasoning?.name,
+        'policyMode': ?policyMode?.name,
+        if (workspaceSpecified) 'workspace': workspace,
+        if (workspaceSpecified) 'workspaceSpecified': true,
+        'expectedRevision': ?expectedRevision,
+      },
+    );
+    final chat = await _api.chat(chatId);
+    if (chat == null) {
+      throw const AgentApiException(
+        404,
+        'chat_not_found',
+        'chat not found after update',
+      );
+    }
+    return chat;
   }
 
   @override
@@ -2518,7 +2752,23 @@ final class _RemoteProjects implements ProjectsStore {
     String? hostId,
     String? workspace,
     bool workspaceSpecified = false,
-  }) => Future.value(chat);
+  }) async {
+    if (hostId != null || !workspaceSpecified) return chat;
+    Future<Chat> send(int? revision) => _api.chatStore.updateChat(
+      chat.id,
+      workspace: workspace,
+      workspaceSpecified: true,
+      expectedRevision: revision,
+    );
+    try {
+      return await send(chat.revision);
+    } on AgentApiException catch (error) {
+      if (error.code != 'chat_conflict') rethrow;
+      final fresh = await _api.chat(chat.id);
+      if (fresh == null) rethrow;
+      return send(fresh.revision);
+    }
+  }
 
   @override
   Future<void> trustWorkspace(String projectId) => Future<void>.value();
@@ -2657,6 +2907,9 @@ final class _RemoteInteractions implements InteractionsStore {
       _api.editChanges;
 
   @override
+  Stream<InteractionResolution> get resolutions => _api.resolutions;
+
+  @override
   List<ApprovalRequest> pendingApprovals(String chatId) =>
       _api.pendingApprovalsSync(chatId);
 
@@ -2695,6 +2948,13 @@ final class _RemoteChatSession implements ChatSessionApi {
 
   @override
   List<QueuedPrompt> get queue => _api._queues[_chatId] ?? const [];
+
+  @override
+  int get queueRevision => _api._queueRevisions[_chatId] ?? 0;
+
+  @override
+  TurnSnapshot get turnSnapshot =>
+      _api._turnSnapshots[_chatId] ?? const TurnSnapshot();
 
   @override
   Stream<AgentEvent> get events =>

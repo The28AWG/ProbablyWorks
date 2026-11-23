@@ -34,7 +34,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 23;
+  static const currentSchemaVersion = 25;
 
   static const _uuid = Uuid();
 
@@ -170,6 +170,15 @@ class AppDatabase extends _$AppDatabase {
       // а полный путь и диапазон живут в JSON, чтобы не угадывать файл заново.
       if (from < 23 && await _hasTable('chats')) {
         await m.addColumn(chats, chats.draftMentions);
+      }
+      // Версия 24: отдельная версия правок сообщений. Раньше она делила
+      // счётчик с черновиком и давала ложные конфликты.
+      if (from < 24 && await _hasTable('chats')) {
+        await m.addColumn(chats, chats.messageEditsRevision);
+      }
+      // Версия 25: ревизия метаданных чата для точечного PATCH.
+      if (from < 25 && await _hasTable('chats')) {
+        await m.addColumn(chats, chats.revision);
       }
     },
   );

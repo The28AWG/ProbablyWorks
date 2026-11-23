@@ -86,6 +86,8 @@ extension _ChatSessionTurn on ChatSession {
       _emit(AgentFailureRaised(chatId, LlmFailure('internal error: $error')));
     } finally {
       _running = false;
+      _liveText.clear();
+      _liveReasoning.clear();
       _turnCancel = null;
       _stepCancel = null;
       _historyWarm = false;
@@ -396,6 +398,10 @@ extension _ChatSessionTurn on ChatSession {
                   ToolCallRef(id: c.id, name: c.name, arguments: c.arguments),
               ],
             );
+      // Шаг уже записан в БД: живой снимок больше не должен показывать его
+      // повторно клиенту, который подключится во время выполнения инструментов.
+      _liveText.clear();
+      _liveReasoning.clear();
       final usage = step.usage;
       if (usage != null) {
         final model = step.model ?? prepared.model;

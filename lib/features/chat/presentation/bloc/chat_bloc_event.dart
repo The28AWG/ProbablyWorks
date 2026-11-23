@@ -76,6 +76,16 @@ final class ChatStopped extends ChatEvent {
   const ChatStopped();
 }
 
+/// Оставить локальный вариант черновика при конфликте.
+final class ChatDraftConflictKeepLocal extends ChatEvent {
+  const ChatDraftConflictKeepLocal();
+}
+
+/// Принять серверный вариант черновика при конфликте.
+final class ChatDraftConflictAcceptRemote extends ChatEvent {
+  const ChatDraftConflictAcceptRemote();
+}
+
 final class ChatContinued extends ChatEvent {
   const ChatContinued();
 }

@@ -162,6 +162,11 @@ final class ClientSessionRegistry {
   final DateTime Function() _now;
   final Map<String, ClientSession> _sessions = {};
   Timer? _sweepTimer;
+  final _changes = StreamController<void>.broadcast();
+
+  /// События изменения состава сессий или присутствия. Сами данные читаются
+  /// через [list], чтобы подписчик не держал устаревший снимок.
+  Stream<void> get changes => _changes.stream;
 
   /// Текущее время реестра; в тестах управляется снаружи.
   DateTime get now => _now();
@@ -189,6 +194,7 @@ final class ClientSessionRegistry {
           previous
             ..updateInfo(info)
             ..touch(at);
+          _notify();
           return previous;
         }
         _sessions.remove(previous.id);
@@ -203,6 +209,7 @@ final class ClientSessionRegistry {
       ttl: ttl,
     );
     _sessions[session.id] = session;
+    _notify();
     return session;
   }
 
@@ -216,6 +223,7 @@ final class ClientSessionRegistry {
     if (session.isExpiredAt(at)) {
       _sessions.remove(id);
       _close(session);
+      _notify();
       return const ClientSessionLookup.failure(ClientSessionProblem.expired);
     }
     session.touch(at);
@@ -233,6 +241,7 @@ final class ClientSessionRegistry {
     session
       ..touch(now)
       ..updatePresence(focused: focused, activeChatId: activeChatId);
+    _notify();
     return session;
   }
 
@@ -249,7 +258,10 @@ final class ClientSessionRegistry {
   /// Удаляет сессию и закрывает её SSE-соединения.
   ClientSession? remove(String id) {
     final session = _sessions.remove(id);
-    if (session != null) _close(session);
+    if (session != null) {
+      _close(session);
+      _notify();
+    }
     return session;
   }
 
@@ -274,6 +286,20 @@ final class ClientSessionRegistry {
       final session = _sessions.remove(id);
       if (session != null) _close(session);
     }
+    if (expired.isNotEmpty) _notify();
+  }
+
+  /// Открыт ли чат в активной (focused) сессии. Нужно, чтобы не отправлять
+  /// push туда, где пользователь и так видит событие.
+  bool hasFocusedChat(String? chatId) {
+    if (chatId == null) return false;
+    final at = now;
+    return _sessions.values.any(
+      (session) =>
+          !session.isExpiredAt(at) &&
+          session.focused &&
+          session.activeChatId == chatId,
+    );
   }
 
   /// Останавливает таймер и закрывает все SSE-соединения реестра.
@@ -284,6 +310,11 @@ final class ClientSessionRegistry {
       _close(session);
     }
     _sessions.clear();
+    unawaited(_changes.close());
+  }
+
+  void _notify() {
+    if (!_changes.isClosed) _changes.add(null);
   }
 
   void _close(ClientSession session) {

@@ -4,6 +4,39 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 
+/// Событие закрытия карточки. Нужно второму клиенту, чтобы убрать
+/// устаревшую карточку и бейдж ожидания, даже если решение приняли в другом
+/// окне.
+sealed class InteractionResolution {
+  const InteractionResolution({required this.chatId});
+
+  final String chatId;
+}
+
+/// Подтверждение действия закрыто.
+final class ApprovalResolved extends InteractionResolution {
+  const ApprovalResolved({required super.chatId, required this.requestId});
+
+  final String requestId;
+}
+
+/// Вопрос агента получил ответ.
+final class QuestionResolved extends InteractionResolution {
+  const QuestionResolved({required super.chatId, required this.questionId});
+
+  final String questionId;
+}
+
+/// Выбор по откату файлов сделан.
+final class EditFileChangesResolved extends InteractionResolution {
+  const EditFileChangesResolved({
+    required super.chatId,
+    required this.requestId,
+  });
+
+  final String requestId;
+}
+
 /// Что пользователь выбрал в карточке подтверждения.
 enum ApprovalAction { deny, allowOnce, allowTurn, allowChat }
 
@@ -159,6 +192,7 @@ class InteractionBroker {
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editFileChangesRequests =
       StreamController<EditFileChangesRequest>.broadcast();
+  final _resolutions = StreamController<InteractionResolution>.broadcast();
   final Map<String, Completer<ApprovalDecision>> _approvals = {};
   final Map<String, Completer<String?>> _answers = {};
   final Map<String, Completer<EditFileChangesChoice>> _editFileChanges = {};
@@ -177,6 +211,9 @@ class InteractionBroker {
 
   Stream<EditFileChangesRequest> get editFileChangesRequests =>
       _editFileChangesRequests.stream;
+
+  /// Закрытые карточки: подтверждения, вопросы и выбор откатов файлов.
+  Stream<InteractionResolution> get resolutions => _resolutions.stream;
 
   /// Чаты, в которых есть хотя бы одна неотвеченная карточка.
   Set<String> get waitingChatIds => {
@@ -227,6 +264,11 @@ class InteractionBroker {
     if (completer != null && !completer.isCompleted) {
       completer.complete(decision);
     }
+    if (request != null) {
+      _resolutions.add(
+        ApprovalResolved(chatId: request.chatId, requestId: requestId),
+      );
+    }
   }
 
   /// Есть ли уже разрешение на этот точный ключ в ходе или чате.
@@ -256,9 +298,14 @@ class InteractionBroker {
   }
 
   void answer(String questionId, String? text) {
-    _pendingQuestions.remove(questionId);
+    final question = _pendingQuestions.remove(questionId);
     final completer = _answers.remove(questionId);
     if (completer != null && !completer.isCompleted) completer.complete(text);
+    if (question != null) {
+      _resolutions.add(
+        QuestionResolved(chatId: question.chatId, questionId: questionId),
+      );
+    }
   }
 
   /// Спросить, откатывать ли файлы перед правкой или укорочением истории.
@@ -273,9 +320,14 @@ class InteractionBroker {
   }
 
   void resolveEditFileChanges(String requestId, EditFileChangesChoice choice) {
-    _pendingEditFileChanges.remove(requestId);
+    final request = _pendingEditFileChanges.remove(requestId);
     final completer = _editFileChanges.remove(requestId);
     if (completer != null && !completer.isCompleted) completer.complete(choice);
+    if (request != null) {
+      _resolutions.add(
+        EditFileChangesResolved(chatId: request.chatId, requestId: requestId),
+      );
+    }
   }
 
   /// Stop: все ожидания чата получают отказ/пустой ответ, чтобы цикл агента завершился.
