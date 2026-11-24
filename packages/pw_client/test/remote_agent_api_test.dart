@@ -165,11 +165,17 @@ void main() {
   });
 
   test('sends a message and resolves a card', () async {
-    await remote.send('c1', 'do it', sendNow: true);
+    await remote.send(
+      'c1',
+      'do it',
+      sendNow: true,
+      clientMessageId: 'client-1',
+    );
     await remote.resolveApproval('a1', ApprovalAction.allowTurn);
     await remote.answerQuestion('q1', 'yes');
 
     expect(backend.sent, [('c1', 'do it', true)]);
+    expect(backend.clientMessageIds, ['client-1']);
     expect(backend.decisions, [ApprovalAction.allowTurn]);
     expect(backend.answers, ['yes']);
   });
@@ -1338,6 +1344,7 @@ final class _FakeAgent implements AgentApi {
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
 
   final sent = <(String, String, bool)>[];
+  final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
   final searchQueries = <SearchQuery>[];
@@ -1545,8 +1552,10 @@ final class _FakeAgent implements AgentApi {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
   }) async {
     sent.add((chatId, text, sendNow));
+    clientMessageIds.add(clientMessageId);
   }
 
   @override

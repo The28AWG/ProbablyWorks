@@ -183,11 +183,22 @@ class Chats extends Table {
 }
 
 @DataClassName('MessageRow')
+@TableIndex(
+  name: 'messages_chat_client_message_id',
+  columns: {#chatId, #clientMessageId},
+  unique: true,
+)
 class Messages extends Table {
   TextColumn get id => text()();
   TextColumn get chatId =>
       text().references(Chats, #id, onDelete: KeyAction.cascade)();
   IntColumn get seq => integer()();
+
+  /// Идентификатор отправки, который назначил клиент.
+  ///
+  /// Нужен для идемпотентности: повтор запроса после сетевого таймаута не
+  /// создаёт второе сообщение. Null у событий агента и старых записей.
+  TextColumn get clientMessageId => text().nullable()();
   TextColumn get role => text()();
   TextColumn get payload => text()();
   TextColumn get openedRevisionId => text().nullable()();

@@ -61,6 +61,7 @@ final class ChatAttachmentRemoved extends ChatEvent {
 final class ChatSubmitted extends ChatEvent {
   const ChatSubmitted(
     this.text, {
+    required this.clientMessageId,
     this.attachments = const [],
     this.mentions = const [],
     this.sendNow = false,
@@ -70,6 +71,10 @@ final class ChatSubmitted extends ChatEvent {
   final List<AttachmentRef> attachments;
   final List<MentionRef> mentions;
   final bool sendNow;
+
+  /// Устойчивый идентификатор отправки. Создаётся вместе с событием, поэтому
+  /// повторная доставка того же события не создаёт второе сообщение.
+  final String clientMessageId;
 }
 
 final class ChatStopped extends ChatEvent {

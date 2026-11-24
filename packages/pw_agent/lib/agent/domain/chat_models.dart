@@ -404,6 +404,7 @@ class ChatMessage {
     this.toolCallId,
     this.attachments = const [],
     this.mentions = const [],
+    this.clientMessageId,
     this.openedRevisionId,
     this.sealedBeforeRevisionId,
   });
@@ -415,6 +416,7 @@ class ChatMessage {
     required String role,
     required String payload,
     required DateTime createdAt,
+    String? clientMessageId,
     String? openedRevisionId,
     String? sealedBeforeRevisionId,
   }) {
@@ -425,6 +427,7 @@ class ChatMessage {
       seq: seq,
       role: MessageRole.values.byName(role),
       createdAt: createdAt,
+      clientMessageId: clientMessageId,
       text: map['text'] as String? ?? '',
       reasoning: map['reasoning'] as String? ?? '',
       toolCalls: [
@@ -459,6 +462,10 @@ class ChatMessage {
 
   /// Упоминания файлов и каталогов workspace. Диапазоны указывают на [text].
   final List<MentionRef> mentions;
+
+  /// Идентификатор отправки от клиента. Повтор с тем же значением не создаёт
+  /// дубль сообщения после потерянного ответа.
+  final String? clientMessageId;
   final DateTime createdAt;
   final String? openedRevisionId;
   final String? sealedBeforeRevisionId;
@@ -475,6 +482,7 @@ class ChatMessage {
     List<AttachmentRef>? attachments,
     List<MentionRef>? mentions,
     DateTime? createdAt,
+    String? clientMessageId,
     String? openedRevisionId,
     String? sealedBeforeRevisionId,
   }) => ChatMessage(
@@ -483,6 +491,7 @@ class ChatMessage {
     seq: seq ?? this.seq,
     role: role ?? this.role,
     createdAt: createdAt ?? this.createdAt,
+    clientMessageId: clientMessageId ?? this.clientMessageId,
     text: text ?? this.text,
     reasoning: reasoning ?? this.reasoning,
     toolCalls: toolCalls ?? this.toolCalls,

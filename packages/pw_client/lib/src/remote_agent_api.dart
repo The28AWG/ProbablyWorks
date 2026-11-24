@@ -797,6 +797,7 @@ class RemoteAgentApi
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
   }) async {
     await _send(
       'POST',
@@ -808,6 +809,10 @@ class RemoteAgentApi
           for (final attachment in attachments) _attachmentBody(attachment),
         ],
         'mentions': [for (final mention in mentions) mention.toJson()],
+        // Идентификатор создаётся здесь, если вызывающий не сохранил свой.
+        // Повтор того же тела запроса (например, после обновления сессии)
+        // несёт тот же id, и сервер не создаёт второе сообщение.
+        'clientMessageId': clientMessageId ?? _uuid.v4(),
       },
     );
     await _trySyncSession(chatId);
@@ -3179,12 +3184,14 @@ final class _RemoteChatSession implements ChatSessionApi {
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
     bool sendNow = false,
+    String? clientMessageId,
   }) => _api.send(
     _chatId,
     text,
     sendNow: sendNow,
     attachments: attachments,
     mentions: mentions,
+    clientMessageId: clientMessageId,
   );
 
   @override

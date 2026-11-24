@@ -524,6 +524,167 @@ void main() {
     await drafts.flush();
     expect((await chats.chat('c1'))!.messageEdits, isEmpty);
   });
+
+  test('a draft repeated after a lost response is not a conflict', () async {
+    drafts.update('c1', const ChatDraft(text: 'first'));
+    await drafts.flush();
+    expect((await chats.chat('c1'))!.draftRevision, 1);
+
+    final backend = _LostResponseDraft(chats);
+    final store = ChatDraftStore(backend);
+    addTearDown(store.dispose);
+    store
+      ..prime('c1', (await chats.chat('c1'))!)
+      ..update('c1', const ChatDraft(text: 'second'));
+
+    // Сервер записал текст, но ответ потерялся: клиент повторит запись
+    // со старой ревизией.
+    await store.flush();
+    expect((await chats.chat('c1'))!.draft.text, 'second');
+    await store.flush();
+
+    expect(store.conflictFor('c1'), isNull);
+    expect(store.of('c1').text, 'second');
+    expect((await chats.chat('c1'))!.draftRevision, 2);
+  });
+
+  test(
+    'typing during a lost response does not create a false conflict',
+    () async {
+      drafts.update('c1', const ChatDraft(text: 'first'));
+      await drafts.flush();
+      expect((await chats.chat('c1'))!.draftRevision, 1);
+
+      final backend = _LostResponseDraft(chats);
+      final store = ChatDraftStore(backend);
+      addTearDown(store.dispose);
+      store
+        ..prime('c1', (await chats.chat('c1'))!)
+        ..update('c1', const ChatDraft(text: 'second'));
+
+      // «second» записан на сервере, но ответ потерян.
+      await store.flush();
+      expect((await chats.chat('c1'))!.draft.text, 'second');
+
+      // Пользователь продолжил печатать, пока клиент не знал об успехе.
+      store.update('c1', const ChatDraft(text: 'third'));
+      await store.flush();
+
+      // Серверная версия — это наша же запись, а не чужое изменение.
+      expect(store.conflictFor('c1'), isNull);
+
+      // «third» ещё не на сервере: он уходит следующим flush с новой ревизией.
+      await store.flush();
+      expect((await chats.chat('c1'))!.draft.text, 'third');
+      expect((await chats.chat('c1'))!.draftRevision, 3);
+    },
+  );
+
+  test(
+    'a draft with an attachment is compared by stored fields, not identity',
+    () async {
+      const attachment = AttachmentRef(
+        name: 'env.txt',
+        mode: AttachmentMode.file,
+        mimeType: 'text/plain',
+        sizeBytes: 4,
+      );
+      drafts.update(
+        'c1',
+        const ChatDraft(text: 'first', attachments: [attachment]),
+      );
+      await drafts.flush();
+
+      final backend = _LostResponseDraft(chats);
+      final store = ChatDraftStore(backend);
+      addTearDown(store.dispose);
+      store
+        ..prime('c1', (await chats.chat('c1'))!)
+        ..update(
+          'c1',
+          const ChatDraft(text: 'second', attachments: [attachment]),
+        );
+
+      await store.flush();
+      await store.flush();
+
+      expect(store.conflictFor('c1'), isNull);
+      expect(store.of('c1').attachments.single.name, 'env.txt');
+    },
+  );
+
+  test(
+    'message edits repeated after a lost response are not a conflict',
+    () async {
+      drafts.updateEdit('c1', 'm1', const ChatDraft(text: 'first'));
+      await drafts.flush();
+      expect((await chats.chat('c1'))!.messageEditsRevision, 1);
+
+      final backend = _LostResponseDraft(chats);
+      final store = ChatDraftStore(backend);
+      addTearDown(store.dispose);
+      store
+        ..prime('c1', (await chats.chat('c1'))!)
+        ..updateEdit('c1', 'm1', const ChatDraft(text: 'second'));
+
+      await store.flush();
+      expect((await chats.chat('c1'))!.messageEdits['m1']?.text, 'second');
+      await store.flush();
+
+      expect(store.conflictFor('c1'), isNull);
+      expect(store.editOf('c1', 'm1')?.text, 'second');
+      expect((await chats.chat('c1'))!.messageEditsRevision, 2);
+    },
+  );
+}
+
+/// Записывает данные, но один раз отвечает сетевым сбоем: так выглядит
+/// потерянный ответ после успешной записи на сервере.
+final class _LostResponseDraft implements DraftPersistence {
+  _LostResponseDraft(this._chats);
+
+  final ChatRepository _chats;
+  var _failDraft = true;
+  var _failEdits = true;
+
+  @override
+  Future<Chat?> chat(String id) => _chats.chat(id);
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async {
+    final revision = await _chats.saveDraft(
+      chatId,
+      draft,
+      expectedRevision: expectedRevision,
+    );
+    if (_failDraft) {
+      _failDraft = false;
+      throw Exception('timeout after save');
+    }
+    return revision;
+  }
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) async {
+    final revision = await _chats.saveMessageEdits(
+      chatId,
+      edits,
+      expectedRevision: expectedRevision,
+    );
+    if (_failEdits) {
+      _failEdits = false;
+      throw Exception('timeout after save');
+    }
+    return revision;
+  }
 }
 
 final class _FailingDraft implements DraftPersistence {

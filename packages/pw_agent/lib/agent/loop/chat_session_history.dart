@@ -4,43 +4,58 @@ extension _ChatSessionHistory on ChatSession {
   // ---- persistence -------------------------------------------------------
 
   /// Сохраняет пользовательский промпт и открывает новую ревизию состояния.
+  ///
+  /// Пока идёт запись, [clientMessageId] держится в
+  /// [_persistingClientMessages]: повторный запрос не должен создать дубль,
+  /// пока элемент уже ушёл из очереди, а сообщение ещё нет в БД.
   Future<void> _persistPrompt(QueuedPrompt prompt) async {
-    final chat = await _hub.chats.chat(chatId);
-    if (chat == null) return;
-    // Заметка идёт отдельным событием: текст пользователя остаётся тем, что
-    // было запланировано, а модель и лента видят причину опоздания.
-    final note = prompt.note;
-    if (note != null) await _append(MessageRole.event, text: note);
-    final messageId = ChatSession._uuid.v4();
-    final revisions = await _hub.state.onUserMessage(chat, messageId);
-    await _append(
-      MessageRole.user,
-      id: messageId,
-      text: prompt.text,
-      attachments: prompt.attachments,
-      mentions: prompt.mentions,
-      openedRevisionId: revisions.opened,
-      sealedBeforeRevisionId: revisions.sealedBefore,
-    );
-    final files = [
-      for (final a in prompt.attachments)
-        if (a.mode == AttachmentMode.file && a.bytes != null)
-          LlmFilePart(
-            name: a.name,
-            mimeType: a.mimeType ?? 'application/octet-stream',
-            bytes: a.bytes!,
-          ),
-    ];
-    if (files.isNotEmpty) _inlineFiles[messageId] = files;
-    final refreshed = await _hub.chats.chat(chatId);
-    if (refreshed != null &&
-        refreshed.titleSource == ChatTitleSource.none &&
-        prompt.text.isNotEmpty) {
-      await _hub.chats.saveChat(
-        refreshed.copyWith(title: ChatTitle.fallback(prompt.text)),
+    final clientMessageId = prompt.clientMessageId;
+    if (clientMessageId != null) {
+      _persistingClientMessages.add(clientMessageId);
+    }
+    try {
+      final chat = await _hub.chats.chat(chatId);
+      if (chat == null) return;
+      // Заметка идёт отдельным событием: текст пользователя остаётся тем, что
+      // было запланировано, а модель и лента видят причину опоздания.
+      final note = prompt.note;
+      if (note != null) await _append(MessageRole.event, text: note);
+      final messageId = ChatSession._uuid.v4();
+      final revisions = await _hub.state.onUserMessage(chat, messageId);
+      await _append(
+        MessageRole.user,
+        id: messageId,
+        text: prompt.text,
+        attachments: prompt.attachments,
+        mentions: prompt.mentions,
+        clientMessageId: clientMessageId,
+        openedRevisionId: revisions.opened,
+        sealedBeforeRevisionId: revisions.sealedBefore,
       );
-      _emit(AgentStateChanged(chatId));
-      unawaited(_generateTitle(prompt.text));
+      final files = [
+        for (final a in prompt.attachments)
+          if (a.mode == AttachmentMode.file && a.bytes != null)
+            LlmFilePart(
+              name: a.name,
+              mimeType: a.mimeType ?? 'application/octet-stream',
+              bytes: a.bytes!,
+            ),
+      ];
+      if (files.isNotEmpty) _inlineFiles[messageId] = files;
+      final refreshed = await _hub.chats.chat(chatId);
+      if (refreshed != null &&
+          refreshed.titleSource == ChatTitleSource.none &&
+          prompt.text.isNotEmpty) {
+        await _hub.chats.saveChat(
+          refreshed.copyWith(title: ChatTitle.fallback(prompt.text)),
+        );
+        _emit(AgentStateChanged(chatId));
+        unawaited(_generateTitle(prompt.text));
+      }
+    } finally {
+      if (clientMessageId != null) {
+        _persistingClientMessages.remove(clientMessageId);
+      }
     }
   }
 
@@ -71,6 +86,7 @@ extension _ChatSessionHistory on ChatSession {
     String? toolCallId,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
     String? openedRevisionId,
     String? sealedBeforeRevisionId,
   }) async {
@@ -78,6 +94,7 @@ extension _ChatSessionHistory on ChatSession {
     final message = ChatMessage(
       id: id ?? ChatSession._uuid.v4(),
       chatId: chatId,
+      clientMessageId: clientMessageId,
       seq: seq,
       role: role,
       createdAt: DateTime.now(),

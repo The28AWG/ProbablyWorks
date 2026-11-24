@@ -197,11 +197,17 @@ abstract interface class ChatSessionApi {
 
   Stream<AgentEvent> get events;
 
+  /// Отправляет пользовательский ввод.
+  ///
+  /// [clientMessageId] — устойчивый идентификатор действия. Повтор с тем же
+  /// значением после сетевого таймаута не создаёт второе сообщение и не
+  /// запускает второй ход.
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
     bool sendNow = false,
+    String? clientMessageId,
   });
   Future<void> stop({String? reason});
   Future<void> continueAfterStepLimit();

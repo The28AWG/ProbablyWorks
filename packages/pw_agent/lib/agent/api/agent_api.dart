@@ -134,12 +134,17 @@ abstract interface class AgentApi {
   /// Регистрирует карточки чата и продолжает ход, если нужно.
   Future<void> openChat(String chatId);
 
+  /// Отправляет сообщение в чат.
+  ///
+  /// [clientMessageId] делает повтор идемпотентным: тот же id после таймаута
+  /// не создаёт дубль и не запускает второй ход.
   Future<void> send(
     String chatId,
     String text, {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
   });
   Future<void> stop(String chatId, {String? reason});
 

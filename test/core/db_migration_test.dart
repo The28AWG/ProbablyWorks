@@ -118,6 +118,7 @@ AppDatabase _openAtVersion(
   int version, {
   bool withLlmModels = false,
   bool withVirtualFs = false,
+  bool withMessages = false,
 }) => AppDatabase(
   NativeDatabase.memory(
     setup: (raw) {
@@ -135,6 +136,16 @@ AppDatabase _openAtVersion(
         ..execute(_toolRunsBeforeV9)
         ..execute('PRAGMA user_version = $version');
       if (version >= 4) raw.execute(_savedModelsV4);
+      if (withMessages) {
+        raw.execute(
+          'CREATE TABLE messages ('
+          'id TEXT NOT NULL PRIMARY KEY, '
+          'chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE, '
+          'seq INTEGER NOT NULL, role TEXT NOT NULL, payload TEXT NOT NULL, '
+          'opened_revision_id TEXT, sealed_before_revision_id TEXT, '
+          'created_at INTEGER NOT NULL, UNIQUE(chat_id, seq))',
+        );
+      }
       if (withVirtualFs) {
         raw
           ..execute(_virtualFsV7)
@@ -707,6 +718,38 @@ void main() {
         .get();
     expect(columns.single.read<String>('name'), 'draft_mentions');
     expect(columns.single.read<String>('dflt_value'), "'[]'");
+  });
+
+  test('v25 → v26 adds the client message id and its per-chat index', () async {
+    final db = _openAtVersion(25, withMessages: true);
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name FROM pragma_table_info('messages') "
+          "WHERE name = 'client_message_id'",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    final indexes = await db
+        .customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'index' "
+          "AND name = 'messages_chat_client_message_id'",
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+    // Уникальность должна быть в пределах чата, а не глобальной.
+    final indexColumns = await db
+        .customSelect(
+          "SELECT name FROM pragma_index_info('messages_chat_client_message_id') "
+          'ORDER BY seqno',
+        )
+        .map((row) => row.read<String>('name'))
+        .get();
+
+    expect(columns, ['client_message_id']);
+    expect(indexes, ['messages_chat_client_message_id']);
+    expect(indexColumns, ['chat_id', 'client_message_id']);
   });
 
   test('v23 → v25 adds separate edit and metadata revisions', () async {

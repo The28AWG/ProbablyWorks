@@ -42,6 +42,7 @@ import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/workspace_path.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
+import 'package:uuid/uuid.dart';
 
 /// Один чат: шапка, лента, док внимания и композер с настройками.
 /// Используется и в компактном маршруте, и в оболочке.
@@ -902,6 +903,9 @@ class _ChatBodyState extends State<ChatBody> {
         attachments: attachments,
         mentions: _composer.mentions,
         sendNow: sendNow,
+        // Идентификатор создаётся один раз на действие. Повторная доставка
+        // того же события не создаст второе сообщение после потерянного ответа.
+        clientMessageId: const Uuid().v4(),
       ),
     );
     // Очистка поля попадает в блок через слушатель и обнуляет черновик этого чата.

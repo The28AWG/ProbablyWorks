@@ -948,18 +948,19 @@ void main() {
     expect((json['questions'] as List).single['text'], 'continue?');
   });
 
-  test('accepts a message and forwards sendNow', () async {
+  test('accepts a message and forwards sendNow and clientMessageId', () async {
     final (status, _) = await _request(
       client,
       base,
       'POST',
       '/api/v1/chats/c1/messages',
       token: _token,
-      body: {'text': 'do it', 'sendNow': true},
+      body: {'text': 'do it', 'sendNow': true, 'clientMessageId': 'client-1'},
     );
 
     expect(status, HttpStatus.accepted);
     expect(backend.sent, [('c1', 'do it', true)]);
+    expect(backend.clientMessageIds, ['client-1']);
   });
 
   test('resolves approvals with the requested scope', () async {
@@ -2452,6 +2453,7 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final sent = <(String, String, bool)>[];
+  final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
   int pendingTasks = 0;
@@ -2674,8 +2676,10 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
   }) async {
     sent.add((chatId, text, sendNow));
+    clientMessageIds.add(clientMessageId);
   }
 
   @override

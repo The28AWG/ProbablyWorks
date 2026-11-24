@@ -292,6 +292,22 @@ class ChatRepository implements DraftPersistence {
     return (await query.get()).map(_message).toList();
   }
 
+  /// Была ли отправка с таким [clientMessageId] уже записана в чате.
+  ///
+  /// Идентификатор уникален в пределах чата, поэтому проверка идёт по обоим
+  /// полям. По этому признаку повтор после потерянного ответа не создаёт
+  /// второе сообщение, а индекс ускоряет проверку и страхует от гонки.
+  Future<bool> hasClientMessage(String chatId, String clientMessageId) async {
+    final row =
+        await (_db.select(_messagesTable)..where(
+              (t) =>
+                  t.chatId.equals(chatId) &
+                  t.clientMessageId.equals(clientMessageId),
+            ))
+            .getSingleOrNull();
+    return row != null;
+  }
+
   Future<int> nextSeq(String chatId) async {
     final max = _messagesTable.seq.max();
     final row =
@@ -311,6 +327,7 @@ class ChatRepository implements DraftPersistence {
             id: message.id,
             chatId: message.chatId,
             seq: message.seq,
+            clientMessageId: Value(message.clientMessageId),
             role: message.role.name,
             payload: message.encodePayload(),
             openedRevisionId: Value(message.openedRevisionId),
@@ -624,6 +641,7 @@ class ChatRepository implements DraftPersistence {
     role: row.role,
     payload: row.payload,
     createdAt: row.createdAt,
+    clientMessageId: row.clientMessageId,
     openedRevisionId: row.openedRevisionId,
     sealedBeforeRevisionId: row.sealedBeforeRevisionId,
   );

@@ -52,6 +52,15 @@ class ChatDraftStore {
   final _editRevisions = <String, int>{};
   final _dirty = <String>{};
   final _editsDirty = <String>{};
+
+  /// Черновик из попытки, ответ на которую потерян.
+  ///
+  /// Он мог уже записаться на сервере. При следующем конфликте сверяем
+  /// серверную версию с этим снимком, а не с текущим текстом: пока ответ
+  /// терялся, пользователь мог продолжить печатать.
+  final _unconfirmedDrafts = <String, ChatDraft>{};
+  final _unconfirmedEdits = <String, Map<String, ChatDraft>>{};
+
   final _conflicts = <String, List<DraftConflict>>{};
   final _conflictChanges = StreamController<DraftConflict>.broadcast();
   Future<void>? _flushing;
@@ -275,12 +284,14 @@ class ChatDraftStore {
   /// Сохраняет черновик. `true` — изменение осталось несохранённым и требует
   /// повтора; `false` — записано, разрешено конфликтом или уже не нужно.
   Future<bool> _saveDraft(String id, DraftPersistence backend) async {
+    final draft = _drafts[id] ?? ChatDraft.empty;
     try {
       _draftRevisions[id] = await backend.saveDraft(
         id,
-        _drafts[id] ?? ChatDraft.empty,
+        draft,
         expectedRevision: _draftRevisions[id],
       );
+      _unconfirmedDrafts.remove(id);
       _removeConflict(id, DraftConflictKind.draft);
       return false;
     } on AgentApiException catch (error) {
@@ -292,10 +303,14 @@ class ChatDraftStore {
         discard(id);
         return false;
       }
+      // Ответ мог потеряться уже после записи на сервере: запоминаем, что
+      // именно ушло, чтобы следующий конфликт не считался чужим изменением.
+      _unconfirmedDrafts[id] = draft;
       _markDirty(id, DraftConflictKind.draft);
       return true;
     } on Object {
       // Сеть, таймаут или битый ответ: изменение не должно исчезнуть.
+      _unconfirmedDrafts[id] = draft;
       _markDirty(id, DraftConflictKind.draft);
       return true;
     }
@@ -303,12 +318,14 @@ class ChatDraftStore {
 
   /// Сохраняет правки сообщений. См. [_saveDraft] о возвращаемом значении.
   Future<bool> _saveEdits(String id, DraftPersistence backend) async {
+    final edits = _edits[id] ?? const {};
     try {
       _editRevisions[id] = await backend.saveMessageEdits(
         id,
-        _edits[id] ?? const {},
+        edits,
         expectedRevision: _editRevisions[id],
       );
+      _unconfirmedEdits.remove(id);
       _removeConflict(id, DraftConflictKind.messageEdits);
       return false;
     } on AgentApiException catch (error) {
@@ -319,10 +336,12 @@ class ChatDraftStore {
         discard(id);
         return false;
       }
+      _unconfirmedEdits[id] = edits;
       _markDirty(id, DraftConflictKind.messageEdits);
       return true;
     } on Object {
       // Сеть, таймаут или битый ответ: изменение не должно исчезнуть.
+      _unconfirmedEdits[id] = edits;
       _markDirty(id, DraftConflictKind.messageEdits);
       return true;
     }
@@ -333,8 +352,10 @@ class ChatDraftStore {
   static bool _isTerminal(AgentApiException error) =>
       error.code == 'chat_not_found' || error.code == 'unauthorized';
 
-  /// Читает удалённую версию для конфликта. `true` — снимок не получен, запись
-  /// осталась грязной.
+  /// Читает удалённую версию для конфликта.
+  ///
+  /// `true` — запись осталась грязной и требует повтора: серверный снимок не
+  /// получен или после потерянного ответа у пользователя появился новый текст.
   Future<bool> _rememberConflict(
     String id,
     DraftPersistence backend,
@@ -348,19 +369,58 @@ class ChatDraftStore {
         _markDirty(id, kind);
         return true;
       }
+      // Ответ на первую запись мог потеряться: на сервере уже лежит ровно
+      // наша версия, а повтор пришёл со старой ревизией. Это успех, а не
+      // конфликт: обновляем ревизию и не показываем баннер пользователю.
+      //
+      // Сверяемся со снимком, который ушёл в потерянной попытке, а не с
+      // текущим текстом: пока ответ терялся, пользователь мог напечатать
+      // больше, и тогда текущий текст заведомо не совпадёт с серверным.
+      final localDraft = _drafts[id] ?? ChatDraft.empty;
+      if (kind == DraftConflictKind.draft) {
+        final sentDraft = _unconfirmedDrafts.remove(id) ?? localDraft;
+        // Совпадение с текущим текстом тоже успех: сервер уже содержит то,
+        // что пользователь видит, и терять нечего.
+        if (_sameDraft(sentDraft, chat.draft) ||
+            _sameDraft(localDraft, chat.draft)) {
+          _draftRevisions[id] = chat.draftRevision;
+          _removeConflict(id, kind);
+          if (!_sameDraft(localDraft, chat.draft)) {
+            // Пользователь успел напечатать больше: этот текст ещё не на
+            // сервере и уходит обычной отложенной записью, а не повтором сбоя.
+            _markDirty(id, kind);
+            _scheduleEdit();
+          }
+          return false;
+        }
+      }
+      final localEdits = _edits[id] ?? const {};
+      if (kind == DraftConflictKind.messageEdits) {
+        final sentEdits = _unconfirmedEdits.remove(id) ?? localEdits;
+        if (_sameEdits(sentEdits, chat.messageEdits) ||
+            _sameEdits(localEdits, chat.messageEdits)) {
+          _editRevisions[id] = chat.messageEditsRevision;
+          _removeConflict(id, kind);
+          if (!_sameEdits(localEdits, chat.messageEdits)) {
+            _markDirty(id, kind);
+            _scheduleEdit();
+          }
+          return false;
+        }
+      }
       final conflict = kind == DraftConflictKind.draft
           ? DraftConflict(
               chatId: id,
               kind: kind,
               remoteRevision: chat.draftRevision,
-              local: _drafts[id] ?? ChatDraft.empty,
+              local: localDraft,
               remote: chat.draft,
             )
           : DraftConflict(
               chatId: id,
               kind: kind,
               remoteRevision: chat.messageEditsRevision,
-              localEdits: _edits[id] ?? const {},
+              localEdits: localEdits,
               remoteEdits: chat.messageEdits,
             );
       _conflicts.putIfAbsent(id, () => [])
@@ -426,10 +486,52 @@ class ChatDraftStore {
     if (index >= 0) conflicts[index] = conflict;
   }
 
+  /// Черновики совпадают по сохранённым полям.
+  ///
+  /// Обычное `==` у [ChatDraft] сравнивает вложения по ссылке: сервер
+  /// возвращает новые объекты, поэтому после успешной записи оно всегда
+  /// ложно. Байты вложений в сравнение не входят — они не сохраняются.
+  bool _sameDraft(ChatDraft a, ChatDraft b) =>
+      a.text == b.text &&
+      _sameAttachments(a.attachments, b.attachments) &&
+      _sameMentions(a.mentions, b.mentions);
+
+  bool _sameAttachments(List<AttachmentRef> a, List<AttachmentRef> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.name != right.name ||
+          left.mode != right.mode ||
+          left.content != right.content ||
+          left.mimeType != right.mimeType ||
+          left.sizeBytes != right.sizeBytes) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameMentions(List<MentionRef> a, List<MentionRef> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.kind != right.kind ||
+          left.path != right.path ||
+          left.start != right.start ||
+          left.end != right.end) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   bool _sameEdits(Map<String, ChatDraft>? a, Map<String, ChatDraft> b) {
     if (a == null || a.length != b.length) return false;
     for (final entry in a.entries) {
-      if (b[entry.key] != entry.value) return false;
+      final other = b[entry.key];
+      if (other == null || !_sameDraft(entry.value, other)) return false;
     }
     return true;
   }
@@ -468,6 +570,8 @@ class ChatDraftStore {
         : _conflictFor(chatId, kind);
     if (conflict == null) return;
     _removeConflict(chatId, conflict.kind);
+    _unconfirmedDrafts.remove(chatId);
+    _unconfirmedEdits.remove(chatId);
     if (conflict.kind == DraftConflictKind.draft) {
       // Пользователь мог продолжить печатать под баннером: сохраняем самую
       // свежую локальную версию, а не снимок на момент конфликта.
@@ -489,6 +593,8 @@ class ChatDraftStore {
         : _conflictFor(chatId, kind);
     if (conflict == null) return;
     _removeConflict(chatId, conflict.kind);
+    _unconfirmedDrafts.remove(chatId);
+    _unconfirmedEdits.remove(chatId);
     if (conflict.kind == DraftConflictKind.draft) {
       _drafts[chatId] = conflict.remote ?? ChatDraft.empty;
       _draftRevisions[chatId] = conflict.remoteRevision;
@@ -508,6 +614,8 @@ class ChatDraftStore {
     _editsDirty.remove(chatId);
     _draftRevisions.remove(chatId);
     _editRevisions.remove(chatId);
+    _unconfirmedDrafts.remove(chatId);
+    _unconfirmedEdits.remove(chatId);
     _conflicts.remove(chatId);
   }
 

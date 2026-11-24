@@ -2413,12 +2413,16 @@ final class ApiServer {
     final body = await _body(request);
     final text = body['text'] is String ? body['text'] as String : '';
     final attachments = _attachments(body['attachments']);
+    final clientMessageId = body['clientMessageId'] is String
+        ? body['clientMessageId'] as String
+        : null;
     await _backend.send(
       chatId,
       text,
       sendNow: body['sendNow'] == true,
       attachments: attachments,
       mentions: _mentions(body['mentions']),
+      clientMessageId: clientMessageId,
     );
     _json(request.response, HttpStatus.accepted, {'ok': true});
   }

@@ -13,12 +13,14 @@ class QueuedPrompt {
     this.attachments = const [],
     this.mentions = const [],
     this.note,
+    this.clientMessageId,
   }) : isEvent = false;
 
   const QueuedPrompt.event(this.text, {this.id = ''})
     : attachments = const [],
       mentions = const [],
       note = null,
+      clientMessageId = null,
       isEvent = true;
 
   final String id;
@@ -26,6 +28,10 @@ class QueuedPrompt {
   final List<AttachmentRef> attachments;
   final List<MentionRef> mentions;
   final bool isEvent;
+
+  /// Идентификатор отправки от клиента. Переживает очередь и запись сообщения,
+  /// чтобы повтор запроса после таймаута был распознан как то же действие.
+  final String? clientMessageId;
 
   /// Служебная заметка перед промптом, отдельным событием.
   ///
@@ -42,6 +48,7 @@ class QueuedPrompt {
           attachments: attachments,
           mentions: mentions,
           note: note,
+          clientMessageId: clientMessageId,
         );
 }
 

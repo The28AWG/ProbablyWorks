@@ -8,12 +8,26 @@ extension _ChatSessionRuntime on ChatSession {
     if (_queue.isEmpty) return;
     final items = _queue.drain();
     _emitQueue();
-    for (final item in items) {
-      if (item.isEvent) {
-        await _append(MessageRole.event, text: item.text);
-      } else {
-        await _persistPrompt(item);
+    // Очередь снимается целиком до первой записи. Пока пишется первый элемент,
+    // остальные уже не в очереди, но их сообщения ещё нет в БД: без этого
+    // набора повтор запроса с тем же id успел бы встать в очередь заново.
+    final clientMessageIds = <String>{
+      for (final item in items)
+        if (!item.isEvent && item.clientMessageId != null)
+          item.clientMessageId!,
+    };
+    _persistingClientMessages.addAll(clientMessageIds);
+    try {
+      for (final item in items) {
+        if (item.isEvent) {
+          await _append(MessageRole.event, text: item.text);
+        } else {
+          await _persistPrompt(item);
+        }
       }
+    } finally {
+      // `_persistPrompt` уже снимает свой id; повторное удаление безопасно.
+      _persistingClientMessages.removeAll(clientMessageIds);
     }
   }
 

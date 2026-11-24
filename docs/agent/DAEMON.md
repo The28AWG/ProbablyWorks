@@ -84,9 +84,14 @@ PATCH  /api/v1/chats/{id}/queue/{itemId}   {"expectedRevision": 3, "position": 0
 DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
 
 GET    /api/v1/chats/{id}/messages
-POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false}
+POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false, "clientMessageId": "..."}
 GET    /api/v1/chats/{id}/runs
 GET    /api/v1/chats/{id}/events     Server-Sent Events по чату
+
+`clientMessageId` необязателен и уникален в пределах чата. Повтор запроса с
+тем же значением после сетевого таймаута не создаёт второе сообщение и не
+запускает второй ход: сервер проверяет уже записанный идентификатор. Один и
+тот же идентификатор в разных чатах обозначает разные действия.
 
 PUT    /api/v1/approvals/{id}/decision         {"action": "allowOnce|allowTurn|allowChat|deny"}
 PUT    /api/v1/questions/{id}/answer           {"answer": "..."}

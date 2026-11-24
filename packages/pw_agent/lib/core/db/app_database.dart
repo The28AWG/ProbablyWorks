@@ -34,7 +34,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 25;
+  static const currentSchemaVersion = 26;
 
   static const _uuid = Uuid();
 
@@ -179,6 +179,14 @@ class AppDatabase extends _$AppDatabase {
       // Версия 25: ревизия метаданных чата для точечного PATCH.
       if (from < 25 && await _hasTable('chats')) {
         await m.addColumn(chats, chats.revision);
+      }
+      // Версия 26: идентификатор отправки для идемпотентного повтора.
+      // Уникальность — в пределах чата: один и тот же id в разных чатах
+      // обозначает разные действия. Индекс допускает много NULL: события и
+      // старые записи идентификатора не имеют.
+      if (from < 26 && await _hasTable('messages')) {
+        await m.addColumn(messages, messages.clientMessageId);
+        await m.createIndex(messagesChatClientMessageId);
       }
     },
   );

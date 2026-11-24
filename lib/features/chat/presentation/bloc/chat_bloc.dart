@@ -662,6 +662,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       attachments: event.attachments,
       mentions: event.mentions,
       sendNow: event.sendNow,
+      // Идентификатор создан вместе с событием: повторная доставка той же
+      // отправки не создаст второе сообщение после потерянного ответа.
+      clientMessageId: event.clientMessageId,
     );
     emit(state.copyWith(queue: _queueItems(), clearFailure: true));
     if (created) onChatCreated?.call(state.chatId!);

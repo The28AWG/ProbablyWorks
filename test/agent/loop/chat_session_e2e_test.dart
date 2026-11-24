@@ -1516,6 +1516,65 @@ void main() {
     },
   );
 
+  test(
+    'a repeated client message id does not create a second message',
+    () async {
+      final chatId = await createChat();
+      final session = hub.session(chatId);
+      llm.script.add([const LlmTextDelta('ok'), const LlmCompleted()]);
+      final finished = session.events.firstWhere(
+        (event) => event is AgentTurnFinished,
+      );
+
+      await session.submit('hello', clientMessageId: 'client-1');
+      await session.submit('hello', clientMessageId: 'client-1');
+      await finished;
+      // Повтор после того, как сообщение уже записано: сеть могла потерять
+      // ответ на первую попытку.
+      await session.submit('hello', clientMessageId: 'client-1');
+
+      final messages = await hub.chats.messages(chatId);
+      final user = messages
+          .where((message) => message.role == MessageRole.user)
+          .toList();
+      expect(user, hasLength(1));
+      expect(user.single.clientMessageId, 'client-1');
+    },
+  );
+
+  test('a repeated client message id is not queued twice', () async {
+    final chatId = await createChat(mode: PolicyMode.ask);
+    final session = hub.session(chatId);
+    final requested = Completer<ApprovalRequest>();
+    final approvals = broker.approvalRequests.listen((request) {
+      if (!requested.isCompleted) requested.complete(request);
+    });
+    addTearDown(approvals.cancel);
+    llm.script
+      ..add([
+        LlmCompleted(
+          toolCalls: [
+            _call(
+              'c1',
+              ToolNames.runCommand,
+              jsonEncode({'command': 'printf held'}),
+            ),
+          ],
+        ),
+      ])
+      ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+    await session.submit('hold');
+    final approval = await requested.future;
+    await session.submit('first', clientMessageId: 'queued-1');
+    await session.submit('first', clientMessageId: 'queued-1');
+
+    expect(session.queue, hasLength(1));
+    expect(session.queue.single.clientMessageId, 'queued-1');
+
+    broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+  });
+
   test('allowTurn grants the exact command for the rest of the turn', () async {
     final chatId = await createChat(mode: PolicyMode.ask);
     final requested = <String>[];
@@ -1921,7 +1980,7 @@ void main() {
 
     bloc.add(const ChatDraftEdited('вопрос'));
     final finished = hub.allEvents.firstWhere((e) => e is AgentTurnFinished);
-    bloc.add(const ChatSubmitted('вопрос'));
+    bloc.add(const ChatSubmitted('вопрос', clientMessageId: 'test-send-1'));
     await finished;
 
     expect(drafts.of(chatId).isEmpty, isTrue);
@@ -1974,7 +2033,7 @@ void main() {
 
     llm.script.add([const LlmTextDelta('ок'), const LlmCompleted()]);
     final finished = hub.allEvents.firstWhere((e) => e is AgentTurnFinished);
-    bloc.add(const ChatSubmitted('вопрос'));
+    bloc.add(const ChatSubmitted('вопрос', clientMessageId: 'test-send-2'));
     await finished;
 
     expect(bloc.state.unsaved, isFalse);

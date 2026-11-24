@@ -190,6 +190,18 @@ class ChatSession {
   /// Открытие чата их показывает. До этого зависимый вызов стоит, а независимый идёт.
   final Map<String, _ParkedCard> _parked = {};
 
+  /// Выполняющиеся отправки по `clientMessageId`.
+  ///
+  /// Повтор с тем же id ждёт исход первой попытки, а не создаёт второе
+  /// сообщение: сеть могла потерять ответ уже после записи на сервере.
+  final Map<String, Future<void>> _submissions = {};
+
+  /// Идентификаторы, которые прямо сейчас записываются в БД.
+  ///
+  /// Элемент уже ушёл из очереди, но сообщение ещё не вставлено. Без этого
+  /// набора повтор в такое окно успел бы встать в очередь заново.
+  final Set<String> _persistingClientMessages = {};
+
   /// История, прочитанная в текущем ходе. Внутри одного хода сообщения пишет
   /// только эта сессия, поэтому повторные чтения на каждом шаге не нужны.
   /// Вне хода кэш пуст: edit/delete и внешние изменения читают базу заново.
@@ -280,12 +292,81 @@ class ChatSession {
   /// [note] — служебная строка перед промптом (например, отложенная задача
   /// сработала позже срока). Пишется отдельным событием: [text] остаётся
   /// ровно тем, что было запланировано.
+  ///
+  /// [clientMessageId] делает отправку идемпотентной. Повтор с тем же id
+  /// возвращает исход первой попытки: таймаут после успешной записи не должен
+  /// запускать второй ход или создавать второе сообщение.
   Future<void> submit(
     String text, {
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
     bool sendNow = false,
     String? note,
+    String? clientMessageId,
+  }) {
+    final id = clientMessageId?.trim();
+    if (id == null || id.isEmpty) {
+      return _submit(
+        text,
+        attachments: attachments,
+        mentions: mentions,
+        sendNow: sendNow,
+        note: note,
+      );
+    }
+    final running = _submissions[id];
+    if (running != null) return running;
+    late final Future<void> future;
+    future =
+        _submitOnce(
+          id,
+          text,
+          attachments: attachments,
+          mentions: mentions,
+          sendNow: sendNow,
+          note: note,
+        ).whenComplete(() {
+          if (identical(_submissions[id], future)) _submissions.remove(id);
+        });
+    _submissions[id] = future;
+    return future;
+  }
+
+  /// Проверяет, не принято ли действие раньше, и только затем выполняет его.
+  ///
+  /// Проверки до и после чтения БД закрывают оба окна гонки: элемент могли
+  /// только что записать или уже вставить сообщение.
+  Future<void> _submitOnce(
+    String clientMessageId,
+    String text, {
+    required List<AttachmentRef> attachments,
+    required List<MentionRef> mentions,
+    required bool sendNow,
+    required String? note,
+  }) async {
+    bool pending() =>
+        _persistingClientMessages.contains(clientMessageId) ||
+        _queue.items.any((item) => item.clientMessageId == clientMessageId);
+    if (pending()) return;
+    if (await _hub.chats.hasClientMessage(chatId, clientMessageId)) return;
+    if (pending()) return;
+    await _submit(
+      text,
+      attachments: attachments,
+      mentions: mentions,
+      sendNow: sendNow,
+      note: note,
+      clientMessageId: clientMessageId,
+    );
+  }
+
+  Future<void> _submit(
+    String text, {
+    required List<AttachmentRef> attachments,
+    required List<MentionRef> mentions,
+    required bool sendNow,
+    required String? note,
+    String? clientMessageId,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty && attachments.isEmpty) return;
@@ -298,6 +379,7 @@ class ChatSession {
       attachments: [for (final a in attachments) a.redacted()],
       mentions: promptMentions,
       note: note,
+      clientMessageId: clientMessageId,
     );
     if (!_running) {
       _beginTurn();

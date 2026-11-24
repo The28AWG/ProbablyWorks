@@ -318,6 +318,7 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
     bool sendNow = false,
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
+    String? clientMessageId,
   }) async {
     await requireChat(chatId);
     if (text.trim().isEmpty && attachments.isEmpty) {
@@ -330,6 +331,7 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
           attachments: attachments,
           mentions: mentions,
           sendNow: sendNow,
+          clientMessageId: clientMessageId,
         );
   }
 
@@ -689,11 +691,13 @@ final class _LocalChatSession implements ChatSessionApi {
     List<AttachmentRef> attachments = const [],
     List<MentionRef> mentions = const [],
     bool sendNow = false,
+    String? clientMessageId,
   }) => _session.submit(
     text,
     attachments: attachments,
     mentions: mentions,
     sendNow: sendNow,
+    clientMessageId: clientMessageId,
   );
 
   @override
