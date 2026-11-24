@@ -210,7 +210,11 @@ final class _FakeNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? noticeId,
   }) => Future<void>.value();
+
+  @override
+  Future<void> cancel(String noticeId) => Future<void>.value();
 }
 
 final class _FakeMcpApi implements McpApi {

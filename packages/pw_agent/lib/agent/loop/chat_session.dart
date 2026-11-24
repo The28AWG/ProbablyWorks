@@ -64,14 +64,41 @@ class ChatSession {
     // Ожидание пользователя должно быть заметно, даже если окно приложения не в фокусе.
     _waitSub = _hub.broker.approvalRequests
         .where((r) => r.chatId == chatId)
-        .listen(
-          (request) => unawaited(
-            _notify(AgentNoticeKind.approvalNeeded, approvalId: request.id),
-          ),
-        );
+        .listen((request) {
+          final noticeId = agentNoticeId(
+            kind: AgentNoticeKind.approvalNeeded,
+            approvalId: request.id,
+          );
+          _pendingNotices.add(noticeId);
+          unawaited(
+            _notify(
+              AgentNoticeKind.approvalNeeded,
+              noticeId: noticeId,
+              approvalId: request.id,
+            ),
+          );
+        });
     _questionSub = _hub.broker.questions
         .where((q) => q.chatId == chatId)
-        .listen((_) => unawaited(_notify(AgentNoticeKind.questionAsked)));
+        .listen((question) {
+          final noticeId = agentNoticeId(
+            kind: AgentNoticeKind.questionAsked,
+            questionId: question.id,
+          );
+          _pendingNotices.add(noticeId);
+          unawaited(
+            _notify(
+              AgentNoticeKind.questionAsked,
+              noticeId: noticeId,
+              questionId: question.id,
+            ),
+          );
+        });
+    // Карточку могли закрыть в другом окне. Уведомление с её id нужно убрать,
+    // иначе нажатие в трее приведёт к уже неактуальному действию.
+    _resolutionSub = _hub.broker.resolutions
+        .where((resolution) => resolution.chatId == chatId)
+        .listen(_onResolution);
     _changesetSub = _hub.turnChangesets.changes
         .where((cs) => cs.chatId == chatId)
         .listen((cs) => _emit(AgentTurnChangesetChanged(chatId, cs)));
@@ -95,6 +122,14 @@ class ChatSession {
   late final StreamSubscription<ToolRun> _runSub;
   late final StreamSubscription<ApprovalRequest> _waitSub;
   late final StreamSubscription<UserQuestion> _questionSub;
+  late final StreamSubscription<InteractionResolution> _resolutionSub;
+
+  /// Карточки, для которых уведомление ещё актуально.
+  ///
+  /// Показ ждёт название чата из БД, поэтому закрытие карточки может прийти
+  /// раньше показа. Набор не даёт показать отменённое уведомление после
+  /// `cancel`.
+  final _pendingNotices = <String>{};
   String? _hostStubHostId;
   String? _hostStubText;
 
@@ -770,6 +805,7 @@ class ChatSession {
     await _runSub.cancel();
     await _waitSub.cancel();
     await _questionSub.cancel();
+    await _resolutionSub.cancel();
     await _changesetSub.cancel();
     await _events.close();
   }

@@ -51,6 +51,9 @@ extension _ChatSessionRuntime on ChatSession {
         detail: outcome.resultError
             ? '${outcome.status.name}, result error'
             : outcome.status.name,
+        // Каждая команда — отдельное событие: без id команды следующее
+        // уведомление в этом чате стёрло бы предыдущее.
+        eventId: run.id,
       ),
     );
     unawaited(_deliverEvent(text));

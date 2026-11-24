@@ -24,6 +24,110 @@ void main() {
     });
   });
 
+  group('agentNoticeId', () {
+    test('card notice is stable and uses the card id', () {
+      final first = agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        scope: 'p1',
+        chatId: 'c1',
+        approvalId: 'a1',
+      );
+      final second = agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        scope: 'p1',
+        chatId: 'c1',
+        approvalId: 'a1',
+      );
+
+      expect(first, second);
+      expect(first, 'p1:approvalNeeded:a1');
+    });
+
+    test('approval and question with the same id stay separate', () {
+      final approval = agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        approvalId: '1',
+      );
+      final question = agentNoticeId(
+        kind: AgentNoticeKind.questionAsked,
+        questionId: '1',
+      );
+
+      expect(approval, isNot(question));
+    });
+
+    test('profiles do not share notification ids', () {
+      final first = agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        scope: 'p1',
+        approvalId: 'a1',
+      );
+      final second = agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        scope: 'p2',
+        approvalId: 'a1',
+      );
+
+      expect(first, isNot(second));
+    });
+
+    test('turn notices are replaced per chat and kind', () {
+      final finished = agentNoticeId(
+        kind: AgentNoticeKind.turnFinished,
+        scope: 'p1',
+        chatId: 'c1',
+      );
+      final failed = agentNoticeId(
+        kind: AgentNoticeKind.turnFailed,
+        scope: 'p1',
+        chatId: 'c1',
+      );
+
+      expect(finished, 'p1:turnFinished:c1');
+      expect(failed, 'p1:turnFailed:c1');
+    });
+
+    test('distinct events in one chat keep separate ids', () {
+      final first = agentNoticeId(
+        kind: AgentNoticeKind.backgroundFinished,
+        eventId: 'run-1',
+      );
+      final second = agentNoticeId(
+        kind: AgentNoticeKind.backgroundFinished,
+        eventId: 'run-2',
+      );
+
+      expect(first, isNot(second));
+      expect(
+        agentNoticeId(
+          kind: AgentNoticeKind.backgroundFinished,
+          eventId: 'run-1',
+        ),
+        first,
+      );
+    });
+  });
+
+  group('notificationPluginId', () {
+    test('is stable for the same key and differs for another', () {
+      expect(
+        notificationPluginId('p1:approvalNeeded:a1'),
+        notificationPluginId('p1:approvalNeeded:a1'),
+      );
+      expect(
+        notificationPluginId('p1:approvalNeeded:a1'),
+        isNot(notificationPluginId('p1:approvalNeeded:a2')),
+      );
+    });
+
+    test('stays in the platform signed 32-bit range', () {
+      for (final key in ['', 'local', 'p1:turnFinished:c1']) {
+        expect(notificationPluginId(key), greaterThan(0));
+        expect(notificationPluginId(key), lessThan(0x80000000));
+      }
+    });
+  });
+
   group('composeAgentNotice', () {
     final en = lookupAppLocalizations(const Locale('en'));
     final ru = lookupAppLocalizations(const Locale('ru'));

@@ -13,5 +13,9 @@ final class WebAppNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? noticeId,
   }) => Future<void>.value();
+
+  @override
+  Future<void> cancel(String noticeId) => Future<void>.value();
 }

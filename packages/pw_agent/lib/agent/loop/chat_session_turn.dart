@@ -335,19 +335,71 @@ extension _ChatSessionTurn on ChatSession {
   Future<void> _notify(
     AgentNoticeKind kind, {
     String? detail,
+    String? noticeId,
     String? approvalId,
+    String? questionId,
+    String? eventId,
   }) async {
+    final id =
+        noticeId ??
+        agentNoticeId(
+          kind: kind,
+          chatId: chatId,
+          approvalId: approvalId,
+          questionId: questionId,
+          eventId: eventId,
+        );
     try {
       final chat = await _hub.chats.chat(chatId);
+      // Карточку могли закрыть, пока читалось название.
+      if (_isCardNotice(kind) && !_pendingNotices.contains(id)) return;
       await _hub.notifier.notify(
         kind: kind,
         chatTitle: chat?.title ?? '',
         detail: detail,
         chatId: chatId,
         approvalId: approvalId,
+        noticeId: id,
       );
+      // Карточку могли закрыть, пока показывалось уведомление: отмена успела
+      // пройти раньше платформенного показа, поэтому убираем его повторно.
+      if (_isCardNotice(kind) && !_pendingNotices.contains(id)) {
+        await _cancelNotice(id);
+      }
     } on Object catch (error) {
       _log.warning('notification skipped: $error');
+    }
+  }
+
+  static bool _isCardNotice(AgentNoticeKind kind) =>
+      kind == AgentNoticeKind.approvalNeeded ||
+      kind == AgentNoticeKind.questionAsked;
+
+  /// Убирает уведомление закрытой карточки. Решение могло прийти из другого
+  /// окна: карточка в UI уже исчезла, а кнопка в трее осталась бы. Для выбора
+  /// отката файлов системного уведомления нет.
+  void _onResolution(InteractionResolution resolution) {
+    final noticeId = switch (resolution) {
+      ApprovalResolved(:final requestId) => agentNoticeId(
+        kind: AgentNoticeKind.approvalNeeded,
+        approvalId: requestId,
+      ),
+      QuestionResolved(:final questionId) => agentNoticeId(
+        kind: AgentNoticeKind.questionAsked,
+        questionId: questionId,
+      ),
+      EditFileChangesResolved() => null,
+    };
+    if (noticeId == null) return;
+    _pendingNotices.remove(noticeId);
+    unawaited(_cancelNotice(noticeId));
+  }
+
+  Future<void> _cancelNotice(String noticeId) async {
+    try {
+      await _hub.notifier.cancel(noticeId);
+    } on Object catch (error) {
+      _log.fine('notification cancel skipped: $error');
     }
   }
 

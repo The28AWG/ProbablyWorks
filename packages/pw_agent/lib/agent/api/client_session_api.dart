@@ -40,6 +40,29 @@ final class ClientSessionView {
   }
 }
 
+/// Открыт ли [chatId] в сессии, которая сейчас в фокусе.
+///
+/// Именно это состояние означает «пользователь видит чат»: фоновое окно может
+/// держать тот же чат в стеке, но пользователь смотрит другое приложение или
+/// другую вкладку. Проверка нужна перед системным уведомлением: оно не должно
+/// дублировать событие, которое уже на экране, даже если экран на другом
+/// устройстве.
+///
+/// [includeCurrent] выключают, когда фокус текущего окна проверяется отдельно:
+/// presence этого окна может отставать, а устаревший `focused` не должен
+/// скрывать уведомление на самом устройстве.
+bool isChatVisibleInPresence(
+  Iterable<ClientSessionView> sessions,
+  String chatId, {
+  bool includeCurrent = true,
+}) => sessions.any(
+  (session) =>
+      (includeCurrent || !session.current) &&
+      session.online &&
+      session.focused &&
+      session.activeChatId == chatId,
+);
+
 /// Присутствие клиентов и список подключений. Реализуется удалённым API;
 /// встроенный агент возвращает пустой список.
 abstract interface class ClientSessionApi {

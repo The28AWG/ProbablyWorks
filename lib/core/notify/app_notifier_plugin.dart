@@ -44,6 +44,22 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
   return (title: name.isEmpty ? action : '$action · $name', body: body);
 }
 
+/// Целочисленный id для платформенного API уведомлений.
+///
+/// Платформа принимает только int, а стабильный ключ — строка. FNV-1a даёт
+/// одинаковый id при повторном показе и отмене, в том числе после перезапуска
+/// приложения: уведомление с тем же ключом обновляется, а не дублируется.
+/// Старший бит снят и у начального значения: некоторые платформы считают id
+/// знаковым, а хеш пустой строки иначе остался бы больше 2^31-1.
+int notificationPluginId(String noticeId) {
+  var hash = 0x811c9dc5 & 0x7fffffff;
+  for (final unit in noticeId.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x01000193) & 0x7fffffff;
+  }
+  return hash == 0 ? 1 : hash;
+}
+
 /// Нужно ли показывать системное уведомление при данном состоянии жизненного цикла.
 ///
 /// Во Flutter `resumed` означает, что окно в фокусе (на desktop — хотя бы одно окно приложения
@@ -77,7 +93,6 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
   Future<void>? _permission;
   NotificationActionHandler? _actionHandler;
   NotificationActionRequest? _pendingAction;
-  var _nextId = 1;
 
   static const _channelId = 'agent_events';
   static const _channelName = 'Agent events';
@@ -112,6 +127,7 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? noticeId,
   }) async {
     if (!shouldShowNotification(SchedulerBinding.instance.lifecycleState)) {
       return;
@@ -129,8 +145,12 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
       final permission = _permission ??= _requestPermissions();
       await permission;
       final approval = kind == AgentNoticeKind.approvalNeeded;
+      final id = notificationPluginId(
+        noticeId ??
+            agentNoticeId(kind: kind, chatId: chatId, approvalId: approvalId),
+      );
       await _plugin.show(
-        id: _nextId++,
+        id: id,
         title: text.title,
         body: text.body,
         payload: _encodePayload(
@@ -156,6 +176,21 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
       );
     } on Object catch (error) {
       _log.fine('notification skipped: $error');
+    }
+  }
+
+  @override
+  Future<void> cancel(String noticeId) async {
+    try {
+      // Инициализация нужна и для отмены: платформенная реализация плагина
+      // регистрируется в `initialize`, а без неё `cancel` — no-op на Android
+      // и исключение на остальных платформах. Разрешения при этом не
+      // запрашиваются: они остаются заботой показа.
+      final ready = _ready ??= _initialize();
+      if (!await ready) return;
+      await _plugin.cancel(id: notificationPluginId(noticeId));
+    } on Object catch (error) {
+      _log.fine('notification cancel skipped: $error');
     }
   }
 

@@ -27,6 +27,46 @@ enum AgentNoticeKind {
   backgroundFinished,
 }
 
+/// Устойчивый id системного уведомления.
+///
+/// Один и тот же ключ означает одно и то же уведомление: повторный показ
+/// обновляет запись в трее, а [AppNotifier.cancel] убирает её. Поэтому
+/// закрытая карточка не оставляет кнопку на уже неактуальное действие, а
+/// событие, пришедшее из двух окон, не превращается в две одинаковые строки.
+///
+/// Для карточек ключ строится по id карточки: он уникален и приходит в
+/// событиях закрытия. Для событий хода — по чату и типу: новое завершение
+/// хода в том же чате заменяет предыдущее уведомление, а не копится в трее.
+/// События, которые повторяются в одном чате и несут разный смысл (завершение
+/// конкретной фоновой команды), различаются [eventId]: иначе следующая команда
+/// стёрла бы уведомление о предыдущей.
+///
+/// [scope] отделяет уведомления разных профилей: id карточек уникальны на
+/// сервере, но два демона могут выдать одинаковые значения. Пустой scope
+/// означает локального агента: у встроенного профиля соседей нет.
+String agentNoticeId({
+  required AgentNoticeKind kind,
+  String? scope,
+  String? chatId,
+  String? approvalId,
+  String? questionId,
+  String? eventId,
+}) {
+  final prefix = scope == null || scope.isEmpty ? 'local' : scope;
+  final cardId = switch (kind) {
+    AgentNoticeKind.approvalNeeded => approvalId,
+    AgentNoticeKind.questionAsked => questionId,
+    _ => null,
+  };
+  if (cardId != null && cardId.isNotEmpty) {
+    return '$prefix:${kind.name}:$cardId';
+  }
+  if (eventId != null && eventId.isNotEmpty) {
+    return '$prefix:${kind.name}:$eventId';
+  }
+  return '$prefix:${kind.name}:${chatId ?? ''}';
+}
+
 /// Системное уведомление о событии агента. Не показывается, пока окно приложения в фокусе:
 /// пользователь и так видит событие в чате.
 ///
@@ -39,6 +79,10 @@ abstract interface class AppNotifier {
   /// [profileId], [chatId] и [approvalId] нужны кнопкам действия: открыть чат
   /// или ответить на карточку подтверждения. Локальный агент профиль не знает
   /// и передаёт null; клиент подставляет локальный профиль.
+  ///
+  /// [noticeId] — устойчивый ключ из [agentNoticeId]. Показ с тем же ключом
+  /// обновляет существующее уведомление, а не добавляет второе. Если ключ не
+  /// передан, реализация строит его из [kind], [chatId] и [approvalId].
   Future<void> notify({
     required AgentNoticeKind kind,
     required String chatTitle,
@@ -46,5 +90,13 @@ abstract interface class AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? noticeId,
   });
+
+  /// Убирает уведомление с ключом [noticeId] из системного трея.
+  ///
+  /// Нужен, когда карточку закрыли в любом окне: нажатие на устаревшее
+  /// уведомление уже не должно вести к неактуальному действию. Отмена
+  /// несуществующего уведомления ничего не делает.
+  Future<void> cancel(String noticeId);
 }

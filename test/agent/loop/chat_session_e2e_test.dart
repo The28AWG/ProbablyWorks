@@ -131,7 +131,15 @@ class _FakeLlm implements LlmProvider {
   }
 }
 
-class _SilentNotifier implements AppNotifier {
+class _RecordingNotifier implements AppNotifier {
+  final notices = <String?>[];
+  final cancelled = <String>[];
+  final events = <String>[];
+
+  /// Если задан, `notify` ждёт его: так проверяется закрытие карточки во время
+  /// платформенного показа.
+  Completer<void>? gate;
+
   @override
   Future<void> notify({
     required AgentNoticeKind kind,
@@ -140,8 +148,18 @@ class _SilentNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? noticeId,
   }) async {
-    return;
+    final pending = gate;
+    if (pending != null) await pending.future;
+    notices.add(noticeId);
+    events.add('notify:${noticeId ?? ''}');
+  }
+
+  @override
+  Future<void> cancel(String noticeId) async {
+    cancelled.add(noticeId);
+    events.add('cancel:$noticeId');
   }
 }
 
@@ -164,6 +182,7 @@ void main() {
   late AgentHub hub;
   late InteractionBroker broker;
   late ChatDraftStore drafts;
+  late _RecordingNotifier notifier;
 
   setUp(() async {
     db = openInMemoryDatabase();
@@ -180,6 +199,7 @@ void main() {
       HostKeyConfirmations(),
     );
     broker = InteractionBroker();
+    notifier = _RecordingNotifier();
     final registry = ActiveExecRegistry();
     final bus = LiveOutputBus();
     final logs = ExecLogStore(tmp);
@@ -247,7 +267,7 @@ void main() {
       registry,
       logs,
       turnChangesets,
-      _SilentNotifier(),
+      notifier,
       ProjectLifecycleService(db, projectStore, hosts, runtimes),
       projectStore,
       PolicyProfileRepository(db),
@@ -4337,5 +4357,69 @@ void main() {
     await sub.cancel();
     await hub.pruneSessions(idleAfter: Duration.zero, keep: 0);
     expect(hub.cachedSessionCount, 0);
+  });
+
+  group('system notices', () {
+    const approvalId = 'approval-1';
+
+    ApprovalRequest pendingApproval() => const ApprovalRequest(
+      id: approvalId,
+      chatId: 'chat-1',
+      toolName: ToolNames.runCommand,
+      summary: 'ls',
+      reason: 'ask',
+    );
+
+    test('a closed card cancels its system notice', () async {
+      await createChat();
+      hub.session('chat-1');
+
+      final decision = broker.requestApproval(pendingApproval());
+      await pumpEventQueue();
+      expect(notifier.notices, ['local:approvalNeeded:$approvalId']);
+
+      broker.resolveApproval(approvalId, const ApprovalDecision.allowOnce());
+      expect((await decision).allowed, isTrue);
+      await pumpEventQueue();
+
+      expect(notifier.cancelled, ['local:approvalNeeded:$approvalId']);
+    });
+
+    test('a card resolved before the show is not shown', () async {
+      await createChat();
+      hub.session('chat-1');
+
+      final decision = broker.requestApproval(pendingApproval());
+      broker.resolveApproval(approvalId, const ApprovalDecision.deny());
+      await decision;
+      await pumpEventQueue();
+
+      expect(notifier.notices, isEmpty);
+      expect(notifier.cancelled, ['local:approvalNeeded:$approvalId']);
+    });
+
+    test('a card closed during the show is cancelled again', () async {
+      await createChat();
+      hub.session('chat-1');
+      final gate = Completer<void>();
+      notifier.gate = gate;
+
+      final decision = broker.requestApproval(pendingApproval());
+      await pumpEventQueue();
+
+      broker.resolveApproval(approvalId, const ApprovalDecision.allowOnce());
+      await pumpEventQueue();
+      gate.complete();
+      await decision;
+      await pumpEventQueue();
+
+      expect(
+        notifier.events.where(
+          (event) => event == 'cancel:local:approvalNeeded:$approvalId',
+        ),
+        hasLength(2),
+      );
+      expect(notifier.events.last, 'cancel:local:approvalNeeded:$approvalId');
+    });
   });
 }

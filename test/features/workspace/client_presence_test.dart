@@ -103,6 +103,38 @@ void main() {
     expect(find.textContaining('Viewing: Alpha'), findsNothing);
   });
 
+  test('a chat is visible only in a focused session', () {
+    final sessions = [
+      _session('background', activeChatId: 'c1'),
+      _session('phone', activeChatId: 'c1', focused: true),
+    ];
+
+    expect(isChatVisibleInPresence(sessions, 'c1'), isTrue);
+    expect(isChatVisibleInPresence(sessions, 'c2'), isFalse);
+    expect(
+      isChatVisibleInPresence([
+        _session('background', activeChatId: 'c1'),
+      ], 'c1'),
+      isFalse,
+    );
+  });
+
+  test('presence can ignore the current screen', () {
+    final sessions = [
+      _session('current', activeChatId: 'c1', focused: true, current: true),
+      _session('phone', activeChatId: 'c1', focused: true),
+    ];
+
+    expect(
+      isChatVisibleInPresence(sessions, 'c1', includeCurrent: false),
+      isTrue,
+    );
+    expect(
+      isChatVisibleInPresence([sessions.first], 'c1', includeCurrent: false),
+      isFalse,
+    );
+  });
+
   testWidgets('presence button is disabled without sessions', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

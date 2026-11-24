@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
+import 'package:probably_works/app/notifications/profile_notice_bridge.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/core/platform/client_info.dart';
@@ -10,6 +11,7 @@ import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -17,8 +19,6 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
-
-import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -64,6 +64,13 @@ class ProfileService {
   final _remote = <String, RemoteAgentApi>{};
   final _listeners = <String, List<StreamSubscription<Object?>>>{};
   final _tokens = <String, String>{};
+
+  /// Общие запросы присутствия на профиль.
+  ///
+  /// События приходят пачками, и каждое уведомление иначе отправляло бы свой
+  /// `GET /client/sessions`. Один запрос отдаёт снимок всем ожидающим; после
+  /// завершения запись удаляется, поэтому следующий показ читает свежий список.
+  final _presenceRefreshes = <AgentApi, Future<List<ClientSessionView>>>{};
 
   var _profiles = <AgentProfile>[];
   var _loaded = false;
@@ -321,6 +328,7 @@ class ProfileService {
     for (final id in _listeners.keys.toList()) {
       await _disposeRemote(id);
     }
+    _presenceRefreshes.clear();
     _remote.clear();
     _clientSessionChannel.close();
     await _changes.close();
@@ -381,65 +389,58 @@ class ProfileService {
   /// Сервер не умеет показывать системные уведомления GUI, поэтому клиент
   /// повторяет их по SSE и потокам карточек удалённого профиля. Локальный
   /// агент уведомляет сам через `ChatSession`, здесь его нет.
+  ///
+  /// Перед показом проверяется presence: если тот же чат открыт в активной
+  /// сессии на другом экране, пользователь уже видит событие. Проверка
+  /// запрашивает свежий список, чтобы сначала уведомление не появилось из-за
+  /// устаревшего снимка после переключения устройства.
   List<StreamSubscription<Object?>> _listenNotices(
     AgentApi api,
     String profileId,
-  ) => [
-    api.events.listen((event) {
-      final kind = switch (event) {
-        AgentTurnFinished(end: TurnEnd.completed) =>
-          AgentNoticeKind.turnFinished,
-        AgentTurnFinished(end: TurnEnd.stepLimit) =>
-          AgentNoticeKind.stepLimitReached,
-        AgentTurnFinished(end: TurnEnd.budget) =>
-          AgentNoticeKind.turnBudgetReached,
-        AgentTurnFinished(end: TurnEnd.stalled) =>
-          AgentNoticeKind.progressStalled,
-        AgentTurnFinished(end: TurnEnd.failed) => AgentNoticeKind.turnFailed,
-        _ => null,
-      };
-      if (kind != null) {
-        unawaited(_notify(api, profileId, event.chatId, kind));
-      }
-    }),
-    api.approvals.listen(
-      (request) => unawaited(
-        _notify(
-          api,
-          profileId,
-          request.chatId,
-          AgentNoticeKind.approvalNeeded,
-          approvalId: request.id,
-        ),
-      ),
-    ),
-    api.questions.listen(
-      (question) => unawaited(
-        _notify(api, profileId, question.chatId, AgentNoticeKind.questionAsked),
-      ),
-    ),
-  ];
+  ) => ProfileNoticeBridge(
+    api: api,
+    notifier: _notifier,
+    profileId: profileId,
+    isVisible: (chatId) => _chatVisibleInFocusedSession(api, chatId),
+  ).listen();
 
-  Future<void> _notify(
-    AgentApi api,
-    String profileId,
-    String chatId,
-    AgentNoticeKind kind, {
-    String? approvalId,
-  }) async {
-    var title = '';
-    try {
-      title = (await api.chat(chatId))?.title ?? '';
-    } on Object {
-      // Название не критично: уведомление покажет только действие.
+  Future<bool> _chatVisibleInFocusedSession(AgentApi api, String chatId) async {
+    final Object source = api;
+    if (source case final ClientSessionApi presence) {
+      try {
+        // Уведомление не должно ждать медленную сеть: за пару секунд presence
+        // либо подтвердит, что чат уже виден, либо покажем уведомление.
+        final sessions = await _refreshPresence(
+          api,
+          presence,
+        ).timeout(const Duration(seconds: 2));
+        // Фокус этого окна уже проверил `PluginAppNotifier`: presence своего
+        // экрана может отставать и скрыть уведомление на этом устройстве зря.
+        return isChatVisibleInPresence(sessions, chatId, includeCurrent: false);
+      } on Object {
+        // Без свежего presence лучше показать лишнее уведомление, чем
+        // пропустить запрос подтверждения.
+        return false;
+      }
     }
-    await _notifier.notify(
-      kind: kind,
-      chatTitle: title,
-      profileId: profileId,
-      chatId: chatId,
-      approvalId: approvalId,
+    return false;
+  }
+
+  /// Читает список присутствия, объединяя одновременные запросы профиля.
+  ///
+  /// Запись снимается по завершении, поэтому следующий показ после ответа
+  /// снова читает сервер, а не опирается на устаревший снимок.
+  Future<List<ClientSessionView>> _refreshPresence(
+    AgentApi api,
+    ClientSessionApi presence,
+  ) {
+    final existing = _presenceRefreshes[api];
+    if (existing != null) return existing;
+    final future = presence.refreshClientSessions().whenComplete(
+      () => _presenceRefreshes.remove(api),
     );
+    _presenceRefreshes[api] = future;
+    return future;
   }
 
   Future<void> _persist() => _settings.write(
