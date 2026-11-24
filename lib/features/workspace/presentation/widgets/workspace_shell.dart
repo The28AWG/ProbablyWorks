@@ -356,6 +356,7 @@ class _RailSlot extends StatelessWidget {
     onExpand: onExpand,
     onNewChat: () => openNewChat(context),
     onOpenTab: (tab) => showWorkspaceTab(context, tab),
+    presence: const WorkspacePresenceRail(),
   );
 }
 

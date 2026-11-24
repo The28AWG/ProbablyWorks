@@ -10,6 +10,7 @@ import 'package:probably_works/features/workspace/presentation/widgets/workspace
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
@@ -42,6 +43,27 @@ Chat _chat(
   updatedAt: updatedAt ?? _now,
 );
 
+ClientSessionView _presence(
+  String id, {
+  String? activeChatId,
+  bool current = false,
+  bool focused = false,
+}) => ClientSessionView(
+  id: id,
+  deviceId: id,
+  clientApp: 'ProbablyWorks',
+  clientVersion: '2.0.0',
+  clientBuild: '1',
+  clientPlatform: 'linux',
+  activeChatId: activeChatId,
+  createdAt: _now,
+  lastSeenAt: _now,
+  expiresAt: _now.add(const Duration(minutes: 1)),
+  focused: focused,
+  online: true,
+  current: current,
+);
+
 class _FakeChats implements ChatRepository {
   _FakeChats(this._chats);
 
@@ -55,11 +77,30 @@ class _FakeChats implements ChatRepository {
       throw UnsupportedError('ChatRepository is not used in this test');
 }
 
-class _FakeApi implements AgentApi {
-  _FakeApi(this._chats, this._hosts);
+class _FakeApi implements AgentApi, ClientSessionApi {
+  _FakeApi(this._chats, this._hosts, [this._sessions = const []]);
 
   final List<Chat> _chats;
   final List<Host> _hosts;
+  final List<ClientSessionView> _sessions;
+
+  @override
+  Stream<List<ClientSessionView>> get clientSessions => Stream.value(_sessions);
+
+  @override
+  Future<List<ClientSessionView>> refreshClientSessions() async => _sessions;
+
+  /// Сколько раз тест попросил обновить присутствие.
+  var presenceUpdates = 0;
+
+  @override
+  void setPresence({
+    bool? focused,
+    String? activeChatId,
+    bool clearActiveChat = false,
+  }) {
+    presenceUpdates++;
+  }
 
   @override
   AgentStatus get status => AgentStatus.online;
@@ -98,10 +139,11 @@ class _FakeApi implements AgentApi {
 
 /// Поднимает развёрнутую панель. [onCollapse] передаётся наружу для проверки, [selectedChatId] и [activeTab]
 /// задают выделение так же, как это делают маршруты в приложении.
-Future<void> _pumpSidebar(
+Future<ChatListCubit> _pumpSidebar(
   WidgetTester tester, {
   required List<Chat> chats,
   List<Host> hosts = const [],
+  List<ClientSessionView> sessions = const [],
   ThemeData? theme,
   VoidCallback? onCollapse,
   String? selectedChatId,
@@ -109,7 +151,7 @@ Future<void> _pumpSidebar(
   void Function(WorkspaceTab tab)? onOpenTab,
 }) async {
   final cubit = ChatListCubit(
-    _FakeApi(chats, hosts),
+    _FakeApi(chats, hosts, sessions),
     ChatDraftStore(_FakeChats(chats)),
   );
   addTearDown(cubit.close);
@@ -139,6 +181,7 @@ Future<void> _pumpSidebar(
     ),
   );
   await tester.pumpAndSettle();
+  return cubit;
 }
 
 void main() {
@@ -254,6 +297,38 @@ void main() {
     await tester.pump();
 
     expect(expanded, 1);
+  });
+
+  testWidgets('shows other screens and marks chats open on them', (
+    tester,
+  ) async {
+    final cubit = await _pumpSidebar(
+      tester,
+      chats: [_chat('a', 'Alpha'), _chat('b', 'Beta')],
+      sessions: [
+        _presence('s1', current: true),
+        _presence('s2', activeChatId: 'a', focused: true),
+      ],
+    );
+
+    expect(cubit.state.sessions, hasLength(2));
+    expect(cubit.state.otherOnlineSessions, hasLength(1));
+    expect(find.text('Projects'), findsOneWidget);
+    expect(find.text('1 other screen'), findsOneWidget);
+    expect(
+      find.byTooltip(
+        'Open on other screens: ProbablyWorks 2.0.0 · linux · #s2',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('1 other screen'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connected screens'), findsOneWidget);
+    expect(find.text('ProbablyWorks 2.0.0'), findsNWidgets(2));
+    expect(find.textContaining('Viewing: Alpha'), findsOneWidget);
+    expect(find.textContaining('This screen'), findsOneWidget);
   });
 
   testWidgets('sidebar tabs report the tapped section', (tester) async {

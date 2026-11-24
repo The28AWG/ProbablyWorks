@@ -23,6 +23,14 @@ String? selectedChatIdOf(TabsRouter tabs) {
   return top.params.getString('chatId');
 }
 
+/// Чат, который пользователь видит прямо сейчас: только на активной вкладке
+/// чатов. Стек вкладки остаётся живым при переходе в настройки, но открытым
+/// чатом для присутствия он уже не считается.
+String? visibleChatIdOf(TabsRouter tabs) =>
+    tabs.activeIndex == WorkspaceTab.chats.index
+    ? selectedChatIdOf(tabs)
+    : null;
+
 /// Id проекта, открытого в стеке вкладки проектов. `null`, если открыт список или другой раздел.
 String? selectedProjectIdOf(TabsRouter tabs) {
   final top = _projectsStack(tabs)?.topRoute;

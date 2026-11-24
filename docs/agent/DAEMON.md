@@ -189,13 +189,17 @@ Content-Type: application/json
   несколькими подключениями. Это не глобальный уникальный id и не граница
   безопасности.
 - TTL сессии по умолчанию 60 секунд, heartbeat — 20 секунд. Любой запрос и
-  `PUT /client/session` продлевают сессию.
+  `PUT /client/session` продлевают сессию. Открытый SSE тоже продлевает её:
+  сервер обновляет `lastSeenAt` на ping.
+- Закрытие вкладки ускоряет `PUT /client/session` с `{"closing": true}` или
+  обрыв последнего SSE. Сессия удаляется через `closeGrace` (5 секунд), если
+  за это время не пришёл обычный запрос, heartbeat или новое SSE.
 - `410 session_expired` означает, что запрос не выполнен и его можно
   безопасно повторить после нового рукопожатия.
 - `400 session_required` — заголовка нет. Исключения: `/health`,
   `/client/probe` и `/client/handshake`.
-- `PUT /client/session` принимает `{"focused": true, "activeChatId": "..."}`;
-  это присутствие, по которому видно, где открыт чат.
+- `PUT /client/session` принимает `{"focused": true, "activeChatId": "..."}`
+  для присутствия и `{"closing": true}` для отложенного закрытия вкладки.
 - `GET /client/sessions` возвращает все клиентские сессии и помечает текущую;
   `DELETE` закрывает текущую и её SSE. Изменения состава сессий и присутствия
   приходят событием `clientSessionsChanged`; неизменённый heartbeat его не

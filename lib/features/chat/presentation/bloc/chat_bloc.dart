@@ -208,6 +208,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         questions: _hub.broker.pendingQuestions(event.chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
         draftConflict: _drafts.conflictFor(event.chatId),
+        clientSessions: _sessionsList,
         otherSessions: _otherSessions(event.chatId),
         loading: true,
       ),
@@ -300,7 +301,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _editFileChangesSub?.cancel();
     await _resolutionSub?.cancel();
     await _conflictSub?.cancel();
-    _sessions?.setPresence(clearActiveChat: true);
     await _sessionsSub?.cancel();
     await _reconnectSub?.cancel();
     await _catalogSub?.cancel();
@@ -411,7 +411,6 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _editFileChangesSub = null;
     _resolutionSub = null;
     _conflictSub = null;
-    _sessions?.setPresence(clearActiveChat: true);
     await _sessionsSub?.cancel();
     _sessionsSub = null;
     _pendingLive.clear();
@@ -443,7 +442,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         .listen((conflict) => add(_ConflictChanged(conflict)));
     final sessions = _sessions;
     if (sessions != null) {
-      sessions.setPresence(activeChatId: chatId);
+      // Присутствие отправляет _PresenceLifecycle по маршруту: оно знает,
+      // открыта ли вкладка чатов и какой чат действительно видит пользователь.
       _sessionsSub = sessions.clientSessions.listen(
         (items) => add(_SessionsChanged(items)),
       );
@@ -492,6 +492,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       questions: _hub.broker.pendingQuestions(event.chatId),
       editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
       draftConflict: _drafts.conflictFor(event.chatId),
+      clientSessions: _sessionsList,
       otherSessions: _otherSessions(event.chatId),
       // Последний точный usage и окно модели доступны до первого запроса:
       // чип не пропадает после перезапуска и не берёт лимит чужого чата.
@@ -1245,7 +1246,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   void _onSessionsChanged(_SessionsChanged event, Emitter<ChatState> emit) {
     _sessionsList = event.sessions;
-    emit(state.copyWith(otherSessions: _otherSessions(state.chatId)));
+    emit(
+      state.copyWith(
+        clientSessions: _sessionsList,
+        otherSessions: _otherSessions(state.chatId),
+      ),
+    );
   }
 
   void _onLiveChunk(_LiveChunk event, Emitter<ChatState> emit) {

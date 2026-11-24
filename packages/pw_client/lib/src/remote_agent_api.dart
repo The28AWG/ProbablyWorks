@@ -137,7 +137,7 @@ class RemoteAgentApi
   /// Идентификатор запущенного сервера из последнего `/health` или handshake.
   String? get instanceId => _instanceId;
 
-  /// Обновляет присутствие. Следующий heartbeat отправит изменения.
+  /// Обновляет присутствие и сразу отправляет его вместе со списком экранов.
   @override
   void setPresence({
     bool? focused,
@@ -150,7 +150,17 @@ class RemoteAgentApi
     } else if (activeChatId != null) {
       _activeChatId = activeChatId;
     }
-    if (!_disposed) unawaited(_sendHeartbeat());
+    if (!_disposed) unawaited(_publishPresence());
+  }
+
+  /// Отправляет присутствие и сразу перечитывает список экранов.
+  ///
+  /// После долгой фоновой вкладки heartbeat мог не дойти, и сессия успела
+  /// истечь. Успешный heartbeat после возврата фокуса восстанавливает её, а
+  /// повторное чтение снимает устаревший список, в котором текущего экрана нет.
+  Future<void> _publishPresence() async {
+    await _sendHeartbeat();
+    if (!_disposed) await _refreshClientSessionsQuietly();
   }
 
   /// Текущая пауза перед следующей попыткой; после успеха сбрасывается.
@@ -185,6 +195,16 @@ class RemoteAgentApi
       StreamController<List<ClientSessionView>>.broadcast();
   final _reconnects = StreamController<void>.broadcast();
   bool _reconnectPending = false;
+
+  /// Номер последнего запроса списка сессий. Ответы старых запросов не должны
+  /// перезаписывать более новый снимок.
+  int _clientSessionsRefreshSequence = 0;
+
+  /// Последний принятый снимок списка сессий.
+  ///
+  /// Хранится отдельно, потому что отклонённый устаревший ответ нельзя отдавать
+  /// вызывающему: иначе вызывающий применил бы его к своему состоянию в обход
+  /// защиты от гонки.
   List<ClientSessionView> _clientSessions = const [];
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _runtimeChanges = StreamController<ModelRuntimeState>.broadcast();
@@ -277,14 +297,26 @@ class RemoteAgentApi
     }
   }
 
+  /// Читает список сессий.
+  ///
+  /// Снимок — это состояние на момент ответа. Если два запроса уйдут
+  /// одновременно, более старый ответ может прийти позже и перезаписать
+  /// свежий: один экран покажет трёх клиентов, другой двух. Поэтому ответ
+  /// применяется, только если после его отправки не начался более новый запрос.
+  ///
+  /// Возвращается последний принятый снимок. Устаревший ответ не отдаётся
+  /// вызывающему даже как результат: применять его к своему состоянию нельзя.
   @override
   Future<List<ClientSessionView>> refreshClientSessions() async {
+    final sequence = ++_clientSessionsRefreshSequence;
     final json = await _get('/client/sessions');
-    _clientSessions = _clientSessionsFrom(json);
+    final sessions = _clientSessionsFrom(json);
+    if (sequence != _clientSessionsRefreshSequence) return _clientSessions;
+    _clientSessions = sessions;
     if (!_clientSessionChanges.isClosed) {
-      _clientSessionChanges.add(_clientSessions);
+      _clientSessionChanges.add(sessions);
     }
-    return _clientSessions;
+    return sessions;
   }
 
   @override

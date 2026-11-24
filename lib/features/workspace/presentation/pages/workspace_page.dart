@@ -11,6 +11,7 @@ import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.
 import 'package:probably_works/features/palette/presentation/command_palette_host.dart';
 import 'package:probably_works/features/projects/presentation/bloc/projects_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/presence_lifecycle.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
@@ -47,89 +48,51 @@ class WorkspacePage extends StatelessWidget {
       pluginApi: service.pluginApiFor(profile),
       securityAuditApi: service.securityAuditApiFor(profile),
       pushApi: service.pushApiFor(profile),
-      child: _PresenceLifecycle(
-        sessionApi: _sessionApi(agentApi),
-        child: MultiBlocProvider(
-          providers: [
-            BlocProvider(
-              create: (_) => ChatListCubit(
-                agentApi,
-                getIt<ChatDraftStore>(),
-                initialHosts: profile.isLocal
-                    ? getIt<StartupHosts>().value
-                    : const [],
-              ),
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(
+            create: (_) => ChatListCubit(
+              agentApi,
+              getIt<ChatDraftStore>(),
+              initialHosts: profile.isLocal
+                  ? getIt<StartupHosts>().value
+                  : const [],
             ),
-            BlocProvider(
-              create: (_) => ProjectsCubit(
-                service.projectsApiFor(profile),
-                initialStatus: agentApi.status,
-                statusChanges: agentApi.statusChanges,
-              ),
+          ),
+          BlocProvider(
+            create: (_) => ProjectsCubit(
+              service.projectsApiFor(profile),
+              initialStatus: agentApi.status,
+              statusChanges: agentApi.statusChanges,
             ),
-            BlocProvider(
-              create: (_) => SidebarCubit(
-                getIt<ClientSettings>(),
-                getIt<SidebarStartupWidth>().value,
-              ),
+          ),
+          BlocProvider(
+            create: (_) => SidebarCubit(
+              getIt<ClientSettings>(),
+              getIt<SidebarStartupWidth>().value,
+            ),
+          ),
+        ],
+        child: AutoTabsRouter(
+          routes: [
+            ChatsTabRoute(),
+            ProjectsTabRoute(),
+            HostsRoute(),
+            SettingsRoute(
+              initialGroup: agentApi.status == AgentStatus.offline
+                  ? 'agents'
+                  : 'account',
             ),
           ],
-          child: AutoTabsRouter(
-            routes: [
-              ChatsTabRoute(),
-              ProjectsTabRoute(),
-              HostsRoute(),
-              SettingsRoute(
-                initialGroup: agentApi.status == AgentStatus.offline
-                    ? 'agents'
-                    : 'account',
-              ),
-            ],
-            builder: (context, child) =>
-                CommandPaletteHost(child: WorkspaceShell(child: child)),
+          builder: (context, child) => PresenceLifecycle(
+            tabs: AutoTabsRouter.of(context),
+            sessionApi: _sessionApi(agentApi),
+            child: CommandPaletteHost(child: WorkspaceShell(child: child)),
           ),
         ),
       ),
     );
   }
-}
-
-/// Сообщает серверу, когда окно приложения в фокусе. Это нужно для presence
-/// и чтобы не отправлять push туда, где пользователь уже смотрит чат.
-class _PresenceLifecycle extends StatefulWidget {
-  const _PresenceLifecycle({required this.sessionApi, required this.child});
-
-  final ClientSessionApi? sessionApi;
-  final Widget child;
-
-  @override
-  State<_PresenceLifecycle> createState() => _PresenceLifecycleState();
-}
-
-class _PresenceLifecycleState extends State<_PresenceLifecycle> {
-  late final AppLifecycleListener _listener;
-
-  @override
-  void initState() {
-    super.initState();
-    _listener = AppLifecycleListener(
-      onStateChange: (state) => widget.sessionApi?.setPresence(
-        focused: state == AppLifecycleState.resumed,
-      ),
-    );
-    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-      widget.sessionApi?.setPresence(focused: true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _listener.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => widget.child;
 }
 
 ClientSessionApi? _sessionApi(AgentApi api) {

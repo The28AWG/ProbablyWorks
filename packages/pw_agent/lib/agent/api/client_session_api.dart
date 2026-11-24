@@ -47,7 +47,10 @@ abstract interface class ClientSessionApi {
 
   Future<List<ClientSessionView>> refreshClientSessions();
 
-  /// Обновляет присутствие. Следующий heartbeat отправит изменения.
+  /// Обновляет присутствие.
+  ///
+  /// Удалённый клиент отправляет изменение сразу и перечитывает список
+  /// экранов; встроенный агент ничего не делает, потому что соседей у него нет.
   void setPresence({
     bool? focused,
     String? activeChatId,

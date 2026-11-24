@@ -248,25 +248,77 @@
   "@chatConflictAccept": {
     "description": "Draft conflict banner and actions."
   },
-  "chatPresenceOpen": "Открыто на другом устройстве",
+  "chatPresenceOpen": "Открыто на другом экране",
   "@chatPresenceOpen": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Подсказка кнопки присутствия в шапке чата."
   },
-  "chatPresenceTitle": "Открытые клиенты",
+  "chatPresenceTitle": "Подключённые экраны",
   "@chatPresenceTitle": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Заголовок списка клиентских сессий."
   },
-  "chatPresenceBody": "Этот чат открыт в других клиентах.",
+  "chatPresenceBody": "Один агент работает здесь, а другие экраны могут следить и действовать. В списке видно, где ещё открыт рабочий стол.",
   "@chatPresenceBody": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Вступление списка клиентских сессий."
   },
   "chatPresenceFocused": "В фокусе",
   "@chatPresenceFocused": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Клиентская сессия на переднем плане."
+  },
+  "chatPresenceBackground": "В фоне",
+  "@chatPresenceBackground": {
+    "description": "Клиентская сессия подключена, но не на переднем плане."
+  },
+  "chatPresenceCurrent": "Этот экран",
+  "@chatPresenceCurrent": {
+    "description": "Отмечает текущую клиентскую сессию в списке."
+  },
+  "chatPresenceViewing": "Открыт чат: {title}",
+  "@chatPresenceViewing": {
+    "description": "Показывает, какой чат открыт в клиентской сессии.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Переделать вход"
+      }
+    }
+  },
+  "chatPresenceNoChat": "Без открытого чата",
+  "@chatPresenceNoChat": {
+    "description": "В клиентской сессии сейчас не открыт чат."
+  },
+  "chatPresenceSessionId": "ID сессии: {id}",
+  "@chatPresenceSessionId": {
+    "description": "Подсказка короткого фрагмента id сессии в списке экранов.",
+    "placeholders": {
+      "id": {
+        "type": "String",
+        "example": "a1b2c3d4"
+      }
+    }
+  },
+  "chatPresenceOthers": "{count, plural, =0{Только этот экран} one{Ещё {count} экран} few{Ещё {count} экрана} many{Ещё {count} экранов} other{Ещё {count} экрана}}",
+  "@chatPresenceOthers": {
+    "description": "Сколько ещё клиентских сессий в сети.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "chatPresenceTooltipList": "Открыт на других экранах: {devices}",
+  "@chatPresenceTooltipList": {
+    "description": "Подсказка значка присутствия в списке чатов.",
+    "placeholders": {
+      "devices": {
+        "type": "String",
+        "example": "ProbablyWorks 2.0.0 linux"
+      }
+    }
   },
   "chatPresenceClose": "Закрыть",
   "@chatPresenceClose": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Закрывает список клиентских сессий."
   },
   "messageEditHint": "Правка запустит ход заново",
   "@messageEditHint": {

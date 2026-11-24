@@ -84,15 +84,49 @@ final class ClientSession {
   /// Последнее обращение клиента; от него считается TTL.
   DateTime lastSeenAt;
 
+  /// Момент, после которого сессию нужно удалить, если она не вернётся.
+  ///
+  /// Ставится по `pagehide` из браузера или когда закрылось последнее SSE-
+  /// соединение. Короткая задержка нужна для reload: новая страница успевает
+  /// переиспользовать сессию и снять отметку обычным запросом.
+  DateTime? closingAt;
+
+  /// Таймер отложенного закрытия. Хранится рядом с отметкой, чтобы любой
+  /// признак жизни мог его отменить.
+  Timer? closeTimer;
+
   /// Момент, после которого сессия считается истёкшей.
   DateTime get expiresAt => lastSeenAt.add(ttl);
 
   /// Истекла ли сессия к моменту [now].
-  bool isExpiredAt(DateTime now) => !now.isBefore(expiresAt);
+  ///
+  /// Отложенное закрытие действует раньше TTL: вкладка уже ушла, и держать
+  /// её до конца TTL незачем.
+  bool isExpiredAt(DateTime now) {
+    final closing = closingAt;
+    if (closing != null && !now.isBefore(closing)) return true;
+    return !now.isBefore(expiresAt);
+  }
 
-  /// Продлевает сессию до [now] + [ttl].
+  /// Продлевает сессию до [now] + [ttl] и снимает отложенное закрытие.
   void touch(DateTime now) {
     lastSeenAt = now;
+    cancelClosing();
+  }
+
+  /// Продлевает сессию, не отменяя отложенное закрытие.
+  ///
+  /// Нужно для ping в SSE: поток ещё пишется, но если страница уже прислала
+  /// `closing`, сервер не должен считать это возвращением вкладки.
+  void keepAlive(DateTime now) {
+    lastSeenAt = now;
+  }
+
+  /// Снимает отметку закрытия и таймер.
+  void cancelClosing() {
+    closeTimer?.cancel();
+    closeTimer = null;
+    closingAt = null;
   }
 
   /// Обновляет описание клиента при повторном рукопожатии.
@@ -155,6 +189,7 @@ final class ClientSessionRegistry {
   ClientSessionRegistry({
     this.ttl = const Duration(seconds: 60),
     this.sweepInterval = const Duration(seconds: 10),
+    this.closeGrace = const Duration(seconds: 5),
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now {
     _sweepTimer = Timer.periodic(sweepInterval, (_) => sweep());
@@ -162,6 +197,10 @@ final class ClientSessionRegistry {
 
   /// Время жизни сессии после последнего обращения.
   final Duration ttl;
+
+  /// Сколько ждать после сигнала закрытия или обрыва SSE, прежде чем убрать
+  /// сессию. Перезагрузка вкладки успевает снять отметку.
+  final Duration closeGrace;
 
   /// Как часто удалять истёкшие сессии.
   final Duration sweepInterval;
@@ -268,6 +307,44 @@ final class ClientSessionRegistry {
     return session;
   }
 
+  /// Продлевает сессию по живому SSE-соединению.
+  ///
+  /// В фоновой вкладке браузер затормаживает таймеры клиента, и heartbeat
+  /// может не успеть до истечения TTL. Открытый SSE при этом остаётся живым:
+  /// сервер пишет в него ping. Считать такую сессию истёкшей нельзя, иначе
+  /// экран «пропадает» из присутствия и возвращается при переключении вкладки.
+  ///
+  /// Метод не отменяет отложенное закрытие: ping может продолжать идти, пока
+  /// браузер ещё не разорвал поток после сигнала `closing`.
+  void keepAlive(String id) {
+    _sessions[id]?.keepAlive(now);
+  }
+
+  /// Планирует закрытие сессии, если она не подаст признак жизни.
+  ///
+  /// Вызывается по `pagehide` из браузера и по [detach], когда закрылось
+  /// последнее SSE-соединение. [closeGrace] даёт перезагрузке время
+  /// переиспользовать сессию: любой обычный запрос или новое SSE снимают
+  /// отметку. Если клиент не вернулся, сессия удаляется таймером.
+  ClientSession? markClosing(String id, {Duration? grace}) {
+    final session = _sessions[id];
+    if (session == null) return null;
+    final delay = grace ?? closeGrace;
+    session
+      ..closeTimer?.cancel()
+      ..closingAt = now.add(delay)
+      ..closeTimer = Timer(delay, () {
+        final current = _sessions[id];
+        if (current == null) return;
+        final closing = current.closingAt;
+        if (closing == null || _now().isBefore(closing)) return;
+        _sessions.remove(id);
+        _close(current);
+        _notify();
+      });
+    return session;
+  }
+
   /// Все живые сессии. Список уже без истёкших записей.
   List<ClientSession> list() {
     sweep();
@@ -289,13 +366,26 @@ final class ClientSessionRegistry {
   }
 
   /// Связывает SSE-ответ с сессией, чтобы `DELETE` мог его закрыть.
+  ///
+  /// Новое соединение означает, что вкладка вернулась: отложенное закрытие
+  /// снимается.
   void attach(String id, HttpResponse response) {
-    _sessions[id]?.sseConnections.add(response);
+    final session = _sessions[id];
+    if (session == null) return;
+    session.sseConnections.add(response);
+    session.cancelClosing();
   }
 
   /// Убирает SSE-ответ из сессии после закрытия потока.
+  ///
+  /// Если это было последнее соединение, вкладка, скорее всего, закрыта или
+  /// ушла с сайта. Планируем закрытие с короткой задержкой: переподключение
+  /// SSE успеет отменить его.
   void detach(String id, HttpResponse response) {
-    _sessions[id]?.sseConnections.remove(response);
+    final session = _sessions[id];
+    if (session == null) return;
+    session.sseConnections.remove(response);
+    if (session.sseConnections.isEmpty) markClosing(id);
   }
 
   /// Удаляет истёкшие сессии. Вызывается таймером и при чтении списка.
@@ -341,6 +431,10 @@ final class ClientSessionRegistry {
   }
 
   void _close(ClientSession session) {
+    session
+      ..closeTimer?.cancel()
+      ..closeTimer = null
+      ..closingAt = null;
     for (final response in [...session.sseConnections]) {
       unawaited(response.close());
     }

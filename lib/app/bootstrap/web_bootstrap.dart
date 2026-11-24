@@ -16,6 +16,7 @@ import 'package:probably_works/core/platform/client_info.dart';
 import 'package:probably_works/core/security/secret_store_plugin.dart';
 import 'package:probably_works/core/session/client_session_channel.dart';
 import 'package:probably_works/core/session/client_session_store.dart';
+import 'package:probably_works/core/session/page_close_listener.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/palette/domain/command_plugin_registry.dart';
@@ -75,6 +76,7 @@ Future<void> bootstrapWeb({bool hosted = false}) async {
     );
 
   await profiles.load();
+  listenForPageClose(profiles.markSessionsClosing);
   await keybindings.load();
   final language = await settings.read(ClientSettingsKeys.language);
   locale.apply(language);

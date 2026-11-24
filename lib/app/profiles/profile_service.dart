@@ -5,6 +5,7 @@ import 'package:injectable/injectable.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/local_agent_apis.dart';
 import 'package:probably_works/core/platform/client_info.dart';
+import 'package:probably_works/core/session/session_close_signal.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
@@ -330,6 +331,31 @@ class ProfileService {
       await subscription.cancel();
     }
     await _remote.remove(id)?.dispose();
+  }
+
+  /// Сообщает серверам активных профилей, что вкладка закрывается.
+  ///
+  /// Вызывается из web `pagehide`. Запросы keepalive, чтобы браузер успел
+  /// отправить их после выгрузки. Ошибка не критична: сессию закроет обрыв SSE
+  /// или TTL.
+  Future<void> markSessionsClosing() async {
+    await Future.wait([
+      for (final api in _remote.values)
+        if (api.sessionId != null) _markSessionClosing(api, api.sessionId!),
+    ]);
+  }
+
+  Future<void> _markSessionClosing(RemoteAgentApi api, String sessionId) async {
+    try {
+      await sendSessionClosing(
+        baseUri: api.baseUri,
+        token: api.token,
+        sessionId: sessionId,
+        headers: api.clientHeaders,
+      );
+    } on Object {
+      // Вкладка уже уходит: следующий признак жизни или TTL разберётся сам.
+    }
   }
 
   RemoteAgentApi _remoteFor(AgentProfile profile) {

@@ -930,6 +930,22 @@ final class ApiServer {
       );
     }
     final body = await _body(request);
+    // Браузер присылает closing из pagehide. Это не мгновенное удаление:
+    // сессия закроется через closeGrace, если reload не успеет вернуться.
+    if (body['closing'] == true) {
+      final closing = _clientSessions.markClosing(sessionId);
+      if (closing == null) {
+        throw const AgentApiException(
+          HttpStatus.gone,
+          'session_expired',
+          'session is unknown or expired',
+        );
+      }
+      _json(request.response, HttpStatus.ok, {
+        'expiresAt': closing.expiresAt.toUtc().toIso8601String(),
+      });
+      return;
+    }
     final hasActiveChatId = body.containsKey('activeChatId');
     final focused = body['focused'];
     final session = _clientSessions.updatePresence(
@@ -2444,13 +2460,26 @@ final class ApiServer {
         // Соединение уже закрыто.
       }
     }
-    final heartbeat = Timer.periodic(_eventHeartbeat, (_) {
+    var pinging = false;
+    Future<void> ping() async {
+      if (pinging) return;
+      pinging = true;
       try {
         response.write(': ping\n\n');
+        await response.flush();
+        // Поток жив: продлеваем сессию даже если heartbeat клиента
+        // заторможен браузером в фоновой вкладке.
+        if (sessionId != null && sessionId.isNotEmpty) {
+          _clientSessions.keepAlive(sessionId);
+        }
       } on Object {
         // Ответ закрыт: окончательную очистку сделает response.done.
+      } finally {
+        pinging = false;
       }
-    });
+    }
+
+    final heartbeat = Timer.periodic(_eventHeartbeat, (_) => unawaited(ping()));
     try {
       await response.done;
     } on Object {

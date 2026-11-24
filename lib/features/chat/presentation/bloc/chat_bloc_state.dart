@@ -14,6 +14,7 @@ class ChatState extends Equatable {
     this.questions = const [],
     this.editFileChanges = const [],
     this.draftConflict,
+    this.clientSessions = const [],
     this.otherSessions = const [],
     this.hosts = const [],
     this.catalog = const ModelCatalogState(),
@@ -67,6 +68,12 @@ class ChatState extends Equatable {
 
   /// Конфликт черновика или правок, который ждёт решения пользователя.
   final DraftConflict? draftConflict;
+
+  /// Все клиентские сессии, включая текущую.
+  ///
+  /// Нужны диалогу присутствия: в шапке он должен показывать тот же полный
+  /// список, что и в боковой панели, иначе один экран выглядит как «пропавший».
+  final List<ClientSessionView> clientSessions;
 
   /// Другие клиенты, у которых открыт этот же чат.
   final List<ClientSessionView> otherSessions;
@@ -236,6 +243,7 @@ class ChatState extends Equatable {
     List<EditFileChangesRequest>? editFileChanges,
     DraftConflict? draftConflict,
     bool clearDraftConflict = false,
+    List<ClientSessionView>? clientSessions,
     List<ClientSessionView>? otherSessions,
     List<Host>? hosts,
     ModelCatalogState? catalog,
@@ -286,6 +294,7 @@ class ChatState extends Equatable {
     draftConflict: clearDraftConflict
         ? null
         : (draftConflict ?? this.draftConflict),
+    clientSessions: clientSessions ?? this.clientSessions,
     otherSessions: otherSessions ?? this.otherSessions,
     hosts: hosts ?? this.hosts,
     catalog: catalog ?? this.catalog,
@@ -339,6 +348,7 @@ class ChatState extends Equatable {
     questions,
     editFileChanges,
     draftConflict,
+    clientSessions,
     otherSessions,
     hosts,
     catalog,

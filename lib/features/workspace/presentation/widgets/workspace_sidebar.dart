@@ -1,8 +1,11 @@
 import 'package:app_ui/app_ui.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/profiles/profile_menu.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/chats/presentation/widgets/chat_list_panel.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/client_presence.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 
 /// Развёрнутая боковая панель: кнопка «Новый чат», список чатов по датам и навигация внизу.
@@ -92,6 +95,7 @@ class WorkspaceSidebar extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const _SidebarPresence(),
                 _SidebarRow(
                   icon: Icons.workspaces_outline,
                   label: l10n.navProjects,
@@ -132,6 +136,7 @@ class WorkspaceRail extends StatelessWidget {
     required this.onExpand,
     required this.onNewChat,
     required this.onOpenTab,
+    this.presence,
     super.key,
   });
 
@@ -146,6 +151,10 @@ class WorkspaceRail extends StatelessWidget {
 
   /// Перейти к разделу «Хосты» или «Настройки».
   final void Function(WorkspaceTab tab) onOpenTab;
+
+  /// Индикатор других экранов. Необязателен: вне оболочки данных о клиентах
+  /// может не быть, и тогда полоса остаётся прежней.
+  final Widget? presence;
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +177,7 @@ class WorkspaceRail extends StatelessWidget {
               icon: const Icon(Icons.add),
               onPressed: onNewChat,
             ),
+            ?presence,
             const Spacer(),
             IconButton(
               tooltip: l10n.navProjects,
@@ -264,4 +274,68 @@ class _SidebarRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Строка «Ещё N экранов» в развёрнутой панели.
+///
+/// Появляется только когда есть соседи: иначе она занимала бы место и
+/// сообщала бы очевидное «только этот экран».
+class _SidebarPresence extends StatelessWidget {
+  const _SidebarPresence();
+
+  @override
+  Widget build(BuildContext context) =>
+      BlocBuilder<ChatListCubit, ChatListState>(
+        buildWhen: (previous, current) =>
+            previous.sessions != current.sessions ||
+            previous.chats != current.chats,
+        builder: (context, state) {
+          final others = state.otherOnlineSessions;
+          if (others.isEmpty) return const SizedBox.shrink();
+          final l10n = AppLocalizations.of(context);
+          final cubit = context.read<ChatListCubit>();
+          return _SidebarRow(
+            icon: Icons.devices_other_outlined,
+            label: l10n.chatPresenceOthers(others.length),
+            onTap: () => showClientPresenceDialog(
+              context,
+              sessions: state.sessions,
+              changes: cubit.stream.map((state) => state.sessions).distinct(),
+              chatTitles: {
+                for (final chat in state.chats)
+                  chat.id: chat.title.isEmpty ? l10n.chatsNew : chat.title,
+              },
+            ),
+          );
+        },
+      );
+}
+
+/// Значок других экранов в свёрнутой полосе. Повторяет строку панели, но без
+/// подписи: место в полосе ограничено иконками.
+class WorkspacePresenceRail extends StatelessWidget {
+  const WorkspacePresenceRail({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      BlocBuilder<ChatListCubit, ChatListState>(
+        buildWhen: (previous, current) =>
+            previous.sessions != current.sessions ||
+            previous.chats != current.chats,
+        builder: (context, state) {
+          final others = state.otherOnlineSessions;
+          if (others.isEmpty) return const SizedBox.shrink();
+          final l10n = AppLocalizations.of(context);
+          final cubit = context.read<ChatListCubit>();
+          return ClientPresenceIconButton(
+            sessions: state.sessions,
+            changes: cubit.stream.map((state) => state.sessions).distinct(),
+            badgeCount: others.length,
+            chatTitles: {
+              for (final chat in state.chats)
+                chat.id: chat.title.isEmpty ? l10n.chatsNew : chat.title,
+            },
+          );
+        },
+      );
 }

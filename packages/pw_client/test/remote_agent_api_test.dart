@@ -6,6 +6,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
@@ -716,6 +717,103 @@ void main() {
     expect(sessions.single.current, isTrue);
     expect(sessions.single.id, remote.sessionId);
   });
+
+  test('presence refresh reads the session list back', () async {
+    final list = Completer<List<ClientSessionView>>();
+    final sub = remote.clientSessions.listen((items) {
+      if (!list.isCompleted) list.complete(items);
+    });
+    addTearDown(sub.cancel);
+
+    remote.setPresence(focused: true);
+
+    final sessions = await list.future.timeout(const Duration(seconds: 2));
+    expect(sessions.single.current, isTrue);
+    expect(sessions.single.focused, isTrue);
+  });
+
+  test(
+    'a stale session list response does not overwrite a newer one',
+    () async {
+      final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var sessionsCalls = 0;
+      final firstStarted = Completer<void>();
+      final expiresAt = DateTime.now()
+          .toUtc()
+          .add(const Duration(minutes: 1))
+          .toIso8601String();
+      Map<String, Object?> sessionJson(String id) => {
+        'id': id,
+        'deviceId': 'device-$id',
+        'clientApp': 'ProbablyWorks',
+        'clientVersion': '1.0.0',
+        'clientBuild': '1',
+        'clientPlatform': 'web',
+        'createdAt': expiresAt,
+        'lastSeenAt': expiresAt,
+        'expiresAt': expiresAt,
+        'focused': false,
+        'online': true,
+        'current': id == 's1',
+      };
+      httpServer.listen((request) async {
+        await request.drain<void>();
+        final response = request.response;
+        response.headers.contentType = ContentType.json;
+        if (request.uri.path == '/api/v1/client/handshake') {
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        } else if (request.uri.path == '/api/v1/client/sessions') {
+          sessionsCalls++;
+          final call = sessionsCalls;
+          if (call == 1) firstStarted.complete();
+          // Первый ответ медленнее: он приходит позже и содержит старый снимок.
+          await Future<void>.delayed(
+            Duration(milliseconds: call == 1 ? 150 : 10),
+          );
+          final ids = call == 1 ? ['s1', 's2'] : ['s1', 's2', 's3'];
+          response.write(
+            jsonEncode({
+              'currentSessionId': 's1',
+              'sessions': [for (final id in ids) sessionJson(id)],
+            }),
+          );
+        } else {
+          response.statusCode = HttpStatus.notFound;
+        }
+        await response.close();
+      });
+      addTearDown(() => httpServer.close(force: true));
+      final api = RemoteAgentApi(
+        baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+        token: _token,
+      );
+      addTearDown(api.dispose);
+      final emitted = <List<ClientSessionView>>[];
+      final sub = api.clientSessions.listen(emitted.add);
+      addTearDown(sub.cancel);
+
+      final first = api.refreshClientSessions();
+      await firstStarted.future;
+      final second = api.refreshClientSessions();
+      final results = await Future.wait([first, second]);
+
+      // Старый ответ не попал в поток: остался только свежий снимок на три экрана.
+      expect(emitted, hasLength(1));
+      expect(emitted.single, hasLength(3));
+      // И вызывающему тоже не отдан устаревший снимок на два экрана.
+      expect(results.first, hasLength(3));
+      expect(results.last, hasLength(3));
+    },
+  );
 
   test('handshakes and exposes the session and instance ids', () async {
     await remote.chats();

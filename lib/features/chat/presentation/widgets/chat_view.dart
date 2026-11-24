@@ -28,9 +28,9 @@ import 'package:probably_works/features/models/presentation/widgets/model_picker
 import 'package:probably_works/features/models/presentation/widgets/model_runtime_builder.dart';
 import 'package:probably_works/features/models/presentation/widgets/reasoning_dialog.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/client_presence.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
-import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/attachments/attachment_loader.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -338,7 +338,21 @@ class _ChatBodyState extends State<ChatBody> {
                   leading: widget.leading,
                   trailing: state.otherSessions.isEmpty
                       ? null
-                      : _PresenceButton(sessions: state.otherSessions),
+                      : ClientPresenceIconButton(
+                          sessions: state.clientSessions,
+                          changes: bloc.stream
+                              .map((state) => state.clientSessions)
+                              .distinct(),
+                          badgeCount: state.otherSessions.length,
+                          chatTitles: state.chatId == null
+                              ? const {}
+                              : {
+                                  state.chatId!:
+                                      state.chat?.title.isNotEmpty ?? false
+                                      ? state.chat!.title
+                                      : l10n.chatsNew,
+                                },
+                        ),
                 ),
                 Expanded(
                   child: Stack(
@@ -1251,72 +1265,6 @@ class _Header extends StatelessWidget {
                     ),
             ),
             ?trailing,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Значок присутствия: показывает, что чат открыт ещё и в другом клиенте.
-class _PresenceButton extends StatelessWidget {
-  const _PresenceButton({required this.sessions});
-
-  final List<ClientSessionView> sessions;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return IconButton(
-      tooltip: l10n.chatPresenceOpen,
-      icon: const Icon(Icons.devices_outlined),
-      onPressed: () => showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(l10n.chatPresenceTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.chatPresenceBody),
-              const SizedBox(height: AppSpacing.md),
-              for (final session in sessions)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.smartphone_outlined, size: 18),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              session.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              [
-                                session.clientPlatform,
-                                if (session.focused) l10n.chatPresenceFocused,
-                              ].where((part) => part.isNotEmpty).join(' · '),
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(l10n.chatPresenceClose),
-            ),
           ],
         ),
       ),

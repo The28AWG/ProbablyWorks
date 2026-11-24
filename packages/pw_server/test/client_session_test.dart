@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:pw_server/pw_server.dart';
 import 'package:test/test.dart';
 
@@ -71,6 +73,47 @@ void main() {
     expect(registry.touch('missing').problem, ClientSessionProblem.missing);
   });
 
+  test('keeps a session alive while its SSE connection is open', () {
+    final session = registry.handshake(info: info);
+    now = now.add(const Duration(seconds: 50));
+
+    registry.keepAlive(session.id);
+
+    expect(registry.byId(session.id)?.lastSeenAt, now);
+    now = now.add(const Duration(seconds: 50));
+    expect(registry.list(), hasLength(1));
+  });
+
+  test('closing removes the session unless it is touched', () {
+    final session = registry.handshake(info: info);
+    registry.markClosing(session.id, grace: const Duration(seconds: 5));
+
+    now = now.add(const Duration(seconds: 3));
+    registry.touch(session.id);
+    now = now.add(const Duration(seconds: 4));
+    registry.sweep();
+
+    expect(registry.byId(session.id), isNotNull);
+
+    registry.markClosing(session.id, grace: const Duration(seconds: 5));
+    now = now.add(const Duration(seconds: 6));
+    registry.sweep();
+
+    expect(registry.byId(session.id), isNull);
+  });
+
+  test('an SSE ping does not cancel a closing signal', () {
+    final session = registry.handshake(info: info);
+    registry.markClosing(session.id, grace: const Duration(seconds: 5));
+
+    now = now.add(const Duration(seconds: 3));
+    registry.keepAlive(session.id);
+    now = now.add(const Duration(seconds: 3));
+    registry.sweep();
+
+    expect(registry.byId(session.id), isNull);
+  });
+
   test('updates presence and lists all sessions', () {
     final first = registry.handshake(info: info);
     final second = registry.handshake(info: otherInfo);
@@ -138,4 +181,23 @@ void main() {
     expect(registry.byId(session.id), isNull);
     expect(registry.remove(session.id), isNull);
   });
+
+  test('the last SSE detach schedules closing', () {
+    final session = registry.handshake(info: info);
+    final response = _FakeResponse();
+
+    registry
+      ..attach(session.id, response)
+      ..detach(session.id, response);
+    now = now.add(const Duration(seconds: 6));
+    registry.sweep();
+
+    expect(registry.byId(session.id), isNull);
+  });
+}
+
+final class _FakeResponse implements HttpResponse {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('HttpResponse is not used in this test');
 }

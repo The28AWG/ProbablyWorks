@@ -4,8 +4,10 @@ import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/chats/presentation/fork_tasks_prompt.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/client_presence.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/util/short_time.dart';
@@ -52,6 +54,7 @@ class ChatListPanel extends StatelessWidget {
           buildWhen: (previous, current) =>
               previous.chats != current.chats ||
               previous.hosts != current.hosts ||
+              previous.sessions != current.sessions ||
               previous.runningIds != current.runningIds ||
               previous.waitingIds != current.waitingIds,
           builder: (context, state) {
@@ -94,6 +97,7 @@ class ChatListPanel extends StatelessWidget {
                             return _ChatTile(
                               chat: chat,
                               host: hosts[chat.hostId],
+                              viewers: state.viewersOf(chat.id),
                               selected: chat.id == selectedId,
                               running: state.runningIds.contains(chat.id),
                               waiting: state.waitingIds.contains(chat.id),
@@ -322,6 +326,7 @@ class _ChatTile extends StatefulWidget {
   const _ChatTile({
     required this.chat,
     required this.host,
+    required this.viewers,
     required this.selected,
     required this.running,
     required this.waiting,
@@ -331,6 +336,10 @@ class _ChatTile extends StatefulWidget {
 
   final Chat chat;
   final Host? host;
+
+  /// Другие экраны, на которых открыт этот чат. Пусто — показываем строку
+  /// только с хостом, как раньше.
+  final List<ClientSessionView> viewers;
   final bool selected;
   final bool running;
   final bool waiting;
@@ -373,6 +382,7 @@ class _ChatTileState extends State<_ChatTile> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final chat = widget.chat;
+
     final host = widget.host;
     final hostName = host == null ? null : hostDisplayName(host, l10n);
     final hostIcon = host == null ? Icons.dns_outlined : hostDisplayIcon(host);
@@ -423,26 +433,32 @@ class _ChatTileState extends State<_ChatTile> {
                                 : FontWeight.w400,
                           ),
                         ),
-                        if (hostName != null) ...[
+                        if (hostName != null || widget.viewers.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              Icon(
-                                hostIcon,
-                                size: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Flexible(
-                                child: Text(
-                                  hostName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
+                              if (hostName != null) ...[
+                                Icon(
+                                  hostIcon,
+                                  size: 12,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Flexible(
+                                  child: Text(
+                                    hostName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ),
-                              ),
+                              ],
+                              if (hostName != null && widget.viewers.isNotEmpty)
+                                const SizedBox(width: AppSpacing.sm),
+                              if (widget.viewers.isNotEmpty)
+                                _PresenceBadge(viewers: widget.viewers),
                             ],
                           ),
                         ],
@@ -480,6 +496,40 @@ class _ChatTileState extends State<_ChatTile> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Значок соседнего экрана в строке чата: иконка и число.
+///
+/// Подсказка перечисляет устройства: по одному значку нельзя понять, телефон
+/// это или второе окно десктопа, а именно это и нужно при работе с несколькими
+/// экранами.
+class _PresenceBadge extends StatelessWidget {
+  const _PresenceBadge({required this.viewers});
+
+  final List<ClientSessionView> viewers;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Tooltip(
+      message: l10n.chatPresenceTooltipList(
+        viewers.map(clientSessionTooltipLabel).join(', '),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.devices_outlined, size: 12, color: scheme.primary),
+          const SizedBox(width: 2),
+          Text(
+            '${viewers.length}',
+            style: theme.textTheme.labelSmall?.copyWith(color: scheme.primary),
+          ),
+        ],
       ),
     );
   }

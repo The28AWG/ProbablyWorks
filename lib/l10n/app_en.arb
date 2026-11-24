@@ -248,25 +248,77 @@
   "@chatConflictAccept": {
     "description": "Draft conflict banner and actions."
   },
-  "chatPresenceOpen": "Open on another device",
+  "chatPresenceOpen": "Open on another screen",
   "@chatPresenceOpen": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Tooltip of the presence button in the chat header."
   },
-  "chatPresenceTitle": "Open clients",
+  "chatPresenceTitle": "Connected screens",
   "@chatPresenceTitle": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Title of the list of connected client sessions."
   },
-  "chatPresenceBody": "This chat is open in other clients.",
+  "chatPresenceBody": "One agent works here, and other screens can watch and act. The list shows where the workspace is open.",
   "@chatPresenceBody": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Intro of the list of connected client sessions."
   },
   "chatPresenceFocused": "Focused",
   "@chatPresenceFocused": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Client session is in the foreground."
+  },
+  "chatPresenceBackground": "In background",
+  "@chatPresenceBackground": {
+    "description": "Client session is connected but not in the foreground."
+  },
+  "chatPresenceCurrent": "This screen",
+  "@chatPresenceCurrent": {
+    "description": "Marks the current client session in the list."
+  },
+  "chatPresenceViewing": "Viewing: {title}",
+  "@chatPresenceViewing": {
+    "description": "Shows which chat is open on a client session.",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Refactor the auth flow"
+      }
+    }
+  },
+  "chatPresenceNoChat": "No chat open",
+  "@chatPresenceNoChat": {
+    "description": "The client session has no chat open right now."
+  },
+  "chatPresenceSessionId": "Session id: {id}",
+  "@chatPresenceSessionId": {
+    "description": "Tooltip of the short session id fragment in the screen list.",
+    "placeholders": {
+      "id": {
+        "type": "String",
+        "example": "a1b2c3d4"
+      }
+    }
+  },
+  "chatPresenceOthers": "{count, plural, =0{Only this screen} one{{count} other screen} other{{count} other screens}}",
+  "@chatPresenceOthers": {
+    "description": "How many other client sessions are online.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "chatPresenceTooltipList": "Open on other screens: {devices}",
+  "@chatPresenceTooltipList": {
+    "description": "Tooltip of the presence badge in the chat list.",
+    "placeholders": {
+      "devices": {
+        "type": "String",
+        "example": "ProbablyWorks 2.0.0 linux"
+      }
+    }
   },
   "chatPresenceClose": "Close",
   "@chatPresenceClose": {
-    "description": "Presence indicator and client list in the chat."
+    "description": "Closes the list of connected client sessions."
   },
   "messageEditHint": "Editing restarts the turn",
   "@messageEditHint": {

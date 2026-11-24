@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -14,6 +15,7 @@ class ChatListState extends Equatable {
   const ChatListState({
     this.chats = const [],
     this.hosts = const [],
+    this.sessions = const [],
     this.runningIds = const {},
     this.waitingIds = const {},
   });
@@ -21,26 +23,50 @@ class ChatListState extends Equatable {
   final List<Chat> chats;
   final List<Host> hosts;
 
+  /// Клиентские сессии этого экземпляра агента, включая текущую.
+  ///
+  /// Список приходит с сервера: встроенный агент всегда отдаёт пустой, а
+  /// подключённый демон — все окна и устройства, которые ещё живы.
+  final List<ClientSessionView> sessions;
+
   /// Чаты с идущим ходом агента.
   final Set<String> runningIds;
 
   /// Чаты, где агент ждёт approve или ответа пользователя.
   final Set<String> waitingIds;
 
+  /// Другие онлайн-экраны, у которых открыт [chatId].
+  ///
+  /// Текущая сессия не считается: значок в строке означает соседа, а не
+  /// собственный экран. Сессии без открытого чата сюда не попадают.
+  List<ClientSessionView> viewersOf(String chatId) => [
+    for (final session in sessions)
+      if (!session.current && session.online && session.activeChatId == chatId)
+        session,
+  ];
+
+  /// Другие онлайн-экраны без текущего. Нужны для общего индикатора в панели.
+  List<ClientSessionView> get otherOnlineSessions => [
+    for (final session in sessions)
+      if (!session.current && session.online) session,
+  ];
+
   ChatListState copyWith({
     List<Chat>? chats,
     List<Host>? hosts,
+    List<ClientSessionView>? sessions,
     Set<String>? runningIds,
     Set<String>? waitingIds,
   }) => ChatListState(
     chats: chats ?? this.chats,
     hosts: hosts ?? this.hosts,
+    sessions: sessions ?? this.sessions,
     runningIds: runningIds ?? this.runningIds,
     waitingIds: waitingIds ?? this.waitingIds,
   );
 
   @override
-  List<Object?> get props => [chats, hosts, runningIds, waitingIds];
+  List<Object?> get props => [chats, hosts, sessions, runningIds, waitingIds];
 }
 
 /// Хосты, прочитанные при старте: список нового чата и композер получают их в первом кадре.
@@ -78,6 +104,9 @@ class ChatListCubit extends Cubit<ChatListState> {
     _resolutionSub = interactions?.resolutions.listen(
       (_) => _refreshActivity(),
     );
+    final presence = api is ClientSessionApi ? api : null;
+    _presenceSub = presence?.clientSessions.listen(_onSessions);
+    if (presence != null) unawaited(_refreshSessions(presence));
     _statusSub = _api.statusChanges.listen((status) {
       // При потере сервера не показываем устаревший список как живой.
       if (status == AgentStatus.offline && !isClosed) {
@@ -96,9 +125,25 @@ class ChatListCubit extends Cubit<ChatListState> {
   late final StreamSubscription<UserQuestion> _questionSub;
   StreamSubscription<InteractionResolution>? _resolutionSub;
   late final StreamSubscription<AgentStatus> _statusSub;
+  StreamSubscription<List<ClientSessionView>>? _presenceSub;
 
   void _clear() {
     if (!isClosed) emit(const ChatListState());
+  }
+
+  /// Снимок присутствия пришёл с сервера: обновляем значки в списке чатов
+  /// и общий счётчик других экранов. Ошибка начального чтения не критична:
+  /// следующее событие присутствия повторит попытку.
+  void _onSessions(List<ClientSessionView> sessions) {
+    if (!isClosed) emit(state.copyWith(sessions: sessions));
+  }
+
+  Future<void> _refreshSessions(ClientSessionApi presence) async {
+    try {
+      await presence.refreshClientSessions();
+    } on Object {
+      // Присутствие не мешает работать с чатами.
+    }
   }
 
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
@@ -166,6 +211,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _questionSub.cancel();
     await _resolutionSub?.cancel();
     await _statusSub.cancel();
+    await _presenceSub?.cancel();
     return super.close();
   }
 }
