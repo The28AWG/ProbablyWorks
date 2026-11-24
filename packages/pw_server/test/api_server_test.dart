@@ -103,6 +103,23 @@ void main() {
     expect(await originHeader(client, 'http://evil.test'), isNull);
   });
 
+  test('CORS allows the client session header', () async {
+    final request = await client.openUrl(
+      'OPTIONS',
+      Uri.parse('$base/api/v1/chats'),
+    );
+    request.headers
+      ..set('Origin', 'http://localhost:8080')
+      ..set('Access-Control-Request-Method', 'GET')
+      ..set('Access-Control-Request-Headers', 'x-client-session');
+    final response = await request.close();
+    expect(
+      response.headers.value('access-control-allow-headers'),
+      contains('x-client-session'),
+    );
+    await response.drain<void>();
+  });
+
   test('validates data cleanup parameters', () async {
     final (badStatus, _) = await _request(
       client,

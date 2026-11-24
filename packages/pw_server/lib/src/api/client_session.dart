@@ -110,9 +110,16 @@ final class ClientSession {
   }
 
   /// Запоминает фокус приложения и открытый чат для присутствия.
-  void updatePresence({required bool focused, String? activeChatId}) {
-    this.focused = focused;
-    this.activeChatId = activeChatId;
+  ///
+  /// [focused] и [activeChatId] необязательны: heartbeat может прислать только
+  /// изменившуюся часть, не сбрасывая вторую.
+  void updatePresence({
+    bool? focused,
+    String? activeChatId,
+    bool activeChatIdSpecified = true,
+  }) {
+    if (focused != null) this.focused = focused;
+    if (activeChatIdSpecified) this.activeChatId = activeChatId;
   }
 
   /// Находится ли приложение в фокусе на этом клиенте.
@@ -231,17 +238,33 @@ final class ClientSessionRegistry {
   }
 
   /// Обновляет фокус и открытый чат; heartbeat продлевает сессию.
+  ///
+  /// Событие изменения рассылается только когда присутствие действительно
+  /// изменилось. Иначе каждый heartbeat раз в 20 секунд заставлял бы всех
+  /// клиентов перечитывать список сессий.
   ClientSession? updatePresence(
     String id, {
-    required bool focused,
+    bool? focused,
     String? activeChatId,
+    bool activeChatIdSpecified = true,
   }) {
     final session = _sessions[id];
     if (session == null) return null;
+    final nextFocused = focused ?? session.focused;
+    final nextActiveChatId = activeChatIdSpecified
+        ? activeChatId
+        : session.activeChatId;
+    final changed =
+        nextFocused != session.focused ||
+        nextActiveChatId != session.activeChatId;
     session
       ..touch(now)
-      ..updatePresence(focused: focused, activeChatId: activeChatId);
-    _notify();
+      ..updatePresence(
+        focused: focused,
+        activeChatId: activeChatId,
+        activeChatIdSpecified: activeChatIdSpecified,
+      );
+    if (changed) _notify();
     return session;
   }
 

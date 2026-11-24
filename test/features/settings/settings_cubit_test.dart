@@ -241,6 +241,19 @@ void main() {
     expect(await pinned, ['openai/gpt-4o']);
   });
 
+  test('a setting written outside the cubit reloads the page', () async {
+    await cubit.load();
+    expect(cubit.state.defaultModel, isEmpty);
+
+    final updated = cubit.stream
+        .map((state) => state.defaultModel)
+        .firstWhere((model) => model == 'openai/gpt-4o')
+        .timeout(const Duration(seconds: 5));
+    await settings.write(SettingsRepository.keyDefaultModel, 'openai/gpt-4o');
+
+    expect(await updated, 'openai/gpt-4o');
+  });
+
   test('theme mode is saved, applied and loaded back', () async {
     await cubit.load();
 

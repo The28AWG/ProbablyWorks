@@ -843,6 +843,125 @@ void main() {
     expect(handshakes, 2);
     expect(chats, 2);
   });
+
+  test('a recovered instance change notifies subscribers once', () async {
+    var healthCalls = 0;
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    httpServer.listen((request) async {
+      await request.drain<void>();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/api/v1/client/handshake':
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': DateTime.now()
+                  .toUtc()
+                  .add(const Duration(minutes: 1))
+                  .toIso8601String(),
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        case '/api/v1/chats':
+          response.write(jsonEncode({'chats': <Object>[]}));
+        case '/api/v1/health':
+          healthCalls++;
+          if (healthCalls == 1) {
+            response.statusCode = HttpStatus.internalServerError;
+          } else {
+            response.write(
+              jsonEncode({
+                'ok': true,
+                'version': '1',
+                'instanceId': 'instance-2',
+              }),
+            );
+          }
+        default:
+          response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+    final reconnects = <void>[];
+    final sub = api.reconnects.listen(reconnects.add);
+    addTearDown(sub.cancel);
+
+    await api.chats();
+    expect(api.instanceId, 'instance-1');
+
+    expect(await api.checkConnection(), isFalse);
+    expect(await api.checkConnection(), isTrue);
+
+    // Статус поднялся после offline и instanceId сменился: оба пути должны
+    // схлопнуться в одно уведомление.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(reconnects, hasLength(1));
+  });
+
+  test('dispose keeps a session stored by another instance', () async {
+    final store = MemoryClientSessionStore();
+    final releaseDelete = Completer<void>();
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    httpServer.listen((request) async {
+      await request.drain<void>();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/api/v1/client/handshake':
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': DateTime.now()
+                  .toUtc()
+                  .add(const Duration(minutes: 1))
+                  .toIso8601String(),
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        case '/api/v1/chats':
+          response.write(jsonEncode({'chats': <Object>[]}));
+        case '/api/v1/client/session':
+          // Закрытие сессии задерживается: за это время другой экземпляр
+          // профиля успевает записать свой id в то же хранилище.
+          await releaseDelete.future;
+          response.statusCode = HttpStatus.noContent;
+        default:
+          response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+      sessionStore: store,
+      sessionKey: 'profile-1',
+    );
+    await api.chats();
+    expect(store.read('profile-1'), 's1');
+
+    final disposal = api.dispose();
+    store.write('profile-1', 's2');
+    releaseDelete.complete();
+    await disposal;
+
+    expect(store.read('profile-1'), 's2');
+  });
 }
 
 final class _FakeData implements DataApi {

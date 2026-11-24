@@ -67,6 +67,7 @@ class ChatListCubit extends Cubit<ChatListState> {
           (event) =>
               event is AgentTurnStarted ||
               event is AgentTurnFinished ||
+              event is AgentTurnSnapshot ||
               event is AgentRunChanged,
         )
         .listen((_) => _refreshActivity());

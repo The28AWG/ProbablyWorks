@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/core/data/chat_draft_store.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
@@ -33,6 +34,69 @@ void main() {
   tearDown(() async {
     await drafts.flush();
     await db.close();
+  });
+
+  test('prime marks an existing draft as updated', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+
+    final remote = base.copyWith(
+      draftRevision: 1,
+      draft: const ChatDraft(text: 'remote'),
+    );
+
+    expect(drafts.prime('c1', remote), isTrue);
+    expect(drafts.of('c1').text, 'remote');
+  });
+
+  test(
+    'a failed network save keeps the draft dirty for the next attempt',
+    () async {
+      final backend = _FailingDraft();
+      final store = ChatDraftStore(backend);
+      addTearDown(store.dispose);
+
+      store.update('c1', const ChatDraft(text: 'не терять'));
+      await store.flush();
+      expect(backend.saves, 1);
+
+      await store.flush();
+      expect(backend.saves, 2);
+    },
+  );
+
+  test('a failure does not retry immediately', () async {
+    final backend = _FailingDraft();
+    final store = ChatDraftStore(backend);
+    addTearDown(store.dispose);
+
+    store.update('c1', const ChatDraft(text: 'не терять'));
+    await store.flush();
+    final firstAttempts = backend.saves;
+    expect(firstAttempts, 1);
+
+    // Пауза перед повтором растёт: заведомо меньше базовой задержки повтора,
+    // поэтому новых запросов быть не должно.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(backend.saves, firstAttempts);
+  });
+
+  test('a deleted chat drops the draft instead of retrying', () async {
+    final backend = _FailingDraft(
+      error: const AgentApiException(404, 'chat_not_found', 'chat not found'),
+    );
+    final store = ChatDraftStore(backend);
+    addTearDown(store.dispose);
+
+    store.update('c1', const ChatDraft(text: 'не терять'));
+    await store.flush();
+    final firstAttempts = backend.saves;
+    expect(firstAttempts, 1);
+
+    // Повтор бессмысленен: чата больше нет, черновик убран.
+    expect(store.of('c1').isEmpty, isTrue);
+    await store.flush();
+    expect(backend.saves, firstAttempts);
   });
 
   test('a typed draft is saved to the database after a short pause', () async {
@@ -261,6 +325,27 @@ void main() {
     expect(drafts.editOf('c1', 'm1')?.text, 'remote edit');
   });
 
+  test('a newer remote revision updates the pending conflict', () async {
+    final base = (await chats.chat('c1'))!;
+    drafts.prime('c1', base);
+    final other = ChatDraftStore(chats)..prime('c1', base);
+
+    drafts.update('c1', const ChatDraft(text: 'local'));
+    other.update('c1', const ChatDraft(text: 'remote'));
+    await other.flush();
+    await drafts.flush();
+
+    expect(drafts.conflictFor('c1')?.remoteRevision, 1);
+    final newer = (await chats.chat('c1'))!
+        .copyWith(draftRevision: 2, draft: const ChatDraft(text: 'newer'));
+    expect(drafts.applyRemote('c1', newer), isFalse);
+    expect(drafts.conflictFor('c1')?.remoteRevision, 2);
+
+    drafts.acceptRemote('c1', kind: DraftConflictKind.draft);
+
+    expect(drafts.of('c1').text, 'newer');
+  });
+
   test('a message edit conflict keeps both maps separately', () async {
     final base = (await chats.chat('c1'))!;
     drafts.prime('c1', base);
@@ -439,4 +524,35 @@ void main() {
     await drafts.flush();
     expect((await chats.chat('c1'))!.messageEdits, isEmpty);
   });
+}
+
+final class _FailingDraft implements DraftPersistence {
+  _FailingDraft({this.error});
+
+  /// Ошибка, которую бросает запись. Null — обычный сбой сети.
+  final Object? error;
+  var saves = 0;
+
+  @override
+  Future<Chat?> chat(String id) async => null;
+
+  @override
+  Future<int> saveDraft(
+    String chatId,
+    ChatDraft draft, {
+    int? expectedRevision,
+  }) async {
+    saves++;
+    throw error ?? Exception('network');
+  }
+
+  @override
+  Future<int> saveMessageEdits(
+    String chatId,
+    Map<String, ChatDraft> edits, {
+    int? expectedRevision,
+  }) async {
+    saves++;
+    throw error ?? Exception('network');
+  }
 }

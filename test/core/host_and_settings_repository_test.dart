@@ -235,6 +235,50 @@ void main() {
     },
   );
 
+  test(
+    'settings changes ignore chat-scoped keys written during a turn',
+    () async {
+      final settings = SettingsRepository(db);
+      await settings.preload();
+      final changes = <void>[];
+      final sub = settings.changes.listen(changes.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      // Начальный снимок не считается изменением.
+      expect(changes, isEmpty);
+
+      await settings.write(SettingsRepository.keyDefaultModel, 'openai/gpt-4o');
+      await pumpEventQueue();
+      final afterSettings = changes.length;
+      expect(afterSettings, 1);
+
+      // Расход дня и лимит пишутся на каждом шаге агента и не должны
+      // перечитывать страницу настроек.
+      await settings.write(
+        '${SettingsRepository.keyDailyUsagePrefix}chat-1:2026-11-24',
+        '{"promptTokens":1}',
+      );
+      await settings.write(
+        '${SettingsRepository.keyDailyBudgetPrefix}chat-1',
+        '5',
+      );
+      await settings.write(
+        '${SettingsRepository.keyCompactionInfoPrefix}chat-1',
+        '{}',
+      );
+      await settings.write(
+        '${SettingsRepository.keyLastUsageContextPrefix}chat-1',
+        '128000',
+      );
+      await pumpEventQueue();
+      expect(changes.length, afterSettings);
+
+      await settings.write(SettingsRepository.keyDefaultPolicy, 'deny');
+      await pumpEventQueue();
+      expect(changes.length, 2);
+    },
+  );
+
   test('preloaded steps, pins and limits match the stored values', () async {
     final settings = SettingsRepository(db);
     await settings.saveStepsDisplay(

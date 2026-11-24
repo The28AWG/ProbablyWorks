@@ -101,3 +101,8 @@ abstract interface class AgentSettingsApi implements LlmProviderSettingsApi {
   Future<void> refreshModels();
   Future<void> rememberModels(List<String> ids);
 }
+
+/// Поток изменений настроек, в том числе сделанных другим клиентом.
+abstract interface class SettingsChangeSource implements AgentSettingsApi {
+  Stream<void> get settingsChanges;
+}

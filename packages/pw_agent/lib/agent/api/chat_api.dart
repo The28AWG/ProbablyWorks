@@ -63,6 +63,13 @@ abstract interface class ChatApi {
   Chat draftChat({required String hostId, Host? host});
 }
 
+/// Поток «соединение восстановлено или экземпляр сервера сменился».
+///
+/// [ChatBloc] по нему перечитывает открытый чат, карточки и черновик.
+abstract interface class ChatReconnectApi implements ChatApi {
+  Stream<void> get reconnects;
+}
+
 abstract interface class ChatStore implements DraftPersistence {
   @override
   Future<Chat?> chat(String id);
@@ -92,6 +99,15 @@ abstract interface class ChatStore implements DraftPersistence {
 
   /// Изменения черновиков, сделанные другим клиентом.
   Stream<String> watchDraftChanges();
+}
+
+/// Быстрое чтение записи чата для синхронизации черновика.
+///
+/// Полный [ChatStore.chat] в удалённом клиенте дополнительно загружает
+/// каталог, usage и проект. Для события черновика это лишние запросы, поэтому
+/// удалённый store отдаёт лёгкий вариант.
+abstract interface class DraftRefreshSource implements ChatStore {
+  Future<Chat?> chatForDraft(String id);
 }
 
 abstract interface class SettingsStore {

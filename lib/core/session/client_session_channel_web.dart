@@ -29,6 +29,9 @@ final class PlatformClientSessionChannel implements ClientSessionChannel {
   web.BroadcastChannel? _channel;
   final _messages = StreamController<Map<Object?, Object?>>.broadcast();
 
+  /// Префикс ключей [PlatformClientSessionStore] в `sessionStorage`.
+  static const _sessionKeyPrefix = 'pworks.session.';
+
   /// Спрашивает другие вкладки, не занят ли этот id.
   @override
   Future<bool> isActive(String id) async {
@@ -55,10 +58,31 @@ final class PlatformClientSessionChannel implements ClientSessionChannel {
 
   void _handle(Map<Object?, Object?> message) {
     final id = message['id'];
-    if (message['type'] == 'claim' && id is String) {
+    if (message['type'] == 'claim' && id is String && _owns(id)) {
       _channel?.postMessage({'type': 'taken', 'id': id}.jsify());
     }
     if (!_messages.isClosed) _messages.add(message);
+  }
+
+  /// Держит ли эта вкладка сессию [id].
+  ///
+  /// Отвечать `taken` на любой `claim` нельзя: любая открытая вкладка
+  /// запретила бы reload другой вкладки, даже если у неё другой id.
+  bool _owns(String id) {
+    try {
+      final storage = web.window.sessionStorage;
+      for (var index = 0; index < storage.length; index++) {
+        final key = storage.key(index);
+        if (key != null &&
+            key.startsWith(_sessionKeyPrefix) &&
+            storage.getItem(key) == id) {
+          return true;
+        }
+      }
+    } on Object {
+      // Хранилище недоступно: дубликат остаётся best-effort.
+    }
+    return false;
   }
 
   /// Закрывает BroadcastChannel и его поток сообщений.

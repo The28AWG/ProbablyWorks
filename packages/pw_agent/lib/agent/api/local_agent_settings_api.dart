@@ -15,7 +15,8 @@ import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 
 /// Локальные настройки агента.
 @LazySingleton(as: AgentSettingsApi)
-final class LocalAgentSettingsApi implements AgentSettingsApi {
+final class LocalAgentSettingsApi
+    implements AgentSettingsApi, SettingsChangeSource {
   LocalAgentSettingsApi(
     this._settings,
     this._catalog,
@@ -77,6 +78,9 @@ final class LocalAgentSettingsApi implements AgentSettingsApi {
 
   @override
   Stream<ModelCatalogState> watchCatalog() => _catalog.watch();
+
+  @override
+  Stream<void> get settingsChanges => _settings.changes;
 
   @override
   Stream<List<String>> watchPinnedModels() => _settings

@@ -106,6 +106,22 @@ void main() {
     expect(changes, isNotEmpty);
   });
 
+  test('unchanged presence does not publish another change', () async {
+    final session = registry.handshake(info: info);
+    final changes = <void>[];
+    final sub = registry.changes.listen(changes.add);
+    addTearDown(sub.cancel);
+
+    registry.updatePresence(session.id, focused: true, activeChatId: 'c1');
+    await Future<void>.delayed(Duration.zero);
+    final afterFirst = changes.length;
+
+    registry.updatePresence(session.id, focused: true, activeChatId: 'c1');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(changes.length, afterFirst);
+  });
+
   test('sweep removes expired sessions', () {
     final session = registry.handshake(info: info);
     now = now.add(const Duration(seconds: 61));

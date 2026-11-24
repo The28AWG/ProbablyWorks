@@ -177,6 +177,11 @@ class SettingsCubit extends Cubit<SettingsState> {
   StreamSubscription<ModelCatalogState>? _catalogSub;
   StreamSubscription<ModelRuntimeState>? _runtimeSub;
   StreamSubscription<List<String>>? _pinsSub;
+  StreamSubscription<void>? _settingsSub;
+
+  /// Одно действие пользователя может записать несколько ключей (например,
+  /// журнал шагов). Схлопываем их в одно перечитывание.
+  Timer? _settingsDebounce;
 
   /// Источник runtime: страница передаёт его в выбор модели и карточку
   /// провайдера.
@@ -184,6 +189,8 @@ class SettingsCubit extends Cubit<SettingsState> {
 
   @override
   Future<void> close() async {
+    _settingsDebounce?.cancel();
+    await _settingsSub?.cancel();
     await _catalogSub?.cancel();
     await _runtimeSub?.cancel();
     await _pinsSub?.cancel();
@@ -197,7 +204,17 @@ class SettingsCubit extends Cubit<SettingsState> {
     final themeMode = ThemeController.modeFrom(
       await _settings.read(ClientSettingsKeys.themeMode),
     );
+    if (isClosed) return;
     emit(state.copyWith(language: language, themeMode: themeMode));
+
+    // Изменения из другого окна: перечитываем снимок, но не создаём
+    // повторную подписку при каждом обновлении.
+    if (_settingsSub == null) {
+      final source = _agentSettings;
+      if (source is SettingsChangeSource) {
+        _settingsSub = source.settingsChanges.listen(_onSettingsChanged);
+      }
+    }
 
     final AgentSettingsSnapshot snapshot;
     try {
@@ -207,6 +224,7 @@ class SettingsCubit extends Cubit<SettingsState> {
       // и локальных настроек. Удалённые разделы не загружаем.
       return;
     }
+    if (isClosed) return;
     emit(
       state.copyWith(
         defaultModel: snapshot.defaultModel,
@@ -243,21 +261,37 @@ class SettingsCubit extends Cubit<SettingsState> {
     } on Object {
       // Кэш моделей — не критичная часть страницы.
     }
+    // Кубок могли закрыть, пока читали настройки: подписки после close никто
+    // не отменит, а их события придут в закрытый эмиттер.
+    if (isClosed) return;
     await _catalogSub?.cancel();
-    _catalogSub = _agentSettings.watchCatalog().listen(
-      (catalog) => emit(state.copyWith(catalog: catalog)),
-    );
+    _catalogSub = _agentSettings.watchCatalog().listen((catalog) {
+      if (isClosed) return;
+      emit(state.copyWith(catalog: catalog));
+    });
     await _runtimeSub?.cancel();
-    _runtimeSub = _agentSettings.modelRuntime.watchRuntime().listen(
-      (runtime) => emit(state.copyWith(runtime: runtime)),
-    );
+    _runtimeSub = _agentSettings.modelRuntime.watchRuntime().listen((runtime) {
+      if (isClosed) return;
+      emit(state.copyWith(runtime: runtime));
+    });
     await _pinsSub?.cancel();
-    _pinsSub = _agentSettings.watchPinnedModels().listen(
-      (pinned) => emit(state.copyWith(pinnedModels: pinned)),
-    );
+    _pinsSub = _agentSettings.watchPinnedModels().listen((pinned) {
+      if (isClosed) return;
+      emit(state.copyWith(pinnedModels: pinned));
+    });
     if (!snapshot.catalog.loaded && snapshot.catalog.hasEnabledProvider) {
       await refreshModels();
     }
+  }
+
+  /// Настройки изменились — перечитываем снимок с небольшой задержкой, чтобы
+  /// несколько ключей одного действия дали одно обновление.
+  void _onSettingsChanged(void _) {
+    if (isClosed) return;
+    _settingsDebounce?.cancel();
+    _settingsDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!isClosed) unawaited(load());
+    });
   }
 
   /// Обновляет список моделей из всех провайдеров. Загрузка и ошибка приходят

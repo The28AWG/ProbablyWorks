@@ -45,6 +45,7 @@ class ChatState extends Equatable {
     this.mentions = const [],
     this.draft = '',
     this.draftId = 0,
+    this.messageEditsId = 0,
     this.unsaved = false,
   });
 
@@ -211,6 +212,17 @@ class ChatState extends Equatable {
   final String draft;
   final int draftId;
 
+  /// Счётчик обновлений неотправленных правок сообщений. Меняется без
+  /// [draftId], чтобы удалённая правка перерисовала ленту, не сбрасывая
+  /// курсор в поле ввода.
+  ///
+  /// Лента читает правки из [ChatDraftStore] напрямую, а не из этого поля:
+  /// счётчик нужен только чтобы `ChatState` перестал быть равным самому себе
+  /// и `BlocBuilder` перестроил экран. Если когда-нибудь появится `buildWhen`,
+  /// его нужно научить учитывать это поле, иначе чужие правки перестанут
+  /// появляться.
+  final int messageEditsId;
+
   ChatState copyWith({
     String? chatId,
     Chat? chat,
@@ -259,6 +271,7 @@ class ChatState extends Equatable {
     List<MentionRef>? mentions,
     String? draft,
     int? draftId,
+    int? messageEditsId,
     bool? unsaved,
   }) => ChatState(
     chatId: chatId ?? this.chatId,
@@ -310,6 +323,7 @@ class ChatState extends Equatable {
     mentions: mentions ?? this.mentions,
     draft: draft ?? this.draft,
     draftId: draftId ?? this.draftId,
+    messageEditsId: messageEditsId ?? this.messageEditsId,
     unsaved: unsaved ?? this.unsaved,
   );
 
@@ -356,6 +370,7 @@ class ChatState extends Equatable {
     mentions,
     draft,
     draftId,
+    messageEditsId,
     unsaved,
   ];
 }

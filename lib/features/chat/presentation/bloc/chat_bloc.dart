@@ -92,6 +92,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatCompactRequested>(_onCompactRequested);
     on<ChatDailyBudgetChanged>(_onDailyBudgetChanged);
     on<_SessionEvent>(_onSessionEvent);
+    on<_Reconnect>(_onReconnect);
     on<_LiveChunk>(_onLiveChunk);
     on<_LiveFlush>(_onLiveFlush);
     on<_Refresh>(_onRefresh);
@@ -150,6 +151,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// Общие подписки блока (каталог, хосты, журнал шагов): живут, пока открыт блок, и не зависят от чата.
   var _sharedWatching = false;
   StreamSubscription<ModelCatalogState>? _catalogSub;
+  StreamSubscription<void>? _reconnectSub;
   StreamSubscription<List<Host>>? _hostsSub;
   final _stepsSubs = <StreamSubscription<String?>>[];
   StreamSubscription<String?>? _pinsSub;
@@ -300,6 +302,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await _conflictSub?.cancel();
     _sessions?.setPresence(clearActiveChat: true);
     await _sessionsSub?.cancel();
+    await _reconnectSub?.cancel();
     await _catalogSub?.cancel();
     await _hostsSub?.cancel();
     // Закрытие чата сохраняет его черновик сразу, не дожидаясь задержки записи.
@@ -353,20 +356,45 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     _draftSub = _hub.chatStore.watchDraftChanges().listen(
       (chatId) => unawaited(_refreshDraft(chatId)),
     );
+    final hub = _hub;
+    if (hub is ChatReconnectApi) {
+      _reconnectSub = hub.reconnects.listen((_) => add(const _Reconnect()));
+    }
   }
 
   Future<void> _refreshDraft(String chatId) async {
     if (chatId != state.chatId) return;
-    final chat = await _hub.chatStore.chat(chatId);
-    if (chat == null || isClosed) return;
+    final store = _hub.chatStore;
+    final Chat? chat;
+    try {
+      chat = store is DraftRefreshSource
+          ? await store.chatForDraft(chatId)
+          : await store.chat(chatId);
+    } on Object catch (error, stack) {
+      // Черновик — не повод ронять поток: следующее событие повторит чтение.
+      AppLog.root.warning('cannot refresh draft $chatId', error, stack);
+      return;
+    }
+    if (chat == null || isClosed || state.chatId != chatId) return;
     final before = _drafts.of(chatId);
+    final beforeEdits = _drafts.editsOf(chatId);
     if (!_drafts.applyRemote(chatId, chat)) return;
     final after = _drafts.of(chatId);
-    // Изменение только в правках сообщений не должно переписывать поле
-    // ввода и сбрасывать курсор.
-    if (after == before) return;
+    final afterEdits = _drafts.editsOf(chatId);
+    if (after == before) {
+      // Поле ввода не переписываем, но лента должна увидеть чужие правки.
+      if (mapEquals(afterEdits, beforeEdits)) return;
+      // ignore: invalid_use_of_visible_for_testing_member, состояние меняет внешний SSE-поток
+      emit(state.copyWith(messageEditsId: state.messageEditsId + 1));
+      return;
+    }
     // ignore: invalid_use_of_visible_for_testing_member, состояние меняет внешний SSE-поток
-    emit(_pushDraft(state, after));
+    emit(
+      _pushDraft(
+        state.copyWith(messageEditsId: state.messageEditsId + 1),
+        after,
+      ),
+    );
   }
 
   /// Снимает подписки на сессию чата, если они были.
@@ -1107,6 +1135,50 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  Future<void> _onReconnect(_Reconnect event, Emitter<ChatState> emit) async {
+    final chatId = state.chatId;
+    if (chatId == null) return;
+    try {
+      // openChat на удалённом клиенте заново читает очередь, снимок хода и
+      // карточки; локальному восстановлению это не вредит.
+      await _session?.restoreUnanswered();
+    } on Object catch (error, stack) {
+      AppLog.root.warning('cannot restore chat $chatId', error, stack);
+    }
+    try {
+      await _reload(emit);
+    } on Object catch (error, stack) {
+      AppLog.root.warning('cannot reload chat $chatId', error, stack);
+      return;
+    }
+    if (isClosed || state.chatId != chatId) return;
+    final Chat? chat;
+    try {
+      chat = await _hub.chatStore.chat(chatId);
+    } on Object catch (error, stack) {
+      AppLog.root.warning('cannot reload draft $chatId', error, stack);
+      return;
+    }
+    if (chat == null || isClosed || state.chatId != chatId) return;
+    final before = _drafts.of(chatId);
+    final beforeEdits = _drafts.editsOf(chatId);
+    if (!_drafts.applyRemote(chatId, chat)) return;
+    final after = _drafts.of(chatId);
+    final afterEdits = _drafts.editsOf(chatId);
+    if (after != before) {
+      emit(
+        _pushDraft(
+          state.copyWith(messageEditsId: state.messageEditsId + 1),
+          after,
+        ),
+      );
+      return;
+    }
+    if (!mapEquals(afterEdits, beforeEdits)) {
+      emit(state.copyWith(messageEditsId: state.messageEditsId + 1));
+    }
+  }
+
   Future<void> _onConflictKeepLocal(
     ChatDraftConflictKeepLocal event,
     Emitter<ChatState> emit,
@@ -1287,6 +1359,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         questions: _hub.broker.pendingQuestions(chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
+        queue: _queueTexts(),
         contextLimit: limit,
         clearContextLimit: limit == null,
         contextWindowKnown: limit != null,
@@ -1317,6 +1390,10 @@ final class _ConflictChanged extends ChatEvent {
   const _ConflictChanged(this.conflict);
 
   final DraftConflict conflict;
+}
+
+final class _Reconnect extends ChatEvent {
+  const _Reconnect();
 }
 
 final class _SessionsChanged extends ChatEvent {

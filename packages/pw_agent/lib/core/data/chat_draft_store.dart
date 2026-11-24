@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 
@@ -53,6 +54,13 @@ class ChatDraftStore {
   final _editsDirty = <String>{};
   final _conflicts = <String, List<DraftConflict>>{};
   final _conflictChanges = StreamController<DraftConflict>.broadcast();
+  Future<void>? _flushing;
+  bool _flushAgain = false;
+
+  /// Сколько раз подряд запись не удалась. Растёт только при сбое, сбрасывается
+  /// при новой правке пользователя: иначе недоступный сервер получал бы запрос
+  /// каждые полсекунды бесконечно.
+  var _retryAttempt = 0;
 
   /// Конфликты, которые ждут решения пользователя. У чата может быть
   /// одновременно конфликт черновика и конфликт правок сообщений.
@@ -95,42 +103,56 @@ class ChatDraftStore {
 
   static const _saveDelay = Duration(milliseconds: 500);
 
+  /// Пауза перед повтором после сбоя: растёт вдвое и упирается в [_retryMaxDelay].
+  static const _retryBaseDelay = Duration(seconds: 2);
+  static const _retryMaxDelay = Duration(seconds: 30);
+  static const _maxRetryShift = 4;
+
   /// Черновик чата из памяти. Если в памяти его нет — из [fallback] (запись из списка чатов).
   ChatDraft of(String chatId, {Chat? fallback}) =>
       _drafts[chatId] ?? fallback?.draft ?? ChatDraft.empty;
 
-  /// Запоминает черновик и правки из записи чата, если в памяти их ещё нет.
-  /// Возвращает true, если запомнил хотя бы одно.
+  /// Запоминает черновик и правки из записи чата, если в памяти их ещё нет
+  /// или серверная версия новее.
+  ///
+  /// Возвращает true, если изменился сам черновик или набор правок. Этим
+  /// пользуется открытие чата: если серверная версия новее, поле ввода нужно
+  /// переписать, даже когда запись в памяти уже была.
   bool prime(String chatId, Chat? stored) {
     if (stored == null) return false;
+    _updateConflictRemote(chatId, stored);
     final draftRevision = _draftRevisions[chatId];
     final editRevision = _editRevisions[chatId];
     final draftDirty = _dirty.contains(chatId);
     final editsDirty = _editsDirty.contains(chatId);
-    if (draftRevision != null &&
-        stored.draftRevision > draftRevision &&
-        !draftDirty) {
+    final draftConflict = _conflictFor(chatId, DraftConflictKind.draft);
+    final editsConflict = _conflictFor(chatId, DraftConflictKind.messageEdits);
+    var changed = false;
+    if (draftConflict == null &&
+        !draftDirty &&
+        (draftRevision == null || stored.draftRevision > draftRevision)) {
+      if (_drafts[chatId] != stored.draft) changed = true;
       _drafts[chatId] = stored.draft;
       _draftRevisions[chatId] = stored.draftRevision;
     }
-    if (editRevision != null &&
-        stored.messageEditsRevision > editRevision &&
-        !editsDirty) {
+    if (editsConflict == null &&
+        !editsDirty &&
+        (editRevision == null || stored.messageEditsRevision > editRevision)) {
+      if (!_sameEdits(_edits[chatId], stored.messageEdits)) changed = true;
       _edits[chatId] = stored.messageEdits;
       _editRevisions[chatId] = stored.messageEditsRevision;
     }
-    var added = false;
     if (!_drafts.containsKey(chatId)) {
-      _drafts[chatId] = stored.draft;
-      added = true;
+      _drafts[chatId] = draftConflict?.local ?? stored.draft;
+      changed = true;
     }
     if (!_edits.containsKey(chatId)) {
-      _edits[chatId] = stored.messageEdits;
-      added = true;
+      _edits[chatId] = editsConflict?.localEdits ?? stored.messageEdits;
+      changed = true;
     }
     _draftRevisions.putIfAbsent(chatId, () => stored.draftRevision);
     _editRevisions.putIfAbsent(chatId, () => stored.messageEditsRevision);
-    return added;
+    return changed;
   }
 
   /// Новый черновик чата: сразу в памяти, в БД — с задержкой.
@@ -138,7 +160,7 @@ class ChatDraftStore {
     if (_drafts[chatId] == draft) return;
     _drafts[chatId] = draft;
     _dirty.add(chatId);
-    _schedule();
+    _scheduleEdit();
   }
 
   /// Неотправленные правки сообщений чата. Пустая карта, если их не было.
@@ -157,7 +179,7 @@ class ChatDraftStore {
     current[messageId] = draft;
     _edits[chatId] = current;
     _editsDirty.add(chatId);
-    _schedule();
+    _scheduleEdit();
   }
 
   /// Убирает правку: сообщение отправили или текст снова совпал с исходным.
@@ -166,12 +188,33 @@ class ChatDraftStore {
     if (current == null || !current.containsKey(messageId)) return;
     _edits[chatId] = Map<String, ChatDraft>.of(current)..remove(messageId);
     _editsDirty.add(chatId);
+    _scheduleEdit();
+  }
+
+  void _schedule([Duration delay = _saveDelay]) {
+    _timer?.cancel();
+    _timer = Timer(delay, () => unawaited(flush()));
+  }
+
+  /// Отложенная запись после правки пользователя: короткая пауза, повторы
+  /// сбрасываются — данные появились заново.
+  void _scheduleEdit() {
+    _retryAttempt = 0;
     _schedule();
   }
 
-  void _schedule() {
-    _timer?.cancel();
-    _timer = Timer(_saveDelay, () => unawaited(flush()));
+  /// Повтор после сбоя с удвоением паузы. Растущая задержка не даёт
+  /// недоступному серверу получать запрос на каждое событие.
+  void _scheduleRetry() {
+    final shift = _retryAttempt > _maxRetryShift
+        ? _maxRetryShift
+        : _retryAttempt;
+    final millis = _retryBaseDelay.inMilliseconds * (1 << shift);
+    final delay = millis > _retryMaxDelay.inMilliseconds
+        ? _retryMaxDelay
+        : Duration(milliseconds: millis);
+    if (_retryAttempt < _maxRetryShift) _retryAttempt++;
+    _schedule(delay);
   }
 
   /// Переносит черновик из [fromId] в [toId] (например, в только что созданный чат) и очищает исходный.
@@ -184,24 +227,54 @@ class ChatDraftStore {
   }
 
   /// Записывает все изменённые черновики в текущий backend.
-  Future<void> flush() => _flushTo(_chats);
+  ///
+  /// Параллельные вызовы не запускают вторую запись: второй вызов только
+  /// просит текущий цикл пройти ещё раз. Это не даёт двум запросам уйти с
+  /// одной `expectedRevision` и получить ложный конфликт.
+  Future<void> flush() {
+    final running = _flushing;
+    if (running != null) {
+      _flushAgain = true;
+      return running;
+    }
+    final future = _flushLoop();
+    _flushing = future;
+    return future;
+  }
+
+  Future<void> _flushLoop() async {
+    try {
+      do {
+        _flushAgain = false;
+        await _flushTo(_chats);
+      } while (_flushAgain && (_dirty.isNotEmpty || _editsDirty.isNotEmpty));
+    } finally {
+      _flushing = null;
+    }
+  }
 
   Future<void> _flushTo(DraftPersistence backend) async {
     _timer?.cancel();
     _timer = null;
     final ids = _dirty.toList();
     final editIds = _editsDirty.toList();
-    _dirty.clear();
-    _editsDirty.clear();
+    _dirty.removeAll(ids);
+    _editsDirty.removeAll(editIds);
+    var failed = false;
     for (final id in ids) {
-      await _saveDraft(id, backend);
+      if (await _saveDraft(id, backend)) failed = true;
     }
     for (final id in editIds) {
-      await _saveEdits(id, backend);
+      if (await _saveEdits(id, backend)) failed = true;
     }
+    // Повтор только после сбоя. Если грязными остались свежие правки, их
+    // запись уже запланирована `_scheduleEdit`.
+    if (failed) _scheduleRetry();
   }
 
-  Future<void> _saveDraft(String id, DraftPersistence backend) async {
+  /// Сохраняет черновик. `true` — изменение осталось несохранённым и требует
+  /// повтора; `false` — записано, разрешено конфликтом или уже не нужно.
+  Future<bool> _saveDraft(String id, DraftPersistence backend) async {
     try {
       _draftRevisions[id] = await backend.saveDraft(
         id,
@@ -209,16 +282,27 @@ class ChatDraftStore {
         expectedRevision: _draftRevisions[id],
       );
       _removeConflict(id, DraftConflictKind.draft);
+      return false;
     } on AgentApiException catch (error) {
       if (error.code == 'draft_conflict') {
-        await _rememberConflict(id, backend, DraftConflictKind.draft);
-      } else {
-        _dirty.add(id);
+        return _rememberConflict(id, backend, DraftConflictKind.draft);
       }
+      if (_isTerminal(error)) {
+        // Чат удалён или токен отозван: повтор не поможет и только крутит цикл.
+        discard(id);
+        return false;
+      }
+      _markDirty(id, DraftConflictKind.draft);
+      return true;
+    } on Object {
+      // Сеть, таймаут или битый ответ: изменение не должно исчезнуть.
+      _markDirty(id, DraftConflictKind.draft);
+      return true;
     }
   }
 
-  Future<void> _saveEdits(String id, DraftPersistence backend) async {
+  /// Сохраняет правки сообщений. См. [_saveDraft] о возвращаемом значении.
+  Future<bool> _saveEdits(String id, DraftPersistence backend) async {
     try {
       _editRevisions[id] = await backend.saveMessageEdits(
         id,
@@ -226,25 +310,43 @@ class ChatDraftStore {
         expectedRevision: _editRevisions[id],
       );
       _removeConflict(id, DraftConflictKind.messageEdits);
+      return false;
     } on AgentApiException catch (error) {
       if (error.code == 'draft_conflict') {
-        await _rememberConflict(id, backend, DraftConflictKind.messageEdits);
-      } else {
-        _editsDirty.add(id);
+        return _rememberConflict(id, backend, DraftConflictKind.messageEdits);
       }
+      if (_isTerminal(error)) {
+        discard(id);
+        return false;
+      }
+      _markDirty(id, DraftConflictKind.messageEdits);
+      return true;
+    } on Object {
+      // Сеть, таймаут или битый ответ: изменение не должно исчезнуть.
+      _markDirty(id, DraftConflictKind.messageEdits);
+      return true;
     }
   }
 
-  Future<void> _rememberConflict(
+  /// Ошибка, при которой повтор бессмысленен: чата больше нет или доступ
+  /// отозван. Данные уже не восстановить, поэтому черновик убирается.
+  static bool _isTerminal(AgentApiException error) =>
+      error.code == 'chat_not_found' || error.code == 'unauthorized';
+
+  /// Читает удалённую версию для конфликта. `true` — снимок не получен, запись
+  /// осталась грязной.
+  Future<bool> _rememberConflict(
     String id,
     DraftPersistence backend,
     DraftConflictKind kind,
   ) async {
     try {
-      final chat = await backend.chat(id);
+      final chat = backend is DraftRefreshSource
+          ? await backend.chatForDraft(id)
+          : await backend.chat(id);
       if (chat == null) {
         _markDirty(id, kind);
-        return;
+        return true;
       }
       final conflict = kind == DraftConflictKind.draft
           ? DraftConflict(
@@ -267,9 +369,11 @@ class ChatDraftStore {
       // Новые правки, появившиеся во время загрузки серверного снимка,
       // остаются грязными и будут отправлены следующим flush.
       if (!_conflictChanges.isClosed) _conflictChanges.add(conflict);
+      return false;
     } on Object {
       // Оставляем изменение грязным: следующая запись повторит попытку.
       _markDirty(id, kind);
+      return true;
     }
   }
 
@@ -281,9 +385,59 @@ class ChatDraftStore {
     }
   }
 
+  /// Подтягивает удалённую часть уже показанного конфликта.
+  ///
+  /// Пока пользователь читает баннер, другой клиент может изменить чат ещё
+  /// раз. «Взять серверное» должно взять последнюю версию, а «оставить моё» —
+  /// текущий локальный текст, а не снимок на момент появления баннера.
+  void _updateConflictRemote(String chatId, Chat chat) {
+    final draftConflict = _conflictFor(chatId, DraftConflictKind.draft);
+    if (draftConflict != null &&
+        chat.draftRevision > draftConflict.remoteRevision) {
+      _replaceConflict(
+        DraftConflict(
+          chatId: chatId,
+          kind: DraftConflictKind.draft,
+          remoteRevision: chat.draftRevision,
+          local: _drafts[chatId] ?? draftConflict.local,
+          remote: chat.draft,
+        ),
+      );
+    }
+    final editsConflict = _conflictFor(chatId, DraftConflictKind.messageEdits);
+    if (editsConflict != null &&
+        chat.messageEditsRevision > editsConflict.remoteRevision) {
+      _replaceConflict(
+        DraftConflict(
+          chatId: chatId,
+          kind: DraftConflictKind.messageEdits,
+          remoteRevision: chat.messageEditsRevision,
+          localEdits: _edits[chatId] ?? editsConflict.localEdits,
+          remoteEdits: chat.messageEdits,
+        ),
+      );
+    }
+  }
+
+  void _replaceConflict(DraftConflict conflict) {
+    final conflicts = _conflicts[conflict.chatId];
+    if (conflicts == null) return;
+    final index = conflicts.indexWhere((item) => item.kind == conflict.kind);
+    if (index >= 0) conflicts[index] = conflict;
+  }
+
+  bool _sameEdits(Map<String, ChatDraft>? a, Map<String, ChatDraft> b) {
+    if (a == null || a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (b[entry.key] != entry.value) return false;
+    }
+    return true;
+  }
+
   /// Принимает версию чата с сервера: например, после SSE о чужом изменении.
   /// Возвращает true, если версия действительно новее локальной.
   bool applyRemote(String chatId, Chat chat) {
+    _updateConflictRemote(chatId, chat);
     final draftRevision = _draftRevisions[chatId];
     final editRevision = _editRevisions[chatId];
     final draftChanged =
@@ -315,11 +469,13 @@ class ChatDraftStore {
     if (conflict == null) return;
     _removeConflict(chatId, conflict.kind);
     if (conflict.kind == DraftConflictKind.draft) {
-      _drafts[chatId] = conflict.local ?? ChatDraft.empty;
+      // Пользователь мог продолжить печатать под баннером: сохраняем самую
+      // свежую локальную версию, а не снимок на момент конфликта.
+      _drafts[chatId] = _drafts[chatId] ?? conflict.local ?? ChatDraft.empty;
       _draftRevisions[chatId] = conflict.remoteRevision;
       _dirty.add(chatId);
     } else {
-      _edits[chatId] = conflict.localEdits ?? const {};
+      _edits[chatId] = _edits[chatId] ?? conflict.localEdits ?? const {};
       _editRevisions[chatId] = conflict.remoteRevision;
       _editsDirty.add(chatId);
     }
@@ -355,8 +511,19 @@ class ChatDraftStore {
     _conflicts.remove(chatId);
   }
 
-  /// Закрывает поток конфликтов при остановке приложения.
-  Future<void> dispose() => _conflictChanges.close();
+  /// Закрывает поток конфликтов, сохраняя несохранённые правки.
+  ///
+  /// Отложенная запись к этому моменту может ещё не сработать, а вызывающий
+  /// закрывает хранилище на выходе из приложения: терять последний черновик
+  /// нельзя.
+  Future<void> dispose() async {
+    _timer?.cancel();
+    _timer = null;
+    await flush();
+    _timer?.cancel();
+    _timer = null;
+    await _conflictChanges.close();
+  }
 }
 
 final class _NoopDraftPersistence implements DraftPersistence {

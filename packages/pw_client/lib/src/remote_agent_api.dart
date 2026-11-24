@@ -54,6 +54,8 @@ class RemoteAgentApi
         HostsApi,
         ProjectsApi,
         AgentSettingsApi,
+        SettingsChangeSource,
+        ChatReconnectApi,
         McpApi,
         PluginApi,
         SecurityAuditApi,
@@ -181,6 +183,8 @@ class RemoteAgentApi
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _clientSessionChanges =
       StreamController<List<ClientSessionView>>.broadcast();
+  final _reconnects = StreamController<void>.broadcast();
+  bool _reconnectPending = false;
   List<ClientSessionView> _clientSessions = const [];
   final _catalogChanges = StreamController<ModelCatalogState>.broadcast();
   final _runtimeChanges = StreamController<ModelRuntimeState>.broadcast();
@@ -256,6 +260,14 @@ class RemoteAgentApi
   @override
   Stream<List<ClientSessionView>> get clientSessions =>
       _clientSessionChanges.stream;
+
+  /// Соединение восстановлено или сервер перезапустился.
+  @override
+  Stream<void> get reconnects => _reconnects.stream;
+
+  /// Изменения настроек, включая пришедшие из другого окна.
+  @override
+  Stream<void> get settingsChanges => _settingsChanges.stream;
 
   Future<void> _refreshClientSessionsQuietly() async {
     try {
@@ -343,6 +355,26 @@ class RemoteAgentApi
     _disposed = true;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    final session = _sessionId;
+    if (session != null) {
+      try {
+        // Явное закрытие не обязательно: TTL всё равно уберёт сессию. Но
+        // при штатном выходе не оставляем её висеть до минуты.
+        await _sendRaw(
+          'DELETE',
+          '/client/session',
+          session: session,
+        ).timeout(const Duration(seconds: 2));
+      } on Object {
+        // Сеть уже недоступна — сессия истечёт по TTL.
+      }
+      _sessionId = null;
+      // Соседний экземпляр того же профиля мог за время ожидания пройти
+      // рукопожатие и записать свой id. Стираем только свой.
+      if (_sessionStore.read(sessionKey) == session) {
+        _sessionStore.delete(sessionKey);
+      }
+    }
     await _statusChanges.close();
     await _events.close();
     await _approvals.close();
@@ -350,6 +382,7 @@ class RemoteAgentApi
     await _editChanges.close();
     await _resolutions.close();
     await _clientSessionChanges.close();
+    await _reconnects.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
     await _localModelsChanges.close();
@@ -592,7 +625,12 @@ class RemoteAgentApi
   /// null вместо прежнего значения при временной ошибке.
   Future<void> _refreshSettingsFromRemote() async {
     try {
-      _globalSettings = await _get('/settings');
+      final json = await _get('/settings');
+      _globalSettings = json;
+      final snapshot = _snapshotFrom(json);
+      _snapshot = snapshot;
+      _publishCatalog(snapshot.catalog);
+      if (!_pinnedChanges.isClosed) _pinnedChanges.add(snapshot.pinnedModels);
       if (!_settingsChanges.isClosed) _settingsChanges.add(null);
     } on Object {
       // Следующее событие или открытие настроек попробует снова.
@@ -811,6 +849,11 @@ class RemoteAgentApi
     _approvalsById.removeWhere((_, value) => value.chatId == chatId);
     _questionsById.removeWhere((_, value) => value.chatId == chatId);
     _editsById.removeWhere((_, value) => value.chatId == chatId);
+    // Карты для _hasPending хранят id, а не объекты. Если событие закрытия
+    // потерялось при обрыве, без этой чистки бейдж ожидания останется навсегда.
+    _approvalChats.removeWhere((_, value) => value == chatId);
+    _questionChats.removeWhere((_, value) => value == chatId);
+    _editChats.removeWhere((_, value) => value == chatId);
     for (final item in (json['approvals'] as List? ?? const [])) {
       final request = _approval(Map<String, dynamic>.from(item as Map));
       _approvalsById[request.id] = request;
@@ -1467,16 +1510,23 @@ class RemoteAgentApi
   /// Запоминает instanceId и сбрасывает runtime-снимки при смене экземпляра.
   void _trackInstance(String instanceId) {
     if (instanceId.isEmpty) return;
-    if (_instanceId != null && _instanceId != instanceId) {
-      // Сервер перезапустился: ревизии очереди и снимки шага относятся к
-      // прошлому экземпляру и не должны перетирать новые данные.
-      _running.clear();
-      _waiting.clear();
-      _queues.clear();
-      _queueRevisions.clear();
-      _turnSnapshots.clear();
-    }
+    final changed = _instanceId != null && _instanceId != instanceId;
     _instanceId = instanceId;
+    if (!changed) return;
+    // Сервер перезапустился: ревизии очереди и снимки шага относятся к
+    // прошлому экземпляру и не должны перетирать новые данные.
+    _running.clear();
+    _waiting.clear();
+    _queues.clear();
+    _queueRevisions.clear();
+    _turnSnapshots.clear();
+    _approvalsById.clear();
+    _approvalChats.clear();
+    _questionsById.clear();
+    _questionChats.clear();
+    _editsById.clear();
+    _editChats.clear();
+    _notifyReconnect();
   }
 
   void _startHeartbeat() {
@@ -1554,17 +1604,37 @@ class RemoteAgentApi
   Uri _url(String path) => baseUri.resolve('/api/v1$path');
 
   void _setStatus(AgentStatus status) {
-    if (_status == status) return;
+    if (_disposed || _status == status) return;
     final wasOffline = _status == AgentStatus.offline;
     _status = status;
     if (!_statusChanges.isClosed) _statusChanges.add(status);
     // После offline списки могли быть очищены. Просим подписчиков
     // перечитать их, когда связь вернулась.
-    if (status == AgentStatus.online && wasOffline) {
+    if (status == AgentStatus.online && wasOffline) _notifyReconnect();
+  }
+
+  /// Сообщает подписчикам о восстановлении связи и обновляет глобальные
+  /// снимки, которые могли устареть за время обрыва.
+  ///
+  /// Одно восстановление может быть замечено несколькими путями сразу
+  /// (успешный запрос поднимает статус, повторное рукопожатие меняет
+  /// `instanceId`). Уведомление откладывается на микрозадачу и схлопывается,
+  /// иначе подписчики получили бы два одинаковых обновления.
+  void _notifyReconnect() {
+    if (_disposed || _reconnectPending) return;
+    _reconnectPending = true;
+    scheduleMicrotask(() {
+      _reconnectPending = false;
+      if (_disposed) return;
       if (!_stateChanges.isClosed) _stateChanges.add('reconnect');
+      if (!_reconnects.isClosed) _reconnects.add(null);
+      if (_sessionId == null) return;
+      unawaited(_refreshSettingsFromRemote());
+      unawaited(_refreshModelsFromRemote());
+      unawaited(_refreshClientSessionsQuietly());
       unawaited(_loadRuntime());
       unawaited(_loadLocalModels());
-    }
+    });
   }
 
   Future<void> _listen() async {
@@ -2432,13 +2502,25 @@ final class _RemotePluginSettings implements plugins.PluginSettings {
   }
 }
 
-final class _RemoteChatStore implements ChatStore {
+final class _RemoteChatStore implements ChatStore, DraftRefreshSource {
   _RemoteChatStore(this._api);
 
   final RemoteAgentApi _api;
 
   @override
   Future<Chat?> chat(String id) => _api.chat(id);
+
+  @override
+  Future<Chat?> chatForDraft(String id) async {
+    try {
+      final json = await _api._get('/chats/$id');
+      final map = Map<String, dynamic>.from(json['chat'] as Map);
+      return _chat(map);
+    } on AgentApiException catch (error) {
+      if (error.status == 404) return null;
+      rethrow;
+    }
+  }
 
   @override
   Future<List<ChatMessage>> messages(String id) => _api.messages(id);

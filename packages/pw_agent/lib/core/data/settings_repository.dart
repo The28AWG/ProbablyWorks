@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:injectable/injectable.dart';
@@ -20,6 +21,7 @@ class SettingsRepository {
   /// Вся kv-таблица в памяти после [preload]: чтения синхронны, записи обновляют и память, и БД.
   final _cache = <String, String>{};
   var _preloaded = false;
+  static const _settingsChangeTick = Object();
 
   static const keyDefaultModel = 'defaultModel';
   static const keyTitleModel = 'titleModel';
@@ -153,6 +155,40 @@ class SettingsRepository {
       (_db.select(_kvSettingsTable)..where((t) => t.key.equals(key)))
           .watchSingleOrNull()
           .map((row) => row?.value);
+
+  /// Изменение настроек, в том числе записанное другим клиентом.
+  ///
+  /// Отслеживаются только настройки: расход дня, лимит и метаданные сжатия
+  /// пишутся на каждом шаге агента и к странице настроек не относятся. Иначе
+  /// открытая страница перечитывала бы всё на каждое действие агента.
+  ///
+  /// Первое событие — текущее состояние таблицы: подписчик уже прочитал его
+  /// при загрузке, поэтому начальный снимок пропускаем.
+  Stream<void> get changes => _db
+      .select(_kvSettingsTable)
+      .watch()
+      .map(_settingsFingerprint)
+      .distinct()
+      .skip(1)
+      .map((_) => _settingsChangeTick);
+
+  /// Отпечаток настроек: значения ключей без учёта расхода чатов. Сравнение
+  /// идёт по строке, поэтому таблица-результат не считается изменившейся,
+  /// пока настройки те же.
+  String _settingsFingerprint(List<KvRow> rows) {
+    final parts = <String>[
+      for (final row in rows)
+        if (!_isChatScoped(row.key)) '${row.key}\u001f${row.value}',
+    ]..sort();
+    return parts.join('\u001e');
+  }
+
+  /// Ключи, привязанные к чату и обновляемые во время хода агента.
+  static bool _isChatScoped(String key) =>
+      key.startsWith(keyDailyUsagePrefix) ||
+      key.startsWith(keyDailyBudgetPrefix) ||
+      key.startsWith(keyCompactionInfoPrefix) ||
+      key.startsWith(keyLastUsageContextPrefix);
 
   Future<void> write(String key, String? value) async {
     if (_preloaded) {

@@ -77,7 +77,15 @@ final class ApiServer {
        _clientSessions = clientSessions ?? ClientSessionRegistry(),
        instanceId = instanceId ?? ApiTokenStore.generateApiToken(),
        assert(maxConcurrentRequests > 0),
-       assert(requestTimeout > Duration.zero);
+       assert(requestTimeout > Duration.zero) {
+    // Одна подписка на весь сервер: иначе каждая SSE-подписка добавляла бы
+    // своё событие в общий _stateEvents и N клиентов получали бы N^2 копий.
+    _sessionChangesSub = _clientSessions.changes.listen((_) {
+      if (!_stateEvents.isClosed) {
+        _stateEvents.add(const _ClientSessionsChanged());
+      }
+    });
+  }
 
   static const _maxBodyBytes = 8 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
@@ -116,6 +124,7 @@ final class ApiServer {
   final String instanceId;
 
   final ClientSessionRegistry _clientSessions;
+  late final StreamSubscription<void> _sessionChangesSub;
 
   /// Одновременные запросы ограничены, чтобы зависший backend не копил
   /// неограниченное число соединений.
@@ -149,7 +158,9 @@ final class ApiServer {
       await response.close();
     }
     _clients.clear();
+    await _sessionChangesSub.cancel();
     _clientSessions.dispose();
+    await _stateEvents.close();
     await _server?.close(force: true);
     _server = null;
   }
@@ -895,12 +906,15 @@ final class ApiServer {
       );
     }
     final body = await _body(request);
+    final hasActiveChatId = body.containsKey('activeChatId');
+    final focused = body['focused'];
     final session = _clientSessions.updatePresence(
       sessionId,
-      focused: body['focused'] == true,
-      activeChatId: body['activeChatId'] is String
+      focused: focused is bool ? focused : null,
+      activeChatId: hasActiveChatId && body['activeChatId'] is String
           ? body['activeChatId'] as String
           : null,
+      activeChatIdSpecified: hasActiveChatId,
     );
     if (session == null) {
       throw const AgentApiException(
@@ -2379,9 +2393,14 @@ final class ApiServer {
     final subscription = _allEvents().listen((event) {
       if (!_matchesChat(event, filterChatId)) return;
       final encoded = _event(event);
-      response.write(
-        'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
-      );
+      try {
+        response.write(
+          'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
+        );
+      } on Object {
+        // DELETE сессии или обрыв клиента уже закрыли ответ. Новые события
+        // этому потоку не нужны, но общий поток не должен падать.
+      }
     });
     // Клиент, подключившийся посреди ответа, не получит уже отправленные
     // дельты. Сразу отдаём снимок текущего шага.
@@ -2391,14 +2410,22 @@ final class ApiServer {
     for (final snapshotChatId in snapshotChats) {
       final session = _chatApi?.session(snapshotChatId);
       final snapshot = session?.turnSnapshot;
-      if (snapshot == null || !snapshot.isRunning || snapshot.isEmpty) continue;
-      response.write(
-        'event: turnSnapshot\n'
-        'data: ${jsonEncode({'chatId': snapshotChatId, ..._turnSnapshotJson(snapshot)})}\n\n',
-      );
+      if (snapshot == null || !snapshot.isRunning) continue;
+      try {
+        response.write(
+          'event: turnSnapshot\n'
+          'data: ${jsonEncode({'chatId': snapshotChatId, ..._turnSnapshotJson(snapshot)})}\n\n',
+        );
+      } on Object {
+        // Соединение уже закрыто.
+      }
     }
     final heartbeat = Timer.periodic(_eventHeartbeat, (_) {
-      response.write(': ping\n\n');
+      try {
+        response.write(': ping\n\n');
+      } on Object {
+        // Ответ закрыт: окончательную очистку сделает response.done.
+      }
     });
     try {
       await response.done;
@@ -2427,11 +2454,6 @@ final class ApiServer {
       _backend.editChanges.listen(controller.add),
       if (backend is InteractionEventsApi)
         backend.resolutions.listen(controller.add),
-      _clientSessions.changes.listen((_) {
-        if (!_stateEvents.isClosed) {
-          _stateEvents.add(const _ClientSessionsChanged());
-        }
-      }),
       _stateEvents.stream.listen(controller.add),
       if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
@@ -2966,6 +2988,7 @@ bool _matchesChat(Object event, String? chatId) {
     EditFileChangesRequest value => value.chatId,
     InteractionResolution value => value.chatId,
     _ChatChanged value => value.chatId,
+    _DraftChanged value => value.chatId,
     _ => null,
   };
   return chatId == null || eventChatId == chatId;
