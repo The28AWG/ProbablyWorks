@@ -19,6 +19,7 @@ void main() {
     paths = AppPaths.forSupport(temp);
     server = (await HttpServer.bind(InternetAddress.loopbackIPv4, 0))
       ..listen((request) {
+        final auth = request.headers.value(HttpHeaders.authorizationHeader);
         if (request.uri.path == '/api/v1/health') {
           request.response
             ..statusCode = HttpStatus.ok
@@ -26,7 +27,15 @@ void main() {
             ..close();
           return;
         }
-        final auth = request.headers.value(HttpHeaders.authorizationHeader);
+        // find() проверяет токен отдельным probe-запросом без сессии.
+        if (request.uri.path == '/api/v1/client/probe' &&
+            auth == 'Bearer $token') {
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..write('{"ok":true,"protocol":1}')
+            ..close();
+          return;
+        }
         request.response
           ..statusCode = auth == 'Bearer $token'
               ? HttpStatus.ok

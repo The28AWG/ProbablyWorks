@@ -123,11 +123,46 @@ void main() {
       final health = await http.get(base.resolve('/api/v1/health'));
       expect(health.statusCode, HttpStatus.ok, reason: health.body);
 
-      final settings = await http.get(
-        base.resolve('/api/v1/settings'),
+      // Probe проверяет токен без создания сессии: именно им пользуется
+      // discovery при поиске демона.
+      final probe = await http.get(
+        base.resolve('/api/v1/client/probe'),
         headers: {'Authorization': 'Bearer ${daemonInfo.token}'},
       );
+      expect(probe.statusCode, HttpStatus.ok, reason: probe.body);
+      expect((jsonDecode(probe.body) as Map)['protocol'], 1);
+
+      // После рукопожатия все маршруты, кроме health, probe и handshake,
+      // требуют X-Client-Session: без неё settings отвечает 400.
+      final handshake = await http.post(
+        base.resolve('/api/v1/client/handshake'),
+        headers: {
+          'Authorization': 'Bearer ${daemonInfo.token}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'protocol': 1}),
+      );
+      expect(handshake.statusCode, HttpStatus.ok, reason: handshake.body);
+      final sessionId =
+          (jsonDecode(handshake.body) as Map)['sessionId'] as String;
+
+      final settings = await http.get(
+        base.resolve('/api/v1/settings'),
+        headers: {
+          'Authorization': 'Bearer ${daemonInfo.token}',
+          'X-Client-Session': sessionId,
+        },
+      );
       expect(settings.statusCode, HttpStatus.ok, reason: settings.body);
+
+      final closed = await http.delete(
+        base.resolve('/api/v1/client/session'),
+        headers: {
+          'Authorization': 'Bearer ${daemonInfo.token}',
+          'X-Client-Session': sessionId,
+        },
+      );
+      expect(closed.statusCode, HttpStatus.noContent, reason: closed.body);
     } finally {
       await stop();
     }

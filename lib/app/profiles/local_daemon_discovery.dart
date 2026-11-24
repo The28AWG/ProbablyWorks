@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/config/local_daemon_info.dart';
@@ -33,17 +35,33 @@ final class LocalDaemonDiscovery {
           .get(base.resolve('/api/v1/health'))
           .timeout(_timeout);
       if (health.statusCode != 200) return null;
-      final settings = await _client
-          .get(
-            base.resolve('/api/v1/settings'),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(_timeout);
-      if (settings.statusCode != 200) return null;
+      // Токен и версия протокола проверяются отдельным probe-запросом:
+      // остальные маршруты после рукопожатия требуют `X-Client-Session`.
+      // Probe не создаёт сессию, поэтому не тревожит список клиентов.
+      if (!await _probe(base, token)) return null;
       return info.copyWith(token: token);
     } on Object {
       return null;
     }
+  }
+
+  Future<bool> _probe(Uri base, String token) async {
+    final response = await _client
+        .get(
+          base.resolve('/api/v1/client/probe'),
+          headers: {'Authorization': 'Bearer $token'},
+        )
+        .timeout(_timeout);
+    if (response.statusCode != 200) return false;
+    try {
+      final decoded = jsonDecode(response.body);
+      return decoded is Map &&
+          decoded['protocol'] is num &&
+          (decoded['protocol'] as num).toInt() == localDaemonProtocol;
+    } on FormatException {
+      // Битый ответ — демон не подтвердил токен.
+    }
+    return false;
   }
 
   Future<String?> _tokenFor(LocalDaemonInfo info) async {

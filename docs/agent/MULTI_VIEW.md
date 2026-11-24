@@ -25,8 +25,8 @@
 ## Что реализовано
 
 - Сервер выдаёт `sessionId` при рукопожатии, хранит сессии в памяти и
-  проверяет `X-Client-Session` на всех запросах, кроме `/health` и
-  `/client/handshake`.
+  проверяет `X-Client-Session` на всех запросах, кроме `/health`,
+  `/client/probe` и `/client/handshake`.
 - `instanceId` создаётся при старте `ApiServer` и отдаётся в `/health` и в
   ответе рукопожатия. Перезапуск сервера меняет `instanceId`; старые сессии
   после него недействительны.
@@ -96,6 +96,7 @@ X-Client-Session: <sessionId>
 Исключения:
 
 - `GET /api/v1/health` — открыт и не требует сессии;
+- `GET /api/v1/client/probe` — требует Bearer, но не сессию; сессию не создаёт;
 - `POST /api/v1/client/handshake` — единственный маршрут, который сессию
   создаёт;
 - статические файлы web-сборки — не API.
@@ -103,6 +104,7 @@ X-Client-Session: <sessionId>
 Ошибки:
 
 - `400 session_required` — заголовка нет, а сервер требует сессию;
+  исключения — `/health`, `/client/probe` и `/client/handshake`;
 - `410 session_expired` — сессия неизвестна или истекла; клиент делает новое
   рукопожатие и один раз повторяет запрос.
 
@@ -165,11 +167,18 @@ sandbox iframe, отключённое хранилище). В этом случ
 Новые маршруты:
 
 ```text
+GET    /api/v1/client/probe            проверить демон и токен без сессии
 POST   /api/v1/client/handshake
 PUT    /api/v1/client/session          heartbeat и presence
 DELETE /api/v1/client/session          закрыть текущую сессию
 GET    /api/v1/client/sessions         список клиентских сессий
 ```
+
+`GET /client/probe` нужен локальному GUI для discovery. Он требует Bearer, но
+не требует `X-Client-Session` и не создаёт сессию: проверка не появляется в
+списке клиентов и не рассылает `clientSessionsChanged`. Ответ содержит
+`protocol` и `instanceId`; несовпадение `protocol` означает, что демон не
+подходит.
 
 `PUT /api/v1/client/session` принимает:
 
@@ -513,11 +522,11 @@ chat_conflict`. Клиент сохраняет только изменивши�
 
 - Registry: создание, повторное рукопожатие с `previousSessionId`, истечение,
   `sweep`, `delete`.
-- API: `/health` содержит `instanceId`; handshake возвращает сессию;
-  `requireSession` без заголовка — `400`; протухшая — `410`; heartbeat
-  продлевает; неизменённое присутствие не рассылает лишнее событие; список
-  сессий помечает текущую; `DELETE` закрывает; SSE принимает заголовок; CORS
-  разрешает `x-client-session`.
+- API: `/health` содержит `instanceId`; probe подтверждает токен без сессии;
+  handshake возвращает сессию; `requireSession` без заголовка — `400`;
+  протухшая — `410`; heartbeat продлевает; неизменённое присутствие не
+  рассылает лишнее событие; список сессий помечает текущую; `DELETE` закрывает;
+  SSE принимает заголовок; CORS разрешает `x-client-session`.
 - Client: рукопожатие ровно один раз при параллельных запросах; заголовок на
   всех запросах; `410` → рукопожатие и один retry; `401` не повторяется;
   heartbeat; `MemoryClientSessionStore`.

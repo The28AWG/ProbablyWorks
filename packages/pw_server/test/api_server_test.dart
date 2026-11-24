@@ -120,6 +120,34 @@ void main() {
     await response.drain<void>();
   });
 
+  test('client probe checks the token without creating a session', () async {
+    final registry = ClientSessionRegistry(
+      sweepInterval: const Duration(hours: 1),
+    );
+    final probeServer = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      clientSessions: registry,
+    );
+    final port = await probeServer.start();
+    addTearDown(probeServer.stop);
+    final base = 'http://127.0.0.1:$port';
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/client/probe',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    expect(jsonDecode(body), containsPair('protocol', 1));
+    // Probe не должен появляться в списке клиентов и тратить TTL.
+    expect(registry.list(), isEmpty);
+  });
+
   test('validates data cleanup parameters', () async {
     final (badStatus, _) = await _request(
       client,

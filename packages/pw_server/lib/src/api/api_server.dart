@@ -90,6 +90,10 @@ final class ApiServer {
   static const _maxBodyBytes = 8 << 20;
   static const _eventHeartbeat = Duration(seconds: 15);
 
+  /// Версия протокола клиентских сессий. Одна на рукопожатие и проверку
+  /// демона, чтобы клиент и сервер не разошлись в допущении.
+  static const clientProtocol = 1;
+
   final AgentApi _backend;
   final ChatApi? _chatApi;
   final DataApi? dataApi;
@@ -468,9 +472,11 @@ final class ApiServer {
 
   static const _clientSessionHeader = 'x-client-session';
 
-  /// Health и рукопожатие не могут требовать сессию: её ещё нет.
+  /// Health, проверка демона и рукопожатие не могут требовать сессию:
+  /// health открыт, probe и handshake работают по Bearer-токену.
   bool _sessionExempt(HttpRequest request) =>
       (request.method == 'GET' && request.uri.path == '/api/v1/health') ||
+      (request.method == 'GET' && request.uri.path == '/api/v1/client/probe') ||
       (request.method == 'POST' &&
           request.uri.path == '/api/v1/client/handshake');
 
@@ -835,6 +841,9 @@ final class ApiServer {
   }
 
   Future<void> _routeClient(HttpRequest request, List<String> rest) async {
+    if (rest.length == 1 && rest.first == 'probe' && request.method == 'GET') {
+      return _probe(request);
+    }
     if (rest.length == 1 &&
         rest.first == 'handshake' &&
         request.method == 'POST') {
@@ -862,6 +871,21 @@ final class ApiServer {
     );
   }
 
+  /// Проверка живого демона и токена без создания клиентской сессии.
+  ///
+  /// Нужна локальному GUI: discovery-файл подтверждает только адрес, а
+  /// настоящий запрос к API без сессии получает `400 session_required`.
+  /// Создавать сессию ради проверки и сразу удалять её — лишние события
+  /// присутствия для остальных окон.
+  Future<void> _probe(HttpRequest request) {
+    _json(request.response, HttpStatus.ok, {
+      'ok': true,
+      'protocol': clientProtocol,
+      'instanceId': instanceId,
+    });
+    return Future<void>.value();
+  }
+
   /// Рукопожатие: сервер сам выдаёт сессию, клиент её только сохраняет.
   ///
   /// `previousSessionId` — подсказка для непрерывности после reload, а не
@@ -870,8 +894,8 @@ final class ApiServer {
     final body = await _body(request);
     final protocol = body['protocol'] is num
         ? (body['protocol'] as num).toInt()
-        : 1;
-    if (protocol != 1) {
+        : clientProtocol;
+    if (protocol != clientProtocol) {
       throw const AgentApiException(
         HttpStatus.badRequest,
         'unsupported_protocol',
@@ -889,7 +913,7 @@ final class ApiServer {
       'sessionId': session.id,
       'instanceId': instanceId,
       'deviceId': session.deviceId,
-      'protocol': 1,
+      'protocol': clientProtocol,
       'expiresAt': session.expiresAt.toUtc().toIso8601String(),
       'heartbeatIntervalMs': _clientSessions.heartbeatInterval.inMilliseconds,
     });

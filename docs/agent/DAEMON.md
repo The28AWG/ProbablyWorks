@@ -53,6 +53,7 @@ lock остаётся общим. Поэтому на desktop GUI сначала
 
 ```
 GET    /api/v1/health
+GET    /api/v1/client/probe         проверка демона и токена без сессии
 POST   /api/v1/client/handshake
 PUT    /api/v1/client/session       heartbeat и присутствие
 DELETE /api/v1/client/session
@@ -157,6 +158,12 @@ GET    /api/v1/events?chatId=...      SSE по всем чатам или одн
 
 ### Клиентская сессия
 
+Перед рукопожатием клиент может проверить живой демон и токен запросом
+`GET /api/v1/client/probe`. Он требует Bearer, не требует `X-Client-Session`
+и не создаёт сессию: локальный discovery не должен появляться в списке
+клиентов и рассылать события присутствия. Ответ содержит `ok`, `protocol` и
+`instanceId`.
+
 После авторизации по Bearer-токену каждый клиент проходит рукопожатие и
 получает временный `sessionId`:
 
@@ -185,8 +192,8 @@ Content-Type: application/json
   `PUT /client/session` продлевают сессию.
 - `410 session_expired` означает, что запрос не выполнен и его можно
   безопасно повторить после нового рукопожатия.
-- `400 session_required` — заголовка нет. Исключения: `/health` и
-  `/client/handshake`.
+- `400 session_required` — заголовка нет. Исключения: `/health`,
+  `/client/probe` и `/client/handshake`.
 - `PUT /client/session` принимает `{"focused": true, "activeChatId": "..."}`;
   это присутствие, по которому видно, где открыт чат.
 - `GET /client/sessions` возвращает все клиентские сессии и помечает текущую;

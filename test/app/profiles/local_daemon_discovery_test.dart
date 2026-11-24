@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,13 +11,16 @@ void main() {
   late Directory temp;
   late HttpServer server;
   late String base;
+  late List<String> requests;
   const token = 'daemon-token';
 
   setUp(() async {
     temp = Directory.systemTemp.createTempSync('pw_daemon_discovery');
+    requests = [];
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = 'http://127.0.0.1:${server.port}';
     server.listen((request) {
+      requests.add('${request.method} ${request.uri.path}');
       if (request.uri.path == '/api/v1/health') {
         request.response
           ..statusCode = HttpStatus.ok
@@ -25,10 +29,18 @@ void main() {
         return;
       }
       final auth = request.headers.value(HttpHeaders.authorizationHeader);
+      final authorized = auth == 'Bearer $token';
+      // find() проверяет токен отдельным probe-запросом: он не создаёт
+      // клиентскую сессию и не требует X-Client-Session.
+      if (request.uri.path == '/api/v1/client/probe' && authorized) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write(jsonEncode({'ok': true, 'protocol': 1}))
+          ..close();
+        return;
+      }
       request.response
-        ..statusCode = auth == 'Bearer $token'
-            ? HttpStatus.ok
-            : HttpStatus.unauthorized
+        ..statusCode = authorized ? HttpStatus.ok : HttpStatus.unauthorized
         ..write('{}')
         ..close();
     });
@@ -56,6 +68,10 @@ void main() {
 
     expect(info?.port, server.port);
     expect(discovery.baseUriFor(info!), Uri.parse(base));
+    // Проверка идёт probe-запросом и не создаёт клиентскую сессию.
+    expect(requests, contains('GET /api/v1/client/probe'));
+    expect(requests, isNot(contains('POST /api/v1/client/handshake')));
+    expect(requests, isNot(contains('DELETE /api/v1/client/session')));
   });
 
   test('ignores a daemon with an invalid token', () async {
