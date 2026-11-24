@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/chat/presentation/bloc/chat_bloc.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/providers/ai/llm_port.dart';
 import 'package:pw_agent/providers/ai/model_catalog.dart';
 
@@ -193,5 +194,27 @@ void main() {
       ),
     );
     expect(state.effectiveReasoningEffort, ReasoningEffort.low);
+  });
+
+  test('queue snapshots compare by item id in order', () {
+    ChatState withQueue(List<QueuedPrompt> queue) => ChatState(queue: queue);
+    final first = withQueue([
+      QueuedPrompt.user('first', id: 'q1'),
+      QueuedPrompt.user('second', id: 'q2'),
+    ]);
+    // Снимок из сети приходит новыми объектами с теми же id: состояние не
+    // должно считаться изменившимся и перестраивать экран зря.
+    final snapshot = withQueue([
+      QueuedPrompt.user('first', id: 'q1'),
+      QueuedPrompt.user('second', id: 'q2'),
+    ]);
+    expect(first, snapshot);
+    expect(first.hashCode, snapshot.hashCode);
+
+    final reordered = withQueue([
+      QueuedPrompt.user('second', id: 'q2'),
+      QueuedPrompt.user('first', id: 'q1'),
+    ]);
+    expect(first, isNot(reordered));
   });
 }

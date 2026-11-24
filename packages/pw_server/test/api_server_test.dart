@@ -1107,6 +1107,136 @@ void main() {
     expect(data, hasLength(2));
   });
 
+  test('queue mutations require item id and expected revision', () async {
+    final queueSession = _FakeQueueSession();
+    final queueServer = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      requireSession: false,
+      chat: _FakeQueueChatApi(queueSession),
+    );
+    final port = await queueServer.start();
+    addTearDown(queueServer.stop);
+    final queueBase = 'http://127.0.0.1:$port';
+
+    final (snapshotStatus, snapshotBody) = await _request(
+      client,
+      queueBase,
+      'GET',
+      '/api/v1/chats/c1/session',
+      token: _token,
+    );
+    expect(snapshotStatus, HttpStatus.ok);
+    final snapshot = jsonDecode(snapshotBody) as Map;
+    expect(snapshot['queueRevision'], 3);
+    expect(
+      [for (final item in snapshot['queue'] as List) item['id']],
+      ['q1', 'q2', 'q3'],
+    );
+
+    final (staleStatus, staleBody) = await _request(
+      client,
+      queueBase,
+      'PATCH',
+      '/api/v1/chats/c1/queue/q3',
+      token: _token,
+      body: {'position': 0, 'expectedRevision': 2},
+    );
+    expect(staleStatus, HttpStatus.conflict);
+    expect((jsonDecode(staleBody) as Map)['error']['code'], 'queue_conflict');
+    expect(
+      [for (final item in queueSession.items) item.id],
+      ['q1', 'q2', 'q3'],
+    );
+
+    final (missingStatus, _) = await _request(
+      client,
+      queueBase,
+      'PATCH',
+      '/api/v1/chats/c1/queue/missing',
+      token: _token,
+      body: {'position': 0, 'expectedRevision': 3},
+    );
+    expect(missingStatus, HttpStatus.conflict);
+
+    final (promoteStatus, _) = await _request(
+      client,
+      queueBase,
+      'PATCH',
+      '/api/v1/chats/c1/queue/q3',
+      token: _token,
+      body: {'position': 0, 'expectedRevision': 3},
+    );
+    expect(promoteStatus, HttpStatus.noContent);
+    expect(
+      [for (final item in queueSession.items) item.id],
+      ['q3', 'q1', 'q2'],
+    );
+    expect(queueSession.revision, 4);
+
+    final (staleDeleteStatus, _) = await _request(
+      client,
+      queueBase,
+      'DELETE',
+      '/api/v1/chats/c1/queue/q1?expectedRevision=3',
+      token: _token,
+    );
+    expect(staleDeleteStatus, HttpStatus.conflict);
+    expect(queueSession.items, hasLength(3));
+
+    final (deleteStatus, _) = await _request(
+      client,
+      queueBase,
+      'DELETE',
+      '/api/v1/chats/c1/queue/q1?expectedRevision=4',
+      token: _token,
+    );
+    expect(deleteStatus, HttpStatus.noContent);
+    expect([for (final item in queueSession.items) item.id], ['q3', 'q2']);
+    expect(queueSession.revision, 5);
+  });
+
+  test('queue mutation without expected revision is rejected', () async {
+    final queueServer = ApiServer(
+      backend,
+      _token,
+      port: 0,
+      requireSession: false,
+      chat: _FakeQueueChatApi(_FakeQueueSession()),
+    );
+    final port = await queueServer.start();
+    addTearDown(queueServer.stop);
+    final queueBase = 'http://127.0.0.1:$port';
+
+    final (patchStatus, patchBody) = await _request(
+      client,
+      queueBase,
+      'PATCH',
+      '/api/v1/chats/c1/queue/q1',
+      token: _token,
+      body: {'position': 0},
+    );
+    expect(patchStatus, HttpStatus.badRequest);
+    expect(
+      (jsonDecode(patchBody) as Map)['error']['code'],
+      'revision_required',
+    );
+
+    final (deleteStatus, deleteBody) = await _request(
+      client,
+      queueBase,
+      'DELETE',
+      '/api/v1/chats/c1/queue/q1',
+      token: _token,
+    );
+    expect(deleteStatus, HttpStatus.badRequest);
+    expect(
+      (jsonDecode(deleteBody) as Map)['error']['code'],
+      'revision_required',
+    );
+  });
+
   test('streams chatChanged and full queue snapshots', () async {
     final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
@@ -2533,6 +2663,71 @@ final class _FakeDraftChatApi implements ChatApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('ChatApi is not used in draft tests');
+}
+
+/// ChatApi только с очередью: HTTP-маршруты очереди не ходят в остальные методы.
+final class _FakeQueueChatApi implements ChatApi {
+  _FakeQueueChatApi(this.queueSession);
+
+  final _FakeQueueSession queueSession;
+
+  @override
+  ChatSessionApi session(String chatId) => queueSession;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('ChatApi is used only for queue routes');
+}
+
+/// Очередь с ревизией: проверяет, что маршрут передаёт id и ожидаемую ревизию.
+final class _FakeQueueSession implements ChatSessionApi {
+  final items = <QueuedPrompt>[
+    const QueuedPrompt.user('a', id: 'q1'),
+    const QueuedPrompt.user('b', id: 'q2'),
+    const QueuedPrompt.user('c', id: 'q3'),
+  ];
+  var revision = 3;
+
+  @override
+  bool get isRunning => false;
+
+  @override
+  TurnSnapshot get turnSnapshot => const TurnSnapshot();
+
+  @override
+  List<QueuedPrompt> get queue => List.unmodifiable(items);
+
+  @override
+  int get queueRevision => revision;
+
+  @override
+  Future<bool> promoteQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != revision) return false;
+    final index = items.indexWhere((item) => item.id == itemId);
+    if (index < 0) return false;
+    items.insert(0, items.removeAt(index));
+    revision++;
+    return true;
+  }
+
+  @override
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != revision) return null;
+    final index = items.indexWhere((item) => item.id == itemId);
+    if (index < 0) return null;
+    revision++;
+    return items.removeAt(index);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('only queue methods are used in queue tests');
 }
 
 final class _FakeDraftStore implements ChatStore {

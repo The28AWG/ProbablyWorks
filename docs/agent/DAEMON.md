@@ -80,8 +80,8 @@ DELETE /api/v1/chats/{id}/messages/{messageId}/following
 PUT    /api/v1/chats/{id}/draft            {"text": "...", "attachments": [...], "revision": 1}
 PUT    /api/v1/chats/{id}/message-edits    {"edits": {...}, "revision": 1}
 GET    /api/v1/chats/{id}/session    очередь, ревизия и turnSnapshot
-PATCH  /api/v1/chats/{id}/queue/{index}
-DELETE /api/v1/chats/{id}/queue/{index}
+PATCH  /api/v1/chats/{id}/queue/{itemId}   {"expectedRevision": 3, "position": 0}
+DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
 
 GET    /api/v1/chats/{id}/messages
 POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false}
@@ -239,6 +239,11 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 список (`chats`, `projects`, `hosts`, `settings` или `models`). `chatChanged`
 обновляет открытый чат; `queueChanged` несёт полную очередь и
 `queueRevision`; `turnSnapshot` позволяет догнать уже начатый ответ.
+У каждого элемента очереди есть устойчивый `id`. Изменение принимает этот
+`id` и `expectedRevision`; если снимок уже устарел или элемент исчез, сервер
+возвращает `409 queue_conflict` и ничего не меняет. Клиент перечитывает
+`GET /chats/{id}/session`; если элемент ещё в очереди, повторяет действие по
+тому же `id`, иначе показывает свежую очередь.
 `approvalResolved`, `questionResolved` и `editFileChangesResolved` убирают
 закрытые карточки у остальных клиентов. `draftChanged` сообщает, что черновик
 чата изменил другой клиент; поле ввода обновляется по `draftRevision`, а

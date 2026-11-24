@@ -24,23 +24,42 @@ void main() {
       expect([for (final p in queue.items) p.text], ['now', 'later']);
     });
 
-    test('takeAt returns the item and keeps the order of the rest (edit and remove from queue)', () {
+    test('every queued element gets a stable unique id', () {
+      final queue = PromptQueue()
+        ..enqueue(const QueuedPrompt.user('a'))
+        ..enqueue(const QueuedPrompt.user('a'))
+        ..enqueue(const QueuedPrompt.event('background done'));
+
+      final ids = [for (final item in queue.items) item.id];
+      expect(ids, everyElement(isNotEmpty));
+      expect(ids.toSet(), hasLength(3));
+    });
+
+    test('takeById removes exactly the addressed item and keeps the order', () {
       final queue = PromptQueue()
         ..enqueue(const QueuedPrompt.user('a'))
         ..enqueue(const QueuedPrompt.user('b'))
         ..enqueue(const QueuedPrompt.user('c'));
+      final middle = queue.items[1].id;
 
-      expect(queue.takeAt(1)?.text, 'b');
+      expect(queue.takeById(middle)?.text, 'b');
       expect([for (final p in queue.items) p.text], ['a', 'c']);
-      expect(queue.takeAt(9), isNull);
+      expect(queue.takeById(middle), isNull);
     });
 
-    test('remove ignores out-of-range indexes', () {
+    test('promoteById moves the same item and ignores a missing id', () {
       final queue = PromptQueue()
         ..enqueue(const QueuedPrompt.user('a'))
-        ..remove(5)
-        ..remove(0);
-      expect(queue.isEmpty, isTrue);
+        ..enqueue(const QueuedPrompt.user('b'))
+        ..enqueue(const QueuedPrompt.user('c'));
+      final last = queue.items.last;
+
+      expect(queue.promoteById(last.id), isTrue);
+      expect(queue.items.first.id, last.id);
+      expect([for (final p in queue.items) p.text], ['c', 'a', 'b']);
+      expect(queue.promoteById('missing'), isFalse);
+      expect(queue.items.first.text, 'c');
+      expect(queue.items.last.text, 'b');
     });
   });
 

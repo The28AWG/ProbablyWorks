@@ -281,10 +281,16 @@ class ChatSession {
 
   /// Элемент очереди — отправить сейчас: встаёт первым, текущий шаг прерывается.
   /// Если хода нет (например, после Stop), ход запускается сразу.
-  void promoteQueued(int index) {
-    final item = _queue.takeAt(index);
-    if (item == null) return;
-    _queue.enqueueFirst(item);
+  ///
+  /// [expectedRevision] — ревизия очереди, на которой основано действие.
+  /// Если она устарела или элемента уже нет, возвращает false и ничего не
+  /// меняет: окно перечитает очередь, а чужой промпт не будет отправлен.
+  Future<bool> promoteQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != _queueRevision) return false;
+    if (!_queue.promoteById(itemId)) return false;
     _emitQueue();
     if (_running) {
       _stepCancel?.cancel();
@@ -292,11 +298,20 @@ class ChatSession {
       _beginTurn();
       unawaited(_runTurn());
     }
+    return true;
   }
 
-  /// Вынимает элемент очереди (для редактирования в поле ввода или удаления).
-  QueuedPrompt? takeQueued(int index) {
-    final item = _queue.takeAt(index);
+  /// Вынимает элемент очереди по id (для редактирования в поле ввода или удаления).
+  ///
+  /// При устаревшей [expectedRevision] или исчезнувшем элементе возвращает null,
+  /// не меняя очередь: решение принимает клиент, перечитав свежий снимок.
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != _queueRevision) return null;
+    final item = _queue.takeById(itemId);
+    if (item == null) return null;
     _emitQueue();
     return item;
   }

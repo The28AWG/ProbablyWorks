@@ -8,6 +8,7 @@ import 'package:probably_works/features/models/presentation/widgets/model_runtim
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
+import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/util/text_clip.dart';
 import 'package:pw_agent/providers/ai/model_runtime.dart';
@@ -613,23 +614,24 @@ class _QuestionCardState extends State<_QuestionCard> {
 class _QueueCard extends StatelessWidget {
   const _QueueCard({required this.items});
 
-  final List<String> items;
+  final List<QueuedPrompt> items;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final bloc = context.read<ChatBloc>();
-    // Строка очереди идентифицируется текстом и номером повтора: удаление из середины не перезапускает соседей.
-    final seen = <String, int>{};
+    // Ключ строки — устойчивый id элемента, а не текст и позиция: два
+    // одинаковых промпта не перезапускают анимацию друг друга, а действие
+    // из другого окна не попадёт в соседний элемент.
     final rows = <_DockItem>[
       for (var i = 0; i < items.length; i++)
         _DockItem(
-          '${items[i]}#${seen.update(items[i], (n) => n + 1, ifAbsent: () => 0)}',
+          items[i].id.isEmpty ? '${items[i].text}#$i' : items[i].id,
           Row(
             children: [
               Expanded(
                 child: Text(
-                  items[i],
+                  items[i].text,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -638,19 +640,19 @@ class _QueueCard extends StatelessWidget {
                 tooltip: l10n.queueSendNow,
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.bolt, size: 18),
-                onPressed: () => bloc.add(ChatQueueSendNow(i)),
+                onPressed: () => bloc.add(ChatQueueSendNow(items[i].id)),
               ),
               IconButton(
                 tooltip: l10n.queueEdit,
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                onPressed: () => bloc.add(ChatQueueEdited(i)),
+                onPressed: () => bloc.add(ChatQueueEdited(items[i].id)),
               ),
               IconButton(
                 tooltip: l10n.queueRemove,
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.close, size: 18),
-                onPressed: () => bloc.add(ChatQueueRemoved(i)),
+                onPressed: () => bloc.add(ChatQueueRemoved(items[i].id)),
               ),
             ],
           ),

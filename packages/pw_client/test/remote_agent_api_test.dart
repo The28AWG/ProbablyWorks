@@ -52,6 +52,7 @@ void main() {
   late _FakePush push;
   late _FakeProjects projectsApi;
   late _FakeDraftStore draftStore;
+  late _FakeQueueSession queueSession;
   late ApiServer server;
   late RemoteAgentApi remote;
 
@@ -65,6 +66,7 @@ void main() {
     push = _FakePush();
     projectsApi = _FakeProjects();
     draftStore = _FakeDraftStore();
+    queueSession = _FakeQueueSession();
     server = ApiServer(
       backend,
       _token,
@@ -76,7 +78,7 @@ void main() {
       pluginApi: pluginsApi,
       securityAuditApi: securityAudit,
       pushApi: push,
-      chat: _FakeDraftChatApi(store: draftStore),
+      chat: _FakeDraftChatApi(store: draftStore, queueSession: queueSession),
     );
     final port = await server.start();
     remote = RemoteAgentApi(
@@ -653,6 +655,62 @@ void main() {
     expect(session.turnSnapshot.reasoning, 'thinking');
     expect(session.isRunning, isTrue);
   });
+
+  test(
+    'queue actions use item ids and repeat once on a stale revision',
+    () async {
+      await remote.startEvents();
+      await remote.eventsReady;
+      final session = remote.session('c1');
+      final queueChanged = Completer<void>();
+      final sub = session.events.listen((event) {
+        if (event is AgentQueueChanged && !queueChanged.isCompleted) {
+          queueChanged.complete();
+        }
+      });
+      addTearDown(sub.cancel);
+
+      backend.emit(
+        AgentQueueChanged('c1', const [
+          QueuedPrompt.user('a', id: 'q1'),
+          QueuedPrompt.user('b', id: 'q2'),
+          QueuedPrompt.user('c', id: 'q3'),
+        ], revision: 3),
+      );
+      await queueChanged.future.timeout(const Duration(seconds: 3));
+
+      // Устаревшая ревизия: клиент перечитывает снимок и повторяет действие
+      // по id, поэтому промпт всё равно отправляется сейчас.
+      expect(await session.promoteQueued('q3', expectedRevision: 2), isTrue);
+      expect(queueSession.promoted, ['q3']);
+      // Снимок обновлён сразу, не дожидаясь SSE: следующее действие увидит
+      // свежую ревизию и порядок.
+      expect(session.queueRevision, 4);
+      expect([for (final item in session.queue) item.id], ['q3', 'q1', 'q2']);
+
+      // Исчезнувший элемент: повторять нечего, действие не применяется.
+      final promotedBefore = [...queueSession.promoted];
+      final revisionBefore = session.queueRevision;
+      expect(
+        await session.promoteQueued('missing', expectedRevision: 4),
+        isFalse,
+      );
+      expect(queueSession.promoted, promotedBefore);
+      expect(session.queueRevision, revisionBefore);
+
+      // Удаление тоже адресуется id и повторяется на свежей ревизии.
+      final taken = await session.takeQueued('q1', expectedRevision: 3);
+      expect(taken?.text, 'a');
+      expect(session.queueRevision, 5);
+      expect([for (final item in session.queue) item.id], ['q3', 'q2']);
+
+      // Удалённый ранее элемент не находится в снимке и не трогает остальные.
+      final revisionAfterDelete = session.queueRevision;
+      expect(await session.takeQueued('q1', expectedRevision: 5), isNull);
+      expect(session.queueRevision, revisionAfterDelete);
+      expect(session.queue.any((item) => item.id == 'q1'), isFalse);
+    },
+  );
 
   test('stops SSE reconnects after an unauthorized response', () async {
     final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -1472,16 +1530,76 @@ final class _FakePluginSettings implements plugins.PluginSettings {
 }
 
 final class _FakeDraftChatApi implements ChatApi {
-  _FakeDraftChatApi({required this.store});
+  _FakeDraftChatApi({required this.store, this.queueSession});
 
   final _FakeDraftStore store;
+  final _FakeQueueSession? queueSession;
 
   @override
   ChatStore get chatStore => store;
 
   @override
+  ChatSessionApi session(String chatId) =>
+      queueSession ??
+      (throw UnsupportedError('queue session is not configured in this test'));
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('ChatApi is not used in remote tests');
+}
+
+/// Очередь с ревизией: проверяет путь клиента через HTTP и восстановление
+/// снимка после `409 queue_conflict`.
+final class _FakeQueueSession implements ChatSessionApi {
+  final items = <QueuedPrompt>[
+    const QueuedPrompt.user('a', id: 'q1'),
+    const QueuedPrompt.user('b', id: 'q2'),
+    const QueuedPrompt.user('c', id: 'q3'),
+  ];
+  var revision = 3;
+  final promoted = <String>[];
+
+  @override
+  bool get isRunning => false;
+
+  @override
+  TurnSnapshot get turnSnapshot => const TurnSnapshot();
+
+  @override
+  List<QueuedPrompt> get queue => List.unmodifiable(items);
+
+  @override
+  int get queueRevision => revision;
+
+  @override
+  Future<bool> promoteQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != revision) return false;
+    final index = items.indexWhere((item) => item.id == itemId);
+    if (index < 0) return false;
+    promoted.add(itemId);
+    items.insert(0, items.removeAt(index));
+    revision++;
+    return true;
+  }
+
+  @override
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    if (expectedRevision != revision) return null;
+    final index = items.indexWhere((item) => item.id == itemId);
+    if (index < 0) return null;
+    revision++;
+    return items.removeAt(index);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('only queue methods are used in queue tests');
 }
 
 final class _FakeDraftStore implements ChatStore {

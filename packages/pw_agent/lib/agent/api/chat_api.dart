@@ -206,8 +206,18 @@ abstract interface class ChatSessionApi {
   Future<void> stop({String? reason});
   Future<void> continueAfterStepLimit();
   Future<bool> regenerateLast();
-  void promoteQueued(int index);
-  QueuedPrompt? takeQueued(int index);
+
+  /// Отправить элемент очереди сейчас. false — действие не применено:
+  /// элемента уже нет или сервер не принял устаревший снимок. Клиент
+  /// перечитывает очередь и показывает актуальное состояние.
+  Future<bool> promoteQueued(String itemId, {required int expectedRevision});
+
+  /// Вынуть элемент очереди по id. null — элемента уже нет или снимок
+  /// устарел: клиент перечитывает очередь и показывает актуальное состояние.
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  });
   Future<bool> editUserMessage(
     String messageId,
     String newText, {

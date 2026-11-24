@@ -242,32 +242,33 @@ final class ChatEditFileChangesAnswered extends ChatEvent {
 
 /// Элемент очереди: отправить сейчас (прерывает текущий шаг модели).
 final class ChatQueueSendNow extends ChatEvent {
-  const ChatQueueSendNow(this.index);
+  const ChatQueueSendNow(this.id);
 
-  final int index;
+  /// Устойчивый id элемента, а не позиция: очередь могла измениться в другом окне.
+  final String id;
 
   @override
-  List<Object?> get props => [index];
+  List<Object?> get props => [id];
 }
 
 /// Элемент очереди: удалить.
 final class ChatQueueRemoved extends ChatEvent {
-  const ChatQueueRemoved(this.index);
+  const ChatQueueRemoved(this.id);
 
-  final int index;
+  final String id;
 
   @override
-  List<Object?> get props => [index];
+  List<Object?> get props => [id];
 }
 
 /// Элемент очереди: вернуть текст в поле ввода для правки.
 final class ChatQueueEdited extends ChatEvent {
-  const ChatQueueEdited(this.index);
+  const ChatQueueEdited(this.id);
 
-  final int index;
+  final String id;
 
   @override
-  List<Object?> get props => [index];
+  List<Object?> get props => [id];
 }
 
 /// Новый чат: стартовый экран без записи в БД. Чат создаётся при первой отправке. Черновик текущего

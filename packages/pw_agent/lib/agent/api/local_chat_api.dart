@@ -706,10 +706,14 @@ final class _LocalChatSession implements ChatSessionApi {
   Future<bool> regenerateLast() => _session.regenerateLast();
 
   @override
-  void promoteQueued(int index) => _session.promoteQueued(index);
+  Future<bool> promoteQueued(String itemId, {required int expectedRevision}) =>
+      _session.promoteQueued(itemId, expectedRevision: expectedRevision);
 
   @override
-  QueuedPrompt? takeQueued(int index) => _session.takeQueued(index);
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) => _session.takeQueued(itemId, expectedRevision: expectedRevision);
 
   @override
   Future<bool> editUserMessage(

@@ -1110,8 +1110,7 @@ final class ApiServer {
             return _promoteQueued(request, chatId, rest[2]);
           }
           if (rest.length == 3 && request.method == 'DELETE') {
-            _session(chatId).takeQueued(int.tryParse(rest[2]) ?? -1);
-            return _json(request.response, HttpStatus.noContent, {});
+            return _removeQueued(request, chatId, rest[2]);
           }
         case 'session':
           if (rest.length == 2 && request.method == 'GET') {
@@ -2327,7 +2326,7 @@ final class ApiServer {
   Future<void> _promoteQueued(
     HttpRequest request,
     String chatId,
-    String index,
+    String itemId,
   ) async {
     final body = await _body(request);
     if (body['position'] != null && body['position'] != 0) {
@@ -2337,9 +2336,50 @@ final class ApiServer {
         'only position 0 is supported',
       );
     }
-    _session(chatId).promoteQueued(int.tryParse(index) ?? -1);
+    final revision = _revisionOf(body);
+    if (revision == null) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'revision_required',
+        'expectedRevision is required',
+      );
+    }
+    final applied = await _session(chatId)
+        .promoteQueued(itemId, expectedRevision: revision);
+    if (!applied) throw _queueConflict();
     _json(request.response, HttpStatus.noContent, {});
   }
+
+  Future<void> _removeQueued(
+    HttpRequest request,
+    String chatId,
+    String itemId,
+  ) async {
+    final revision = int.tryParse(
+      request.uri.queryParameters['expectedRevision'] ?? '',
+    );
+    if (revision == null) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'revision_required',
+        'expectedRevision is required',
+      );
+    }
+    final item = await _session(chatId)
+        .takeQueued(itemId, expectedRevision: revision);
+    if (item == null) throw _queueConflict();
+    _json(request.response, HttpStatus.noContent, {});
+  }
+
+  /// Действие с очередью основано на устаревшем снимке.
+  ///
+  /// Клиент перечитывает очередь и повторяет действие только осознанно:
+  /// сервер не подставляет элемент по позиции.
+  AgentApiException _queueConflict() => const AgentApiException(
+    HttpStatus.conflict,
+    'queue_conflict',
+    'queue changed; reload the queue',
+  );
 
   Future<void> _send(HttpRequest request, String chatId) async {
     final body = await _body(request);
@@ -2983,6 +3023,7 @@ Map<String, Object?> _turnSnapshotJson(TurnSnapshot snapshot) => {
 };
 
 Map<String, Object?> _queueJson(QueuedPrompt item) => {
+  'id': item.id,
   'text': item.text,
   'isEvent': item.isEvent,
   'note': item.note,

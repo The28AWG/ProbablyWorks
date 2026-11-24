@@ -84,10 +84,8 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatWorkspaceTrusted>(_onTrusted);
     on<ChatRunStopRequested>(_onRunStop);
     on<ChatEditFileChangesAnswered>(_onEditFileChanges);
-    on<ChatQueueSendNow>(
-      (event, _) async => _session?.promoteQueued(event.index),
-    );
-    on<ChatQueueRemoved>((event, _) async => _session?.takeQueued(event.index));
+    on<ChatQueueSendNow>(_onQueueSendNow);
+    on<ChatQueueRemoved>(_onQueueRemoved);
     on<ChatQueueEdited>(_onQueueEdited);
     on<ChatCompactRequested>(_onCompactRequested);
     on<ChatDailyBudgetChanged>(_onDailyBudgetChanged);
@@ -203,7 +201,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         contextWindowKnown: limit != null,
         draftId: state.draftId,
         isRunning: _session?.isRunning ?? false,
-        queue: _queueTexts(),
+        queue: _queueItems(),
         approvals: _hub.broker.pendingApprovals(event.chatId),
         questions: _hub.broker.pendingQuestions(event.chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(event.chatId),
@@ -276,7 +274,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       approvals: hub.broker.pendingApprovals(chat.id),
       questions: hub.broker.pendingQuestions(chat.id),
       isRunning: session.isRunning,
-      queue: [for (final item in session.queue) item.text],
+      queue: session.queue,
       draft: draft.text,
       attachments: draft.attachments,
       mentions: draft.mentions,
@@ -510,7 +508,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       isRunning: _session?.isRunning ?? false,
       streamText: turn.text,
       streamReasoning: turn.reasoning,
-      queue: _queueTexts(),
+      queue: _queueItems(),
       loading: false,
       unsaved: false,
     );
@@ -658,7 +656,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       mentions: event.mentions,
       sendNow: event.sendNow,
     );
-    emit(state.copyWith(queue: _queueTexts(), clearFailure: true));
+    emit(state.copyWith(queue: _queueItems(), clearFailure: true));
     if (created) onChatCreated?.call(state.chatId!);
   }
 
@@ -906,12 +904,39 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(state.copyWith(pinnedModels: pins));
   }
 
-  void _onQueueEdited(ChatQueueEdited event, Emitter<ChatState> emit) {
-    final item = _session?.takeQueued(event.index);
-    if (item == null) return;
+  Future<void> _onQueueSendNow(
+    ChatQueueSendNow event,
+    Emitter<ChatState> emit,
+  ) async {
+    final session = _session;
+    if (session == null) return;
+    await _promoteQueued(session, event.id);
+    // И успех, и отказ могли изменить очередь (успех — перестановкой, отказ —
+    // другим окном). Показываем снимок из сессии, не дожидаясь SSE.
+    emit(state.copyWith(queue: _queueItems()));
+  }
+
+  Future<void> _onQueueRemoved(
+    ChatQueueRemoved event,
+    Emitter<ChatState> emit,
+  ) async {
+    await _takeQueued(event.id);
+    emit(state.copyWith(queue: _queueItems()));
+  }
+
+  Future<void> _onQueueEdited(
+    ChatQueueEdited event,
+    Emitter<ChatState> emit,
+  ) async {
+    final item = await _takeQueued(event.id);
+    final fresh = state.copyWith(queue: _queueItems());
+    if (item == null) {
+      emit(fresh);
+      return;
+    }
     emit(
       _pushDraft(
-        state,
+        fresh,
         ChatDraft(
           text: item.text,
           attachments: state.attachments,
@@ -919,6 +944,27 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         ),
       ),
     );
+  }
+
+  Future<void> _promoteQueued(ChatSessionApi session, String itemId) async {
+    final revision = session.queueRevision;
+    try {
+      await session.promoteQueued(itemId, expectedRevision: revision);
+    } on Object catch (error, stack) {
+      AppLog.root.warning('cannot promote queued prompt', error, stack);
+    }
+  }
+
+  Future<QueuedPrompt?> _takeQueued(String itemId) async {
+    final session = _session;
+    if (session == null) return null;
+    final revision = session.queueRevision;
+    try {
+      return await session.takeQueued(itemId, expectedRevision: revision);
+    } on Object catch (error, stack) {
+      AppLog.root.warning('cannot take queued prompt', error, stack);
+      return null;
+    }
   }
 
   Future<void> _onCompactRequested(
@@ -1062,7 +1108,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
             stepLimitReached: end == TurnEnd.stepLimit,
             budgetReached: end == TurnEnd.budget,
             stalledReached: end == TurnEnd.stalled,
-            queue: _queueTexts(),
+            queue: _queueItems(),
           ),
         );
         await _reload(emit);
@@ -1101,7 +1147,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       case AgentTurnChangesetChanged():
         break;
       case AgentQueueChanged():
-        emit(state.copyWith(queue: _queueTexts()));
+        emit(state.copyWith(queue: _queueItems()));
       case AgentFailureRaised(:final failure):
         emit(
           state.copyWith(
@@ -1365,7 +1411,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         questions: _hub.broker.pendingQuestions(chatId),
         editFileChanges: _hub.broker.pendingEditFileChanges(chatId),
         isRunning: _session?.isRunning ?? false,
-        queue: _queueTexts(),
+        queue: _queueItems(),
         contextLimit: limit,
         clearContextLimit: limit == null,
         contextWindowKnown: limit != null,
@@ -1387,9 +1433,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     compaction: await _hub.settings.readCompactionInfo(chatId),
   );
 
-  List<String> _queueTexts() => [
-    for (final item in _session?.queue ?? const <QueuedPrompt>[]) item.text,
-  ];
+  List<QueuedPrompt> _queueItems() => [...?_session?.queue];
 }
 
 final class _ConflictChanged extends ChatEvent {

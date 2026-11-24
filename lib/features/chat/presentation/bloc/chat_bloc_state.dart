@@ -61,7 +61,8 @@ class ChatState extends Equatable {
   final List<ChatMessage> messages;
   final List<ToolRun> runs;
 
-  final List<String> queue;
+  /// Очередь с устойчивыми id: действие относится к элементу, а не к позиции.
+  final List<QueuedPrompt> queue;
   final List<ApprovalRequest> approvals;
   final List<UserQuestion> questions;
   final List<EditFileChangesRequest> editFileChanges;
@@ -237,7 +238,7 @@ class ChatState extends Equatable {
     bool clearProject = false,
     List<ChatMessage>? messages,
     List<ToolRun>? runs,
-    List<String>? queue,
+    List<QueuedPrompt>? queue,
     List<ApprovalRequest>? approvals,
     List<UserQuestion>? questions,
     List<EditFileChangesRequest>? editFileChanges,
@@ -343,7 +344,11 @@ class ChatState extends Equatable {
     project,
     messages,
     runs,
-    queue,
+    // Элементы очереди неизменяемы и адресуются по id, а снимок из сети
+    // приходит новыми объектами. Для сравнения состояний берём id в порядке
+    // отправки, иначе одинаковые очереди считались бы разными и экран
+    // перестраивался бы на каждый снимок.
+    [for (final item in queue) item.id.isEmpty ? item.text : item.id],
     approvals,
     questions,
     editFileChanges,

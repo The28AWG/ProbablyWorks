@@ -2333,9 +2333,11 @@ ToolRun _run(Map<String, dynamic> json) => ToolRun(
 
 QueuedPrompt _queuedPrompt(Map<String, dynamic> json) {
   final text = '${json['text'] ?? ''}';
-  if (json['isEvent'] == true) return QueuedPrompt.event(text);
+  final id = '${json['id'] ?? ''}';
+  if (json['isEvent'] == true) return QueuedPrompt.event(text, id: id);
   return QueuedPrompt.user(
     text,
+    id: id,
     attachments: [
       for (final item in (json['attachments'] as List? ?? const []))
         if (item is Map)
@@ -3107,23 +3109,66 @@ final class _RemoteChatSession implements ChatSessionApi {
   }
 
   @override
-  void promoteQueued(int index) {
-    unawaited(
-      _api.sendJson(
-        'PATCH',
-        '/chats/$_chatId/queue/$index',
-        body: {'position': 0},
-      ),
-    );
+  Future<bool> promoteQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    var revision = expectedRevision;
+    // Две попытки: конфликт означает лишь, что очередь изменилась в другом
+    // окне. Действие адресует элемент по id, поэтому повтор на свежей ревизии
+    // применяется к тому же промпту, а не к соседнему по позиции.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        await _api.sendJson(
+          'PATCH',
+          '/chats/$_chatId/queue/${Uri.encodeComponent(itemId)}',
+          body: {'position': 0, 'expectedRevision': revision},
+        );
+        // Без SSE экран не узнает о перестановке: обновляем снимок сразу,
+        // чтобы следующее действие не отправилось со старой ревизией.
+        await _api._trySyncSession(_chatId);
+        return true;
+      } on AgentApiException catch (error) {
+        if (error.code != 'queue_conflict') rethrow;
+        await _api._trySyncSession(_chatId);
+        final fresh = _api._queueRevisions[_chatId] ?? revision;
+        // Ревизия не сдвинулась — элемента уже нет, повтор не поможет.
+        if (fresh == revision) return false;
+        revision = fresh;
+      }
+    }
+    return false;
   }
 
   @override
-  QueuedPrompt? takeQueued(int index) {
-    final items = _api._queues[_chatId];
-    if (items == null || index < 0 || index >= items.length) return null;
-    final item = items.removeAt(index);
-    unawaited(_api.sendJson('DELETE', '/chats/$_chatId/queue/$index'));
-    return item;
+  Future<QueuedPrompt?> takeQueued(
+    String itemId, {
+    required int expectedRevision,
+  }) async {
+    var revision = expectedRevision;
+    // Как и promote: одна повторная попытка по тому же id после конфликта.
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final items = _api._queues[_chatId];
+      final index = items?.indexWhere((item) => item.id == itemId) ?? -1;
+      if (items == null || index < 0) return null;
+      final item = items[index];
+      try {
+        await _api.sendJson(
+          'DELETE',
+          '/chats/$_chatId/queue/${Uri.encodeComponent(itemId)}'
+              '?expectedRevision=$revision',
+        );
+        await _api._trySyncSession(_chatId);
+        return item;
+      } on AgentApiException catch (error) {
+        if (error.code != 'queue_conflict') rethrow;
+        await _api._trySyncSession(_chatId);
+        final fresh = _api._queueRevisions[_chatId] ?? revision;
+        if (fresh == revision) return null;
+        revision = fresh;
+      }
+    }
+    return null;
   }
 
   @override

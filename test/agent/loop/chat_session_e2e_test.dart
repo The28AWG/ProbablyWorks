@@ -1441,6 +1441,61 @@ void main() {
     },
   );
 
+  test(
+    'queue mutations address an item id and reject a stale revision',
+    () async {
+      final chatId = await createChat(mode: PolicyMode.ask);
+      final session = hub.session(chatId);
+      final requested = Completer<ApprovalRequest>();
+      final approvals = broker.approvalRequests.listen((request) {
+        if (!requested.isCompleted) requested.complete(request);
+      });
+      addTearDown(approvals.cancel);
+      llm.script
+        ..add([
+          LlmCompleted(
+            toolCalls: [
+              _call(
+                'c1',
+                ToolNames.runCommand,
+                jsonEncode({'command': 'printf held'}),
+              ),
+            ],
+          ),
+        ])
+        ..add([const LlmTextDelta('ok'), const LlmCompleted()]);
+
+      final turn = session.submit('hold');
+      final approval = await requested.future;
+      await session.submit('first');
+      await session.submit('second');
+      expect(
+        [for (final item in session.queue) item.text],
+        ['first', 'second'],
+      );
+      final firstId = session.queue.first.id;
+      final revision = session.queueRevision;
+
+      expect(
+        await session.takeQueued(firstId, expectedRevision: revision - 1),
+        isNull,
+      );
+      expect(session.queue, hasLength(2));
+      expect(session.queue.first.id, firstId);
+
+      final taken = await session.takeQueued(
+        firstId,
+        expectedRevision: revision,
+      );
+      expect(taken?.text, 'first');
+      expect([for (final item in session.queue) item.text], ['second']);
+      expect(session.queue.single.id, isNot(firstId));
+
+      broker.resolveApproval(approval.id, const ApprovalDecision.allowOnce());
+      await turn;
+    },
+  );
+
   test('allowTurn grants the exact command for the rest of the turn', () async {
     final chatId = await createChat(mode: PolicyMode.ask);
     final requested = <String>[];
