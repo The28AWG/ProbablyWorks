@@ -103,6 +103,14 @@
       }
     }
   },
+  "chatsDeleted": "Chat deleted",
+  "@chatsDeleted": {
+    "description": "Notification and empty state after the open chat was deleted here or in another window."
+  },
+  "chatsDeletedHint": "It was deleted here or on another device. The draft and history are no longer available.",
+  "@chatsDeletedHint": {
+    "description": "Explanation in the chat screen after its chat was deleted."
+  },
   "chatsFork": "Duplicate",
   "@chatsFork": {
     "description": "Menu action that copies the current chat history into a new chat."

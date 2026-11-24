@@ -127,6 +127,17 @@ void main() {
     expect(visibleChatIdOf(tabs), 'c1');
   });
 
+  test('only the top chat route is selected', () {
+    final tabs = _FakeTabs(_FakeStack());
+    tabs.chatsStack.open(ChatRoute.name, chatId: 'c1');
+    expect(selectedChatIdOf(tabs), 'c1');
+
+    // Дубль открыт поверх исходного чата: удаление исходного не должно
+    // закрывать видимый дубль.
+    tabs.chatsStack.open(ChatRoute.name, chatId: 'c2');
+    expect(selectedChatIdOf(tabs), 'c2');
+  });
+
   test('another tab hides the still alive chat stack', () {
     final tabs = _FakeTabs(_FakeStack());
     tabs.chatsStack.open(ChatRoute.name, chatId: 'c1');

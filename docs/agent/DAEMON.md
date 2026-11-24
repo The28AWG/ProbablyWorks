@@ -235,8 +235,8 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `turnSnapshot`, `runChanged`, `queueChanged`, `failure`,
-`trustNeeded`, `usage`, `stateChanged`, `chatChanged`, `stateAreaChanged`,
-`draftChanged`, `approval`, `approvalResolved`, `question`,
+`trustNeeded`, `usage`, `stateChanged`, `chatChanged`, `chatDeleted`,
+`stateAreaChanged`, `draftChanged`, `approval`, `approvalResolved`, `question`,
 `questionResolved`, `editFileChanges`, `editFileChangesResolved`,
 `clientSessionsChanged`, `modelRuntime`. `modelRuntime` — глобальное
 состояние загрузки моделей, не привязанное к чату; оно приходит и в
@@ -244,7 +244,11 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 
 `stateAreaChanged` сообщает, что после изменяющего запроса нужно перечитать
 список (`chats`, `projects`, `hosts`, `settings` или `models`). `chatChanged`
-обновляет открытый чат; `queueChanged` несёт полную очередь и
+обновляет открытый чат; `chatDeleted` с `chatId` сообщает, что чат удалён, и
+открытый экран закрывает маршрут, а не перечитывает пустую запись. Удаление
+чата и каскадная очистка истории публикуют событие по одному на каждый
+удалённый чат, включая скрытых субагентов.
+`queueChanged` несёт полную очередь и
 `queueRevision`; `turnSnapshot` позволяет догнать уже начатый ответ.
 У каждого элемента очереди есть устойчивый `id`. Изменение принимает этот
 `id` и `expectedRevision`; если снимок уже устарел или элемент исчез, сервер

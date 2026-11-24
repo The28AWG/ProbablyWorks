@@ -136,6 +136,13 @@ final class AgentStateChanged extends AgentEvent {
   const AgentStateChanged(super.chatId);
 }
 
+/// Чат удалён. Открытый экран не должен переживать удалённый объект:
+/// он закрывает маршрут и уходит на стартовый экран, а не показывает
+/// бесконечную загрузку по уже несуществующему чату.
+final class AgentChatDeleted extends AgentEvent {
+  const AgentChatDeleted(super.chatId);
+}
+
 enum TurnEnd {
   /// Модель ответила без инструментов или вызвала finish.
   completed,

@@ -143,6 +143,7 @@ final class LocalDataApi implements DataApi {
     final afterDatabase = await _databaseBytes();
     return HistoryClearResult(
       deletedChats: targets.length,
+      deletedChatIds: [for (final chat in targets) chat.id],
       freedBytes:
           math.max(0, beforeFiles - afterFiles) +
           math.max(0, beforeDatabase - afterDatabase),

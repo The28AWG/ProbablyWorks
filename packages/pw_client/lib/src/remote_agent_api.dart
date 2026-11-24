@@ -629,10 +629,19 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> deleteChat(String chatId) async {
-    await _send('DELETE', '/chats/$chatId');
+  Future<List<String>> deleteChat(String chatId) async {
+    final json = await _send('DELETE', '/chats/$chatId');
     _running.remove(chatId);
     _waiting.remove(chatId);
+    final ids = json is Map
+        ? [
+            for (final id in json['chatIds'] as List? ?? const [])
+              if (id is String) id,
+          ]
+        : const <String>[];
+    // Старый сервер отвечал 204 без тела: открытый экран всё равно нужно
+    // закрыть, поэтому корневой id подставляем сами.
+    return ids.isEmpty ? [chatId] : ids;
   }
 
   @override
@@ -2019,6 +2028,14 @@ class RemoteAgentApi
         _events.add(AgentStateChanged(_string(json, 'chatId')));
       case 'chatChanged':
         _events.add(AgentStateChanged(_string(json, 'chatId')));
+      case 'chatDeleted':
+        final chatId = _string(json, 'chatId');
+        _running.remove(chatId);
+        _waiting.remove(chatId);
+        _turnSnapshots.remove(chatId);
+        _queues.remove(chatId);
+        _queueRevisions.remove(chatId);
+        _events.add(AgentChatDeleted(chatId));
       case 'stateAreaChanged':
         final area = _string(json, 'area');
         if (area == 'settings') {

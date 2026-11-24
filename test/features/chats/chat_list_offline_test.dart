@@ -60,6 +60,24 @@ void main() {
     api.pendingTasksFailed = true;
     expect(await cubit.pendingScheduledTasks('c1'), isNull);
   });
+
+  test('deleting a chat discards drafts of the whole cascade', () async {
+    final drafts = ChatDraftStore.unbound()
+      ..update('c1', const ChatDraft(text: 'root'))
+      ..update('s1', const ChatDraft(text: 'subagent'));
+    final api = _FakeAgent(
+      const Stream.empty(),
+      const Stream.empty(),
+      const Stream.empty(),
+    )..deletedIds = const ['c1', 's1'];
+    final cubit = ChatListCubit(api, drafts);
+    addTearDown(cubit.close);
+
+    await cubit.delete('c1');
+
+    expect(drafts.of('c1').isEmpty, isTrue);
+    expect(drafts.of('s1').isEmpty, isTrue);
+  });
 }
 
 final class _FakeAgent implements AgentApi {
@@ -101,6 +119,7 @@ final class _FakeAgent implements AgentApi {
 
   int pendingTasks = 0;
   bool pendingTasksFailed = false;
+  List<String> deletedIds = const ['c1'];
 
   @override
   Future<int> pendingScheduledTasks(
@@ -110,6 +129,9 @@ final class _FakeAgent implements AgentApi {
     if (pendingTasksFailed) throw StateError('count unavailable');
     return pendingTasks;
   }
+
+  @override
+  Future<List<String>> deleteChat(String chatId) async => deletedIds;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

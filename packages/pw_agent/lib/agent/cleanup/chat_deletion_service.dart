@@ -37,10 +37,20 @@ class ChatDeletionService {
   ///
   /// Отсутствующий чат не считается ошибкой: список мог устареть, а повторное
   /// удаление уже удалённого не должно ломать очистку остальных.
-  Future<void> delete(String chatId) async {
+  ///
+  /// Возвращает id всех удалённых чатов, включая субагентов: вызывающий
+  /// (HTTP-маршрут) публикует `chatDeleted` по каждому из них. Для уже
+  /// отсутствующего чата возвращается его собственный id — открытый экран
+  /// всё равно нужно закрыть.
+  Future<List<String>> delete(String chatId) async {
     final tree = await _chats.chatAndDescendants(chatId);
-    if (tree.isEmpty) return;
-    await deleteTree(tree);
+    if (tree.isEmpty) {
+      // Чат уже удалён, но открытый экран мог остаться: повторное удаление
+      // из другого окна должно закрыть его, а не промолчать.
+      _stopper.notifyChatDeleted(chatId);
+      return [chatId];
+    }
+    return deleteTree(tree);
   }
 
   /// Удаляет уже собранное дерево чатов.
@@ -48,8 +58,10 @@ class ChatDeletionService {
   /// [tree] должен идти от самых глубоких потомков к корню: очистке истории
   /// выгодно собрать его один раз на снимке базы, а не читать все чаты для
   /// каждого корня.
-  Future<void> deleteTree(List<Chat> tree) async {
-    if (tree.isEmpty) return;
+  ///
+  /// Возвращает id удалённых чатов в порядке [tree].
+  Future<List<String>> deleteTree(List<Chat> tree) async {
+    if (tree.isEmpty) return const [];
     final projectIds = <String>{for (final chat in tree) ?chat.projectId};
     for (final chat in tree) {
       await _stopper.stopChat(chat.id);
@@ -62,9 +74,14 @@ class ChatDeletionService {
       _broker.clearChatGrants(chat.id);
       await _logs.deleteChat(chat.id);
       await _turnChangesets.store.deleteChat(chat.id);
+      // Открытый экран этого чата должен закрыться, а не перечитывать
+      // пустую запись. Уведомление идёт после очистки данных: к этому
+      // моменту повторное чтение уже не вернёт удалённый чат.
+      _stopper.notifyChatDeleted(chat.id);
     }
     for (final projectId in projectIds) {
       await _projects.releaseIfEmpty(projectId);
     }
+    return [for (final chat in tree) chat.id];
   }
 }

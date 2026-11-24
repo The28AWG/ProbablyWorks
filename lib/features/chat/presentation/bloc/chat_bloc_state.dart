@@ -48,6 +48,7 @@ class ChatState extends Equatable {
     this.draftId = 0,
     this.messageEditsId = 0,
     this.unsaved = false,
+    this.chatDeleted = false,
   });
 
   final String? chatId;
@@ -58,6 +59,11 @@ class ChatState extends Equatable {
 
   /// Чат ещё не записан в БД (новый чат до первой отправки). Его настройки живут в памяти.
   final bool unsaved;
+
+  /// Чат удалён здесь или в другом окне. Экран закрывает маршрут и уходит на
+  /// стартовый экран, а не ждёт данные, которых больше нет.
+  final bool chatDeleted;
+
   final List<ChatMessage> messages;
   final List<ToolRun> runs;
 
@@ -282,6 +288,7 @@ class ChatState extends Equatable {
     int? draftId,
     int? messageEditsId,
     bool? unsaved,
+    bool? chatDeleted,
   }) => ChatState(
     chatId: chatId ?? this.chatId,
     chat: chat ?? this.chat,
@@ -335,6 +342,7 @@ class ChatState extends Equatable {
     draftId: draftId ?? this.draftId,
     messageEditsId: messageEditsId ?? this.messageEditsId,
     unsaved: unsaved ?? this.unsaved,
+    chatDeleted: chatDeleted ?? this.chatDeleted,
   );
 
   @override
@@ -387,5 +395,6 @@ class ChatState extends Equatable {
     draftId,
     messageEditsId,
     unsaved,
+    chatDeleted,
   ];
 }

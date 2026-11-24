@@ -196,9 +196,14 @@ class ChatListCubit extends Cubit<ChatListState> {
 
   /// Удаление: сначала останавливаем активный ход, затем чистим БД и файлы логов чата.
   /// Если чат был последним в проекте, проект уходит в архив и живёт там неделю.
+  ///
+  /// Каскад удаляет и скрытых субагентов, поэтому сервер возвращает их id:
+  /// черновики живут на клиенте и убираются для всех удалённых чатов.
   Future<void> delete(String chatId) async {
-    await _api.deleteChat(chatId);
-    // Черновик живёт на клиенте и не удаляется вместе с серверным чатом.
+    final deleted = await _api.deleteChat(chatId);
+    for (final id in deleted) {
+      _drafts.discard(id);
+    }
     _drafts.discard(chatId);
   }
 

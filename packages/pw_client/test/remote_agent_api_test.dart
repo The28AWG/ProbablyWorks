@@ -624,6 +624,25 @@ void main() {
     expect(approvals.single.id, 'a1');
   });
 
+  test('delivers chat deletion to the open chat session', () async {
+    await remote.startEvents();
+    await remote.eventsReady;
+    final session = remote.session('c1');
+    final deleted = Completer<AgentChatDeleted>();
+    final sub = session.events.listen((event) {
+      if (event is AgentChatDeleted && !deleted.isCompleted) {
+        deleted.complete(event);
+      }
+    });
+    addTearDown(sub.cancel);
+
+    final ids = await remote.deleteChat('c1');
+
+    expect(ids, ['c1']);
+    final event = await deleted.future.timeout(const Duration(seconds: 3));
+    expect(event.chatId, 'c1');
+  });
+
   test('applies queue and live turn snapshots from SSE', () async {
     await remote.startEvents();
     await remote.eventsReady;
@@ -1474,7 +1493,7 @@ final class _FakeAgent implements AgentApi {
   }
 
   @override
-  Future<void> deleteChat(String chatId) => Future<void>.value();
+  Future<List<String>> deleteChat(String chatId) async => [chatId];
 
   @override
   Future<List<ChatMessage>> messages(String chatId) async {

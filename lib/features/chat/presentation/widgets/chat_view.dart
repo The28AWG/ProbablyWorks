@@ -56,6 +56,7 @@ class ChatView extends StatefulWidget {
     this.seedChat,
     this.seedHosts = const [],
     this.onCreated,
+    this.onChatDeleted,
     this.leading,
     super.key,
   });
@@ -78,6 +79,10 @@ class ChatView extends StatefulWidget {
   /// Новый чат записан в БД после первой отправки. Владелец экрана переключает выбор на него.
   final ValueChanged<String>? onCreated;
 
+  /// Чат удалён здесь или в другом окне. Владелец маршрута уводит экран на
+  /// стартовый, чтобы не оставлять пользователя на пустой загрузке.
+  final VoidCallback? onChatDeleted;
+
   @override
   State<ChatView> createState() => _ChatViewState();
 }
@@ -85,6 +90,8 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   final _drafts = getIt<ChatDraftStore>();
   ChatBloc? _bloc;
+  StreamSubscription<ChatState>? _stateSub;
+  var _deletionHandled = false;
 
   ChatBloc get _chat => _bloc!;
 
@@ -100,6 +107,20 @@ class _ChatViewState extends State<ChatView> {
       seedHosts: widget.seedHosts,
       onChatCreated: (id) => widget.onCreated?.call(id),
     )..add(_openEvent(widget.chatId));
+    _stateSub = _bloc!.stream.listen(_onChatState);
+  }
+
+  /// Удалённый чат закрывается один раз, даже если блок успел отправить
+  /// несколько состояний подряд.
+  void _onChatState(ChatState state) {
+    if (!state.chatDeleted || _deletionHandled) return;
+    _deletionHandled = true;
+    final callback = widget.onChatDeleted;
+    if (callback == null) return;
+    // Навигация во время обработки состояния блока недопустима: сначала кадр.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) callback();
+    });
   }
 
   @override
@@ -107,6 +128,7 @@ class _ChatViewState extends State<ChatView> {
     super.didUpdateWidget(oldWidget);
     final chatId = widget.chatId;
     if (chatId == oldWidget.chatId) return;
+    _deletionHandled = false;
     // Новый чат, который только что записан после отправки: блок уже открыт на нём, второй раз не открываем.
     if (chatId != null && chatId == _chat.state.chatId) return;
     _chat.add(
@@ -128,6 +150,7 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   void dispose() {
+    unawaited(_stateSub?.cancel());
     unawaited(_chat.close());
     super.dispose();
   }
@@ -260,6 +283,11 @@ class _ChatBodyState extends State<ChatBody> {
       listener: _onBlocState,
       builder: (context, state) {
         final chat = state.chat;
+        // Чат удалён здесь или в другом окне: не показываем бесконечную
+        // загрузку по записи, которой уже нет.
+        if (state.chatDeleted) {
+          return _ChatDeletedBody(leading: widget.leading);
+        }
         // Без перехода: fade всего тела на каждом открытии рисует весь экран через saveLayer.
         // Стартовый кадр нового чата: блок ещё готовит пустой чат, спиннера и скелета нет.
         if (chat == null && state.chatId == null) {
@@ -1207,6 +1235,31 @@ class _ChatBlankBody extends StatelessWidget {
       const Spacer(),
     ],
   );
+}
+
+/// Чат удалён, но маршрут ещё не успел закрыться (или экран открыт вне
+/// оболочки): показываем понятное состояние вместо пустой загрузки.
+class _ChatDeletedBody extends StatelessWidget {
+  const _ChatDeletedBody({this.leading});
+
+  final Widget? leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      children: [
+        _Header(title: l10n.chatsDeleted, leading: leading),
+        Expanded(
+          child: AppEmptyState(
+            icon: Icons.delete_outline,
+            title: l10n.chatsDeleted,
+            message: l10n.chatsDeletedHint,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Каркас чата до загрузки: шапка-заглушка, спиннер в ленте и скелет композера.

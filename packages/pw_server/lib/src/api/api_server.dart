@@ -543,6 +543,12 @@ final class ApiServer {
     if (!_stateEvents.isClosed) _stateEvents.add(_ChatChanged(chatId));
   }
 
+  /// Сообщает всем клиентам, что чат удалён. Экран, где он был открыт,
+  /// закрывает маршрут и очищает черновик, а не остаётся на пустой загрузке.
+  void _emitChatDeleted(String chatId) {
+    if (!_stateEvents.isClosed) _stateEvents.add(_ChatDeleted(chatId));
+  }
+
   /// Откладывает `chatChanged` на микрозадачу: общий `stateAreaChanged`
   /// должен уйти первым, чтобы существующие подписчики списков не меняли
   /// порядок обработки.
@@ -1034,8 +1040,14 @@ final class ApiServer {
       if (request.method == 'PUT') return _saveChat(request, id);
       if (request.method == 'PATCH') return _renameChat(request, id);
       if (request.method == 'DELETE') {
-        await _backend.deleteChat(id);
-        return _json(request.response, HttpStatus.noContent, {});
+        final deleted = await _backend.deleteChat(id);
+        // Бэкенд отдаёт и субагентов, удалённых каскадом. Пустой ответ
+        // означает старый/внешний бэкенд: корневой чат всё равно закрываем.
+        final ids = deleted.isEmpty ? [id] : deleted;
+        for (final chatId in ids) {
+          _emitChatDeleted(chatId);
+        }
+        return _json(request.response, HttpStatus.ok, {'chatIds': ids});
       }
     }
     if (rest.length >= 2) {
@@ -1788,6 +1800,11 @@ final class ApiServer {
     final result = await _requireDataApi().clearHistory(
       olderThanDays: olderThanDays,
     );
+    // Очистка удаляет чаты каскадом, а не через DELETE /chats/{id}. Без
+    // отдельного события открытые экраны этих чатов остались бы в других окнах.
+    for (final chatId in result.deletedChatIds) {
+      _emitChatDeleted(chatId);
+    }
     _json(request.response, HttpStatus.ok, result.toJson());
   }
 
@@ -3093,6 +3110,7 @@ bool _matchesChat(Object event, String? chatId) {
     EditFileChangesRequest value => value.chatId,
     InteractionResolution value => value.chatId,
     _ChatChanged value => value.chatId,
+    _ChatDeleted value => value.chatId,
     _DraftChanged value => value.chatId,
     _ => null,
   };
@@ -3160,6 +3178,7 @@ bool _matchesChat(Object event, String? chatId) {
     },
   ),
   AgentStateChanged value => ('stateChanged', {'chatId': value.chatId}),
+  AgentChatDeleted value => ('chatDeleted', {'chatId': value.chatId}),
   ApprovalRequest value => ('approval', _approvalJson(value)),
   UserQuestion value => ('question', _questionJson(value)),
   EditFileChangesRequest value => ('editFileChanges', _editJson(value)),
@@ -3178,6 +3197,7 @@ bool _matchesChat(Object event, String? chatId) {
   ModelRuntimeState value => ('modelRuntime', {'runtime': value.toJson()}),
   LocalModelsState value => ('localModels', value.toJson()),
   _ChatChanged value => ('chatChanged', {'chatId': value.chatId}),
+  _ChatDeleted value => ('chatDeleted', {'chatId': value.chatId}),
   _ClientSessionsChanged() => (
     'clientSessionsChanged',
     const <String, Object?>{},
@@ -3192,6 +3212,14 @@ bool _matchesChat(Object event, String? chatId) {
 
 final class _ChatChanged {
   const _ChatChanged(this.chatId);
+
+  final String chatId;
+}
+
+/// Чат удалён. Отдельный тип, а не признак в `_ChatChanged`: клиент не должен
+/// перечитывать запись, которой уже нет, и показывать бесконечную загрузку.
+final class _ChatDeleted {
+  const _ChatDeleted(this.chatId);
 
   final String chatId;
 }

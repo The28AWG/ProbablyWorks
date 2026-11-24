@@ -73,6 +73,7 @@ final class HistoryClearResult {
     required this.deletedChats,
     required this.freedBytes,
     this.compacted = true,
+    this.deletedChatIds = const [],
   });
 
   /// Восстанавливает результат из JSON HTTP API.
@@ -81,10 +82,18 @@ final class HistoryClearResult {
         deletedChats: _int(json['deletedChats']),
         freedBytes: _int(json['freedBytes']),
         compacted: json['compacted'] != false,
+        deletedChatIds: [
+          for (final id in json['deletedChatIds'] as List? ?? const [])
+            if (id is String) id,
+        ],
       );
 
   /// Все удалённые чаты, включая скрытых субагентов.
   final int deletedChats;
+
+  /// Идентификаторы удалённых чатов. Нужны, чтобы клиенты с открытым экраном
+  /// получили `chatDeleted` даже при каскадной очистке истории.
+  final List<String> deletedChatIds;
 
   /// Всего освобождено: файлы чатов, логи запусков и сжатие базы.
   final int freedBytes;
@@ -97,6 +106,7 @@ final class HistoryClearResult {
     'deletedChats': deletedChats,
     'freedBytes': freedBytes,
     'compacted': compacted,
+    'deletedChatIds': deletedChatIds,
   };
 }
 

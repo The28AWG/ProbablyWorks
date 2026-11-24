@@ -757,6 +757,15 @@ class ChatSession {
     if (!_events.isClosed) _events.add(event);
   }
 
+  /// Сообщает открытому экрану, что чат удалён.
+  ///
+  /// В общий поток хаба событие не идёт: сервер публикует `chatDeleted`
+  /// по маршруту удаления, а локальное окно получает его через свою сессию.
+  /// Так один и тот же экран не получает событие дважды.
+  void notifyDeleted() {
+    if (!_events.isClosed) _events.add(AgentChatDeleted(chatId));
+  }
+
   Future<void> dispose() async {
     await _runSub.cancel();
     await _waitSub.cancel();

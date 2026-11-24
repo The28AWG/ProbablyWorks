@@ -457,8 +457,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     // выйти отдельным кадром до загрузки чата.
     _watchShared();
 
-    final shared = await _readShared();
+    // Сначала чат: если его уже удалили, остальные чтения не нужны, а экран
+    // должен закрыться, а не показывать бесконечную загрузку.
     final snapshot = await _readChat(event.chatId);
+    if (snapshot.chat == null) {
+      await _markDeleted(emit, event.chatId);
+      return;
+    }
+    final shared = await _readShared();
     final usage = await _usageOf(event.chatId);
     final project = await _hub.projectStore.forChat(event.chatId);
     // Карточки этого чата — из базы, не при старте приложения.
@@ -511,6 +517,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       queue: _queueItems(),
       loading: false,
       unsaved: false,
+      chatDeleted: false,
     );
     // Черновик из записи чата нужен, только если в памяти его не было (без списка чатов). Иначе поле уже верное.
     final restored = _drafts.prime(event.chatId, snapshot.chat);
@@ -1179,6 +1186,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         );
       case AgentStateChanged():
         await _reload(emit);
+      case AgentChatDeleted(:final chatId):
+        if (chatId != state.chatId) return;
+        await _markDeleted(emit, chatId);
     }
   }
 
@@ -1375,18 +1385,62 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   }
 
   /// Чат, сообщения и запуски из БД. Без emit: вызывающий сам решает, когда перерисовать экран.
+  ///
+  /// Удалённого чата может уже не быть: тогда сообщения и запуски не читаются,
+  /// иначе удалённый экран получал бы лишнюю ошибку вместо понятного состояния.
   Future<({Chat? chat, List<ChatMessage> messages, List<ToolRun> runs})>
   _readChat(String chatId) async {
     final chat = await _hub.chatStore.chat(chatId);
+    if (chat == null) {
+      return (
+        chat: null,
+        messages: const <ChatMessage>[],
+        runs: const <ToolRun>[],
+      );
+    }
     final messages = await _hub.chatStore.messages(chatId);
     final runs = await _hub.chatStore.toolRunsForChat(chatId);
     return (chat: chat, messages: messages, runs: runs);
+  }
+
+  /// Переводит открытый чат в состояние «удалён»: снимает подписки, убирает
+  /// черновик и очищает ленту. Экран по этому признаку закрывает маршрут.
+  Future<void> _markDeleted(Emitter<ChatState> emit, String chatId) async {
+    if (isClosed || state.chatId != chatId || state.chatDeleted) return;
+    _drafts.discard(chatId);
+    await _detach();
+    if (isClosed || state.chatId != chatId) return;
+    emit(
+      state.copyWith(
+        chatDeleted: true,
+        loading: false,
+        isRunning: false,
+        messages: const [],
+        runs: const [],
+        queue: const [],
+        approvals: const [],
+        questions: const [],
+        editFileChanges: const [],
+        streamText: '',
+        streamReasoning: '',
+        live: const {},
+        draft: '',
+        attachments: const [],
+        mentions: const [],
+        draftId: state.draftId + 1,
+        clearDraftConflict: true,
+      ),
+    );
   }
 
   Future<void> _reload(Emitter<ChatState> emit) async {
     final chatId = state.chatId;
     if (chatId == null) return;
     final snapshot = await _readChat(chatId);
+    if (snapshot.chat == null) {
+      await _markDeleted(emit, chatId);
+      return;
+    }
     final usage = await _usageOf(chatId);
     final activeIds = {
       for (final r in snapshot.runs)
@@ -1420,6 +1474,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
         clearDailyBudget: usage.budget == null,
         compactionInfo: usage.compaction,
         clearCompactionInfo: usage.compaction == null,
+        chatDeleted: false,
       ),
     );
   }

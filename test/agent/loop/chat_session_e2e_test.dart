@@ -1697,6 +1697,43 @@ void main() {
     },
   );
 
+  test(
+    'deleting an open chat closes it instead of reloading an empty record',
+    () async {
+      final chatId = await createChat();
+      final api = LocalChatApi(hub);
+      final bloc = ChatBloc(api, LiveOutputBus(), drafts);
+      addTearDown(bloc.close);
+      bloc.add(ChatOpened(chatId));
+      await bloc.stream.firstWhere((s) => !s.loading && s.chatId == chatId);
+
+      final deleted = bloc.stream.firstWhere((s) => s.chatDeleted);
+      await api.deleteChat(chatId);
+      final state = await deleted.timeout(const Duration(seconds: 3));
+
+      expect(state.chatId, chatId);
+      expect(state.loading, isFalse);
+      expect(state.isRunning, isFalse);
+      expect(state.messages, isEmpty);
+    },
+  );
+
+  test(
+    'opening a chat that no longer exists shows the deleted state',
+    () async {
+      final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
+      addTearDown(bloc.close);
+
+      bloc.add(const ChatOpened('missing-chat'));
+      final state = await bloc.stream
+          .firstWhere((s) => s.chatDeleted)
+          .timeout(const Duration(seconds: 3));
+
+      expect(state.chatId, 'missing-chat');
+      expect(state.loading, isFalse);
+    },
+  );
+
   test('a chat from the list is in the first state, so its header and composer never blank out', () async {
     final chatId = await createChat();
     final chat = (await hub.chats.chat(chatId))!;

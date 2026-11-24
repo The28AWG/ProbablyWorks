@@ -159,6 +159,14 @@ class AgentHub implements ChatRunStopper, SubagentHost {
     if (session != null && session.isRunning) await session.stop();
   }
 
+  /// Открытый экран получает `AgentChatDeleted` через свою сессию. В общий
+  /// поток событий уведомление не добавляется: сервер публикует его сам, а
+  /// иначе один и тот же клиент получил бы событие дважды.
+  @override
+  void notifyChatDeleted(String chatId) {
+    _sessions[chatId]?.notifyDeleted();
+  }
+
   /// Чаты, в которых сейчас идёт ход.
   Set<String> get runningChatIds => {
     for (final session in _sessions.values)

@@ -117,7 +117,12 @@ abstract interface class AgentApi {
   /// они в копию не попадут, и обещать их перенос нельзя.
   Future<int> pendingScheduledTasks(String chatId, {String? untilMessageId});
 
-  Future<void> deleteChat(String chatId);
+  /// Удаляет чат и его скрытых субагентов.
+  ///
+  /// Возвращает id всех удалённых чатов: каскад затрагивает подчаты, и
+  /// клиенту нужно очистить их черновики. Локальный backend отдаёт полный
+  /// список, удалённый получает его из ответа сервера.
+  Future<List<String>> deleteChat(String chatId);
 
   Future<List<ChatMessage>> messages(String chatId);
   Future<List<ToolRun>> runs(String chatId);

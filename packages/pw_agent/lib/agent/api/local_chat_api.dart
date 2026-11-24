@@ -196,7 +196,7 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
     }
   }
 
-  Future<void> deleteChat(String chatId) => _deletion.delete(chatId);
+  Future<List<String>> deleteChat(String chatId) => _deletion.delete(chatId);
 
   Future<List<ChatMessage>> messages(String chatId) async {
     await requireChat(chatId);

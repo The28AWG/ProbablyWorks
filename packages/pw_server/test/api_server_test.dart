@@ -1289,6 +1289,112 @@ void main() {
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
   });
 
+  test('streams chatDeleted after a chat is removed', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/chats/c1',
+      token: _token,
+    );
+    expect(status, HttpStatus.ok);
+    expect((jsonDecode(body) as Map)['chatIds'], ['c1']);
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event == 'event: chatDeleted' && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: chatDeleted');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
+  });
+
+  test('streams chatDeleted for subagents removed with the chat', () async {
+    backend.deletedChatIds = ['c1', 's1'];
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/chats/c1',
+      token: _token,
+    );
+    expect(status, HttpStatus.ok);
+    expect((jsonDecode(body) as Map)['chatIds'], ['c1', 's1']);
+
+    final deleted = <String>[];
+    String? event;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) {
+        if (event == 'event: chatDeleted') {
+          deleted.add(
+            jsonDecode(lines.current.replaceFirst('data: ', ''))['chatId']
+                as String,
+          );
+          if (deleted.length == 2) break;
+        }
+      }
+    }
+    await lines.cancel();
+    expect(deleted, ['c1', 's1']);
+  });
+
+  test(
+    'streams chatDeleted for every chat removed by history cleanup',
+    () async {
+      final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+      final response = await request.close();
+      final lines = StreamIterator(
+        response.transform(utf8.decoder).transform(const LineSplitter()),
+      );
+      expect(await lines.moveNext(), isTrue);
+      expect(lines.current, ': connected');
+
+      final (status, _) = await _request(
+        client,
+        base,
+        'POST',
+        '/api/v1/data/history/clear',
+        token: _token,
+        body: {'olderThanDays': 30},
+      );
+      expect(status, HttpStatus.ok);
+
+      String? event;
+      String? data;
+      while (await lines.moveNext()) {
+        if (lines.current.startsWith('event:')) event = lines.current;
+        if (lines.current.startsWith('data:')) data = lines.current;
+        if (event == 'event: chatDeleted' && data != null) break;
+      }
+      await lines.cancel();
+      expect(event, 'event: chatDeleted');
+      expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
+    },
+  );
+
   test('streams resolved cards over SSE', () async {
     final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
@@ -2360,6 +2466,7 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   final choices = <EditFileChangesChoice>[];
   var opened = 0;
   var stopped = 0;
+  List<String> deletedChatIds = const [];
   final searchQueries = <SearchQuery>[];
   Completer<void>? chatsGate;
   Completer<void>? chatsStarted;
@@ -2510,7 +2617,8 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   }
 
   @override
-  Future<void> deleteChat(String chatId) => Future<void>.value();
+  Future<List<String>> deleteChat(String chatId) async =>
+      deletedChatIds.isEmpty ? [chatId] : deletedChatIds;
 
   @override
   Future<Chat> createChat(String hostId) async {
@@ -2936,6 +3044,7 @@ final class _FakeData implements DataApi {
       deletedChats: 1,
       freedBytes: 10,
       compacted: false,
+      deletedChatIds: ['c1'],
     );
   }
 

@@ -39,8 +39,13 @@ import 'package:pw_agent/providers/ai/provider_settings_store.dart';
 final _now = DateTime.utc(2026, 11, 21);
 
 class _NoopStopper implements ChatRunStopper {
+  final deleted = <String>[];
+
   @override
   Future<void> stopChat(String chatId) => Future<void>.value();
+
+  @override
+  void notifyChatDeleted(String chatId) => deleted.add(chatId);
 }
 
 final class _CreatingDeletion implements ChatDeletionService {
@@ -50,12 +55,12 @@ final class _CreatingDeletion implements ChatDeletionService {
   final Future<void> Function() _onCreate;
 
   @override
-  Future<void> delete(String chatId) => _inner.delete(chatId);
+  Future<List<String>> delete(String chatId) => _inner.delete(chatId);
 
   @override
-  Future<void> deleteTree(List<Chat> tree) async {
+  Future<List<String>> deleteTree(List<Chat> tree) async {
     await _onCreate();
-    await _inner.deleteTree(tree);
+    return _inner.deleteTree(tree);
   }
 }
 
