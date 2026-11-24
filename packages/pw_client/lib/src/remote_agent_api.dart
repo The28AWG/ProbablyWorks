@@ -129,6 +129,21 @@ class RemoteAgentApi
   bool _focused = false;
   String? _activeChatId;
 
+  /// Монотонный номер состояния присутствия.
+  ///
+  /// Назначается каждой отправке и всегда растёт. Рукопожатие может вернуть
+  /// ревизию переиспользованной сессии: клиент берёт максимум из локальной и
+  /// серверной, поэтому reload не начинает нумерацию заново. Сервер применяет
+  /// запрос, лишь если ревизия больше последней принятой: иначе периодический
+  /// heartbeat, ушедший раньше, мог бы прийти позже свежего запроса и вернуть
+  /// presence назад.
+  int _presenceRevision = 0;
+
+  /// Очередь отправки присутствия: одновременно выполняется не больше одного
+  /// запроса, а накопленные изменения схлопываются в последнее состояние.
+  Future<void>? _presenceInFlight;
+  bool _presenceDirty = false;
+
   static const _clientSessionHeader = 'x-client-session';
 
   /// Сессия текущего клиента. null — рукопожатие ещё не выполнено.
@@ -153,7 +168,7 @@ class RemoteAgentApi
     if (!_disposed) unawaited(_publishPresence());
   }
 
-  /// Отправляет присутствие и сразу перечитывает список экранов.
+  /// Отправляет актуальное присутствие и сразу перечитывает список экранов.
   ///
   /// После долгой фоновой вкладки heartbeat мог не дойти, и сессия успела
   /// истечь. Успешный heartbeat после возврата фокуса восстанавливает её, а
@@ -161,6 +176,34 @@ class RemoteAgentApi
   Future<void> _publishPresence() async {
     await _sendHeartbeat();
     if (!_disposed) await _refreshClientSessionsQuietly();
+  }
+
+  /// Ставит присутствие в очередь и отправляет самое свежее состояние.
+  ///
+  /// Параллельные вызовы не создают несколько запросов: если отправка уже
+  /// идёт, новое состояние лишь помечается грязным, и текущий цикл отправит
+  /// его следующим. Так порядок ревизий совпадает с порядком запросов, даже
+  /// когда периодический heartbeat совпал с ручным изменением.
+  Future<void> _flushPresence() {
+    _presenceDirty = true;
+    final inFlight = _presenceInFlight;
+    if (inFlight != null) return inFlight;
+    final done = Completer<void>();
+    _presenceInFlight = done.future;
+    unawaited(_drainPresence(done));
+    return done.future;
+  }
+
+  Future<void> _drainPresence(Completer<void> done) async {
+    try {
+      while (_presenceDirty && !_disposed) {
+        _presenceDirty = false;
+        await _sendPresence();
+      }
+    } finally {
+      _presenceInFlight = null;
+      if (!done.isCompleted) done.complete();
+    }
   }
 
   /// Текущая пауза перед следующей попыткой; после успеха сбрасывается.
@@ -1468,7 +1511,10 @@ class RemoteAgentApi
     final http.Response response;
     try {
       final streamed = await _client.send(request).timeout(timeout);
-      response = await http.Response.fromStream(streamed);
+      // Таймаут покрывает и тело ответа: сеть может отдать заголовки и
+      // замолчать. Иначе зависший запрос остаётся в единственной очереди
+      // присутствия навсегда, и смена экрана больше не доходит до сервера.
+      response = await http.Response.fromStream(streamed).timeout(timeout);
     } on http.ClientException {
       _setStatus(AgentStatus.offline);
       rethrow;
@@ -1530,6 +1576,12 @@ class RemoteAgentApi
     if (map['instanceId'] is String) {
       _trackInstance(map['instanceId'] as String);
     }
+    // Продолжаем нумерацию присутствия с серверного значения, чтобы reload
+    // не начинал ревизии заново и не получал отказ от собственной сессии.
+    final revision = map['presenceRevision'];
+    if (revision is num && revision.isFinite) {
+      _presenceRevision = max(_presenceRevision, revision.toInt());
+    }
     final heartbeat = map['heartbeatIntervalMs'];
     if (heartbeat is num && heartbeat > 0) {
       _heartbeatInterval = Duration(
@@ -1569,18 +1621,42 @@ class RemoteAgentApi
     });
   }
 
-  Future<void> _sendHeartbeat() async {
+  Future<void> _sendHeartbeat() => _flushPresence();
+
+  /// Отправляет один снимок присутствия.
+  ///
+  /// Ревизия назначается после рукопожатия, перед самой отправкой: сервер
+  /// мог вернуть более высокую ревизию переиспользованной сессии, и снимок
+  /// обязан быть новее неё, иначе сервер отклонил бы изменившееся присутствие
+  /// как устаревшее.
+  ///
+  /// Ответ несёт принятую сервером ревизию. Если наша отстала (например,
+  /// сессию делит другая вкладка), запрос отклонён как устаревший, но мы
+  /// догоняем сервер и отправляем следующее состояние уже с принятым номером,
+  /// а не остаёмся незамеченными до перезагрузки.
+  Future<void> _sendPresence() async {
     if (_disposed) return;
     try {
       // Присутствие должно дойти до сервера сразу, а не только со следующим
       // периодическим heartbeat: иначе push может уйти в уже открытый чат.
       await _ensureSession();
       if (_disposed || _sessionId == null) return;
-      await _send(
+      final revision = ++_presenceRevision;
+      final json = await _send(
         'PUT',
         '/client/session',
-        body: {'focused': _focused, 'activeChatId': _activeChatId},
+        body: {
+          'focused': _focused,
+          'activeChatId': _activeChatId,
+          'presenceRevision': revision,
+        },
       );
+      if (json is Map) {
+        final accepted = json['presenceRevision'];
+        if (accepted is num && accepted.isFinite) {
+          _presenceRevision = max(_presenceRevision, accepted.toInt());
+        }
+      }
     } on Object {
       // Следующий запрос или SSE-переподключение восстановит сессию.
     }

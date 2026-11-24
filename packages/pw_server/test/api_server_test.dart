@@ -2148,6 +2148,106 @@ void main() {
       expect(current['online'], isTrue);
     });
 
+    test('an out-of-order presence request does not roll back', () async {
+      final (ackStatus, ackBody) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {'focused': true, 'activeChatId': 'c2', 'presenceRevision': 2},
+      );
+      expect(ackStatus, HttpStatus.ok);
+      expect((jsonDecode(ackBody) as Map)['presenceRevision'], 2);
+
+      // Периодический heartbeat со старым снимком приходит позже свежего
+      // запроса: сервер обязан сохранить более новое присутствие и вернуть
+      // принятую ревизию, чтобы отставший клиент догнал её.
+      final (staleStatus, staleBody) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {'focused': false, 'activeChatId': null, 'presenceRevision': 1},
+      );
+      expect(staleStatus, HttpStatus.ok);
+      expect((jsonDecode(staleBody) as Map)['presenceRevision'], 2);
+
+      final (_, body) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/client/sessions',
+        token: _token,
+        session: sessionId,
+      );
+      final current = ((jsonDecode(body) as Map)['sessions'] as List)
+          .cast<Map>()
+          .firstWhere((entry) => entry['id'] == sessionId);
+      expect(current['focused'], isTrue);
+      expect(current['activeChatId'], 'c2');
+      expect(current['presenceRevision'], 2);
+    });
+
+    test('a non-finite presence revision is treated as missing', () async {
+      // jsonEncode не воспроизводит бесконечность, а разбор тела получает её
+      // из 1e400: без проверки toInt() бросает и запрос отвечает 500.
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        rawBody: '{"focused": true, "presenceRevision": 1e400}',
+      );
+      expect(status, HttpStatus.ok);
+
+      final (_, list) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/client/sessions',
+        token: _token,
+        session: sessionId,
+      );
+      final current = ((jsonDecode(list) as Map)['sessions'] as List)
+          .cast<Map>()
+          .firstWhere((entry) => entry['id'] == sessionId);
+      // Ревизия как у старого клиента: присутствие применяется, номер не растёт.
+      expect(current['focused'], isTrue);
+      expect(current['presenceRevision'], 0);
+    });
+
+    test('handshake returns the presence revision for reload', () async {
+      await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {'focused': true, 'activeChatId': 'c1', 'presenceRevision': 9},
+      );
+
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: clientHeaders,
+        body: {'protocol': 1, 'previousSessionId': sessionId},
+      );
+      expect(status, HttpStatus.ok);
+      final json = jsonDecode(body) as Map;
+      expect(json['sessionId'], sessionId);
+      expect(json['presenceRevision'], 9);
+    });
+
     test(
       'expired session gets 410 and a new handshake gets a new id',
       () async {
@@ -2213,6 +2313,7 @@ Future<(int, String)> _request(
   String? session,
   Map<String, String>? headers,
   Object? body,
+  String? rawBody,
 }) async {
   final request = await client.openUrl(method, Uri.parse('$base$path'));
   if (token != null) {
@@ -2227,6 +2328,12 @@ Future<(int, String)> _request(
   if (body != null) {
     request.headers.contentType = ContentType.json;
     request.write(jsonEncode(body));
+  }
+  if (rawBody != null) {
+    // Нужно для тел, которые jsonEncode не воспроизводит, например 1e400:
+    // бесконечность нельзя закодировать, но её понимает разбор на сервере.
+    request.headers.contentType = ContentType.json;
+    request.write(rawBody);
   }
   final response = await request.close();
   return (response.statusCode, await utf8.decoder.bind(response).join());

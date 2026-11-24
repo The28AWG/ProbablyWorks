@@ -916,6 +916,10 @@ final class ApiServer {
       'protocol': clientProtocol,
       'expiresAt': session.expiresAt.toUtc().toIso8601String(),
       'heartbeatIntervalMs': _clientSessions.heartbeatInterval.inMilliseconds,
+      // Клиент продолжает нумерацию присутствия с этого значения. Без него
+      // reload начинал бы ревизии заново, и сервер отклонял бы новые
+      // обновления как устаревшие.
+      'presenceRevision': session.presenceRevision,
     });
   }
 
@@ -948,6 +952,7 @@ final class ApiServer {
     }
     final hasActiveChatId = body.containsKey('activeChatId');
     final focused = body['focused'];
+    final revision = body['presenceRevision'];
     final session = _clientSessions.updatePresence(
       sessionId,
       focused: focused is bool ? focused : null,
@@ -955,6 +960,7 @@ final class ApiServer {
           ? body['activeChatId'] as String
           : null,
       activeChatIdSpecified: hasActiveChatId,
+      revision: revision is num && revision.isFinite ? revision.toInt() : null,
     );
     if (session == null) {
       throw const AgentApiException(
@@ -965,6 +971,10 @@ final class ApiServer {
     }
     _json(request.response, HttpStatus.ok, {
       'expiresAt': session.expiresAt.toUtc().toIso8601String(),
+      // Принятая ревизия. Если клиент отстал (сессию делит другая вкладка),
+      // его снимок отклонён как устаревший, и по этому значению он догоняет
+      // сервер, а не остаётся незамеченным до перезагрузки.
+      'presenceRevision': session.presenceRevision,
     });
   }
 
@@ -1010,6 +1020,7 @@ final class ApiServer {
     'expiresAt': session.expiresAt.toUtc().toIso8601String(),
     'focused': session.focused,
     'activeChatId': session.activeChatId,
+    'presenceRevision': session.presenceRevision,
     'online': !session.isExpiredAt(now),
     'current': current,
   };

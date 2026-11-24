@@ -790,6 +790,166 @@ void main() {
     expect(sessions.single.focused, isTrue);
   });
 
+  test('serializes presence and sends the latest revision in order', () async {
+    final presence = <Map<String, dynamic>>[];
+    final firstStarted = Completer<void>();
+    final releaseFirst = Completer<void>();
+    final secondReceived = Completer<void>();
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    httpServer.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      final path = request.uri.path;
+      if (path == '/api/v1/client/handshake') {
+        response.write(
+          jsonEncode({
+            'sessionId': 's1',
+            'instanceId': 'instance-1',
+            'deviceId': 'device-1',
+            'protocol': 1,
+            'expiresAt': expiresAt,
+            'heartbeatIntervalMs': 60000,
+            'presenceRevision': 4,
+          }),
+        );
+      } else if (path == '/api/v1/chats') {
+        response.write(jsonEncode({'chats': <Object>[]}));
+      } else if (path == '/api/v1/client/sessions') {
+        response.write(
+          jsonEncode({'currentSessionId': 's1', 'sessions': <Object>[]}),
+        );
+      } else if (path == '/api/v1/client/session' && request.method == 'PUT') {
+        presence.add(jsonDecode(body) as Map<String, dynamic>);
+        if (presence.length == 1) {
+          firstStarted.complete();
+          await releaseFirst.future;
+        }
+        if (presence.length == 2 && !secondReceived.isCompleted) {
+          secondReceived.complete();
+        }
+        response.write(jsonEncode({'expiresAt': expiresAt}));
+      } else if (path == '/api/v1/client/session' &&
+          request.method == 'DELETE') {
+        response.statusCode = HttpStatus.noContent;
+      } else {
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    // Присутствие уходит до любого другого запроса: рукопожатие внутри
+    // отправки возвращает ревизию 4, и первый снимок должен быть новее неё.
+    api.setPresence(focused: true, activeChatId: 'a');
+    await firstStarted.future.timeout(const Duration(seconds: 2));
+
+    // Второе изменение приходит, пока первый запрос ещё не завершён.
+    api.setPresence(clearActiveChat: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(presence, hasLength(1));
+
+    releaseFirst.complete();
+    await secondReceived.future.timeout(const Duration(seconds: 2));
+
+    expect(presence, hasLength(2));
+    // Ревизия продолжает серверную после рукопожатия, а порядок запросов
+    // совпадает с порядком изменений: устаревшее состояние не уходит позже.
+    expect(presence.first, {
+      'focused': true,
+      'activeChatId': 'a',
+      'presenceRevision': 5,
+    });
+    expect(presence[1], {
+      'focused': true,
+      'activeChatId': null,
+      'presenceRevision': 6,
+    });
+  });
+
+  test('a presence response advances a lagging revision', () async {
+    final revisions = <int>[];
+    final flushed = Completer<void>();
+    final secondReceived = Completer<void>();
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    httpServer.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      final path = request.uri.path;
+      if (path == '/api/v1/client/handshake') {
+        response.write(
+          jsonEncode({
+            'sessionId': 's1',
+            'instanceId': 'instance-1',
+            'deviceId': 'device-1',
+            'protocol': 1,
+            'expiresAt': expiresAt,
+            'heartbeatIntervalMs': 60000,
+            'presenceRevision': 0,
+          }),
+        );
+      } else if (path == '/api/v1/client/sessions') {
+        // Чтение списка идёт после отправки присутствия: к этому моменту
+        // клиент уже разобрал ответ и обновил ревизию.
+        if (!flushed.isCompleted) flushed.complete();
+        response.write(
+          jsonEncode({'currentSessionId': 's1', 'sessions': <Object>[]}),
+        );
+      } else if (path == '/api/v1/client/session' && request.method == 'PUT') {
+        final map = jsonDecode(body) as Map<String, dynamic>;
+        final revision = map['presenceRevision']! as int;
+        revisions.add(revision);
+        if (revisions.length == 2 && !secondReceived.isCompleted) {
+          secondReceived.complete();
+        }
+        response.write(
+          jsonEncode({
+            'expiresAt': expiresAt,
+            // Сессию делит другая вкладка: сервер уже принял ревизию 40 и
+            // отклоняет наш снимок, возвращая принятое значение.
+            'presenceRevision': revisions.length == 1 ? 40 : revision,
+          }),
+        );
+      } else if (path == '/api/v1/client/session' &&
+          request.method == 'DELETE') {
+        response.statusCode = HttpStatus.noContent;
+      } else {
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    api.setPresence(focused: true);
+    await flushed.future.timeout(const Duration(seconds: 2));
+
+    api.setPresence(clearActiveChat: true);
+    await secondReceived.future.timeout(const Duration(seconds: 2));
+
+    // Первый снимок отклонён как устаревший, но ответ вернул 40, поэтому
+    // следующая отправка идёт с 41 и снова попадает в состояние сервера.
+    expect(revisions, [1, 41]);
+  });
+
   test(
     'a stale session list response does not overwrite a newer one',
     () async {

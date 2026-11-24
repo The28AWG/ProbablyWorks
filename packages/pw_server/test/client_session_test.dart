@@ -165,6 +165,75 @@ void main() {
     expect(changes.length, afterFirst);
   });
 
+  test(
+    'applies presence by increasing revision and ignores stale updates',
+    () async {
+      final session = registry.handshake(info: info);
+      final changes = <void>[];
+      final sub = registry.changes.listen(changes.add);
+      addTearDown(sub.cancel);
+
+      registry.updatePresence(
+        session.id,
+        focused: true,
+        activeChatId: 'a',
+        revision: 2,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(changes, hasLength(1));
+
+      // Более новый запрос пришёл раньше: старый не должен откатить состояние
+      // и не должен рассылать событие присутствия.
+      registry.updatePresence(
+        session.id,
+        focused: false,
+        activeChatId: null,
+        revision: 1,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(changes.length, 1);
+      expect(session.focused, isTrue);
+      expect(session.activeChatId, 'a');
+      expect(session.presenceRevision, 2);
+
+      registry.updatePresence(
+        session.id,
+        focused: false,
+        activeChatId: null,
+        revision: 3,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(changes, hasLength(2));
+      expect(session.focused, isFalse);
+      expect(session.activeChatId, isNull);
+      expect(session.presenceRevision, 3);
+    },
+  );
+
+  test('a stale presence revision still keeps the session alive', () {
+    final session = registry.handshake(info: info);
+
+    registry.updatePresence(session.id, focused: true, revision: 5);
+    now = now.add(const Duration(seconds: 50));
+    registry.updatePresence(session.id, focused: false, revision: 4);
+
+    expect(session.focused, isTrue);
+    expect(session.lastSeenAt, now);
+  });
+
+  test('a reload keeps the presence revision of the reused session', () {
+    final first = registry.handshake(info: info);
+    registry.updatePresence(first.id, focused: true, revision: 7);
+
+    final second = registry.handshake(info: info, previousSessionId: first.id);
+
+    expect(second.id, first.id);
+    expect(second.presenceRevision, 7);
+    // Следующая ревизия после reload продолжает нумерацию, а не начинает с 1.
+    registry.updatePresence(second.id, focused: false, revision: 8);
+    expect(second.focused, isFalse);
+  });
+
   test('sweep removes expired sessions', () {
     final session = registry.handshake(info: info);
     now = now.add(const Duration(seconds: 61));

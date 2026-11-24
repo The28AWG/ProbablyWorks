@@ -147,13 +147,32 @@ final class ClientSession {
   ///
   /// [focused] и [activeChatId] необязательны: heartbeat может прислать только
   /// изменившуюся часть, не сбрасывая вторую.
-  void updatePresence({
+  ///
+  /// [revision] — монотонный номер состояния присутствия. Запрос с ревизией не
+  /// больше уже принятой игнорируется: периодический heartbeat мог обогнать
+  /// более свежий запрос, и без такой проверки presence откатился бы назад.
+  /// Ревизия null означает старого клиента без номера: его состояние
+  /// применяется как раньше.
+  ///
+  /// Возвращает true, если видимое присутствие изменилось. Устаревшая ревизия
+  /// возвращает false, но сама сессия уже продлена вызывающим кодом.
+  bool updatePresence({
     bool? focused,
     String? activeChatId,
     bool activeChatIdSpecified = true,
+    int? revision,
   }) {
+    if (revision != null && revision <= presenceRevision) return false;
+    final nextFocused = focused ?? this.focused;
+    final nextActiveChatId = activeChatIdSpecified
+        ? activeChatId
+        : this.activeChatId;
+    final changed =
+        nextFocused != this.focused || nextActiveChatId != this.activeChatId;
     if (focused != null) this.focused = focused;
     if (activeChatIdSpecified) this.activeChatId = activeChatId;
+    if (revision != null) presenceRevision = revision;
+    return changed;
   }
 
   /// Находится ли приложение в фокусе на этом клиенте.
@@ -161,6 +180,14 @@ final class ClientSession {
 
   /// Чат, открытый на этом клиенте, если он сообщил его в heartbeat.
   String? activeChatId;
+
+  /// Последняя принятая ревизия присутствия.
+  ///
+  /// Ноль — новая сессия или клиент без ревизий. Значение переживает
+  /// повторное рукопожатие после reload: иначе новый экземпляр страницы
+  /// начинал бы нумерацию заново, и сервер отклонял бы его обновления как
+  /// устаревшие.
+  int presenceRevision = 0;
 }
 
 /// Причина, по которой сессия не подошла.
@@ -280,29 +307,24 @@ final class ClientSessionRegistry {
   ///
   /// Событие изменения рассылается только когда присутствие действительно
   /// изменилось. Иначе каждый heartbeat раз в 20 секунд заставлял бы всех
-  /// клиентов перечитывать список сессий.
+  /// клиентов перечитывать список сессий. Запрос с устаревшей ревизией тоже
+  /// продлевает сессию, но состояние не меняет.
   ClientSession? updatePresence(
     String id, {
     bool? focused,
     String? activeChatId,
     bool activeChatIdSpecified = true,
+    int? revision,
   }) {
     final session = _sessions[id];
     if (session == null) return null;
-    final nextFocused = focused ?? session.focused;
-    final nextActiveChatId = activeChatIdSpecified
-        ? activeChatId
-        : session.activeChatId;
-    final changed =
-        nextFocused != session.focused ||
-        nextActiveChatId != session.activeChatId;
-    session
-      ..touch(now)
-      ..updatePresence(
-        focused: focused,
-        activeChatId: activeChatId,
-        activeChatIdSpecified: activeChatIdSpecified,
-      );
+    session.touch(now);
+    final changed = session.updatePresence(
+      focused: focused,
+      activeChatId: activeChatId,
+      activeChatIdSpecified: activeChatIdSpecified,
+      revision: revision,
+    );
     if (changed) _notify();
     return session;
   }
