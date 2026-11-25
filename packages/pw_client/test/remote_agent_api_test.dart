@@ -737,6 +737,193 @@ void main() {
     },
   );
 
+  test(
+    'treats a normally finished SSE stream as a break and reconciles',
+    () async {
+      final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final expiresAt = DateTime.now()
+          .toUtc()
+          .add(const Duration(minutes: 1))
+          .toIso8601String();
+      final keepingOpen = Completer<void>();
+      var eventsRequests = 0;
+      var sessionsRequests = 0;
+      final secondEvents = Completer<void>();
+      final reconciled = Completer<void>();
+      final reconciledAfterReconnect = Completer<void>();
+      httpServer.listen((request) async {
+        final path = request.uri.path;
+        final response = request.response;
+        if (path == '/api/v1/client/handshake') {
+          response.headers.contentType = ContentType.json;
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+              'presenceRevision': 1,
+            }),
+          );
+          await response.close();
+          return;
+        }
+        if (path == '/api/v1/events') {
+          eventsRequests++;
+          response
+            ..bufferOutput = false
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType(
+              'text',
+              'event-stream',
+              charset: 'utf-8',
+            )
+            ..write(': connected\n\n');
+          await response.flush();
+          if (eventsRequests == 1) {
+            // Сервер закрывает поток без ошибки: соединение кончилось по FIN,
+            // статус 200 уже был, исключения нет.
+            await response.close();
+            return;
+          }
+          if (!secondEvents.isCompleted) secondEvents.complete();
+          await keepingOpen.future;
+          await response.close();
+          return;
+        }
+        if (path == '/api/v1/client/sessions') {
+          sessionsRequests++;
+          if (!reconciled.isCompleted) reconciled.complete();
+          if (secondEvents.isCompleted &&
+              !reconciledAfterReconnect.isCompleted) {
+            reconciledAfterReconnect.complete();
+          }
+          response.headers.contentType = ContentType.json;
+          response.write(
+            jsonEncode({'currentSessionId': 's1', 'sessions': <Object>[]}),
+          );
+          await response.close();
+          return;
+        }
+        response.statusCode = HttpStatus.notFound;
+        await response.close();
+      });
+      final api = RemoteAgentApi(
+        baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+        token: 'token',
+        reconnectBaseDelay: const Duration(milliseconds: 300),
+        reconnectMaxDelay: const Duration(milliseconds: 600),
+        reconnectJitter: 0,
+      );
+      final statuses = <AgentStatus>[];
+      final statusSub = api.statusChanges.listen(statuses.add);
+      final reconnected = Completer<void>();
+      final reconnectSub = api.reconnects.listen((_) {
+        if (!reconnected.isCompleted) reconnected.complete();
+      });
+      addTearDown(() async {
+        await statusSub.cancel();
+        await reconnectSub.cancel();
+        await api.dispose();
+        if (!keepingOpen.isCompleted) keepingOpen.complete();
+        await httpServer.close(force: true);
+      });
+
+      await api.startEvents();
+      await api.eventsReady.timeout(const Duration(seconds: 3));
+
+      // Нормальный конец первого потока: клиент обязан считать это разрывом,
+      // а не жить дальше со статусом online и пропущенными событиями.
+      await reconnected.future.timeout(const Duration(seconds: 3));
+      expect(statuses, contains(AgentStatus.offline));
+      // Пока поток не вернулся, REST-ответы не должны выдавать себя за
+      // восстановление.
+      expect(api.status, AgentStatus.offline);
+      await reconciled.future.timeout(const Duration(seconds: 3));
+      // Даём фоновой сверке после обрыва завершиться до переподключения.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final sessionsBeforeReconnect = sessionsRequests;
+      expect(sessionsBeforeReconnect, greaterThanOrEqualTo(1));
+
+      // Переподключение состоялось: поток запрошен снова, статус снова online.
+      await secondEvents.future.timeout(const Duration(seconds: 3));
+      expect(eventsRequests, 2);
+      // События между снимком при обрыве и новым потоком могли не дойти:
+      // после подключения нужен ещё один снимок.
+      await reconciledAfterReconnect.future.timeout(const Duration(seconds: 3));
+      expect(api.status, AgentStatus.online);
+      expect(sessionsRequests, greaterThan(sessionsBeforeReconnect));
+    },
+  );
+
+  test(
+    'does not leak unhandled errors when the server is gone after a break',
+    () async {
+      final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final expiresAt = DateTime.now()
+          .toUtc()
+          .add(const Duration(minutes: 1))
+          .toIso8601String();
+      final firstEvents = Completer<void>();
+      httpServer.listen((request) async {
+        final path = request.uri.path;
+        final response = request.response;
+        if (path == '/api/v1/client/handshake') {
+          response.headers.contentType = ContentType.json;
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+              'presenceRevision': 1,
+            }),
+          );
+          await response.close();
+          return;
+        }
+        if (path == '/api/v1/events') {
+          response
+            ..bufferOutput = false
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType(
+              'text',
+              'event-stream',
+              charset: 'utf-8',
+            )
+            ..write(': connected\n\n');
+          await response.flush();
+          await response.close();
+          if (!firstEvents.isCompleted) firstEvents.complete();
+          return;
+        }
+        response.statusCode = HttpStatus.notFound;
+        await response.close();
+      });
+      final api = RemoteAgentApi(
+        baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+        token: 'token',
+        reconnectBaseDelay: const Duration(milliseconds: 50),
+        reconnectMaxDelay: const Duration(milliseconds: 100),
+        reconnectJitter: 0,
+      );
+      addTearDown(api.dispose);
+
+      await api.startEvents();
+      await api.eventsReady.timeout(const Duration(seconds: 3));
+      await firstEvents.future.timeout(const Duration(seconds: 3));
+      // Сервер ушёл целиком: сверка после обрыва и переподключение бьются в
+      // закрытый порт. Необработанные ошибки фоновых футур уронили бы тест.
+      await httpServer.close(force: true);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(api.status, AgentStatus.offline);
+    },
+  );
+
   test('stops SSE reconnects after an unauthorized response', () async {
     final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     var requests = 0;

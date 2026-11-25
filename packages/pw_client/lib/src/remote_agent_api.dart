@@ -239,6 +239,14 @@ class RemoteAgentApi
   final _reconnects = StreamController<void>.broadcast();
   bool _reconnectPending = false;
 
+  /// SSE-поток оборвался и ещё не восстановлен.
+  ///
+  /// Пока флаг поднят, успешный REST-ответ не переводит статус в
+  /// [AgentStatus.online]: события всё ещё не доставляются, и UI не должен
+  /// показывать «на связи» до нового потока. Снимается только при получении
+  /// очередного SSE-ответа со статусом 200.
+  bool _streamBroken = false;
+
   /// Номер последнего запроса списка сессий. Ответы старых запросов не должны
   /// перезаписывать более новый снимок.
   int _clientSessionsRefreshSequence = 0;
@@ -291,7 +299,9 @@ class RemoteAgentApi
           // Health может быть от старого сервера без instanceId.
         }
       }
-      _setStatus(online ? AgentStatus.online : AgentStatus.offline);
+      _setStatus(
+        online && !_streamBroken ? AgentStatus.online : AgentStatus.offline,
+      );
       return online;
     } on Object {
       _setStatus(AgentStatus.offline);
@@ -324,7 +334,11 @@ class RemoteAgentApi
   Stream<List<ClientSessionView>> get clientSessions =>
       _clientSessionChanges.stream;
 
-  /// Соединение восстановлено или сервер перезапустился.
+  /// Поток оборвался или восстановился, либо сервер перезапустился.
+  ///
+  /// Подписчики перечитывают снимки в обоих случаях: после обрыва часть
+  /// событий могла не дойти, а после восстановления нужен ещё один снимок,
+  /// чтобы догнать то, что случилось до нового потока.
   @override
   Stream<void> get reconnects => _reconnects.stream;
 
@@ -1536,8 +1550,12 @@ class RemoteAgentApi
       _setStatus(AgentStatus.offline);
       rethrow;
     }
+    // Пока SSE-поток не восстановлен, REST-ответ не делает клиент online:
+    // события всё ещё не доставляются, и UI не должен показывать «на связи».
     _setStatus(
-      response.statusCode == 401 ? AgentStatus.offline : AgentStatus.online,
+      response.statusCode == 401 || _streamBroken
+          ? AgentStatus.offline
+          : AgentStatus.online,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _error(response);
@@ -1735,13 +1753,13 @@ class RemoteAgentApi
     if (status == AgentStatus.online && wasOffline) _notifyReconnect();
   }
 
-  /// Сообщает подписчикам о восстановлении связи и обновляет глобальные
-  /// снимки, которые могли устареть за время обрыва.
+  /// Сообщает подписчикам, что нужно сверить снимки: связь восстановилась,
+  /// экземпляр сервера сменился или SSE-поток оборвался.
   ///
-  /// Одно восстановление может быть замечено несколькими путями сразу
-  /// (успешный запрос поднимает статус, повторное рукопожатие меняет
-  /// `instanceId`). Уведомление откладывается на микрозадачу и схлопывается,
-  /// иначе подписчики получили бы два одинаковых обновления.
+  /// Один переход может быть замечен несколькими путями сразу (успешный запрос
+  /// поднимает статус, повторное рукопожатие меняет `instanceId`, новый поток
+  /// продолжает прерванный). Уведомление откладывается на микрозадачу и
+  /// схлопывается, иначе подписчики получили бы два одинаковых обновления.
   void _notifyReconnect() {
     if (_disposed || _reconnectPending) return;
     _reconnectPending = true;
@@ -1754,9 +1772,53 @@ class RemoteAgentApi
       unawaited(_refreshSettingsFromRemote());
       unawaited(_refreshModelsFromRemote());
       unawaited(_refreshClientSessionsQuietly());
-      unawaited(_loadRuntime());
-      unawaited(_loadLocalModels());
+      unawaited(_loadRuntimeQuietly());
+      unawaited(_loadLocalModelsQuietly());
     });
+  }
+
+  /// Читает runtime, не выпуская сетевую ошибку наружу.
+  ///
+  /// Вызывается из уведомления о сверке, где сервер может быть уже недоступен:
+  /// необработанная ошибка `unawaited`-футуры попала бы в зону приложения.
+  Future<void> _loadRuntimeQuietly() async {
+    try {
+      await _loadRuntime();
+    } on Object {
+      // Следующее событие или переподключение повторит чтение.
+    }
+  }
+
+  /// Читает файлы локальных моделей, не выпуская сетевую ошибку наружу.
+  ///
+  /// Отличается от публичного `refresh` у `LocalModelsSource`: там ошибка
+  /// нужна вызывающему, а здесь это фоновая сверка после обрыва.
+  Future<void> _loadLocalModelsQuietly() async {
+    try {
+      await _loadLocalModels();
+    } on Object {
+      // Следующее событие или переподключение повторит чтение.
+    }
+  }
+
+  /// Фиксирует обрыв SSE-потока, даже если он завершился «нормально».
+  ///
+  /// Обычные HTTP-запросы в этот момент могут продолжать работать, поэтому
+  /// восстановление не откладывается до следующего подключения: статус сразу
+  /// переводится в [AgentStatus.offline], а снимки настроек, присутствия,
+  /// моделей и состояния ходов перечитываются немедленно. Пока поток не
+  /// вернётся, [_streamBroken] держит статус offline, чтобы REST-ответы не
+  /// выдавали себя за восстановление. События, пришедшие между этим снимком и
+  /// повторным подключением, догоняются вторым уведомлением при установке
+  /// нового потока.
+  ///
+  /// Повторные неудачные попытки переподключения не шлют сверку заново:
+  /// подписчиков будит только первый переход в разрыв.
+  void _markStreamBroken() {
+    final wasBroken = _streamBroken;
+    _streamBroken = true;
+    _setStatus(AgentStatus.offline);
+    if (!wasBroken) _notifyReconnect();
   }
 
   Future<void> _listen() async {
@@ -1783,7 +1845,7 @@ class RemoteAgentApi
         if (response.statusCode == 401) {
           // Неверный токен не станет верным от повторного запроса: останавливаем
           // цикл, иначе клиент будет долбить сервер каждые несколько секунд.
-          _setStatus(AgentStatus.offline);
+          _markStreamBroken();
           return;
         }
         if (response.statusCode == 410 && _sessionId == session) {
@@ -1799,15 +1861,27 @@ class RemoteAgentApi
             'SSE connection failed',
           );
         }
+        // Новый поток снимает запрет на online и сам сообщает о сверке:
+        // статус мог остаться offline, а события между последним снимком и
+        // этим потоком уже потеряны.
+        final recovered = _streamBroken;
+        _streamBroken = false;
         _setStatus(AgentStatus.online);
+        if (recovered) _notifyReconnect();
         _reconnectDelay = reconnectBaseDelay;
         if (!_eventsReady.isCompleted) _eventsReady.complete();
         await _consume(response.stream);
+        // Поток мог закончиться без исключения: сервер закрыл соединение,
+        // прокси срезал его по таймауту простоя или сеть закрылась по FIN.
+        // Для клиента это такой же разрыв, как и ошибка: за время потока
+        // события `messageAdded`/`chatChanged` могли не дойти, instanceId
+        // остался прежним, и статус `online` вводил бы UI в заблуждение.
+        _markStreamBroken();
       } on AgentApiException catch (error) {
-        _setStatus(AgentStatus.offline);
+        _markStreamBroken();
         if (error.status == 401) return;
       } on Object {
-        _setStatus(AgentStatus.offline);
+        _markStreamBroken();
         // Ниже пауза и повторное подключение.
       }
       if (_disposed) break;

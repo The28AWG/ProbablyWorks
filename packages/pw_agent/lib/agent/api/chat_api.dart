@@ -63,9 +63,11 @@ abstract interface class ChatApi {
   Chat draftChat({required String hostId, Host? host});
 }
 
-/// Поток «соединение восстановлено или экземпляр сервера сменился».
+/// Поток «SSE-соединение оборвалось или восстановилось, либо экземпляр сервера
+/// сменился».
 ///
-/// [ChatBloc] по нему перечитывает открытый чат, карточки и черновик.
+/// [ChatBloc] по нему перечитывает открытый чат, карточки и черновик. Обрыв
+/// тоже важен: часть событий могла не дойти до клиента.
 abstract interface class ChatReconnectApi implements ChatApi {
   Stream<void> get reconnects;
 }

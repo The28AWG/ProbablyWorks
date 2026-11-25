@@ -125,9 +125,17 @@ class WorkspaceShell extends StatefulWidget {
 }
 
 class _WorkspaceShellState extends State<WorkspaceShell> {
+  /// Пауза, после которой потеря связи считается устойчивой.
+  ///
+  /// Короткий обрыв SSE (прокси, перезапуск демона) клиент переживает сам:
+  /// поток переподключится и сверит снимки. Выкидывать пользователя из
+  /// открытого чата из-за такого обрыва нельзя.
+  static const _offlineCloseDelay = Duration(seconds: 5);
+
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   StreamSubscription<AgentStatus>? _statusSub;
   AgentApi? _statusApi;
+  Timer? _offlineCloseTimer;
   var _collapsed = false;
   var _resizing = false;
   ThemeData? _baseTheme;
@@ -138,6 +146,7 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
     super.didChangeDependencies();
     final api = ProfileScope.maybeOf(context)?.agentApi;
     if (identical(api, _statusApi)) return;
+    _cancelOfflineCheck();
     unawaited(_statusSub?.cancel());
     _statusApi = api;
     _statusSub = api?.statusChanges.listen(_onBackendStatus);
@@ -146,22 +155,51 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
 
   @override
   void dispose() {
+    _cancelOfflineCheck();
     unawaited(_statusSub?.cancel());
     super.dispose();
   }
 
   void _onBackendStatus(AgentStatus status) {
-    if (!mounted || status != AgentStatus.offline) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final tabs = AutoTabsRouter.of(context);
-      // Не выдёргиваем пользователя из настроек или проектов: чат закроется,
-      // когда он сам вернётся на вкладку чатов, а содержимое уже offline.
-      if (tabs.activeIndex == WorkspaceTab.chats.index &&
-          selectedChatIdOf(tabs) != null) {
-        openNewChat(context);
-      }
+    if (!mounted) return;
+    if (status != AgentStatus.offline) {
+      _cancelOfflineCheck();
+      return;
+    }
+    _offlineCloseTimer ??= Timer(_offlineCloseDelay, () {
+      unawaited(_closeChatIfOffline());
     });
+  }
+
+  void _cancelOfflineCheck() {
+    _offlineCloseTimer?.cancel();
+    _offlineCloseTimer = null;
+  }
+
+  Future<void> _closeChatIfOffline() async {
+    _offlineCloseTimer = null;
+    if (!mounted) return;
+    final api = _statusApi;
+    if (api == null || api.status != AgentStatus.offline) return;
+    // Оборвался только SSE, а REST отвечает: чат рабочий, закрывать его
+    // незачем, а поток и снимки восстановятся сами. Проверим ещё раз позже,
+    // если поток так и не вернётся.
+    if (await api.checkConnection()) {
+      if (!mounted || api.status != AgentStatus.offline) return;
+      _offlineCloseTimer ??= Timer(_offlineCloseDelay, () {
+        unawaited(_closeChatIfOffline());
+      });
+      return;
+    }
+    if (!mounted) return;
+    _cancelOfflineCheck();
+    final tabs = AutoTabsRouter.of(context);
+    // Не выдёргиваем пользователя из настроек или проектов: чат закроется,
+    // когда он сам вернётся на вкладку чатов, а содержимое уже offline.
+    if (tabs.activeIndex == WorkspaceTab.chats.index &&
+        selectedChatIdOf(tabs) != null) {
+      openNewChat(context);
+    }
   }
 
   void _toggle() => setState(() => _collapsed = !_collapsed);
