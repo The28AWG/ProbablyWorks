@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 void main() {
   const info = ClientSessionInfo(
     deviceId: 'device-a',
+    clientId: 'client-a',
     app: 'ProbablyWorks',
     package: 'probably_works',
     version: '1.0.0',
@@ -14,11 +15,21 @@ void main() {
   );
   const otherInfo = ClientSessionInfo(
     deviceId: 'device-b',
+    clientId: 'client-b',
     app: 'ProbablyWorks',
     package: 'probably_works',
     version: '1.0.0',
     build: '1',
     platform: 'android',
+  );
+  const updatedInfo = ClientSessionInfo(
+    deviceId: 'device-a2',
+    clientId: 'client-a',
+    app: 'ProbablyWorks',
+    package: 'probably_works',
+    version: '2.0.0',
+    build: '2',
+    platform: 'linux',
   );
 
   late DateTime now;
@@ -35,20 +46,49 @@ void main() {
 
   tearDown(() => registry.dispose());
 
-  test('creates a session and returns the same one by previous id', () {
+  test('creates a session and resumes it by id and secret', () {
     final first = registry.handshake(info: info);
     expect(first.deviceId, 'device-a');
+    expect(first.clientId, 'client-a');
+    expect(first.resumeSecret, isNotEmpty);
+    expect(first.resumeSecret, isNot(first.id));
     expect(first.expiresAt, now.add(const Duration(seconds: 60)));
 
     now = now.add(const Duration(seconds: 10));
     final second = registry.handshake(
-      info: otherInfo,
+      info: updatedInfo,
       previousSessionId: first.id,
+      previousSessionSecret: first.resumeSecret,
     );
 
     expect(second.id, first.id);
-    expect(second.deviceId, 'device-b');
+    expect(second.deviceId, 'device-a2');
+    expect(second.clientId, 'client-a');
+    expect(second.clientVersion, '2.0.0');
     expect(second.lastSeenAt, now);
+  });
+
+  test('does not resume a session without its secret', () {
+    final first = registry.handshake(info: info);
+
+    final second = registry.handshake(info: info, previousSessionId: first.id);
+
+    expect(second.id, isNot(first.id));
+    // Чужая живая сессия не удалена: без секрета её просто не переиспользуют.
+    expect(registry.byId(first.id), isNotNull);
+  });
+
+  test('does not resume a session from another client id', () {
+    final first = registry.handshake(info: info);
+
+    final second = registry.handshake(
+      info: otherInfo,
+      previousSessionId: first.id,
+      previousSessionSecret: first.resumeSecret,
+    );
+
+    expect(second.id, isNot(first.id));
+    expect(registry.byId(first.id), isNotNull);
   });
 
   test('two handshakes are two sessions with the same device id', () {
@@ -57,6 +97,8 @@ void main() {
 
     expect(second.id, isNot(first.id));
     expect(second.deviceId, first.deviceId);
+    expect(second.clientId, first.clientId);
+    expect(second.resumeSecret, isNot(first.resumeSecret));
   });
 
   test('expires and removes sessions after ttl', () {
@@ -225,7 +267,11 @@ void main() {
     final first = registry.handshake(info: info);
     registry.updatePresence(first.id, focused: true, revision: 7);
 
-    final second = registry.handshake(info: info, previousSessionId: first.id);
+    final second = registry.handshake(
+      info: info,
+      previousSessionId: first.id,
+      previousSessionSecret: first.resumeSecret,
+    );
 
     expect(second.id, first.id);
     expect(second.presenceRevision, 7);

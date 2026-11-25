@@ -399,8 +399,8 @@ final class ApiServer {
       ..set(
         'Access-Control-Allow-Headers',
         'Authorization, Content-Type, x-request-id, '
-            'x-client-app, x-client-package, x-client-version, x-client-build, '
-            'x-client-platform, x-client-session',
+            'x-client-id, x-client-app, x-client-package, x-client-version, '
+            'x-client-build, x-client-platform, x-client-session',
       )
       ..set('Access-Control-Max-Age', '600');
     if (request.method != 'OPTIONS') return false;
@@ -445,6 +445,7 @@ final class ApiServer {
   }) {
     final log = accessLog;
     if (log == null) return;
+    final clientId = _clientId(request);
     log.write({
       'ts': DateTime.now().toUtc().toIso8601String(),
       'event': event,
@@ -461,6 +462,7 @@ final class ApiServer {
       'clientPlatform': _clientHeader(request, 'x-client-platform'),
       'instanceId': instanceId,
       'deviceId': _deviceId(request),
+      'clientId': clientId.isEmpty ? null : ApiAccessLog.fingerprint(clientId),
       'clientSession': clientSession == null
           ? null
           : ApiAccessLog.fingerprint(clientSession),
@@ -479,6 +481,21 @@ final class ApiServer {
       (request.method == 'GET' && request.uri.path == '/api/v1/client/probe') ||
       (request.method == 'POST' &&
           request.uri.path == '/api/v1/client/handshake');
+
+  /// Стабильный id установки из `X-Client-Id`.
+  ///
+  /// Заголовок необязателен: старый клиент присылает только отпечаток
+  /// `X-Client-*`, и тогда группировка идёт по `deviceId`. Значение
+  /// ограничиваем безопасным набором символов, чтобы оно не ломало JSON и
+  /// подписи интерфейса.
+  static String _clientId(HttpRequest request) {
+    final raw = _clientHeader(request, 'x-client-id');
+    if (raw == null) return '';
+    final cleaned = raw.replaceAll(RegExp('[^A-Za-z0-9._-]'), '').trim();
+    return cleaned.length <= 64
+        ? cleaned
+        : String.fromCharCodes(cleaned.codeUnits.take(64));
+  }
 
   /// Короткий отпечаток `X-Client-*`.
   ///
@@ -500,6 +517,7 @@ final class ApiServer {
   static ClientSessionInfo _clientInfo(HttpRequest request) =>
       ClientSessionInfo(
         deviceId: _deviceId(request),
+        clientId: _clientId(request),
         app: _clientHeader(request, 'x-client-app') ?? '',
         package: _clientHeader(request, 'x-client-package') ?? '',
         version: _clientHeader(request, 'x-client-version') ?? '',
@@ -894,8 +912,10 @@ final class ApiServer {
 
   /// Рукопожатие: сервер сам выдаёт сессию, клиент её только сохраняет.
   ///
-  /// `previousSessionId` — подсказка для непрерывности после reload, а не
-  /// доказательство. Авторизация уже прошла по Bearer-токену.
+  /// `previousSessionId` и `previousSessionSecret` — подсказка для
+  /// непрерывности после reload, а не доказательство. Без секрета, выданного
+  /// этой же сессии, id не переиспользуется: список сессий не должен
+  /// позволять одному окну «усыновить» другое.
   Future<void> _handshake(HttpRequest request) async {
     final body = await _body(request);
     final protocol = body['protocol'] is num
@@ -911,14 +931,22 @@ final class ApiServer {
     final previous = body['previousSessionId'] is String
         ? body['previousSessionId'] as String
         : null;
+    final previousSecret = body['previousSessionSecret'] is String
+        ? body['previousSessionSecret'] as String
+        : null;
     final session = _clientSessions.handshake(
       info: _clientInfo(request),
       previousSessionId: previous,
+      previousSessionSecret: previousSecret,
     );
     _json(request.response, HttpStatus.ok, {
       'sessionId': session.id,
+      // Секрет продолжения не попадает в список сессий: клиент хранит его
+      // рядом с sessionId и присылает только в рукопожатии.
+      'resumeSecret': session.resumeSecret,
       'instanceId': instanceId,
       'deviceId': session.deviceId,
+      'clientId': session.clientId,
       'protocol': clientProtocol,
       'expiresAt': session.expiresAt.toUtc().toIso8601String(),
       'heartbeatIntervalMs': _clientSessions.heartbeatInterval.inMilliseconds,
@@ -993,13 +1021,19 @@ final class ApiServer {
     return Future<void>.value();
   }
 
-  /// Снимок клиентских сессий для диагностики и будущего UI.
+  /// Снимок клиентских сессий для диагностики и UI.
+  ///
+  /// Сырой `sessionId` и `resumeSecret` наружу не отдаются: для списка
+  /// достаточно fingerprint. Иначе соседнее окно могло бы попытаться
+  /// продолжить чужую сессию, а для UI хватает короткой подписи.
   Future<void> _clientSessionList(HttpRequest request) {
     final current = request.headers.value(_clientSessionHeader);
     final at = _clientSessions.now;
     final sessions = _clientSessions.list();
     _json(request.response, HttpStatus.ok, {
-      'currentSessionId': current,
+      'currentSessionId': current == null
+          ? null
+          : ApiAccessLog.fingerprint(current),
       'instanceId': instanceId,
       'sessions': [
         for (final session in sessions)
@@ -1014,8 +1048,11 @@ final class ApiServer {
     required bool current,
     required DateTime now,
   }) => {
-    'id': session.id,
+    // Короткий fingerprint вместо сырого id: список нужен для группировки и
+    // подписи, а не для продолжения сессии.
+    'id': ApiAccessLog.fingerprint(session.id),
     'deviceId': session.deviceId,
+    'clientId': session.clientId,
     'clientApp': session.clientApp,
     'clientPackage': session.clientPackage,
     'clientVersion': session.clientVersion,

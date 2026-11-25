@@ -294,9 +294,23 @@
   "@chatPresenceNoChat": {
     "description": "В клиентской сессии сейчас не открыт чат."
   },
-  "chatPresenceSessionId": "ID сессии: {id}",
+  "chatPresenceDeviceScreens": "{count, plural, =0{Нет экранов} one{{count} экран} few{{count} экрана} many{{count} экранов} other{{count} экрана}}",
+  "@chatPresenceDeviceScreens": {
+    "description": "Сколько вкладок или окон принадлежит одному устройству.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "chatPresenceUnknownDevice": "Неизвестное устройство",
+  "@chatPresenceUnknownDevice": {
+    "description": "Название устройства, если клиент не прислал сведения о приложении."
+  },
+  "chatPresenceSessionId": "Отпечаток сессии: {id}",
   "@chatPresenceSessionId": {
-    "description": "Подсказка короткого фрагмента id сессии в списке экранов.",
+    "description": "Подсказка короткого отпечатка сессии в списке экранов.",
     "placeholders": {
       "id": {
         "type": "String",

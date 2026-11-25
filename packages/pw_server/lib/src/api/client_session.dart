@@ -6,11 +6,11 @@ import 'package:pw_server/src/api/api_token.dart';
 
 /// Описание клиента, которое сервер получил из заголовков `X-Client-*`.
 ///
-/// [deviceId] — устройство в модели: одинаковый `deviceId` и разные
-/// `sessionId` означают одно устройство с несколькими подключениями. Это не
-/// глобальный уникальный идентификатор: после обновления приложения отпечаток
-/// меняется, а у двух одинаково описанных машин он может совпасть. Для доступа
-/// и отзыва устройств он не годится.
+/// [clientId] — устройство в модели: одинаковый `clientId` и разные
+/// `sessionId` означают одно устройство с несколькими подключениями.
+/// [deviceId] — запасной отпечаток для старых клиентов и журнала: после
+/// обновления приложения он меняется, а у двух одинаково описанных машин может
+/// совпасть. Ни то, ни другое не годится для доступа и отзыва устройств.
 final class ClientSessionInfo {
   const ClientSessionInfo({
     required this.deviceId,
@@ -19,10 +19,18 @@ final class ClientSessionInfo {
     required this.version,
     required this.build,
     required this.platform,
+    this.clientId = '',
   });
 
   /// Отпечаток `X-Client-*`, а не уникальный id устройства.
   final String deviceId;
+
+  /// Стабильный id установки из `X-Client-Id`.
+  ///
+  /// В отличие от [deviceId], не меняется при обновлении приложения и не
+  /// совпадает у двух машин с одинаковой версией. Пустая строка означает
+  /// старого клиента: тогда для группировки используется [deviceId].
+  final String clientId;
 
   /// Название приложения из `X-Client-App`.
   final String app;
@@ -46,14 +54,16 @@ final class ClientSessionInfo {
 /// демоне один API-токен; сессии не делят пользователей и не привязаны к
 /// fingerprint токена.
 final class ClientSession {
-  /// Создаёт запись сессии; id и срок выбирает реестр.
+  /// Создаёт запись сессии; id, секрет продолжения и срок выбирает реестр.
   ClientSession({
     required this.id,
+    required this.resumeSecret,
     required ClientSessionInfo info,
     required this.createdAt,
     required this.lastSeenAt,
     required this.ttl,
   }) : deviceId = info.deviceId,
+       clientId = info.clientId,
        clientApp = info.app,
        clientPackage = info.package,
        clientVersion = info.version,
@@ -63,6 +73,12 @@ final class ClientSession {
   /// Непрозрачный id, выданный сервером.
   final String id;
 
+  /// Секрет продолжения сессии. Клиент хранит его рядом с id и присылает
+  /// только в рукопожатии; сервер хранит его вместе с сессией, но не отдаёт в
+  /// списке. Одного `previousSessionId` недостаточно, иначе другое окно могло
+  /// бы «усыновить» чужое представление.
+  final String resumeSecret;
+
   /// Когда сессия создана.
   final DateTime createdAt;
 
@@ -71,6 +87,9 @@ final class ClientSession {
 
   /// Отпечаток `X-Client-*`, а не уникальный id устройства.
   String deviceId;
+
+  /// Стабильный id установки из `X-Client-Id` или пустая строка.
+  String clientId;
   String clientApp;
   String clientPackage;
   String clientVersion;
@@ -133,7 +152,8 @@ final class ClientSession {
   ///
   /// Версия и платформа могли измениться после обновления приложения, а
   /// сессия остаться прежней. Это нормально: сессия — это представление,
-  /// а не версия сборки.
+  /// а не версия сборки. [clientId] при этом остаётся прежним: обновление
+  /// приложения не создаёт новое устройство.
   void updateInfo(ClientSessionInfo info) {
     deviceId = info.deviceId;
     clientApp = info.app;
@@ -141,6 +161,7 @@ final class ClientSession {
     clientVersion = info.version;
     clientBuild = info.build;
     clientPlatform = info.platform;
+    if (info.clientId.isNotEmpty) clientId = info.clientId;
   }
 
   /// Запоминает фокус приложения и открытый чат для присутствия.
@@ -253,29 +274,36 @@ final class ClientSessionRegistry {
   /// Создаёт сессию или переиспользует [previousSessionId], если она жива.
   ///
   /// [previousSessionId] — подсказка для непрерывности после reload, а не
-  /// доказательство. Запрос уже авторизован Bearer-токеном сервера; если
-  /// старой сессии нет, будет создана новая.
+  /// доказательство. Продолжение разрешено только вместе с секретом, который
+  /// сервер выдал этой же сессии в рукопожатии. Если обе стороны прислали
+  /// [clientId], он тоже должен совпасть. Так другое окно не может
+  /// «усыновить» чужое представление, даже если узнало id из списка. Если
+  /// старой сессии нет или проверка не прошла, создаётся новая; живую чужую
+  /// сессию при этом не трогаем.
   ClientSession handshake({
     required ClientSessionInfo info,
     String? previousSessionId,
+    String? previousSessionSecret,
   }) {
     final at = now;
     if (previousSessionId != null && previousSessionId.isNotEmpty) {
       final previous = _sessions[previousSessionId];
       if (previous != null) {
-        if (!previous.isExpiredAt(at)) {
+        if (previous.isExpiredAt(at)) {
+          _sessions.remove(previous.id);
+          _close(previous);
+        } else if (_canResume(previous, info, previousSessionSecret)) {
           previous
             ..updateInfo(info)
             ..touch(at);
           _notify();
           return previous;
         }
-        _sessions.remove(previous.id);
-        _close(previous);
       }
     }
     final session = ClientSession(
       id: _newSessionId(),
+      resumeSecret: _newSessionId(),
       info: info,
       createdAt: at,
       lastSeenAt: at,
@@ -284,6 +312,25 @@ final class ClientSessionRegistry {
     _sessions[session.id] = session;
     _notify();
     return session;
+  }
+
+  /// Проверяет, можно ли продолжить [session] по присланной подсказке.
+  ///
+  /// Секрет — главное условие: без него id из списка сессий бесполезен.
+  /// [clientId] необязателен для старых клиентов, но если обе стороны его
+  /// прислали, он тоже должен совпасть: секрет от одной вкладки не должен
+  /// продолжать сессию устройства, которое успело сменить установку.
+  static bool _canResume(
+    ClientSession session,
+    ClientSessionInfo info,
+    String? secret,
+  ) {
+    if (secret == null || secret.isEmpty || secret != session.resumeSecret) {
+      return false;
+    }
+    return session.clientId.isEmpty ||
+        info.clientId.isEmpty ||
+        session.clientId == info.clientId;
   }
 
   /// Продлевает сессию и сообщает, почему она не подошла.

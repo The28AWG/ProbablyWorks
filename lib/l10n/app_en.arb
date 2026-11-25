@@ -294,9 +294,23 @@
   "@chatPresenceNoChat": {
     "description": "The client session has no chat open right now."
   },
-  "chatPresenceSessionId": "Session id: {id}",
+  "chatPresenceDeviceScreens": "{count, plural, =0{No screens} one{{count} screen} other{{count} screens}}",
+  "@chatPresenceDeviceScreens": {
+    "description": "How many tabs or windows belong to one device.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
+    }
+  },
+  "chatPresenceUnknownDevice": "Unknown device",
+  "@chatPresenceUnknownDevice": {
+    "description": "Fallback device name when the client did not send app details."
+  },
+  "chatPresenceSessionId": "Session fingerprint: {id}",
   "@chatPresenceSessionId": {
-    "description": "Tooltip of the short session id fragment in the screen list.",
+    "description": "Tooltip of the short session fingerprint in the screen list.",
     "placeholders": {
       "id": {
         "type": "String",

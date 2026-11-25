@@ -16,9 +16,12 @@ ClientSessionView _session(
   bool current = false,
   bool focused = false,
   String platform = 'linux',
+  String clientId = '',
+  String? deviceId,
 }) => ClientSessionView(
   id: id,
-  deviceId: id,
+  deviceId: deviceId ?? id,
+  clientId: clientId,
   clientApp: 'ProbablyWorks',
   clientVersion: '2.0.0',
   clientBuild: '1',
@@ -59,12 +62,101 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Connected screens'), findsOneWidget);
-    expect(find.text('ProbablyWorks 2.0.0'), findsNWidgets(2));
+    expect(find.text('ProbablyWorks · 2.0.0 · linux'), findsOneWidget);
+    expect(find.text('ProbablyWorks · 2.0.0 · android'), findsOneWidget);
     expect(find.text('#s1'), findsOneWidget);
     expect(find.text('#s2'), findsOneWidget);
     expect(find.textContaining('Viewing: Alpha'), findsOneWidget);
     expect(find.textContaining('This screen'), findsOneWidget);
     expect(find.byIcon(Icons.smartphone_outlined), findsOneWidget);
+  });
+
+  test('groups tabs by stable client id', () {
+    final groups = groupClientSessions([
+      _session('s1', clientId: 'install-1', deviceId: 'fp-a'),
+      _session('s2', clientId: 'install-1', deviceId: 'fp-b'),
+      _session('s3', clientId: 'install-2', deviceId: 'fp-c'),
+      _session('s4', deviceId: 'legacy-device'),
+    ]);
+
+    expect(groups, hasLength(3));
+    final first = groups.firstWhere((group) => group.key == 'install-1');
+    expect(first.sessions.map((session) => session.id), ['s1', 's2']);
+    expect(
+      groups.firstWhere((group) => group.key == 'install-2').sessions,
+      hasLength(1),
+    );
+    expect(
+      groups.firstWhere((group) => group.key == 'legacy-device').sessions,
+      hasLength(1),
+    );
+  });
+
+  testWidgets('expands tabs of one device', (tester) async {
+    final sessions = [
+      _session('s1', current: true, clientId: 'install-1'),
+      _session('s2', focused: true, clientId: 'install-1'),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(body: ClientPresenceIconButton(sessions: sessions)),
+      ),
+    );
+
+    await tester.tap(find.byType(ClientPresenceIconButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ProbablyWorks · 2.0.0 · linux'), findsOneWidget);
+    expect(find.text('2 screens'), findsOneWidget);
+    expect(find.text('#s1'), findsOneWidget);
+    expect(find.text('#s2'), findsOneWidget);
+
+    await tester.tap(find.text('ProbablyWorks · 2.0.0 · linux'));
+    await tester.pumpAndSettle();
+    expect(find.text('#s1'), findsNothing);
+    expect(find.text('#s2'), findsNothing);
+
+    await tester.tap(find.text('ProbablyWorks · 2.0.0 · linux'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Focused'), findsOneWidget);
+  });
+
+  testWidgets('a device stays open when a second screen appears', (
+    tester,
+  ) async {
+    final changes = StreamController<List<ClientSessionView>>.broadcast();
+    addTearDown(changes.close);
+    final current = _session('s1', current: true);
+    final remote = _session('s2', clientId: 'install-remote');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: ClientPresenceIconButton(
+            sessions: [current, remote],
+            changes: changes.stream,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ClientPresenceIconButton));
+    await tester.pumpAndSettle();
+    expect(find.text('1 screen'), findsNWidgets(2));
+
+    changes.add([current, remote, _session('s3', clientId: 'install-remote')]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 screens'), findsOneWidget);
+    expect(find.text('#s2'), findsOneWidget);
+    expect(find.text('#s3'), findsOneWidget);
   });
 
   testWidgets('open dialog follows presence changes', (tester) async {

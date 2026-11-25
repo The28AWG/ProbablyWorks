@@ -121,6 +121,11 @@ class RemoteAgentApi
   final ClientSessionStore _sessionStore;
   final ClientSessionChannel _sessionChannel;
 
+  /// Секрет продолжения сессии лежит рядом с id, но под отдельным ключом.
+  /// Так существующие хранилища со старым значением id читаются как раньше,
+  /// а список сессий и соседние окна секрета не видят.
+  String get _resumeSecretKey => '$sessionKey.resume';
+
   String? _sessionId;
   String? _instanceId;
   Future<void>? _sessionInFlight;
@@ -462,6 +467,7 @@ class RemoteAgentApi
       // рукопожатие и записать свой id. Стираем только свой.
       if (_sessionStore.read(sessionKey) == session) {
         _sessionStore.delete(sessionKey);
+        _sessionStore.delete(_resumeSecretKey);
       }
     }
     await _statusChanges.close();
@@ -1575,6 +1581,7 @@ class RemoteAgentApi
 
   Future<void> _handshake() async {
     var previous = _sessionStore.read(sessionKey);
+    var previousSecret = _sessionStore.read(_resumeSecretKey);
     if (previous != null && previous.isNotEmpty) {
       var active = false;
       try {
@@ -1584,13 +1591,19 @@ class RemoteAgentApi
       }
       if (active) {
         _sessionStore.delete(sessionKey);
+        _sessionStore.delete(_resumeSecretKey);
         previous = null;
+        previousSecret = null;
       }
     }
     final json = await _sendRaw(
       'POST',
       '/client/handshake',
-      body: {'protocol': 1, 'previousSessionId': ?previous},
+      body: {
+        'protocol': 1,
+        'previousSessionId': ?previous,
+        'previousSessionSecret': ?previousSecret,
+      },
       session: null,
     );
     if (_disposed) return;
@@ -1605,6 +1618,14 @@ class RemoteAgentApi
     }
     _sessionId = sessionId;
     _sessionStore.write(sessionKey, sessionId);
+    final resumeSecret = map['resumeSecret'];
+    if (resumeSecret is String && resumeSecret.isNotEmpty) {
+      _sessionStore.write(_resumeSecretKey, resumeSecret);
+    } else {
+      // Старый сервер секрет не выдаёт: не оставляем чужой секрет рядом с
+      // новым id, иначе следующее рукопожатие отправит его впустую.
+      _sessionStore.delete(_resumeSecretKey);
+    }
     if (map['instanceId'] is String) {
       _trackInstance(map['instanceId'] as String);
     }
@@ -2460,6 +2481,7 @@ ClientSessionView _clientSessionView(Map<String, dynamic> item) =>
     ClientSessionView(
       id: _string(item, 'id'),
       deviceId: '${item['deviceId'] ?? ''}',
+      clientId: '${item['clientId'] ?? ''}',
       clientApp: '${item['clientApp'] ?? ''}',
       clientVersion: '${item['clientVersion'] ?? ''}',
       clientBuild: '${item['clientBuild'] ?? ''}',

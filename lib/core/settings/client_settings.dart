@@ -11,6 +11,14 @@ abstract final class ClientSettingsKeys {
   static const localAgentProfileId = 'localAgentProfileId';
   static const keybindings = 'keybindings';
 
+  /// Стабильный id установки для `X-Client-Id`.
+  ///
+  /// Не входит в [interfacePreferences]: сброс настроек интерфейса не должен
+  /// выдавать текущее устройство за новое. На web ключ живёт в `localStorage`
+  /// (через `shared_preferences`), поэтому дублированная вкладка его наследует,
+  /// а другой профиль браузера получает свой.
+  static const clientId = 'clientId';
+
   /// Порядок моделей в диалоге выбора: значение `ModelSort.name`.
   static const modelSort = 'modelSort';
 

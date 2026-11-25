@@ -103,7 +103,7 @@ void main() {
     expect(await originHeader(client, 'http://evil.test'), isNull);
   });
 
-  test('CORS allows the client session header', () async {
+  test('CORS allows client identity headers', () async {
     final request = await client.openUrl(
       'OPTIONS',
       Uri.parse('$base/api/v1/chats'),
@@ -111,12 +111,11 @@ void main() {
     request.headers
       ..set('Origin', 'http://localhost:8080')
       ..set('Access-Control-Request-Method', 'GET')
-      ..set('Access-Control-Request-Headers', 'x-client-session');
+      ..set('Access-Control-Request-Headers', 'x-client-session, x-client-id');
     final response = await request.close();
-    expect(
-      response.headers.value('access-control-allow-headers'),
-      contains('x-client-session'),
-    );
+    final allowed = response.headers.value('access-control-allow-headers');
+    expect(allowed, contains('x-client-session'));
+    expect(allowed, contains('x-client-id'));
     await response.drain<void>();
   });
 
@@ -1937,6 +1936,7 @@ void main() {
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
       request.headers.set('x-request-id', 'client-request-1');
       request.headers.set('x-client-app', 'ProbablyWorks');
+      request.headers.set('x-client-id', 'client-install-1');
       request.headers.set('x-client-version', '1.2.3');
       request.headers.set('x-client-build', '42');
       request.headers.set('x-client-platform', 'linux');
@@ -1952,6 +1952,10 @@ void main() {
       ];
       expect(entries.single['requestId'], 'client-request-1');
       expect(entries.single['clientApp'], 'ProbablyWorks');
+      expect(
+        entries.single['clientId'],
+        ApiAccessLog.fingerprint('client-install-1'),
+      );
       expect(entries.single['clientVersion'], '1.2.3');
       expect(entries.single['clientBuild'], '42');
       expect(entries.single['clientPlatform'], 'linux');
@@ -2095,6 +2099,7 @@ void main() {
 
   group('client sessions', () {
     const clientHeaders = {
+      'x-client-id': 'client-install-1',
       'x-client-app': 'ProbablyWorks',
       'x-client-package': 'probably_works',
       'x-client-version': '1.0.0',
@@ -2106,6 +2111,7 @@ void main() {
     late String sessionBase;
     late DateTime sessionNow;
     late String sessionId;
+    late String resumeSecret;
     late String instanceId;
     late String deviceId;
 
@@ -2135,6 +2141,7 @@ void main() {
       expect(status, HttpStatus.ok);
       final json = jsonDecode(body) as Map;
       sessionId = json['sessionId'] as String;
+      resumeSecret = json['resumeSecret'] as String;
       instanceId = json['instanceId'] as String;
       deviceId = json['deviceId'] as String;
     });
@@ -2189,6 +2196,7 @@ void main() {
 
       expect(json['sessionId'], isNot(sessionId));
       expect(json['deviceId'], deviceId);
+      expect(json['clientId'], 'client-install-1');
       expect(json['instanceId'], instanceId);
 
       final (listStatus, listBody) = await _request(
@@ -2206,10 +2214,14 @@ void main() {
         sessions.map((entry) => (entry as Map)['deviceId']),
         everyElement(deviceId),
       );
+      expect(
+        sessions.map((entry) => (entry as Map)['clientId']),
+        everyElement('client-install-1'),
+      );
     });
 
-    test('previous session id is reused while alive', () async {
-      final (status, body) = await _request(
+    test('previous session id is reused only with its secret', () async {
+      final (withoutSecretStatus, withoutSecretBody) = await _request(
         client,
         sessionBase,
         'POST',
@@ -2218,10 +2230,74 @@ void main() {
         headers: clientHeaders,
         body: {'protocol': 1, 'previousSessionId': sessionId},
       );
+      expect(withoutSecretStatus, HttpStatus.ok);
+      expect(
+        (jsonDecode(withoutSecretBody) as Map)['sessionId'],
+        isNot(sessionId),
+      );
+
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: clientHeaders,
+        body: {
+          'protocol': 1,
+          'previousSessionId': sessionId,
+          'previousSessionSecret': resumeSecret,
+        },
+      );
 
       expect(status, HttpStatus.ok);
       expect((jsonDecode(body) as Map)['sessionId'], sessionId);
     });
+
+    test('another client id cannot resume a session', () async {
+      final (status, body) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: {...clientHeaders, 'x-client-id': 'client-install-2'},
+        body: {
+          'protocol': 1,
+          'previousSessionId': sessionId,
+          'previousSessionSecret': resumeSecret,
+        },
+      );
+
+      expect(status, HttpStatus.ok);
+      expect((jsonDecode(body) as Map)['sessionId'], isNot(sessionId));
+      expect((jsonDecode(body) as Map)['clientId'], 'client-install-2');
+    });
+
+    test(
+      'the session list exposes fingerprints, not raw ids or secrets',
+      () async {
+        final (status, body) = await _request(
+          client,
+          sessionBase,
+          'GET',
+          '/api/v1/client/sessions',
+          token: _token,
+          session: sessionId,
+        );
+
+        expect(status, HttpStatus.ok);
+        final json = jsonDecode(body) as Map;
+        final sessions = json['sessions'] as List;
+        final entry = sessions.cast<Map>().firstWhere(
+          (item) => item['current'] == true,
+        );
+        expect(entry['id'], isNot(sessionId));
+        expect(entry['id'], ApiAccessLog.fingerprint(sessionId));
+        expect(entry, isNot(contains('resumeSecret')));
+        expect(json['currentSessionId'], ApiAccessLog.fingerprint(sessionId));
+      },
+    );
 
     test('heartbeat keeps the session and reports presence', () async {
       sessionNow = sessionNow.add(const Duration(seconds: 30));
@@ -2247,7 +2323,7 @@ void main() {
       expect(listStatus, HttpStatus.ok);
       final sessions = (jsonDecode(body) as Map)['sessions'] as List;
       final current = sessions.cast<Map>().firstWhere(
-        (entry) => entry['id'] == sessionId,
+        (entry) => entry['current'] == true,
       );
       expect(current['focused'], isTrue);
       expect(current['activeChatId'], 'c1');
@@ -2293,7 +2369,7 @@ void main() {
       );
       final current = ((jsonDecode(body) as Map)['sessions'] as List)
           .cast<Map>()
-          .firstWhere((entry) => entry['id'] == sessionId);
+          .firstWhere((entry) => entry['current'] == true);
       expect(current['focused'], isTrue);
       expect(current['activeChatId'], 'c2');
       expect(current['presenceRevision'], 2);
@@ -2323,7 +2399,7 @@ void main() {
       );
       final current = ((jsonDecode(list) as Map)['sessions'] as List)
           .cast<Map>()
-          .firstWhere((entry) => entry['id'] == sessionId);
+          .firstWhere((entry) => entry['current'] == true);
       // Ревизия как у старого клиента: присутствие применяется, номер не растёт.
       expect(current['focused'], isTrue);
       expect(current['presenceRevision'], 0);
@@ -2347,7 +2423,11 @@ void main() {
         '/api/v1/client/handshake',
         token: _token,
         headers: clientHeaders,
-        body: {'protocol': 1, 'previousSessionId': sessionId},
+        body: {
+          'protocol': 1,
+          'previousSessionId': sessionId,
+          'previousSessionSecret': resumeSecret,
+        },
       );
       expect(status, HttpStatus.ok);
       final json = jsonDecode(body) as Map;

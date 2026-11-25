@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:plugin_web/plugin_web.dart';
+import 'package:probably_works/app/bootstrap/client_info.dart';
 import 'package:probably_works/app/bootstrap/web_host_config.dart';
 import 'package:probably_works/app/di/injection.dart';
 import 'package:probably_works/app/guards/api_key_guard.dart';
@@ -37,7 +38,7 @@ Future<void> bootstrapWeb({bool hosted = false}) async {
   final settings = SharedPreferencesClientSettings(SharedPreferencesAsync());
   final secrets = FlutterSecretStore(const FlutterSecureStorage());
   final local = LocalAgentApisProvider();
-  final clientInfo = const ClientInfo.fallback();
+  final clientInfo = await loadClientInfo(settings: settings);
   final profiles = ProfileService(
     settings,
     secrets,

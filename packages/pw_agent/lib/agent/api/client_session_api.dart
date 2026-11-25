@@ -16,11 +16,17 @@ final class ClientSessionView {
     required this.focused,
     required this.online,
     required this.current,
+    this.clientId = '',
     this.activeChatId,
   });
 
   final String id;
   final String deviceId;
+
+  /// Стабильный id установки. Пустая строка — старый сервер или клиент без
+  /// сохранённого id; тогда устройство определяется по [deviceId].
+  final String clientId;
+
   final String clientApp;
   final String clientVersion;
   final String clientBuild;
@@ -32,6 +38,13 @@ final class ClientSessionView {
   final bool focused;
   final bool online;
   final bool current;
+
+  /// Ключ группировки вкладок и окон в одно устройство.
+  ///
+  /// [clientId] не меняется при обновлении приложения и различает машины с
+  /// одинаковой версией. [deviceId] остаётся запасным вариантом для старых
+  /// клиентов: он по-прежнему отпечаток `X-Client-*`.
+  String get deviceKey => clientId.isNotEmpty ? clientId : deviceId;
 
   /// Короткая подпись устройства для UI.
   String get label {

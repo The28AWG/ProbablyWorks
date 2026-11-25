@@ -52,10 +52,10 @@ Future<bool> bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
   final paths = await resolveAppPaths();
   await AppLog.init(paths.logs.path);
-  final clientInfo = await loadClientInfo();
   final clientSettings = SharedPreferencesClientSettings(
     SharedPreferencesAsync(),
   );
+  final clientInfo = await loadClientInfo(settings: clientSettings);
   getIt
     ..registerSingleton<AppPaths>(paths)
     ..registerSingleton<ClientInfo>(clientInfo)

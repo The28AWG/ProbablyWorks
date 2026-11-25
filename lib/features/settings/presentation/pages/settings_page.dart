@@ -967,7 +967,7 @@ class _SettingsViewState extends State<_SettingsView> {
           action: FilledButton(
             onPressed: () => showLicensePage(
               context: context,
-              applicationName: clientInfo.appName,
+              applicationName: ClientInfo.appName,
               applicationVersion:
                   '${clientInfo.version}+${clientInfo.buildNumber}',
             ),

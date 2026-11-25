@@ -326,7 +326,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Connected screens'), findsOneWidget);
-    expect(find.text('ProbablyWorks 2.0.0'), findsNWidgets(2));
+    expect(find.text('ProbablyWorks · 2.0.0 · linux'), findsNWidgets(2));
     expect(find.textContaining('Viewing: Alpha'), findsOneWidget);
     expect(find.textContaining('This screen'), findsOneWidget);
   });

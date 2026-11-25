@@ -31,22 +31,79 @@ IconData clientSessionIcon(ClientSessionView session) {
   return Icons.devices_outlined;
 }
 
-/// Короткий фрагмент id сессии.
+/// Короткий фрагмент fingerprint сессии.
 ///
 /// Две вкладки одного браузера выглядят одинаково: одно приложение, версия и
-/// платформа. Фрагмент id делает строки различимыми, не показывая длинный
-/// идентификатор целиком.
+/// платформа. Фрагмент fingerprint делает строки различимыми, не показывая
+/// служебный идентификатор целиком.
 String clientSessionShortId(ClientSessionView session, {int length = 6}) =>
     session.id.characters.take(length).toString();
 
 /// Подпись клиента для подсказки в списке чатов: приложение с версией,
-/// платформа и короткий id сессии. Id нужен, когда у соседей совпадают все
-/// остальные поля — например, у нескольких вкладок одного браузера.
+/// платформа и короткий fingerprint сессии. Fingerprint нужен, когда у соседей
+/// совпадают все остальные поля — например, у нескольких вкладок браузера.
 String clientSessionTooltipLabel(ClientSessionView session) => [
   if (session.label.isNotEmpty) session.label,
   if (session.clientPlatform.isNotEmpty) session.clientPlatform,
   '#${clientSessionShortId(session)}',
 ].join(' · ');
+
+/// Название устройства в списке: приложение, версия и платформа.
+///
+/// Платформа входит в название, потому что один и тот же клиент на телефоне
+/// и на настольной машине — разные устройства, даже когда версия совпадает.
+String clientSessionDeviceLabel(ClientSessionView session) => [
+  if (session.clientApp.isNotEmpty) session.clientApp,
+  if (session.clientVersion.isNotEmpty) session.clientVersion,
+  if (session.clientPlatform.isNotEmpty) session.clientPlatform,
+].join(' · ');
+
+/// Одно устройство в списке: все его вкладки и окна.
+///
+/// Границей группировки служит [ClientSessionView.deviceKey]: стабильный
+/// `clientId`, а для старых клиентов — отпечаток `deviceId`. Две вкладки
+/// одного браузера попадают в одну группу, а две машины с одинаковой версией
+/// при наличии `clientId` остаются разными устройствами.
+final class ClientSessionDeviceGroup {
+  const ClientSessionDeviceGroup({required this.key, required this.sessions});
+
+  /// Ключ устройства: `clientId` или запасной `deviceId`.
+  final String key;
+
+  /// Сессии устройства, уже упорядоченные для показа.
+  final List<ClientSessionView> sessions;
+
+  /// Первая сессия группы: её подпись представляет устройство.
+  ClientSessionView get primary => sessions.first;
+
+  /// Есть ли в группе текущий экран.
+  bool get hasCurrent => sessions.any((session) => session.current);
+
+  /// Есть ли в группе экран в фокусе.
+  bool get hasFocused => sessions.any((session) => session.focused);
+}
+
+/// Группирует сессии по устройству и упорядочивает их для диалога.
+///
+/// Текущее устройство поднимается наверх, затем устройства с экраном в фокусе.
+/// Внутри группы текущий экран идёт первым. Так пользователь видит знакомое
+/// место раньше остальных, а не список одинаковых строк.
+List<ClientSessionDeviceGroup> groupClientSessions(
+  List<ClientSessionView> sessions,
+) {
+  final byDevice = <String, List<ClientSessionView>>{};
+  for (final session in sessions) {
+    byDevice.putIfAbsent(session.deviceKey, () => []).add(session);
+  }
+  final groups = [
+    for (final entry in byDevice.entries)
+      ClientSessionDeviceGroup(
+        key: entry.key,
+        sessions: [...entry.value]..sort(_compareSessions),
+      ),
+  ];
+  return groups..sort(_compareGroups);
+}
 
 /// Открывает список подключённых экранов.
 ///
@@ -120,9 +177,11 @@ class ClientPresenceIconButton extends StatelessWidget {
 
 /// Диалог списка подключённых экранов.
 ///
-/// Показывает переданные сессии: в общем списке и в шапке чата это все
-/// подключённые экраны. Пользователь видит, откуда открыт рабочий стол, какой
-/// чат там выбран и находится ли окно в фокусе. Открытый диалог слушает
+/// Показывает переданные сессии, сгруппированные по устройству: вкладки
+/// одного браузера или два окна одной установки — одна группа, а разные
+/// машины с одинаковой версией остаются разными, если клиент прислал
+/// стабильный `clientId`. Пользователь видит, откуда открыт рабочий стол,
+/// какой чат там выбран и находится ли окно в фокусе. Открытый диалог слушает
 /// [changes] и обновляется без закрытия.
 class ClientPresenceDialog extends StatefulWidget {
   const ClientPresenceDialog({
@@ -142,11 +201,20 @@ class ClientPresenceDialog extends StatefulWidget {
 
 class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
   late List<ClientSessionView> _sessions = widget.sessions;
+
+  /// Раскрытые группы устройств по [ClientSessionDeviceGroup.key].
+  ///
+  /// Группа с текущим или активным экраном открыта сразу, остальные можно
+  /// раскрыть по нажатию. Состояние переживает обновления присутствия, пока
+  /// устройство остаётся в списке.
+  final Map<String, bool> _expanded = {};
+
   StreamSubscription<List<ClientSessionView>>? _changesSub;
 
   @override
   void initState() {
     super.initState();
+    _syncExpanded(_sessions);
     _listen();
   }
 
@@ -159,7 +227,9 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
       _listen();
     }
     if (widget.changes == null && oldWidget.sessions != widget.sessions) {
+      // didUpdateWidget уже вызывает сборку: setState здесь не нужен.
       _sessions = widget.sessions;
+      _syncExpanded(widget.sessions);
     }
   }
 
@@ -174,15 +244,45 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
     final changes = widget.changes;
     if (changes == null) return;
     _changesSub = changes.listen((sessions) {
-      if (mounted) setState(() => _sessions = sessions);
+      if (mounted) _setSessions(sessions);
     });
   }
+
+  void _setSessions(List<ClientSessionView> sessions) {
+    setState(() {
+      _sessions = sessions;
+      _syncExpanded(sessions);
+    });
+  }
+
+  /// Добавляет новые устройства и убирает исчезнувшие.
+  ///
+  /// Уже раскрытую пользователем группу не переоткрываем: иначе каждое
+  /// heartbeat с presence снова разворачивало бы список. Группу с одним
+  /// экраном считаем раскрытой: её строка и так видна, и при появлении второй
+  /// вкладки она не должна исчезать.
+  void _syncExpanded(List<ClientSessionView> sessions) {
+    final groups = groupClientSessions(sessions);
+    final keys = {for (final group in groups) group.key};
+    _expanded.removeWhere((key, _) => !keys.contains(key));
+    for (final group in groups) {
+      _expanded.putIfAbsent(
+        group.key,
+        () =>
+            group.sessions.length == 1 || group.hasCurrent || group.hasFocused,
+      );
+    }
+  }
+
+  /// Раскрыта ли [group] с учётом ручного выбора пользователя.
+  bool _isExpanded(ClientSessionDeviceGroup group) =>
+      _expanded[group.key] ?? group.sessions.length == 1;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final ordered = [..._sessions]..sort(_compareSessions);
+    final groups = groupClientSessions(_sessions);
     return AlertDialog(
       title: Text(
         l10n.chatPresenceTitle,
@@ -203,12 +303,16 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
-              for (final session in ordered)
+              for (final group in groups)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                  child: _SessionRow(
-                    session: session,
-                    chatTitle: widget.chatTitles[session.activeChatId],
+                  child: _DeviceGroup(
+                    group: group,
+                    expanded: _isExpanded(group),
+                    onToggle: () => setState(
+                      () => _expanded[group.key] = !_isExpanded(group),
+                    ),
+                    chatTitles: widget.chatTitles,
                   ),
                 ),
             ],
@@ -223,17 +327,108 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
       ],
     );
   }
+}
 
-  /// Текущий экран сверху, затем активные окна, затем остальные: так строка,
-  /// которую пользователь ищет чаще всего, не уезжает вниз.
-  static int _compareSessions(ClientSessionView a, ClientSessionView b) {
-    if (a.current != b.current) return a.current ? -1 : 1;
-    if (a.focused != b.focused) return a.focused ? -1 : 1;
-    return a.label.compareTo(b.label);
+/// Устройство и его вкладки.
+class _DeviceGroup extends StatelessWidget {
+  const _DeviceGroup({
+    required this.group,
+    required this.expanded,
+    required this.onToggle,
+    required this.chatTitles,
+  });
+
+  final ClientSessionDeviceGroup group;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Map<String, String> chatTitles;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final multiple = group.sessions.length > 1;
+    final name = clientSessionDeviceLabel(group.primary);
+    final displayName = name.isEmpty ? l10n.chatPresenceUnknownDevice : name;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: multiple ? onToggle : null,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            child: Row(
+              children: [
+                Icon(
+                  clientSessionIcon(group.primary),
+                  size: 20,
+                  color: group.hasFocused
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: group.hasCurrent
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                MetaChip(
+                  label: l10n.chatPresenceDeviceScreens(group.sessions.length),
+                ),
+                if (multiple) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: AppDurations.fast,
+          alignment: Alignment.topCenter,
+          child: expanded || !multiple
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final session in group.sessions)
+                      Padding(
+                        // Подпись устройства начинается после InkWell (xs),
+                        // значка (20) и отступа (md): 4 + 20 + 12 = 36.
+                        // Строка вкладки выравнивается по этой подписи, а не
+                        // по значку устройства.
+                        padding: const EdgeInsetsDirectional.only(
+                          start: AppSpacing.xxl + AppSpacing.xs,
+                          bottom: AppSpacing.sm,
+                        ),
+                        child: _SessionRow(
+                          session: session,
+                          chatTitle: chatTitles[session.activeChatId],
+                        ),
+                      ),
+                  ],
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 }
 
-/// Строка клиента: значок платформы, подпись и состояние.
+/// Строка сессии внутри устройства: fingerprint и состояние.
 class _SessionRow extends StatelessWidget {
   const _SessionRow({required this.session, this.chatTitle});
 
@@ -260,56 +455,45 @@ class _SessionRow extends StatelessWidget {
       if (session.current) l10n.chatPresenceCurrent,
     ].join(' · ');
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      // У MetaChip есть вертикальный отступ: без центрирования чип
+      // оказывается ниже текста статуса. Центрируем его по блоку статуса.
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Icon(
-            clientSessionIcon(session),
-            size: 20,
-            color: session.focused ? scheme.primary : scheme.onSurfaceVariant,
-          ),
+        MetaChip(
+          label: '#${clientSessionShortId(session)}',
+          mono: true,
+          tooltip: l10n.chatPresenceSessionId(session.id),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      session.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: session.current
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  MetaChip(
-                    label: '#${clientSessionShortId(session)}',
-                    mono: true,
-                    tooltip: l10n.chatPresenceSessionId(session.id),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                status,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+          child: Text(
+            status,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: session.current
+                  ? scheme.onSurface
+                  : scheme.onSurfaceVariant,
+            ),
           ),
         ),
       ],
     );
   }
+}
+
+/// Текущий экран сверху, затем активные окна, затем остальные.
+int _compareSessions(ClientSessionView a, ClientSessionView b) {
+  if (a.current != b.current) return a.current ? -1 : 1;
+  if (a.focused != b.focused) return a.focused ? -1 : 1;
+  return a.label.compareTo(b.label);
+}
+
+/// Устройства с текущим и активным экраном поднимаются наверх.
+int _compareGroups(ClientSessionDeviceGroup a, ClientSessionDeviceGroup b) {
+  if (a.hasCurrent != b.hasCurrent) return a.hasCurrent ? -1 : 1;
+  if (a.hasFocused != b.hasFocused) return a.hasFocused ? -1 : 1;
+  final byName = a.primary.label.compareTo(b.primary.label);
+  if (byName != 0) return byName;
+  return a.key.compareTo(b.key);
 }

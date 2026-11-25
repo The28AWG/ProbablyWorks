@@ -985,7 +985,10 @@ void main() {
 
     expect(sessions, hasLength(1));
     expect(sessions.single.current, isTrue);
-    expect(sessions.single.id, remote.sessionId);
+    // Список отдаёт fingerprint, а не сырой id: для UI этого достаточно, а
+    // продолжение сессии по одному id без секрета запрещено.
+    expect(sessions.single.id, isNot(remote.sessionId));
+    expect(sessions.single.id, hasLength(8));
   });
 
   test('presence refresh reads the session list back', () async {
@@ -1264,6 +1267,7 @@ void main() {
     await first.chats();
     final sessionId = first.sessionId;
     expect(sessionId, isNotNull);
+    expect(store.read('profile-1.resume'), isNotNull);
 
     final second = RemoteAgentApi(
       baseUri: remote.baseUri,

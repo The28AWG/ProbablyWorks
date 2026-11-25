@@ -76,13 +76,14 @@ Future<void> runScheduledTasksHeadless() async {
   final lock = SingleInstanceLock(paths.lockFile);
   if (!lock.acquire()) return;
   try {
-    final clientInfo = await loadClientInfo();
+    final clientSettings = SharedPreferencesClientSettings(
+      SharedPreferencesAsync(),
+    );
+    final clientInfo = await loadClientInfo(settings: clientSettings);
     getIt
       ..registerSingleton<AppPaths>(paths)
       ..registerSingleton<ClientInfo>(clientInfo)
-      ..registerSingleton<ClientSettings>(
-        SharedPreferencesClientSettings(SharedPreferencesAsync()),
-      );
+      ..registerSingleton<ClientSettings>(clientSettings);
     await configureDependencies();
     await getIt<SettingsRepository>().preload();
     await getIt<HostRepository>().ensureLocalHost(DateTime.now());
