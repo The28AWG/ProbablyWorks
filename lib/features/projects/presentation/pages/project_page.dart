@@ -13,6 +13,7 @@ import 'package:probably_works/features/settings/presentation/widgets/settings_f
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_shell.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -207,7 +208,10 @@ class _ProjectBody extends StatelessWidget {
       initialText: project.name,
     );
     if (name == null || !context.mounted) return;
-    await context.read<ProjectsCubit>().rename(project, name);
+    await _runProjectAction(
+      context,
+      () => context.read<ProjectsCubit>().rename(project, name),
+    );
   }
 
   Future<void> _deleteProject(BuildContext context) async {
@@ -226,6 +230,37 @@ class _ProjectBody extends StatelessWidget {
     if (context.mounted) await context.router.maybePop();
   }
 }
+
+/// Выполняет действие над проектом и показывает ошибку.
+///
+/// Конфликт ревизии (`project_conflict`) означает, что проект изменило другое
+/// окно: сервер ничего не записал, а список уже перечитывается по событию.
+Future<void> _runProjectAction(
+  BuildContext context,
+  Future<void> Function() action,
+) async {
+  try {
+    await action();
+  } on Object catch (error) {
+    if (!context.mounted) return;
+    final l10n = AppLocalizations.of(context);
+    AppSnackBar.show(
+      context,
+      error is AgentApiException && error.code == 'project_conflict'
+          ? l10n.commonConflict
+          : l10n.commonError('$error'),
+    );
+  }
+}
+
+/// Свежий снимок проекта из списка. Нужен после `project_conflict`, чтобы
+/// повторное сохранение отправляло актуальную ревизию.
+Project? _latestProject(BuildContext context, String id) => context
+    .read<ProjectsCubit>()
+    .state
+    .projects
+    .where((project) => project.id == id)
+    .firstOrNull;
 
 /// Чаты проекта. Число на карточке списка само по себе чат не открывает:
 /// здесь каждая строка ведёт в чат.
@@ -509,9 +544,13 @@ class _TrustSection extends StatelessWidget {
                 title: l10n.projectsAgentsMd,
                 subtitle: l10n.projectsAgentsMdHint,
                 value: project.trustAgentsMd,
-                onChanged: (value) => context
-                    .read<ProjectsCubit>()
-                    .setAgentsTrust(project, trusted: value),
+                onChanged: (value) => _runProjectAction(
+                  context,
+                  () => context.read<ProjectsCubit>().setAgentsTrust(
+                    project,
+                    trusted: value,
+                  ),
+                ),
               ),
               const Divider(height: AppSpacing.xl),
               Text(l10n.projectsSkillsTitle, style: theme.textTheme.titleSmall),
@@ -540,12 +579,14 @@ class _TrustSection extends StatelessWidget {
                               ? l10n.projectsSkillTrusted
                               : l10n.projectsSkillUntrusted,
                           value: skill.trusted,
-                          onChanged: (value) =>
-                              context.read<ProjectsCubit>().setSkillTrusted(
-                                project.id,
-                                skill.name,
-                                trusted: value,
-                              ),
+                          onChanged: (value) => _runProjectAction(
+                            context,
+                            () => context.read<ProjectsCubit>().setSkillTrusted(
+                              project.id,
+                              skill.name,
+                              trusted: value,
+                            ),
+                          ),
                         ),
                     ],
                   );
@@ -705,6 +746,7 @@ class _PolicyActions extends StatelessWidget {
             context,
             project: project,
             api: ProfileScope.of(context).projectsApi,
+            latest: () => _latestProject(context, project.id),
           ),
         ),
         if (selected != null)
@@ -716,6 +758,7 @@ class _PolicyActions extends StatelessWidget {
               project: project,
               existing: selected,
               api: ProfileScope.of(context).projectsApi,
+              latest: () => _latestProject(context, project.id),
             ),
           )
         else
@@ -786,16 +829,24 @@ class _PolicyField extends StatelessWidget {
             _PolicyMenuItem(
               label: l10n.projectsPolicyGlobal,
               style: itemStyle,
-              onPressed: () =>
-                  context.read<ProjectsCubit>().setPolicyProfile(project, null),
+              onPressed: () => _runProjectAction(
+                context,
+                () => context.read<ProjectsCubit>().setPolicyProfile(
+                  project,
+                  null,
+                ),
+              ),
             ),
             for (final profile in profiles)
               _PolicyMenuItem(
                 label: profile.name,
                 style: itemStyle,
-                onPressed: () => context.read<ProjectsCubit>().setPolicyProfile(
-                  project,
-                  profile.id,
+                onPressed: () => _runProjectAction(
+                  context,
+                  () => context.read<ProjectsCubit>().setPolicyProfile(
+                    project,
+                    profile.id,
+                  ),
                 ),
               ),
           ],

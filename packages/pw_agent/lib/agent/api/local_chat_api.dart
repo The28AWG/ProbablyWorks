@@ -15,6 +15,8 @@ import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/agent/workspace/mention_search_service.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/chat_usage.dart';
@@ -32,7 +34,7 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
 class LocalChatApi implements ChatApi, ClientSessionApi {
-  LocalChatApi(AgentHub hub, [this.runtime]) : _hub = hub {
+  LocalChatApi(AgentHub hub, [this.runtime, this.changes]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
     // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
     _deletion = ChatDeletionService(
@@ -55,8 +57,11 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
   /// не передавать: модели работают, но прогресс и управление недоступны.
   final ModelRuntimeService? runtime;
 
+  /// Публикация изменений для окон. В локальном GUI подписчиков нет.
+  final DomainChangeBus? changes;
+
   @override
-  late final ChatStore chatStore = _LocalChatStore(_hub.chats);
+  late final ChatStore chatStore = _LocalChatStore(_hub.chats, changes);
 
   @override
   late final SettingsStore settings = _LocalSettings(_hub.settings);
@@ -145,10 +150,15 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
     if (await _hub.hosts.byId(hostId) == null) {
       throw AgentApiException(404, 'host_not_found', 'host $hostId not found');
     }
-    return _hub.newChat(hostId: hostId);
+    final chat = _hub.newChat(hostId: hostId);
+    _publishChats(projects: true);
+    return chat;
   }
 
-  Future<void> saveChat(Chat chat) => _hub.chats.saveChat(chat);
+  Future<void> saveChat(Chat chat) async {
+    await _hub.chats.saveChat(chat);
+    _publishChats();
+  }
 
   Future<void> renameChat(String chatId, String title) =>
       updateChat(chatId, title: title);
@@ -171,6 +181,7 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
       workspace: workspace,
       workspaceSpecified: workspaceSpecified,
     );
+    _publishChats(projects: workspaceSpecified);
   }
 
   @override
@@ -185,18 +196,27 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
     bool copyPendingTasks = false,
   }) async {
     try {
-      return await _hub.forkChat(
+      final chat = await _hub.forkChat(
         chatId,
         title: title,
         untilMessageId: untilMessageId,
         copyPendingTasks: copyPendingTasks,
       );
+      _publishChats(projects: true);
+      return chat;
     } on Object {
       return null;
     }
   }
 
-  Future<List<String>> deleteChat(String chatId) => _deletion.delete(chatId);
+  Future<List<String>> deleteChat(String chatId) async {
+    final ids = await _deletion.delete(chatId);
+    _publishChats(projects: true);
+    // Удаление меняет счётчики и объём истории: раздел «Данные» перечитывает
+    // сводку только по этому событию.
+    changes?.publish(SharedResource.data);
+    return ids;
+  }
 
   Future<List<ChatMessage>> messages(String chatId) async {
     await requireChat(chatId);
@@ -333,11 +353,19 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
           sendNow: sendNow,
           clientMessageId: clientMessageId,
         );
+    _publishChats();
   }
 
   Future<void> stop(String chatId, {String? reason}) async {
     await requireChat(chatId);
     await _hub.session(chatId).stop(reason: reason);
+    _publishChats();
+  }
+
+  /// Сообщает окнам, что список чатов или счётчики проектов изменились.
+  void _publishChats({bool projects = false}) {
+    changes?.publish(SharedResource.chats);
+    if (projects) changes?.publish(SharedResource.projects);
   }
 
   Future<void> resolveApproval(
@@ -385,9 +413,10 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
 }
 
 final class _LocalChatStore implements ChatStore {
-  _LocalChatStore(this._chats);
+  _LocalChatStore(this._chats, this._changes);
 
   final dynamic _chats;
+  final DomainChangeBus? _changes;
 
   @override
   Future<Chat?> chat(String id) => _chats.chat(id);
@@ -400,10 +429,16 @@ final class _LocalChatStore implements ChatStore {
       _chats.toolRunsForChat(id);
 
   @override
-  Future<void> createChat(Chat chat) => _chats.saveChat(chat);
+  Future<void> createChat(Chat chat) async {
+    await _chats.saveChat(chat);
+    _changes?.publish(SharedResource.chats);
+  }
 
   @override
-  Future<void> saveChat(Chat chat) => _chats.saveChat(chat);
+  Future<void> saveChat(Chat chat) async {
+    await _chats.saveChat(chat);
+    _changes?.publish(SharedResource.chats);
+  }
 
   @override
   Future<Chat> updateChat(
@@ -415,16 +450,21 @@ final class _LocalChatStore implements ChatStore {
     String? workspace,
     bool workspaceSpecified = false,
     int? expectedRevision,
-  }) => _chats.updateChat(
-    chatId,
-    title: title,
-    model: model,
-    reasoning: reasoning,
-    policyMode: policyMode,
-    workspace: workspace,
-    workspaceSpecified: workspaceSpecified,
-    expectedRevision: expectedRevision,
-  );
+  }) async {
+    final chat = await _chats.updateChat(
+      chatId,
+      title: title,
+      model: model,
+      reasoning: reasoning,
+      policyMode: policyMode,
+      workspace: workspace,
+      workspaceSpecified: workspaceSpecified,
+      expectedRevision: expectedRevision,
+    );
+    _changes?.publish(SharedResource.chats);
+    if (workspaceSpecified) _changes?.publish(SharedResource.projects);
+    return chat;
+  }
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();

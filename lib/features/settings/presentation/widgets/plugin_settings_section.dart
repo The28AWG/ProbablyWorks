@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:plugin_api_ui/plugin_api_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
@@ -5,6 +7,8 @@ import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
+import 'package:pw_agent/agent/api/state_events_api.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 
 PluginUi? _uiOf(String pluginId) => getIt<PluginUiRegistry>().byId(pluginId);
 
@@ -34,12 +38,26 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
   var _loading = true;
   var _busy = false;
   var _enabled = <String>{};
+  var _revision = 0;
   List<PluginDescriptor> _plugins = const [];
+  StreamSubscription<SharedResource>? _stateSub;
 
   @override
   void initState() {
     super.initState();
+    final Object source = widget.api;
+    if (source is StateEventsApi) {
+      _stateSub = source.sharedStateChanges
+          .where((resource) => resource == SharedResource.plugins)
+          .listen((_) => unawaited(_load()));
+    }
     _load();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_stateSub?.cancel());
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -49,6 +67,7 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
       setState(() {
         _plugins = snapshot.plugins;
         _enabled = snapshot.enabled;
+        _revision = snapshot.revision;
         _loading = false;
       });
     } on Object {
@@ -81,10 +100,22 @@ class _PluginSettingsSectionState extends State<PluginSettingsSection> {
     }
     setState(() => _busy = true);
     try {
-      await widget.api.setEnabled({plugin.id, ...affected}, enabled: value);
+      await widget.api.setEnabled(
+        {plugin.id, ...affected},
+        enabled: value,
+        expectedRevision: _revision,
+      );
       await _load();
     } on AgentApiException catch (error) {
       if (!mounted) return;
+      if (error.code == 'plugin_conflict') {
+        // Ревизия устарела: снимок изменился в другом окне. Перечитываем его,
+        // иначе следующая попытка снова получит 409.
+        await _load();
+        if (!mounted) return;
+        AppSnackBar.show(context, l10n.pluginsConflict);
+        return;
+      }
       AppSnackBar.show(
         context,
         error.status == 409

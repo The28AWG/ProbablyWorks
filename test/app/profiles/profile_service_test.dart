@@ -310,6 +310,7 @@ final class _MigrationHostsApi implements HostsApi {
     String? secret,
     String? privateKeyPem,
     Map<String, String>? environment,
+    int? expectedRevision,
   }) async {
     saves++;
     savedSecret = secret;

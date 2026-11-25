@@ -28,6 +28,7 @@ final class LocalPluginApi implements PluginApi {
         ),
     ],
     enabled: _service.enabledIds,
+    revision: _service.revision,
   );
 
   @override
@@ -38,7 +39,11 @@ final class LocalPluginApi implements PluginApi {
   Future<Set<String>> dependents(String id) async => _service.dependents(id);
 
   @override
-  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+  Future<void> setEnabled(
+    Set<String> ids, {
+    required bool enabled,
+    int? expectedRevision,
+  }) async {
     if (_hub.runningChatIds.isNotEmpty) {
       throw const AgentApiException(
         409,
@@ -47,9 +52,9 @@ final class LocalPluginApi implements PluginApi {
       );
     }
     if (enabled) {
-      await _service.enable(ids);
+      await _service.enable(ids, expectedRevision: expectedRevision);
     } else {
-      await _service.disable(ids);
+      await _service.disable(ids, expectedRevision: expectedRevision);
     }
   }
 

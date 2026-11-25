@@ -34,7 +34,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 26;
+  static const currentSchemaVersion = 27;
 
   static const _uuid = Uuid();
 
@@ -188,6 +188,24 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(messages, messages.clientMessageId);
         await m.createIndex(messagesChatClientMessageId);
       }
+      // Версия 27: ревизии редактируемых общих сущностей. Две формы одного
+      // хоста, проекта или MCP-сервера не должны молча затирать друг друга.
+      // Таблицы, созданные более поздними блоками этой же миграции, уже
+      // содержат колонку: добавляем её только там, где её действительно нет.
+      if (from < 27) {
+        if (await _hasTable('hosts') &&
+            !await _hasColumn('hosts', 'revision')) {
+          await m.addColumn(hosts, hosts.revision);
+        }
+        if (await _hasTable('projects') &&
+            !await _hasColumn('projects', 'revision')) {
+          await m.addColumn(projects, projects.revision);
+        }
+        if (await _hasTable('mcp_servers') &&
+            !await _hasColumn('mcp_servers', 'revision')) {
+          await m.addColumn(mcpServers, mcpServers.revision);
+        }
+      }
     },
   );
 
@@ -197,6 +215,14 @@ class AppDatabase extends _$AppDatabase {
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
     variables: [Variable.withString(name)],
   ).get()).isNotEmpty;
+
+  /// Есть ли колонка в таблице. Нужно миграциям, которые могут встретить
+  /// таблицу, уже созданную текущей схемой в том же проходе.
+  Future<bool> _hasColumn(String table, String column) async =>
+      (await customSelect(
+        'SELECT name FROM pragma_table_info(?) WHERE name = ?',
+        variables: [Variable.withString(table), Variable.withString(column)],
+      ).get()).isNotEmpty;
 
   /// Пересоздаёт FTS-индекс из сохранённых сообщений.
   ///

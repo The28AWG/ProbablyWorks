@@ -98,7 +98,7 @@ PUT    /api/v1/questions/{id}/answer           {"answer": "..."}
 PUT    /api/v1/edit-file-changes/{id}/decision {"choice": "rollbackAndContinue|continueWithoutRollback|cancel"}
 
 GET    /api/v1/push
-PUT    /api/v1/push                           {"enabled": true, "relayUrl": "...", "token": "..."}
+PUT    /api/v1/push                           {"enabled": true, "relayUrl": "...", "token": "...", "expectedRevision": 1}
 POST   /api/v1/push/test
 GET    /api/v1/settings
 PUT    /api/v1/settings/{key}                 {"value": "..." | null}
@@ -122,7 +122,7 @@ POST   /api/v1/models/runtime/unload          {"model": "llamacpp:..."}
 
 GET    /api/v1/security/audit
 GET    /api/v1/plugins
-PUT    /api/v1/plugins/enabled                {"ids": ["..."], "enabled": false}
+PUT    /api/v1/plugins/enabled                {"ids": ["..."], "enabled": false, "expectedRevision": 3}
 GET    /api/v1/plugins/{id}/missing-dependencies
 GET    /api/v1/plugins/{id}/dependents
 GET    /api/v1/plugins/{id}/settings
@@ -255,8 +255,11 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 состояние загрузки моделей, не привязанное к чату; оно приходит и в
 чат-фильтрованный SSE.
 
-`stateAreaChanged` сообщает, что после изменяющего запроса нужно перечитать
-список (`chats`, `projects`, `hosts`, `settings` или `models`). `chatChanged`
+`stateAreaChanged` сообщает, что общий ресурс изменился и его снимок нужно
+перечитать. Области: `chats`, `projects`, `hosts`, `settings`, `models`,
+`mcp`, `plugins`, `push` и `data`. Событие публикует доменный сервис через
+`DomainChangeBus`, а не конкретный HTTP-маршрут: правка `mcp.json` снаружи и
+фоновое изменение каталога моделей тоже доходят до окон. `chatChanged`
 обновляет открытый чат; `chatDeleted` с `chatId` сообщает, что чат удалён, и
 открытый экран закрывает маршрут, а не перечитывает пустую запись. Удаление
 чата и каскадная очистка истории публикуют событие по одному на каждый
@@ -276,6 +279,16 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `PATCH /chats/{id}` принимает `expectedRevision`. При несовпадении сервер
 возвращает `409 chat_conflict`; клиент перечитывает чат и повторяет только
 свои поля.
+
+Редактируемые общие сущности тоже версионируются. `PUT /hosts/{id}`,
+`PUT|PATCH /projects/{id}`, `PUT /mcp/servers/{id}`, `PUT /plugins/enabled` и
+`PUT /push` принимают `expectedRevision` — `revision` снимка, на котором
+основана форма. Устаревшая форма получает `409` с кодом `host_conflict`,
+`project_conflict`, `mcp_conflict`, `plugin_conflict` или `push_conflict`;
+сервер ничего не меняет. Без `expectedRevision` проверка не выполняется:
+служебная запись и клиент без ревизии сохраняют объект, просто увеличивая
+`revision`. Успешное сохранение попадает в снимок и событие
+`stateAreaChanged`.
 
 ## Статическая web-сборка
 
@@ -318,8 +331,9 @@ Push выключен по умолчанию. Демон не делает ни
 - URL relay;
 - токен relay в `SecretStore`.
 
-`GET /push` возвращает `enabled`, `relayUrl` и `hasToken`; сам токен никогда
-не возвращается. `PUT /push` сохраняет настройки, `POST /push/test` отправляет
+`GET /push` возвращает `enabled`, `relayUrl`, `hasToken` и `revision`; сам
+токен никогда не возвращается. `PUT /push` сохраняет настройки и принимает
+`expectedRevision`, `POST /push/test` отправляет
 тестовое событие. Если конфигурация неполная, тест завершается ошибкой
 `push_not_configured`, а обычные уведомления молча пропускаются.
 

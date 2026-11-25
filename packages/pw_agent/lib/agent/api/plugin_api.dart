@@ -18,10 +18,18 @@ final class PluginDescriptor {
 
 /// Снимок ядра плагинов и их флагов включения.
 final class PluginSnapshot {
-  const PluginSnapshot({required this.plugins, required this.enabled});
+  const PluginSnapshot({
+    required this.plugins,
+    required this.enabled,
+    this.revision = 0,
+  });
 
   final List<PluginDescriptor> plugins;
   final Set<String> enabled;
+
+  /// Ревизия включённости и настроек плагинов. Два окна не должны включать
+  /// набор плагинов на основе устаревшего списка.
+  final int revision;
 }
 
 /// Управление ядром плагинов конкретного агента.
@@ -34,7 +42,15 @@ abstract interface class PluginApi {
   Future<Set<String>> missingDependencies(String id);
   Future<Set<String>> dependents(String id);
 
-  Future<void> setEnabled(Set<String> ids, {required bool enabled});
+  /// Включает или выключает набор плагинов.
+  ///
+  /// [expectedRevision] — ревизия снимка, на котором основано действие.
+  /// Устаревшая ревизия даёт `409 plugin_conflict` и не меняет набор.
+  Future<void> setEnabled(
+    Set<String> ids, {
+    required bool enabled,
+    int? expectedRevision,
+  });
 
   /// Настройки плагина. Для удалённого профиля чтение и запись идут через API.
   PluginSettings settingsFor(String id);
@@ -66,6 +82,7 @@ Map<String, Object?> pluginSnapshotToJson(PluginSnapshot snapshot) => {
     for (final plugin in snapshot.plugins) pluginDescriptorToJson(plugin),
   ],
   'enabled': snapshot.enabled.toList()..sort(),
+  'revision': snapshot.revision,
 };
 
 /// Восстанавливает снимок ядра из JSON API.
@@ -80,4 +97,5 @@ PluginSnapshot pluginSnapshotFromJson(Map<String, dynamic> json) =>
         for (final id in (json['enabled'] as List? ?? const []))
           if (id is String) id,
       },
+      revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
     );

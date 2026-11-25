@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
+import 'package:pw_agent/agent/api/state_events_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_types.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
 
 /// Какая операция с `mcp.json` сейчас выполняется.
@@ -66,10 +68,17 @@ class McpState extends Equatable {
 class McpCubit extends Cubit<McpState> {
   McpCubit(this._api) : super(const McpState()) {
     _changes = _api.watchStates().listen(_onState);
+    final Object source = _api;
+    if (source is StateEventsApi) {
+      _stateSub = source.sharedStateChanges
+          .where((resource) => resource == SharedResource.mcp)
+          .listen((_) => unawaited(_reloadQuietly()));
+    }
   }
 
   final McpApi _api;
   late final StreamSubscription<McpServerState> _changes;
+  StreamSubscription<SharedResource>? _stateSub;
 
   Future<void> load() async {
     emit(state.copyWith(loading: true, clearError: true));
@@ -94,7 +103,7 @@ class McpCubit extends Cubit<McpState> {
   }
 
   Future<void> save(McpServerConfig server) async {
-    await _api.save(server);
+    await _api.save(server, expectedRevision: server.revision);
     await _reload();
   }
 
@@ -164,6 +173,20 @@ class McpCubit extends Cubit<McpState> {
     );
   }
 
+  /// Перечитывает снимок MCP после конфликта ревизии: в локальном режиме
+  /// список не обновляется сам, потому что подписки на события окон нет.
+  Future<void> reload() => _reloadQuietly();
+
+  /// Перечитывает MCP после события другого окна. Ошибка не должна ронять
+  /// подписку: следующее событие или ручное обновление попробует снова.
+  Future<void> _reloadQuietly() async {
+    try {
+      await _reload();
+    } on Object catch (error) {
+      if (!isClosed) emit(state.copyWith(error: '$error'));
+    }
+  }
+
   void _onState(McpServerState update) {
     final states = Map<String, McpServerState>.of(state.states);
     states[update.serverId] = update;
@@ -173,6 +196,7 @@ class McpCubit extends Cubit<McpState> {
   @override
   Future<void> close() async {
     await _changes.cancel();
+    await _stateSub?.cancel();
     return super.close();
   }
 }

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
+import 'package:pw_agent/agent/api/state_events_api.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 
 /// Состояние раздела «Данные» в настройках.
@@ -45,9 +49,20 @@ class DataState extends Equatable {
 
 /// Загружает объём истории и выполняет необратимые операции раздела.
 class DataCubit extends Cubit<DataState> {
-  DataCubit(this._api) : super(const DataState());
+  DataCubit(this._api) : super(const DataState()) {
+    final Object source = _api;
+    if (source is StateEventsApi) {
+      // Только сводка: `usage()` обходит папку чатов, и пересчёт на каждое
+      // событие списка чатов был бы дорогим. Удаление чата и очистка истории
+      // публикуют `data` сами.
+      _stateSub = source.sharedStateChanges
+          .where((resource) => resource == SharedResource.data)
+          .listen((_) => unawaited(_reloadQuietly()));
+    }
+  }
 
   final DataApi _api;
+  StreamSubscription<SharedResource>? _stateSub;
 
   /// Перечитывает занятое место. Ошибка остаётся в состоянии.
   Future<void> load() async {
@@ -119,6 +134,24 @@ class DataCubit extends Cubit<DataState> {
     } on Object {
       return null;
     }
+  }
+
+  /// Очистка или сброс в другом окне: обновляем цифры без ручного действия.
+  Future<void> _reloadQuietly() async {
+    try {
+      final usage = await _api.usage();
+      if (!isClosed) {
+        emit(state.copyWith(usage: usage, loading: false, clearError: true));
+      }
+    } on Object {
+      // Следующее событие или открытие раздела попробует снова.
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    await _stateSub?.cancel();
+    return super.close();
   }
 
   static String _messageOf(Object error) =>

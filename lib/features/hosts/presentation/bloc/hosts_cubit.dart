@@ -37,8 +37,14 @@ class HostsCubit extends Cubit<HostsState> {
   /// Пустой секрет при редактировании оставляет прежний.
   ///
   /// Виртуальный Host заполняет свою ФС после записи самого хоста: узлы ФС ссылаются на него внешним ключом.
+  /// Ревизия снимка защищает форму от затирания полей, изменённых в другом окне.
   Future<void> save(Host host, {String? secret, String? privateKeyPem}) =>
-      _api.saveHost(host, secret: secret, privateKeyPem: privateKeyPem);
+      _api.saveHost(
+        host,
+        secret: secret,
+        privateKeyPem: privateKeyPem,
+        expectedRevision: host.revision,
+      );
 
   Future<void> delete(String id) => _api.deleteHost(id);
 

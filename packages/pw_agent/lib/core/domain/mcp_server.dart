@@ -66,6 +66,7 @@ final class McpServerConfig {
     this.url,
     this.headers = const {},
     this.oauth,
+    this.revision = 0,
   });
 
   /// Восстанавливает запись из строки БД. Остальные поля — из JSON конфигурации.
@@ -79,6 +80,7 @@ final class McpServerConfig {
     required DateTime updatedAt,
     String? externalKey,
     bool enabled = true,
+    int revision = 0,
   }) {
     final json = jsonDecode(configJson);
     final config = json is Map ? json : const <String, Object?>{};
@@ -98,6 +100,7 @@ final class McpServerConfig {
       oauth: config['oauth'] is Map
           ? McpOAuthConfig.fromJson(config['oauth'] as Map)
           : null,
+      revision: revision,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -118,6 +121,10 @@ final class McpServerConfig {
   final String? url;
   final Map<String, String> headers;
   final McpOAuthConfig? oauth;
+
+  /// Ревизия формы. Ноль — новый сервер или строка до появления версии;
+  /// сохранение из формы сверяет её и увеличивает.
+  final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -148,6 +155,7 @@ final class McpServerConfig {
     String? url,
     Map<String, String>? headers,
     McpOAuthConfig? oauth,
+    int? revision,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => McpServerConfig(
@@ -164,6 +172,7 @@ final class McpServerConfig {
     url: url ?? this.url,
     headers: headers ?? this.headers,
     oauth: oauth ?? this.oauth,
+    revision: revision ?? this.revision,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );

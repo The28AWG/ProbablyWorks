@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
@@ -54,6 +55,34 @@ void main() {
 
     await repository.delete('one');
     expect(await repository.all(), isEmpty);
+  });
+
+  test('revision grows and a stale form is rejected', () async {
+    await repository.upsert(_server('one', source: McpServerSource.user));
+    final first = (await repository.all()).single;
+    expect(first.revision, 1);
+
+    await expectLater(
+      repository.upsert(
+        _server('one', source: McpServerSource.user).copyWith(name: 'stale'),
+        expectedRevision: 0,
+      ),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'mcp_conflict',
+        ),
+      ),
+    );
+
+    await repository.upsert(
+      first.copyWith(name: 'fresh'),
+      expectedRevision: first.revision,
+    );
+    final saved = (await repository.all()).single;
+    expect(saved.name, 'fresh');
+    expect(saved.revision, 2);
   });
 
   test('file sync replaces only file-managed servers', () async {

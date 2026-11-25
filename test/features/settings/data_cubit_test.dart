@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/settings/presentation/bloc/data_cubit.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
+import 'package:pw_agent/agent/api/state_events_api.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 
 const _usage = DataUsage(
   chats: 2,
@@ -15,15 +19,26 @@ const _usage = DataUsage(
   databaseBytes: 2048,
 );
 
-final class _FakeDataApi implements DataApi {
+final class _FakeDataApi implements DataApi, StateEventsApi {
   _FakeDataApi({this.fail = false});
 
   bool fail;
   int? clearedDays;
   var resets = 0;
+  var usageCalls = 0;
+  final _events = StreamController<SharedResource>.broadcast();
+
+  @override
+  Stream<SharedResource> get sharedStateChanges => _events.stream;
+
+  /// Рассылает событие так же, как сервер через SSE.
+  void publish(SharedResource resource) => _events.add(resource);
+
+  Future<void> close() => _events.close();
 
   @override
   Future<DataUsage> usage() async {
+    usageCalls++;
     if (fail) throw StateError('usage failed');
     return _usage;
   }
@@ -84,5 +99,24 @@ void main() {
     expect(api.resets, 1);
     expect(cubit.state.usage, _usage);
     expect(cubit.state.resetting, isFalse);
+  });
+
+  test('reloads usage only when the data resource changes', () async {
+    final api = _FakeDataApi();
+    final cubit = DataCubit(api);
+    addTearDown(cubit.close);
+    addTearDown(api.close);
+    await cubit.load();
+    final calls = api.usageCalls;
+
+    // Список чатов меняется на каждое сообщение: сводка не должна обходить
+    // папку чатов так часто.
+    api.publish(SharedResource.chats);
+    await pumpEventQueue();
+    expect(api.usageCalls, calls);
+
+    api.publish(SharedResource.data);
+    await pumpEventQueue();
+    expect(api.usageCalls, calls + 1);
   });
 }

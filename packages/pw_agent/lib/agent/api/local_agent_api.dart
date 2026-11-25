@@ -9,7 +9,7 @@ import 'package:pw_agent/agent/api/local_chat_api.dart';
 @lazySingleton
 final class LocalAgentApi extends LocalChatApi
     implements AgentApi, InteractionEventsApi {
-  LocalAgentApi(super.hub, super.runtime);
+  LocalAgentApi(super.hub, super.runtime, super.changes);
 
   @override
   AgentStatus get status => AgentStatus.online;

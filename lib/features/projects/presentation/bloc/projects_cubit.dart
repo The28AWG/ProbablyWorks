@@ -99,7 +99,10 @@ class ProjectsCubit extends Cubit<ProjectsState> {
   Future<void> rename(Project project, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty || trimmed == project.name) return;
-    await _api.saveProject(project.copyWith(name: trimmed));
+    await _api.saveProject(
+      project.copyWith(name: trimmed),
+      expectedRevision: project.revision,
+    );
   }
 
   /// Профиль политики проекта. Null — используется глобальный профиль из настроек.
@@ -109,6 +112,7 @@ class ProjectsCubit extends Cubit<ProjectsState> {
           policyProfileId: profileId,
           clearPolicyProfile: profileId == null,
         ),
+        expectedRevision: project.revision,
       );
 
   /// Доверие к AGENTS.md. Skills доверяются отдельно, по одному.

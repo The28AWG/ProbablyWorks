@@ -48,6 +48,7 @@ class Host {
     this.lastLatencyMs,
     this.lastCheckError,
     this.environment = const {},
+    this.revision = 0,
   });
 
   final String id;
@@ -85,6 +86,10 @@ class Host {
   /// Значения могут быть токенами, поэтому карта хранится в SecretStore, а не в таблице хостов.
   final Map<String, String> environment;
 
+  /// Ревизия редактируемых полей. Ноль — строка до появления версии или новый
+  /// хост; сохранение из формы сверяет её и увеличивает.
+  final int revision;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -111,6 +116,7 @@ class Host {
     int? lastLatencyMs,
     String? lastCheckError,
     Map<String, String>? environment,
+    int? revision,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Host(
@@ -137,5 +143,6 @@ class Host {
     lastLatencyMs: lastLatencyMs ?? this.lastLatencyMs,
     lastCheckError: lastCheckError ?? this.lastCheckError,
     environment: environment ?? this.environment,
+    revision: revision ?? this.revision,
   );
 }

@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
 import 'package:plugin_api/plugin_api.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/exec/command_executor.dart';
 import 'package:pw_agent/agent/plugins/plugin_graph.dart';
 import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/agent/plugins/plugin_tool_source.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
@@ -19,18 +22,34 @@ class PluginService {
     this._settings,
     this._tools,
     this._commands,
-    this._secrets,
-  );
+    this._secrets, [
+    this._changes,
+  ]);
 
   final PluginRegistry _registry;
   final SettingsRepository _settings;
   final ToolExecutor _tools;
   final CommandExecutor _commands;
   final SecretStore _secrets;
+  final DomainChangeBus? _changes;
 
   static final _log = Logger('PluginService');
   static const _enabledPrefix = 'plugin.';
   static const _settingsPrefix = 'pluginSettings.';
+  static const _revisionKey = 'plugin.revision';
+
+  /// Ревизия включённости и настроек плагинов.
+  int get revision => int.tryParse(_settings.cached(_revisionKey) ?? '') ?? 0;
+
+  /// Увеличивает ревизию. Вызывается после записи, чтобы открытая в другом
+  /// окне форма не сохранила набор плагинов поверх изменений.
+  Future<void> _bumpRevision() async {
+    await _settings.write(_revisionKey, '${revision + 1}');
+  }
+
+  /// Сообщает окнам, что плагины изменились. Публикуется после записи, а не
+  /// внутри транзакции: иначе окно успело бы прочитать старый снимок.
+  void _notifyChanged() => _changes?.publish(SharedResource.plugins);
 
   Future<void>? _ready;
 
@@ -60,14 +79,36 @@ class PluginService {
   Set<String> dependents(String id, {Set<String>? enabled}) =>
       PluginGraph(all).dependents(id, enabled ?? enabledIds);
 
-  Future<void> enable(Set<String> ids) => _setEnabled(ids, true);
+  Future<void> enable(Set<String> ids, {int? expectedRevision}) =>
+      _setEnabled(ids, true, expectedRevision: expectedRevision);
 
-  Future<void> disable(Set<String> ids) => _setEnabled(ids, false);
+  Future<void> disable(Set<String> ids, {int? expectedRevision}) =>
+      _setEnabled(ids, false, expectedRevision: expectedRevision);
 
-  Future<void> _setEnabled(Set<String> ids, bool value) async {
-    for (final id in ids) {
-      await _settings.write('$_enabledPrefix$id.enabled', value ? 'yes' : 'no');
-    }
+  Future<void> _setEnabled(
+    Set<String> ids,
+    bool value, {
+    int? expectedRevision,
+  }) async {
+    // Проверка ревизии и записи флагов — одна транзакция: параллельное
+    // переключение из другого окна не пройдёт между проверкой и записью.
+    await _settings.transaction(() async {
+      if (expectedRevision != null && expectedRevision != revision) {
+        throw const AgentApiException(
+          409,
+          'plugin_conflict',
+          'plugins were changed by another client',
+        );
+      }
+      for (final id in ids) {
+        await _settings.write(
+          '$_enabledPrefix$id.enabled',
+          value ? 'yes' : 'no',
+        );
+      }
+      await _bumpRevision();
+    });
+    _notifyChanged();
     await refresh();
   }
 
@@ -141,6 +182,8 @@ final class _KvPluginSettings implements PluginSettings {
   @override
   Future<void> save(Map<String, Object?> value) async {
     await _service._settings.write(_key, jsonEncode(value));
+    await _service._bumpRevision();
+    _service._notifyChanged();
     await _service.refresh();
   }
 
@@ -156,6 +199,8 @@ final class _KvPluginSettings implements PluginSettings {
     } else {
       await _service._secrets.write(key, value);
     }
+    await _service._bumpRevision();
+    _service._notifyChanged();
     // Наличие ключа влияет на набор инструментов: без refresh search не
     // появится до следующего открытия настроек.
     await _service.refresh();

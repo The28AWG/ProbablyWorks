@@ -6,6 +6,8 @@ import 'package:pw_agent/agent/domain/workspace_entry.dart';
 import 'package:pw_agent/agent/memory/project_memory_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/agent/workspace/mention_search_service.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
@@ -25,8 +27,9 @@ final class LocalProjectsApi implements ProjectsApi {
     this._settings,
     this._memory,
     this._lifecycle,
-    this._mentions,
-  );
+    this._mentions, [
+    this._changes,
+  ]);
 
   final ProjectRepository _projects;
   final ChatRepository _chats;
@@ -36,6 +39,7 @@ final class LocalProjectsApi implements ProjectsApi {
   final ProjectMemoryService _memory;
   final ProjectLifecycleService _lifecycle;
   final MentionSearchService _mentions;
+  final DomainChangeBus? _changes;
 
   @override
   Stream<List<Project>> watchProjects() => _projects.watchAll();
@@ -70,25 +74,38 @@ final class LocalProjectsApi implements ProjectsApi {
       _mentions.search(projectId, query);
 
   @override
-  Future<void> saveProject(Project project) => _projects.save(project);
+  Future<void> saveProject(Project project, {int? expectedRevision}) async {
+    await _projects.save(project, expectedRevision: expectedRevision);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
-  Future<void> deleteProject(String id) => _projects.delete(id);
+  Future<void> deleteProject(String id) async {
+    await _projects.delete(id);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
-  Future<void> setTrustAgentsMd(String projectId, bool trusted) =>
-      _projects.setTrustAgentsMd(projectId, trusted);
+  Future<void> setTrustAgentsMd(String projectId, bool trusted) async {
+    await _projects.setTrustAgentsMd(projectId, trusted);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
   Future<void> setSkillTrusted(
     String projectId,
     String name, {
     required bool trusted,
-  }) => _projects.setSkillTrusted(projectId, name, trusted: trusted);
+  }) async {
+    await _projects.setSkillTrusted(projectId, name, trusted: trusted);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
-  Future<void> trustWorkspace(String projectId) =>
-      _projects.trustWorkspace(projectId);
+  Future<void> trustWorkspace(String projectId) async {
+    await _projects.trustWorkspace(projectId);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
   Future<void> reviseMemory(String projectId, String instruction) async {
@@ -97,14 +114,20 @@ final class LocalProjectsApi implements ProjectsApi {
       throw StateError('project not found: $projectId');
     }
     await _memory.revise(project: project, instruction: instruction);
+    _changes?.publish(SharedResource.projects);
   }
 
   @override
-  Future<void> savePolicyProfile(PolicyProfile profile) =>
-      _policies.save(profile);
+  Future<void> savePolicyProfile(PolicyProfile profile) async {
+    await _policies.save(profile);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
-  Future<void> deletePolicyProfile(String id) => _policies.delete(id);
+  Future<void> deletePolicyProfile(String id) async {
+    await _policies.delete(id);
+    _changes?.publish(SharedResource.projects);
+  }
 
   @override
   Future<List<String>> readDenylist() => _settings.readDenylist();

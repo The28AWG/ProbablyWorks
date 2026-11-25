@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/bloc/mcp_cubit.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -113,7 +114,7 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
                   child: _ServerCard(
                     server: server,
                     state: state.stateOf(server.id),
-                    onToggle: (enabled) => _cubit.toggle(server, enabled),
+                    onToggle: (enabled) => _toggle(server, enabled),
                     onRestart: () => _cubit.restart(server),
                     onRefresh: () => _cubit.refreshTools(server),
                     onEdit: server.isFileManaged
@@ -137,7 +138,33 @@ class _McpSettingsSectionState extends State<McpSettingsSection> {
       builder: (_) => McpServerEditorDialog(server: server),
     );
     if (result == null || !mounted) return;
-    await _cubit.save(result);
+    try {
+      await _cubit.save(result);
+    } on Object catch (error) {
+      await _reportSaveError(error);
+    }
+  }
+
+  /// Сообщает о неудачном сохранении. Конфликт ревизии объясняется отдельно:
+  /// сервер ничего не записал, а список нужно перечитать, иначе повторная
+  /// попытка снова получит `409`.
+  Future<void> _reportSaveError(Object error) async {
+    final conflict = error is AgentApiException && error.code == 'mcp_conflict';
+    if (conflict) await _cubit.reload();
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    AppSnackBar.show(
+      context,
+      conflict ? l10n.commonConflict : l10n.commonError('$error'),
+    );
+  }
+
+  Future<void> _toggle(McpServerConfig server, bool enabled) async {
+    try {
+      await _cubit.toggle(server, enabled);
+    } on Object catch (error) {
+      await _reportSaveError(error);
+    }
   }
 
   Future<void> _delete(BuildContext context, McpServerConfig server) async {
@@ -649,6 +676,7 @@ class _McpServerEditorDialogState extends State<McpServerEditorDialog> {
           ? _pairs(_headers.text)
           : const {},
       oauth: oauth,
+      revision: widget.server?.revision ?? 0,
       createdAt: widget.server?.createdAt ?? now,
       updatedAt: now,
     );

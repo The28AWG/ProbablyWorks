@@ -25,7 +25,12 @@ abstract interface class ProjectsApi {
   /// таймауты выбирает агент, а не клиент.
   Future<List<WorkspaceEntry>> searchMentions(String projectId, String query);
 
-  Future<void> saveProject(Project project);
+  /// Сохраняет свойства проекта.
+  ///
+  /// [expectedRevision] — `revision` снимка, с которого открыта форма. При
+  /// несовпадении реализация бросает `409 project_conflict` до записи. Без
+  /// него (служебная запись, старый клиент) ревизия не проверяется.
+  Future<void> saveProject(Project project, {int? expectedRevision});
   Future<void> deleteProject(String id);
   Future<void> setTrustAgentsMd(String projectId, bool trusted);
   Future<void> setSkillTrusted(

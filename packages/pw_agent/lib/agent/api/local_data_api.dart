@@ -7,6 +7,8 @@ import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/schedule/scheduled_task.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
@@ -31,8 +33,9 @@ final class LocalDataApi implements DataApi {
     this._deletion,
     this._catalog,
     this._runtime,
-    this._registry,
-  );
+    this._registry, [
+    this._changes,
+  ]);
 
   final AppDatabase _db;
   final AppPaths _paths;
@@ -42,6 +45,7 @@ final class LocalDataApi implements DataApi {
   final ModelCatalogService _catalog;
   final ModelRuntimeService _runtime;
   final LlmProviderRegistry _registry;
+  final DomainChangeBus? _changes;
 
   @override
   Future<DataUsage> usage() async {
@@ -141,6 +145,11 @@ final class LocalDataApi implements DataApi {
     final compacted = targets.isEmpty || await _vacuumDatabase();
     final afterFiles = await _chatFilesBytes();
     final afterDatabase = await _databaseBytes();
+    // Очистка меняет список чатов, счётчики проектов и сводку истории.
+    _changes
+      ?..publish(SharedResource.chats)
+      ..publish(SharedResource.projects)
+      ..publish(SharedResource.data);
     return HistoryClearResult(
       deletedChats: targets.length,
       deletedChatIds: [for (final chat in targets) chat.id],
@@ -186,6 +195,12 @@ final class LocalDataApi implements DataApi {
     for (final provider in _registry.providers) {
       await _runtime.restartProvider(provider.id);
     }
+    // Сброс затрагивает настройки, каталог и сводку данных. События
+    // публикуются из сервиса, поэтому следующий маршрут не забудет их.
+    _changes
+      ?..publish(SharedResource.settings)
+      ..publish(SharedResource.models)
+      ..publish(SharedResource.data);
   }
 
   Future<int> _countRows(String table) async {

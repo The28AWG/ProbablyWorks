@@ -17,6 +17,7 @@ final class _FakePush implements PushApi {
     PushSettings value, {
     String? token,
     bool clearToken = false,
+    int? expectedRevision,
   }) async {
     settings = value.copyWith(
       hasToken: !clearToken && (token != null || settings.hasToken),

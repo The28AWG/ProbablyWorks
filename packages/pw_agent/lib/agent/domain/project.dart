@@ -18,6 +18,7 @@ class Project extends Equatable {
     this.trustAgentsMd = false,
     this.skillsInitialized = false,
     this.archivedAt,
+    this.revision = 0,
   });
 
   final String id;
@@ -33,6 +34,10 @@ class Project extends Equatable {
   final bool trustAgentsMd;
   final bool skillsInitialized;
   final DateTime? archivedAt;
+
+  /// Ревизия свойств проекта. Ноль — новый проект или строка до появления
+  /// версии; сохранение из формы сверяет её и увеличивает.
+  final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -50,6 +55,7 @@ class Project extends Equatable {
     bool? skillsInitialized,
     DateTime? archivedAt,
     bool clearArchivedAt = false,
+    int? revision,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Project(
@@ -64,6 +70,7 @@ class Project extends Equatable {
     trustAgentsMd: trustAgentsMd ?? this.trustAgentsMd,
     skillsInitialized: skillsInitialized ?? this.skillsInitialized,
     archivedAt: clearArchivedAt ? null : (archivedAt ?? this.archivedAt),
+    revision: revision ?? this.revision,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? DateTime.now(),
   );
@@ -79,6 +86,7 @@ class Project extends Equatable {
     trustAgentsMd,
     skillsInitialized,
     archivedAt,
+    revision,
     createdAt,
     updatedAt,
   ];

@@ -10,11 +10,16 @@ abstract interface class HostsApi {
 
   /// Сохраняет Host и его секреты. `environment` — карта переменных хоста;
   /// null означает «не менять», пустая карта удаляет переменные.
+  ///
+  /// [expectedRevision] — `revision` снимка, с которого открыта форма. При
+  /// несовпадении реализация бросает `409 host_conflict` до записи. Без него
+  /// (служебная запись, старый клиент) ревизия не проверяется и просто растёт.
   Future<void> saveHost(
     Host host, {
     String? secret,
     String? privateKeyPem,
     Map<String, String>? environment,
+    int? expectedRevision,
   });
   Future<void> deleteHost(String id);
   Future<void> testHost(Host host);

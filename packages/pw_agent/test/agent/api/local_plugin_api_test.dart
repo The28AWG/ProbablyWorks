@@ -35,6 +35,9 @@ final class _FakeService implements PluginService {
   Set<String> get enabledIds => const {'first'};
 
   @override
+  int get revision => 3;
+
+  @override
   Set<String> missingDependencies(String id, {Set<String>? enabled}) =>
       id == 'second' ? const {'first'} : const {};
 
@@ -43,12 +46,12 @@ final class _FakeService implements PluginService {
       id == 'first' ? const {'second'} : const {};
 
   @override
-  Future<void> enable(Set<String> ids) async {
+  Future<void> enable(Set<String> ids, {int? expectedRevision}) async {
     calls.add('enable:${ids.join(',')}');
   }
 
   @override
-  Future<void> disable(Set<String> ids) async {
+  Future<void> disable(Set<String> ids, {int? expectedRevision}) async {
     calls.add('disable:${ids.join(',')}');
   }
 

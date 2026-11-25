@@ -190,6 +190,14 @@ class SettingsRepository {
       key.startsWith(keyCompactionInfoPrefix) ||
       key.startsWith(keyLastUsageContextPrefix);
 
+  /// Выполняет несколько чтений и записей как одну транзакцию.
+  ///
+  /// Нужна проверкам ревизий: пока транзакция не завершилась, drift не пускает
+  /// другие запросы к базе, поэтому параллельное сохранение не пройдёт между
+  /// проверкой и записью. Ошибка внутри откатывает изменения и пробрасывается.
+  Future<T> transaction<T>(Future<T> Function() action) =>
+      _db.transaction(action);
+
   Future<void> write(String key, String? value) async {
     if (_preloaded) {
       if (value == null) {

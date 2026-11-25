@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
@@ -282,6 +283,43 @@ void main() {
     expect(orphan.workspace, '/srv/keep');
     expect(loose.projectId, isNull);
     expect(loose.workspace, isNull);
+  });
+
+  test('ревизия проекта отвергает сохранение устаревшей формы', () async {
+    final host = await virtual('box');
+    final project = await life.ensureProject(
+      hostId: host.id,
+      workspace: '/home/agent/repo',
+    );
+    final created = (await projects.byId(project.id))!;
+    await projects.save(
+      created.copyWith(name: 'first'),
+      expectedRevision: created.revision,
+    );
+    final first = (await projects.byId(project.id))!;
+    expect(first.revision, created.revision + 1);
+
+    await expectLater(
+      projects.save(
+        first.copyWith(name: 'stale'),
+        expectedRevision: created.revision,
+      ),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'project_conflict',
+        ),
+      ),
+    );
+
+    await projects.save(
+      first.copyWith(name: 'fresh'),
+      expectedRevision: first.revision,
+    );
+    final saved = (await projects.byId(project.id))!;
+    expect(saved.name, 'fresh');
+    expect(saved.revision, first.revision + 1);
   });
 }
 

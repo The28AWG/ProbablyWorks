@@ -79,6 +79,37 @@ AppDatabase _openFactsV16() => AppDatabase(
   ),
 );
 
+/// База v26 с общими редактируемыми сущностями без ревизий.
+AppDatabase _openSharedV26() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(
+          'CREATE TABLE hosts ('
+          'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, '
+          "kind TEXT NOT NULL, auth_type TEXT NOT NULL DEFAULT 'key', "
+          "os_family TEXT NOT NULL DEFAULT 'posix', "
+          'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        )
+        ..execute(
+          'CREATE TABLE projects ('
+          'id TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, '
+          'name TEXT NOT NULL, workspace TEXT NOT NULL, '
+          'workspace_key TEXT NOT NULL, '
+          'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        )
+        ..execute(
+          'CREATE TABLE mcp_servers ('
+          'id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, '
+          'transport TEXT NOT NULL, source TEXT NOT NULL, '
+          'enabled INTEGER NOT NULL DEFAULT 1, config_json TEXT NOT NULL, '
+          'created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        )
+        ..execute('PRAGMA user_version = 26');
+    },
+  ),
+);
+
 /// База v17 с сообщениями и (опционально) старым FTS-индексом.
 AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
   NativeDatabase.memory(
@@ -768,6 +799,22 @@ void main() {
     expect(columns.first.read<String>('dflt_value'), '0');
     expect(columns.last.read<String>('name'), 'revision');
     expect(columns.last.read<String>('dflt_value'), '0');
+  });
+
+  test('v26 → v27 adds revisions to hosts, projects and MCP servers', () async {
+    final db = _openSharedV26();
+    addTearDown(db.close);
+
+    for (final table in ['hosts', 'projects', 'mcp_servers']) {
+      final column = await db
+          .customSelect(
+            "SELECT name, dflt_value FROM pragma_table_info('$table') "
+            "WHERE name = 'revision'",
+          )
+          .getSingle();
+      expect(column.read<String>('name'), 'revision');
+      expect(column.read<String>('dflt_value'), '0');
+    }
   });
 
   test('v21 → v22 separates result errors from call failures', () async {

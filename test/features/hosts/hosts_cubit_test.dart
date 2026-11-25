@@ -3,7 +3,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/test_support/pipe_pty_launcher.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/local_hosts_api.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/data/virtual_host_provisioner.dart';
@@ -28,10 +31,13 @@ void main() {
   late AppDatabase db;
   late HostRepository hosts;
   late VirtualHostProvisioner provisioner;
+  late DomainChangeBus changes;
+  late LocalHostsApi api;
   late HostsCubit cubit;
 
   setUp(() async {
     db = openInMemoryDatabase();
+    changes = DomainChangeBus();
     final secrets = MemorySecretStore();
     hosts = HostRepository(db, secrets);
     final settings = SettingsRepository(db);
@@ -42,18 +48,19 @@ void main() {
       const PipePtyLauncher(),
       provisioner,
     );
-    cubit = HostsCubit(
-      LocalHostsApi(
-        hosts,
-        secrets,
-        HostDiagnostics(hosts, secrets, settings, runtimes),
-        provisioner,
-      ),
+    api = LocalHostsApi(
+      hosts,
+      secrets,
+      HostDiagnostics(hosts, secrets, settings, runtimes),
+      provisioner,
+      changes,
     );
+    cubit = HostsCubit(api);
   });
 
   tearDown(() async {
     await cubit.close();
+    await changes.close();
     await db.close();
   });
 
@@ -86,11 +93,58 @@ void main() {
         Uint8List.fromList([1, 2, 3]),
       );
 
-      await cubit.save(host.copyWith(notes: 'новая заметка'));
+      // Форма всегда строится из свежего снимка списка: ревизия защищает от
+      // сохранения поверх изменений другого окна.
+      final saved = (await hosts.byId(host.id))!;
+      await cubit.save(saved.copyWith(notes: 'новая заметка'));
 
       expect(await runtime.stat('/home/agent/keep.txt'), isNotNull);
     },
   );
+
+  test('сохранение и удаление публикуют общий ресурс хостов', () async {
+    final events = <SharedResource>[];
+    final sub = changes.changes.listen(events.add);
+    addTearDown(sub.cancel);
+
+    await cubit.save(_host('sandbox', HostKind.virtual));
+    await cubit.delete('sandbox');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(events, [SharedResource.hosts, SharedResource.hosts]);
+  });
+
+  test('сохранение без ревизии не проверяет её', () async {
+    await api.saveHost(_host('server', HostKind.ssh));
+    final first = (await hosts.byId('server'))!;
+    expect(first.revision, 1);
+
+    // Служебная запись и старый клиент не присылают ревизию: сохранение
+    // проходит, а ревизия просто растёт.
+    await api.saveHost(_host('server', HostKind.ssh).copyWith(notes: 'x'));
+
+    expect((await hosts.byId('server'))!.revision, 2);
+  });
+
+  test('сохранение со старой ревизией отклоняется', () async {
+    await cubit.save(_host('server', HostKind.ssh));
+    final stale = (await hosts.byId('server'))!;
+    await cubit.save(stale.copyWith(notes: 'первое окно'));
+    final fresh = (await hosts.byId('server'))!;
+    expect(fresh.revision, stale.revision + 1);
+
+    await expectLater(
+      cubit.save(stale.copyWith(notes: 'второе окно')),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'host_conflict',
+        ),
+      ),
+    );
+    expect((await hosts.byId('server'))!.notes, 'первое окно');
+  });
 
   test('удаление виртуального Host удаляет его ФС вместе с записью', () async {
     await cubit.save(_host('sandbox', HostKind.virtual));

@@ -24,6 +24,8 @@ import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -68,6 +70,7 @@ final class ApiServer {
     this.requestTimeout = const Duration(minutes: 5),
     ApiRateLimiter? rateLimiter,
     ClientSessionRegistry? clientSessions,
+    this.domainChanges,
     String? instanceId,
   }) : _address = address ?? InternetAddress.loopbackIPv4,
        _chatApi = chat,
@@ -85,6 +88,21 @@ final class ApiServer {
         _stateEvents.add(const _ClientSessionsChanged());
       }
     });
+    // Доменные сервисы публикуют изменения сами. Путь-`switch` больше не
+    // решает, что синхронизировать: новый маршрут поверх сервиса получает
+    // событие автоматически.
+    _domainChangesSub = domainChanges?.changes.listen(
+      (resource) => _emitState(resource.area),
+    );
+    // Настройки пишутся не только HTTP-маршрутами: агент меняет модели и
+    // лимиты во время работы. Изменения kv-таблицы уже отфильтрованы от
+    // счётчиков расхода, поэтому подписка не создаёт лишнего трафика.
+    final settings = settingsApi;
+    if (settings is SettingsChangeSource) {
+      _settingsChangesSub = settings.settingsChanges.listen(
+        (_) => _emitState(SharedResource.settings.area),
+      );
+    }
   }
 
   static const _maxBodyBytes = 8 << 20;
@@ -129,6 +147,15 @@ final class ApiServer {
 
   final ClientSessionRegistry _clientSessions;
   late final StreamSubscription<void> _sessionChangesSub;
+  late final StreamSubscription<SharedResource>? _domainChangesSub;
+  StreamSubscription<void>? _settingsChangesSub;
+
+  /// Необязательный поток изменений доменных сервисов.
+  ///
+  /// В демоне это общий `DomainChangeBus`; тестовый сервер без него работает
+  /// как раньше, а события `chatChanged`/`chatDeleted` по-прежнему приходят
+  /// из конкретных маршрутов.
+  final DomainChangeBus? domainChanges;
 
   /// Одновременные запросы ограничены, чтобы зависший backend не копил
   /// неограниченное число соединений.
@@ -163,6 +190,8 @@ final class ApiServer {
     }
     _clients.clear();
     await _sessionChangesSub.cancel();
+    await _domainChangesSub?.cancel();
+    await _settingsChangesSub?.cancel();
     _clientSessions.dispose();
     await _stateEvents.close();
     await _server?.close(force: true);
@@ -299,7 +328,6 @@ final class ApiServer {
           );
         }
         await _routeWithTimeout(request, sse: sse);
-        _publishState(request);
       } finally {
         _activeRequests--;
       }
@@ -524,34 +552,6 @@ final class ApiServer {
         build: _clientHeader(request, 'x-client-build') ?? '',
         platform: _clientHeader(request, 'x-client-platform') ?? '',
       );
-
-  /// Сообщает SSE-клиентам, какие списки могли измениться после запроса.
-  void _publishState(HttpRequest request) {
-    if (request.method == 'GET') return;
-    final path = request.uri.pathSegments;
-    if (path.length < 3 || path.first != 'api' || path[1] != 'v1') return;
-    // Черновик обновляется часто; для него есть отдельное SSE-событие, список чатов не трогаем.
-    if (path[2] == 'chats' &&
-        path.length > 3 &&
-        (path[3] == 'draft' || path[3] == 'message-edits')) {
-      return;
-    }
-    switch (path[2]) {
-      case 'hosts':
-        _emitState('hosts');
-      case 'chats':
-        _emitState('chats');
-        _emitState('projects');
-      case 'projects':
-      case 'policy-profiles':
-        _emitState('projects');
-      case 'settings':
-        _emitState('settings');
-      case 'models':
-      case 'providers':
-        _emitState('models');
-    }
-  }
 
   void _emitState(String area) {
     if (!_stateEvents.isClosed) _stateEvents.add(_StateChanged(area));
@@ -1256,7 +1256,10 @@ final class ApiServer {
       final id = rest.first;
       if (request.method == 'PUT' || request.method == 'PATCH') {
         final body = await _body(request);
-        await api.saveProject(_projectFromJson(id, body));
+        await api.saveProject(
+          _projectFromJson(id, body),
+          expectedRevision: _expectedRevisionOf(body),
+        );
         return _json(request.response, HttpStatus.noContent, {});
       }
       if (request.method == 'DELETE') {
@@ -1357,7 +1360,10 @@ final class ApiServer {
 
   Future<void> _saveMcpServer(HttpRequest request, String id) async {
     final body = await _body(request);
-    await _requireMcpApi().save(mcpServerFromJson(id, body));
+    await _requireMcpApi().save(
+      mcpServerFromJson(id, body),
+      expectedRevision: _expectedRevisionOf(body),
+    );
     _json(request.response, HttpStatus.noContent, {});
   }
 
@@ -1452,10 +1458,14 @@ final class ApiServer {
         'ids must be a list and enabled must be a boolean',
       );
     }
-    await _requirePluginApi().setEnabled({
-      for (final id in rawIds)
-        if (id is String) id,
-    }, enabled: enabled);
+    await _requirePluginApi().setEnabled(
+      {
+        for (final id in rawIds)
+          if (id is String) id,
+      },
+      enabled: enabled,
+      expectedRevision: _revisionOf(body),
+    );
     _json(request.response, HttpStatus.noContent, {});
   }
 
@@ -1551,6 +1561,7 @@ final class ApiServer {
       'enabled': settings.enabled,
       'relayUrl': settings.relayUrl,
       'hasToken': settings.hasToken,
+      'revision': settings.revision,
     });
   }
 
@@ -1563,6 +1574,7 @@ final class ApiServer {
       ),
       token: body['token'] as String?,
       clearToken: body['clearToken'] == true,
+      expectedRevision: _revisionOf(body),
     );
     _json(request.response, HttpStatus.noContent, {});
   }
@@ -1620,6 +1632,7 @@ final class ApiServer {
       secret: body['secret'] as String?,
       privateKeyPem: body['privateKeyPem'] as String?,
       environment: environment,
+      expectedRevision: _expectedRevisionOf(body),
     );
     _json(request.response, HttpStatus.noContent, {});
   }
@@ -2296,6 +2309,15 @@ final class ApiServer {
     return raw is num ? raw.toInt() : null;
   }
 
+  /// Ревизия, на которой основана форма полного объекта (хост, проект,
+  /// MCP-сервер). Отсутствие `expectedRevision` — старый клиент или служебная
+  /// запись: проверка не выполняется, иначе такая запись не смогла бы
+  /// сохранить уже существующий объект.
+  int? _expectedRevisionOf(Map<String, dynamic> body) {
+    final raw = body['expectedRevision'];
+    return raw is num ? raw.toInt() : null;
+  }
+
   void _publishDraft(String chatId, int revision) {
     if (!_stateEvents.isClosed) {
       _stateEvents.add(_DraftChanged(chatId, revision));
@@ -2730,6 +2752,7 @@ Project _projectFromJson(String id, Map<String, dynamic> json) {
     trustAgentsMd: json['trustAgentsMd'] == true,
     skillsInitialized: json['skillsInitialized'] == true,
     archivedAt: _date(json['archivedAt']),
+    revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
     createdAt: _date(json['createdAt']) ?? now,
     updatedAt: _date(json['updatedAt']) ?? now,
   );
@@ -2807,6 +2830,7 @@ Host _hostFromJson(String id, Map<String, dynamic> json) {
         ? (json['lastLatencyMs'] as num).toInt()
         : null,
     lastCheckError: json['lastCheckError'] as String?,
+    revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
     createdAt: _date(json['createdAt']) ?? now,
     updatedAt: _date(json['updatedAt']) ?? now,
   );
@@ -2831,6 +2855,7 @@ Map<String, Object?> _hostJson(Host host) => {
   'lastCheckAt': host.lastCheckAt?.toUtc().toIso8601String(),
   'lastLatencyMs': host.lastLatencyMs,
   'lastCheckError': host.lastCheckError,
+  'revision': host.revision,
   'createdAt': host.createdAt.toUtc().toIso8601String(),
   'updatedAt': host.updatedAt.toUtc().toIso8601String(),
 };
@@ -2852,6 +2877,7 @@ Map<String, Object?> _projectJson(Project project) => {
   'trustAgentsMd': project.trustAgentsMd,
   'skillsInitialized': project.skillsInitialized,
   'archivedAt': project.archivedAt?.toUtc().toIso8601String(),
+  'revision': project.revision,
   'createdAt': project.createdAt.toUtc().toIso8601String(),
   'updatedAt': project.updatedAt.toUtc().toIso8601String(),
 };

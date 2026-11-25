@@ -15,6 +15,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/api/state_events_api.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -27,6 +28,7 @@ import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_types.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/agent/turn/turn_file_kind.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
@@ -61,6 +63,7 @@ class RemoteAgentApi
         SecurityAuditApi,
         PushApi,
         InteractionEventsApi,
+        StateEventsApi,
         ClientSessionApi {
   RemoteAgentApi({
     required this.baseUri,
@@ -339,6 +342,15 @@ class RemoteAgentApi
   Stream<List<ClientSessionView>> get clientSessions =>
       _clientSessionChanges.stream;
 
+  @override
+  Stream<SharedResource> get sharedStateChanges =>
+      _stateChanges.stream.expand((area) {
+        // После обрыва перечитываем все ресурсы: часть событий могла не дойти.
+        if (area == 'reconnect') return SharedResource.values;
+        final resource = SharedResource.fromArea(area);
+        return resource == null ? const <SharedResource>[] : [resource];
+      });
+
   /// Поток оборвался или восстановился, либо сервер перезапустился.
   ///
   /// Подписчики перечитывают снимки в обоих случаях: после обрыва часть
@@ -495,6 +507,7 @@ class RemoteAgentApi
     String? secret,
     String? privateKeyPem,
     Map<String, String>? environment,
+    int? expectedRevision,
   }) async {
     await _send(
       'PUT',
@@ -504,6 +517,7 @@ class RemoteAgentApi
         'secret': ?secret,
         'privateKeyPem': ?privateKeyPem,
         'environment': ?environment,
+        'expectedRevision': ?expectedRevision,
       },
     );
   }
@@ -1154,11 +1168,11 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> save(McpServerConfig server) async {
+  Future<void> save(McpServerConfig server, {int? expectedRevision}) async {
     await _send(
       'PUT',
       '/mcp/servers/${server.id}',
-      body: mcpServerToJson(server),
+      body: {...mcpServerToJson(server), 'expectedRevision': ?expectedRevision},
     );
   }
 
@@ -1219,11 +1233,19 @@ class RemoteAgentApi
   }
 
   @override
-  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+  Future<void> setEnabled(
+    Set<String> ids, {
+    required bool enabled,
+    int? expectedRevision,
+  }) async {
     await _send(
       'PUT',
       '/plugins/enabled',
-      body: {'ids': ids.toList()..sort(), 'enabled': enabled},
+      body: {
+        'ids': ids.toList()..sort(),
+        'enabled': enabled,
+        'expectedRevision': ?expectedRevision,
+      },
     );
   }
 
@@ -1248,6 +1270,7 @@ class RemoteAgentApi
       enabled: json['enabled'] == true,
       relayUrl: '${json['relayUrl'] ?? ''}',
       hasToken: json['hasToken'] == true,
+      revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
     );
   }
 
@@ -1256,6 +1279,7 @@ class RemoteAgentApi
     PushSettings settings, {
     String? token,
     bool clearToken = false,
+    int? expectedRevision,
   }) async {
     await _send(
       'PUT',
@@ -1265,6 +1289,7 @@ class RemoteAgentApi
         'relayUrl': settings.relayUrl,
         'token': ?token,
         'clearToken': clearToken,
+        'expectedRevision': ?expectedRevision,
       },
     );
   }
@@ -1353,8 +1378,12 @@ class RemoteAgentApi
   );
 
   @override
-  Future<void> saveProject(Project project) async {
-    await _send('PUT', '/projects/${project.id}', body: _projectBody(project));
+  Future<void> saveProject(Project project, {int? expectedRevision}) async {
+    await _send(
+      'PUT',
+      '/projects/${project.id}',
+      body: {..._projectBody(project), 'expectedRevision': ?expectedRevision},
+    );
   }
 
   @override
@@ -1365,7 +1394,10 @@ class RemoteAgentApi
   @override
   Future<void> setTrustAgentsMd(String projectId, bool trusted) async {
     final project = await _projectById(projectId);
-    await saveProject(project.copyWith(trustAgentsMd: trusted));
+    await saveProject(
+      project.copyWith(trustAgentsMd: trusted),
+      expectedRevision: project.revision,
+    );
   }
 
   @override
@@ -2166,6 +2198,7 @@ Project _project(Map<String, dynamic> json) => Project(
   trustAgentsMd: json['trustAgentsMd'] == true,
   skillsInitialized: json['skillsInitialized'] == true,
   archivedAt: _date(json['archivedAt']),
+  revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
   createdAt: _date(json['createdAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
   updatedAt: _date(json['updatedAt']) ?? DateTime.fromMillisecondsSinceEpoch(0),
 );
@@ -2179,6 +2212,7 @@ Map<String, Object?> _projectBody(Project project) => {
   'trustAgentsMd': project.trustAgentsMd,
   'skillsInitialized': project.skillsInitialized,
   'archivedAt': project.archivedAt?.toUtc().toIso8601String(),
+  'revision': project.revision,
   'createdAt': project.createdAt.toUtc().toIso8601String(),
   'updatedAt': project.updatedAt.toUtc().toIso8601String(),
 };
@@ -2573,6 +2607,7 @@ Map<String, Object?> _hostBody(Host host) => {
   'lastCheckAt': host.lastCheckAt?.toUtc().toIso8601String(),
   'lastLatencyMs': host.lastLatencyMs,
   'lastCheckError': host.lastCheckError,
+  'revision': host.revision,
   'createdAt': host.createdAt.toUtc().toIso8601String(),
   'updatedAt': host.updatedAt.toUtc().toIso8601String(),
 };
@@ -2602,6 +2637,7 @@ Host _host(Map<String, dynamic> json) => Host(
       ? (json['lastLatencyMs'] as num).toInt()
       : null,
   lastCheckError: json['lastCheckError'] as String?,
+  revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
   createdAt:
       _date(json['createdAt']) ??
       DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),

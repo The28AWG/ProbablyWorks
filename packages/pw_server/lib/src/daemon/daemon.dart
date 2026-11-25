@@ -18,6 +18,7 @@ import 'package:pw_agent/agent/plugins/plugin_registry.dart';
 import 'package:pw_agent/agent/project/project_lifecycle.dart';
 import 'package:pw_agent/agent/recovery/startup_recovery.dart';
 import 'package:pw_agent/agent/schedule/task_scheduler.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
 import 'package:pw_agent/agent_di.dart';
 import 'package:pw_agent/core/appearance/appearance_port.dart';
 import 'package:pw_agent/core/config/app_paths.dart';
@@ -152,6 +153,9 @@ Future<int> runDaemon(List<String> args) async {
     web: web,
     allowedOrigins: options.allowedOrigins.toSet(),
     clientSessions: clientSessions,
+    // Сервисы агента уже публикуют изменения в этот bus, включая те, что
+    // пришли из фоновых задач, а не из HTTP-маршрута.
+    domainChanges: getIt<DomainChangeBus>(),
   );
   final port = await server.start();
   // Токен в файле нужен только как fallback: если keyring сработал, GUI

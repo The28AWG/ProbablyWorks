@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -16,14 +18,21 @@ import 'package:pw_agent/core/security/secret_store.dart';
 /// или другой транспорт. Без URL и токена сервис не делает сетевых запросов.
 @lazySingleton
 final class PushService {
-  PushService(this._settings, this._secrets) : _client = http.Client();
+  PushService(this._settings, this._secrets, [this._changes])
+    : _client = http.Client();
 
   /// Конструктор для тестов с подменённым HTTP-клиентом.
-  PushService.withClient(this._settings, this._secrets, this._client);
+  PushService.withClient(
+    this._settings,
+    this._secrets,
+    this._client, [
+    this._changes,
+  ]);
 
   final SettingsRepository _settings;
   final SecretStore _secrets;
   final http.Client _client;
+  final DomainChangeBus? _changes;
 
   static const _settingsKey = 'push.settings';
   static const _tokenKey = 'push.relayToken';
@@ -33,12 +42,16 @@ final class PushService {
     final raw = await _settings.read(_settingsKey);
     var enabled = false;
     var relayUrl = '';
+    var revision = 0;
     if (raw != null && raw.isNotEmpty) {
       try {
         final json = jsonDecode(raw);
         if (json is Map) {
           enabled = json['enabled'] == true;
           relayUrl = '${json['relayUrl'] ?? ''}';
+          revision = json['revision'] is num
+              ? (json['revision'] as num).toInt()
+              : 0;
         }
       } on FormatException {
         // Битые настройки не включают push.
@@ -49,6 +62,7 @@ final class PushService {
       enabled: enabled,
       relayUrl: relayUrl,
       hasToken: token != null && token.isNotEmpty,
+      revision: revision,
     );
   }
 
@@ -56,35 +70,54 @@ final class PushService {
     PushSettings settings, {
     String? token,
     bool clearToken = false,
+    int? expectedRevision,
   }) async {
     final relayUrl = settings.relayUrl.trim();
     if (settings.enabled || relayUrl.isNotEmpty) {
       _validateUrl(relayUrl);
     }
-    if (clearToken) {
-      await _secrets.delete(_tokenKey);
-    } else if (token != null && token.trim().isNotEmpty) {
-      await _secrets.write(_tokenKey, token.trim());
-    }
-    final hasToken = !clearToken && await _hasToken();
-    if (settings.enabled && !hasToken) {
-      throw const AgentApiException(
-        400,
-        'push_token_required',
-        'push relay token is required when notifications are enabled',
+    // Проверка ревизии и запись — одна транзакция: параллельное сохранение из
+    // другого окна не пройдёт между чтением и записью, иначе оба запроса
+    // прочитали бы одну ревизию и второй молча затёр первый.
+    await _settings.transaction(() async {
+      final current = await load();
+      if (expectedRevision != null && expectedRevision != current.revision) {
+        throw const AgentApiException(
+          409,
+          'push_conflict',
+          'push settings were changed by another client',
+        );
+      }
+      if (clearToken) {
+        await _secrets.delete(_tokenKey);
+      } else if (token != null && token.trim().isNotEmpty) {
+        await _secrets.write(_tokenKey, token.trim());
+      }
+      final hasToken = !clearToken && await _hasToken();
+      if (settings.enabled && !hasToken) {
+        throw const AgentApiException(
+          400,
+          'push_token_required',
+          'push relay token is required when notifications are enabled',
+        );
+      }
+      if (settings.enabled && relayUrl.isEmpty) {
+        throw const AgentApiException(
+          400,
+          'push_url_required',
+          'push relay URL is required when notifications are enabled',
+        );
+      }
+      await _settings.write(
+        _settingsKey,
+        jsonEncode({
+          'enabled': settings.enabled,
+          'relayUrl': relayUrl,
+          'revision': current.revision + 1,
+        }),
       );
-    }
-    if (settings.enabled && relayUrl.isEmpty) {
-      throw const AgentApiException(
-        400,
-        'push_url_required',
-        'push relay URL is required when notifications are enabled',
-      );
-    }
-    await _settings.write(
-      _settingsKey,
-      jsonEncode({'enabled': settings.enabled, 'relayUrl': relayUrl}),
-    );
+    });
+    _changes?.publish(SharedResource.push);
   }
 
   /// Проверяет доставку тестового уведомления. Без настроек ничего не делает

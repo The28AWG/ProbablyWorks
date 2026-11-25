@@ -6,6 +6,7 @@ import 'package:probably_works/core/platform/app_platform.dart';
 import 'package:probably_works/features/hosts/presentation/bloc/hosts_cubit.dart';
 import 'package:probably_works/features/settings/presentation/widgets/settings_form_row.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/host/process_control.dart';
 import 'package:uuid/uuid.dart';
@@ -27,9 +28,18 @@ const _windowsIconAsset = 'assets/icons/os_windows.svg';
 /// редактируется только окружение. Сохранение идёт через [HostsCubit], который должен быть в контексте.
 Future<void> showHostFormDialog(BuildContext context, {Host? existing}) {
   final cubit = context.read<HostsCubit>();
+  final id = existing?.id;
   return showDialog<void>(
     context: context,
-    builder: (_) => HostFormDialog(existing: existing, onSave: cubit.save),
+    builder: (_) => HostFormDialog(
+      existing: existing,
+      onSave: cubit.save,
+      // Свежий снимок открытой формы: после конфликта ревизия обновляется,
+      // иначе повторное сохранение снова получит 409.
+      latest: id == null
+          ? null
+          : () => cubit.state.hosts.where((host) => host.id == id).firstOrNull,
+    ),
   );
 }
 
@@ -41,13 +51,23 @@ Future<void> showHostFormDialog(BuildContext context, {Host? existing}) {
 /// реальной оболочке, а песочница живёт внутри приложения. Поля, которых нет в режиме, не валидируются и
 /// не попадают в сохраняемую запись.
 class HostFormDialog extends StatefulWidget {
-  const HostFormDialog({required this.onSave, this.existing, super.key});
+  const HostFormDialog({
+    required this.onSave,
+    this.existing,
+    this.latest,
+    super.key,
+  });
 
   /// Редактируемый хост. Null — новый хост; его тип (SSH или виртуальный) выбирается в форме.
   final Host? existing;
 
   /// Сохраняет хост и секреты (пароль, passphrase, PEM).
   final HostSave onSave;
+
+  /// Актуальный снимок хоста из списка. Нужен после конфликта ревизии:
+  /// следующий раз форма должна отправлять свежую ревизию, а не ту, на
+  /// которой открылась. Null — снимка нет (закрытое окно).
+  final Host? Function()? latest;
 
   @override
   State<HostFormDialog> createState() => _HostFormDialogState();
@@ -92,6 +112,10 @@ class _HostFormDialogState extends State<HostFormDialog> {
   late final _notes = TextEditingController(text: widget.existing?.notes ?? '');
   final _secret = TextEditingController();
   late SshAuthType _auth = widget.existing?.authType ?? SshAuthType.key;
+
+  /// Ревизия снимка, на котором основана форма. После конфликта обновляется
+  /// из [HostFormDialog.latest]; остальные поля остаются как ввёл пользователь.
+  late int _revision = widget.existing?.revision ?? 0;
 
   String? _addressError;
   String? _portError;
@@ -224,13 +248,29 @@ class _HostFormDialogState extends State<HostFormDialog> {
   Future<void> _saveHost(AppLocalizations l10n) async {
     if (!_validate(l10n)) return;
     final host = _build(l10n);
-    await widget.onSave(
-      host,
-      secret: _ssh ? _secret.text : null,
-      privateKeyPem: !_ssh || _auth != SshAuthType.key
-          ? null
-          : _privateKey.text,
-    );
+    try {
+      await widget.onSave(
+        host,
+        secret: _ssh ? _secret.text : null,
+        privateKeyPem: !_ssh || _auth != SshAuthType.key
+            ? null
+            : _privateKey.text,
+      );
+    } on Object catch (error) {
+      // Обычно это конфликт ревизии: хост изменило другое окно. Закрывать
+      // форму молча нельзя — пользователь увидел бы, что сохранение исчезло.
+      if (!mounted) return;
+      if (error is AgentApiException && error.code == 'host_conflict') {
+        // Берём ревизию свежего снимка, иначе повторная попытка снова получит
+        // 409. Поля пользователя не трогаем: он сам решает, сохранять их поверх.
+        final latest = widget.latest?.call();
+        if (latest != null) setState(() => _revision = latest.revision);
+        AppSnackBar.show(context, l10n.commonConflict);
+        return;
+      }
+      AppSnackBar.show(context, l10n.commonError('$error'));
+      return;
+    }
     if (!mounted) return;
     Navigator.pop(context);
   }
@@ -266,6 +306,7 @@ class _HostFormDialogState extends State<HostFormDialog> {
       lastLatencyMs: existing?.lastLatencyMs,
       lastCheckError: existing?.lastCheckError,
       environment: _collectedEnvironment(),
+      revision: _revision,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     );

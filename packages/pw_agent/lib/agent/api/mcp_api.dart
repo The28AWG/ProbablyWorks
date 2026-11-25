@@ -28,7 +28,12 @@ abstract interface class McpApi {
   /// Подключает включённые серверы, если они ещё не подключены.
   Future<void> ensureReady();
 
-  Future<void> save(McpServerConfig server);
+  /// Сохраняет конфигурацию сервера.
+  ///
+  /// [expectedRevision] — `revision` снимка, с которого открыта форма. При
+  /// несовпадении реализация бросает `409 mcp_conflict` до записи. Без него
+  /// (импорт `mcp.json`, служебная запись) ревизия не проверяется.
+  Future<void> save(McpServerConfig server, {int? expectedRevision});
   Future<void> delete(McpServerConfig server);
   Future<void> restart(McpServerConfig server);
   Future<void> refreshTools(McpServerConfig server);
@@ -53,6 +58,7 @@ Map<String, Object?> mcpServerToJson(McpServerConfig server) => {
   'url': server.url,
   'headers': server.headers,
   'oauth': server.oauth?.toJson(),
+  'revision': server.revision,
   'createdAt': server.createdAt.toUtc().toIso8601String(),
   'updatedAt': server.updatedAt.toUtc().toIso8601String(),
 };
@@ -75,6 +81,7 @@ McpServerConfig mcpServerFromJson(String id, Map<String, dynamic> json) =>
       oauth: json['oauth'] is Map
           ? McpOAuthConfig.fromJson(json['oauth'] as Map)
           : null,
+      revision: json['revision'] is num ? (json['revision'] as num).toInt() : 0,
       createdAt: _date(json['createdAt']) ?? DateTime.now().toUtc(),
       updatedAt: _date(json['updatedAt']) ?? DateTime.now().toUtc(),
     );

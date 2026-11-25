@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/platform/local_system_info.dart';
@@ -59,9 +60,58 @@ class HostRepository {
 
   /// Пишет строку, затем карту окружения. Недопустимое имя бросает [ArgumentError] до любой записи,
   /// чтобы битое имя не оставило ни строку, ни секрет. Пустая карта удаляет ключ: старый секрет не остаётся.
-  Future<void> save(Host host) async {
+  ///
+  /// [expectedRevision] — ревизия, на которой основана форма. При несовпадении
+  /// бросает `409 host_conflict` до записи: два окна не затирают поля друг
+  /// друга. Без неё (служебная запись, миграция) ревизия просто растёт.
+  Future<void> save(Host host, {int? expectedRevision}) async {
     _requireEnvironmentNames(host.environment);
-    await _db.into(_hostsTable).insertOnConflictUpdate(_toRow(host));
+    final row = _toRow(host);
+    if (expectedRevision == null) {
+      final current = await (_db.select(
+        _hostsTable,
+      )..where((t) => t.id.equals(host.id))).getSingleOrNull();
+      await _db
+          .into(_hostsTable)
+          .insertOnConflictUpdate(
+            row.copyWith(revision: Value((current?.revision ?? 0) + 1)),
+          );
+    } else {
+      // Сравнение и запись — один UPDATE: два окна не проходят проверку
+      // одновременно и потом не затирают друг друга.
+      final next = expectedRevision + 1;
+      final updated =
+          await (_db.update(_hostsTable)..where(
+                (t) =>
+                    t.id.equals(host.id) & t.revision.equals(expectedRevision),
+              ))
+              .write(row.copyWith(revision: Value(next)));
+      if (updated == 0) {
+        final exists = await (_db.select(
+          _hostsTable,
+        )..where((t) => t.id.equals(host.id))).getSingleOrNull();
+        if (exists != null || expectedRevision != 0) {
+          throw const AgentApiException(
+            409,
+            'host_conflict',
+            'host was changed by another client',
+          );
+        }
+        final inserted = await _db
+            .into(_hostsTable)
+            .insert(
+              row.copyWith(revision: Value(next)),
+              mode: InsertMode.insertOrIgnore,
+            );
+        if (inserted == 0) {
+          throw const AgentApiException(
+            409,
+            'host_conflict',
+            'host was changed by another client',
+          );
+        }
+      }
+    }
     await _writeEnvironment(host.id, host.environment);
   }
 
@@ -125,6 +175,7 @@ class HostRepository {
       lastLatencyMs: row.lastLatencyMs,
       lastCheckError: row.lastCheckError,
       environment: await _readEnvironment(row.id),
+      revision: row.revision,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     );
@@ -148,6 +199,7 @@ class HostRepository {
     lastCheckAt: Value(host.lastCheckAt),
     lastLatencyMs: Value(host.lastLatencyMs),
     lastCheckError: Value(host.lastCheckError),
+    revision: Value(host.revision),
     createdAt: host.createdAt,
     updatedAt: host.updatedAt,
   );

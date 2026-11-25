@@ -19,6 +19,11 @@ class Hosts extends Table {
   DateTimeColumn get lastCheckAt => dateTime().nullable()();
   IntColumn get lastLatencyMs => integer().nullable()();
   TextColumn get lastCheckError => text().nullable()();
+
+  /// Ревизия редактируемых полей. Растёт при сохранении из формы; результат
+  /// проверки подключения её не меняет, чтобы автопроверка не ломала открытую
+  /// форму в другом окне.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -64,6 +69,10 @@ class Projects extends Table {
 
   /// Время архивации: чатов не осталось. Null — проект активен.
   DateTimeColumn get archivedAt => dateTime().nullable()();
+
+  /// Ревизия свойств проекта. Хост и папка — идентичность и не меняются;
+  /// имя, память, доверие и профиль политики версионируются.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -310,6 +319,10 @@ class McpServers extends Table {
   TextColumn get externalKey => text().nullable()();
   BoolColumn get enabled => boolean().withDefault(const Constant(true))();
   TextColumn get configJson => text()();
+
+  /// Ревизия формы MCP-сервера. Импорт файла тоже её увеличивает, чтобы
+  /// открытая в другом окне форма не затёрла свежую конфигурацию.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
@@ -359,5 +361,32 @@ void main() {
       expect(status.error, isNull);
       expect(status.checkedAt, isNull);
     });
+
+    test(
+      'reading provider configs publishes nothing for other windows',
+      () async {
+        final changes = DomainChangeBus();
+        addTearDown(changes.close);
+        final published = <SharedResource>[];
+        final sub = changes.changes.listen(published.add);
+        addTearDown(sub.cancel);
+        final service = ModelCatalogService(
+          repository,
+          _StatusLlm(),
+          null,
+          changes,
+        );
+
+        // GET /models и GET /settings вызывают именно этот метод. Событие
+        // `models` заставило бы клиента читать каталог снова — без конца.
+        await service.loadProviderConfigs();
+        await Future<void>.delayed(Duration.zero);
+        expect(published, isEmpty);
+
+        await service.refreshStatuses();
+        await Future<void>.delayed(Duration.zero);
+        expect(published, [SharedResource.models]);
+      },
+    );
   });
 }

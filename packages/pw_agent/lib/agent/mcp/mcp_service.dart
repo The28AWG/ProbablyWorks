@@ -6,6 +6,8 @@ import 'package:logging/logging.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_config_file.dart';
 import 'package:pw_agent/agent/mcp/mcp_tool_source.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/agent/tools/tool_executor.dart';
 import 'package:pw_agent/core/data/mcp_server_repository.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -19,12 +21,19 @@ export 'package:pw_agent/agent/mcp/mcp_types.dart';
 /// к модели, а настройки могут перечитать список через [refresh].
 @lazySingleton
 class McpService {
-  McpService(this._repository, this._manager, this._tools, this._secrets);
+  McpService(
+    this._repository,
+    this._manager,
+    this._tools,
+    this._secrets, [
+    this._changes,
+  ]);
 
   final McpServerRepository _repository;
   final McpClientManager _manager;
   final ToolExecutor _tools;
   final SecretStore _secrets;
+  final DomainChangeBus? _changes;
 
   static final _log = Logger('McpService');
 
@@ -213,6 +222,9 @@ class McpService {
           unawaited(() async {
             await _importConfig();
             if (_configError == null) await refresh();
+            // Правка mcp.json снаружи — такое же изменение общего ресурса,
+            // как сохранение формы в другом окне.
+            _changes?.publish(SharedResource.mcp);
           }());
         });
       });

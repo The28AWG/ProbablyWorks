@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/data/saved_model_repository.dart';
 import 'package:pw_agent/core/error/app_failure.dart';
 import 'package:pw_agent/core/util/char_substring.dart';
@@ -220,7 +222,12 @@ abstract interface class ModelCatalogSource {
 /// только выбранные модели ([remember]).
 @lazySingleton
 class ModelCatalogService implements ModelCatalogSource {
-  ModelCatalogService(this._repository, this._llm, [this._runtime]);
+  ModelCatalogService(
+    this._repository,
+    this._llm, [
+    this._runtime,
+    this._domainChanges,
+  ]);
 
   static final _log = Logger('ModelCatalog');
 
@@ -242,6 +249,10 @@ class ModelCatalogService implements ModelCatalogSource {
   /// Необязательный источник runtime: его ошибки сразу переводят провайдера
   /// в offline, не дожидаясь следующего обновления каталога.
   final ModelRuntimeService? _runtime;
+
+  /// Изменения каталога могут прийти из фонового обновления, а не из формы.
+  /// Публикуем их как общий ресурс, чтобы остальные окна перечитали модели.
+  final DomainChangeBus? _domainChanges;
   StreamSubscription<ModelRuntimeState>? _runtimeSub;
   final _changes = StreamController<ModelCatalogState>.broadcast();
   ModelCatalogState _state = const ModelCatalogState();
@@ -287,13 +298,19 @@ class ModelCatalogService implements ModelCatalogSource {
 
   /// Настройки провайдеров без сети: включённость, адрес и наличие ключа.
   /// Нужны экрану настроек до первой проверки доступности.
-  Future<void> loadProviderConfigs() async {
+  ///
+  /// [shared] — настройки изменились, а не просто прочитаны. По умолчанию
+  /// метод ничего не публикует: его вызывают `GET /settings` и `GET /models`,
+  /// и событие `models` заставило бы клиента снова запросить каталог, а тот —
+  /// снова опубликовать событие. Чтение и запись различает вызывающий код.
+  Future<void> loadProviderConfigs({bool shared = false}) async {
     final statuses = await _llm.configStatuses();
     _emit(
       _state.copyWith(
         providers: _llm.providers,
         providerStatuses: _mergeStatuses(_state.providerStatuses, statuses),
       ),
+      shared: shared,
     );
   }
 
@@ -344,6 +361,7 @@ class ModelCatalogService implements ModelCatalogSource {
         providers: _llm.providers,
         providerStatuses: _mergeStatuses(_state.providerStatuses, statuses),
       ),
+      shared: true,
     );
     return statuses;
   }
@@ -395,7 +413,7 @@ class ModelCatalogService implements ModelCatalogSource {
       }
     } on Object catch (error, stack) {
       _log.warning('model list refresh failed', error, stack);
-      _emit(_state.copyWith(loading: false, error: '$error'));
+      _emit(_state.copyWith(loading: false, error: '$error'), shared: true);
       _scheduleRetry();
       rethrow;
     }
@@ -409,6 +427,7 @@ class ModelCatalogService implements ModelCatalogSource {
         loading: false,
         clearError: true,
       ),
+      shared: true,
     );
     // Детали выбранных моделей, которые всё ещё есть в списке, обновляем (название, tool calling).
     await _store([
@@ -469,6 +488,7 @@ class ModelCatalogService implements ModelCatalogSource {
       _state.copyWith(
         saved: {..._state.saved, for (final model in changed) model.id: model},
       ),
+      shared: true,
     );
   }
 
@@ -523,13 +543,20 @@ class ModelCatalogService implements ModelCatalogSource {
         changed = true;
       }
     }
-    if (changed) _emit(_state.copyWith(providerStatuses: next));
+    if (changed) {
+      _emit(_state.copyWith(providerStatuses: next), shared: true);
+    }
     // Провайдер поднялся: список моделей мог измениться, пока его не было.
     if (recovered) _quietRefresh();
   }
 
-  void _emit(ModelCatalogState next) {
+  void _emit(ModelCatalogState next, {bool shared = false}) {
+    final changed = next != _state;
     _state = next;
     _changes.add(next);
+    // Публикуем только настоящие изменения, а не повторное чтение снимка.
+    // Иначе `GET /models` порождает `stateAreaChanged`, клиент снова читает
+    // каталог, и запросы не заканчиваются.
+    if (shared && changed) _domainChanges?.publish(SharedResource.models);
   }
 }

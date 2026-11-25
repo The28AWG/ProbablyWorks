@@ -25,6 +25,8 @@ import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/domain/host.dart';
 import 'package:pw_agent/core/domain/mcp_server.dart';
@@ -48,6 +50,7 @@ void main() {
   late _FakePush push;
   late _FakeProjects projectsApi;
   late _FakeData dataApi;
+  late DomainChangeBus domainChanges;
   late ApiServer server;
   late HttpClient client;
   late String base;
@@ -60,6 +63,7 @@ void main() {
     push = _FakePush();
     projectsApi = _FakeProjects();
     dataApi = _FakeData();
+    domainChanges = DomainChangeBus();
     server = ApiServer(
       backend,
       _token,
@@ -71,6 +75,7 @@ void main() {
       pluginApi: pluginApi,
       securityAuditApi: securityAudit,
       pushApi: push,
+      domainChanges: domainChanges,
       allowedOrigins: const {'http://localhost:8080'},
     );
     final port = await server.start();
@@ -81,6 +86,7 @@ void main() {
   tearDown(() async {
     client.close(force: true);
     await server.stop();
+    await domainChanges.close();
     await backend.dispose();
   });
 
@@ -1419,7 +1425,7 @@ void main() {
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['requestId'], 'a1');
   });
 
-  test('publishes state changes after mutating requests', () async {
+  test('forwards domain state changes over SSE', () async {
     final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
     final response = await request.close();
@@ -1429,26 +1435,21 @@ void main() {
     expect(await lines.moveNext(), isTrue);
     expect(lines.current, ': connected');
 
-    final (status, _) = await _request(
-      client,
-      base,
-      'PUT',
-      '/api/v1/chats/c1',
-      token: _token,
-      body: {'title': 'Renamed'},
-    );
-    expect(status, HttpStatus.noContent);
+    // Сервис публикует изменение сам; маршрут для этого не нужен.
+    domainChanges
+      ..publish(SharedResource.mcp)
+      ..publish(SharedResource.plugins)
+      ..publish(SharedResource.push)
+      ..publish(SharedResource.data);
 
-    String? event;
-    String? data;
-    while (await lines.moveNext()) {
-      if (lines.current.startsWith('event:')) event = lines.current;
-      if (lines.current.startsWith('data:')) data = lines.current;
-      if (event != null && data != null) break;
+    final areas = <String>[];
+    while (areas.length < 4 && await lines.moveNext()) {
+      if (!lines.current.startsWith('data:')) continue;
+      final json = jsonDecode(lines.current.replaceFirst('data: ', ''));
+      areas.add('${(json as Map)['area']}');
     }
     await lines.cancel();
-    expect(event, 'event: stateAreaChanged');
-    expect(jsonDecode(data!.replaceFirst('data: ', ''))['area'], 'chats');
+    expect(areas, ['mcp', 'plugins', 'push', 'data']);
   });
 
   test('streams agent events over SSE', () async {
@@ -2880,7 +2881,11 @@ final class _FakePlugins implements PluginApi {
       id == 'first' ? {'second'} : {};
 
   @override
-  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+  Future<void> setEnabled(
+    Set<String> ids, {
+    required bool enabled,
+    int? expectedRevision,
+  }) async {
     if (busy) {
       throw const AgentApiException(
         409,
@@ -2933,6 +2938,7 @@ final class _FakePush implements PushApi {
     PushSettings settings, {
     String? token,
     bool clearToken = false,
+    int? expectedRevision,
   }) async {
     saved = settings;
     this.token = token;
@@ -3174,7 +3180,7 @@ final class _FakeMcp implements McpApi {
   Future<void> ensureReady() => Future<void>.value();
 
   @override
-  Future<void> save(McpServerConfig server) async {
+  Future<void> save(McpServerConfig server, {int? expectedRevision}) async {
     savedId = server.id;
     saved = server;
   }

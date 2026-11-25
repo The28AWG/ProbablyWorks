@@ -24,6 +24,8 @@ import 'package:pw_agent/agent/loop/prompt_queue.dart';
 import 'package:pw_agent/agent/mcp/mcp_client_manager.dart';
 import 'package:pw_agent/agent/mcp/mcp_service.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
+import 'package:pw_agent/agent/state/domain_change_bus.dart';
+import 'package:pw_agent/agent/state/shared_state.dart';
 import 'package:pw_agent/core/config/app_limits.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/domain/host.dart';
@@ -78,6 +80,7 @@ void main() {
       pluginApi: pluginsApi,
       securityAuditApi: securityAudit,
       pushApi: push,
+      domainChanges: backend.changes,
       chat: _FakeDraftChatApi(store: draftStore, queueSession: queueSession),
     );
     final port = await server.start();
@@ -536,6 +539,8 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     await remote.updateChat('c1', model: 'vendor/model');
+    // Доменный сервис публикует изменение сам; маршрут его не подменяет.
+    backend.changes.publish(SharedResource.chats);
     await changed.future.timeout(const Duration(seconds: 3));
 
     expect(snapshots.length, greaterThan(1));
@@ -1529,6 +1534,7 @@ final class _FakeData implements DataApi {
 }
 
 final class _FakeAgent implements AgentApi {
+  final changes = DomainChangeBus();
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -1572,6 +1578,7 @@ final class _FakeAgent implements AgentApi {
     await _approvals.close();
     await _questions.close();
     await _editChanges.close();
+    await changes.close();
   }
 
   @override
@@ -1665,6 +1672,7 @@ final class _FakeAgent implements AgentApi {
     bool workspaceSpecified = false,
   }) async {
     updatedModel = model;
+    changes.publish(SharedResource.chats);
   }
 
   @override
@@ -1821,6 +1829,7 @@ final class _FakePush implements PushApi {
     PushSettings settings, {
     String? token,
     bool clearToken = false,
+    int? expectedRevision,
   }) async {
     saved = settings.copyWith(hasToken: token != null || !clearToken);
     this.token = token;
@@ -1861,7 +1870,11 @@ final class _FakePlugins implements PluginApi {
       id == 'first' ? {'second'} : {};
 
   @override
-  Future<void> setEnabled(Set<String> ids, {required bool enabled}) async {
+  Future<void> setEnabled(
+    Set<String> ids, {
+    required bool enabled,
+    int? expectedRevision,
+  }) async {
     if (busy) {
       throw const AgentApiException(
         409,
@@ -2112,7 +2125,7 @@ final class _FakeMcp implements McpApi {
   Future<void> ensureReady() => Future<void>.value();
 
   @override
-  Future<void> save(McpServerConfig server) async {
+  Future<void> save(McpServerConfig server, {int? expectedRevision}) async {
     saved = server;
   }
 

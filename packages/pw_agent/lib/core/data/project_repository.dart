@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 
@@ -62,23 +63,68 @@ class ProjectRepository {
     return row == null ? null : _project(row.readTable(_projects));
   }
 
-  Future<void> save(Project project) => _db
-      .into(_projects)
-      .insertOnConflictUpdate(
-        ProjectsCompanion.insert(
-          id: project.id,
-          hostId: project.hostId,
-          name: project.name,
-          workspace: project.workspace,
-          workspaceKey: project.workspaceKey,
-          policyProfileId: Value(project.policyProfileId),
-          trustAgentsMd: Value(project.trustAgentsMd),
-          skillsInitialized: Value(project.skillsInitialized),
-          archivedAt: Value(project.archivedAt),
-          createdAt: project.createdAt,
-          updatedAt: project.updatedAt,
-        ),
+  /// Сохраняет свойства проекта.
+  ///
+  /// [expectedRevision] защищает форму, открытую в другом окне: при
+  /// несовпадении бросает `409 project_conflict` до записи. Без неё
+  /// (жизненный цикл, миграция) ревизия просто растёт.
+  Future<void> save(Project project, {int? expectedRevision}) async {
+    final companion = ProjectsCompanion.insert(
+      id: project.id,
+      hostId: project.hostId,
+      name: project.name,
+      workspace: project.workspace,
+      workspaceKey: project.workspaceKey,
+      policyProfileId: Value(project.policyProfileId),
+      trustAgentsMd: Value(project.trustAgentsMd),
+      skillsInitialized: Value(project.skillsInitialized),
+      archivedAt: Value(project.archivedAt),
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+    );
+    if (expectedRevision == null) {
+      final row = await (_db.select(
+        _projects,
+      )..where((t) => t.id.equals(project.id))).getSingleOrNull();
+      await _db
+          .into(_projects)
+          .insertOnConflictUpdate(
+            companion.copyWith(revision: Value((row?.revision ?? 0) + 1)),
+          );
+      return;
+    }
+    final next = expectedRevision + 1;
+    final updated =
+        await (_db.update(_projects)..where(
+              (t) =>
+                  t.id.equals(project.id) & t.revision.equals(expectedRevision),
+            ))
+            .write(companion.copyWith(revision: Value(next)));
+    if (updated > 0) return;
+    final exists = await (_db.select(
+      _projects,
+    )..where((t) => t.id.equals(project.id))).getSingleOrNull();
+    if (exists != null || expectedRevision != 0) {
+      throw const AgentApiException(
+        409,
+        'project_conflict',
+        'project was changed by another client',
       );
+    }
+    final inserted = await _db
+        .into(_projects)
+        .insert(
+          companion.copyWith(revision: Value(next)),
+          mode: InsertMode.insertOrIgnore,
+        );
+    if (inserted == 0) {
+      throw const AgentApiException(
+        409,
+        'project_conflict',
+        'project was changed by another client',
+      );
+    }
+  }
 
   Future<void> delete(String id) =>
       (_db.delete(_projects)..where((t) => t.id.equals(id))).go();
@@ -235,10 +281,14 @@ class ProjectRepository {
 
   /// Доверяет всё содержимое папки: AGENTS.md и все известные skills.
   Future<void> trustWorkspace(String projectId) => _db.transaction(() async {
+    final row = await (_db.select(
+      _projects,
+    )..where((t) => t.id.equals(projectId))).getSingleOrNull();
     await (_db.update(_projects)..where((t) => t.id.equals(projectId))).write(
       ProjectsCompanion(
         trustAgentsMd: const Value(true),
         skillsInitialized: const Value(true),
+        revision: Value((row?.revision ?? 0) + 1),
         updatedAt: Value(DateTime.now()),
       ),
     );
@@ -246,13 +296,18 @@ class ProjectRepository {
         .write(const ProjectSkillsCompanion(trusted: Value(true)));
   });
 
-  Future<void> setTrustAgentsMd(String projectId, bool trusted) =>
-      (_db.update(_projects)..where((t) => t.id.equals(projectId))).write(
-        ProjectsCompanion(
-          trustAgentsMd: Value(trusted),
-          updatedAt: Value(DateTime.now()),
-        ),
-      );
+  Future<void> setTrustAgentsMd(String projectId, bool trusted) async {
+    final row = await (_db.select(
+      _projects,
+    )..where((t) => t.id.equals(projectId))).getSingleOrNull();
+    await (_db.update(_projects)..where((t) => t.id.equals(projectId))).write(
+      ProjectsCompanion(
+        trustAgentsMd: Value(trusted),
+        revision: Value((row?.revision ?? 0) + 1),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
 
   // ---- mapping -----------------------------------------------------------
 
@@ -266,6 +321,7 @@ class ProjectRepository {
     trustAgentsMd: row.trustAgentsMd,
     skillsInitialized: row.skillsInitialized,
     archivedAt: row.archivedAt,
+    revision: row.revision,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );

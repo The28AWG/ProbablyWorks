@@ -1,5 +1,6 @@
 import 'package:command_shield/command_shield.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/policy/command_risk.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -54,6 +55,34 @@ void main() {
       expect(loaded.lastCheckAt, isNull);
     },
   );
+
+  test('revision grows and a stale form is rejected', () async {
+    await hosts.save(sshHost());
+    final first = (await hosts.byId('h1'))!;
+    expect(first.revision, 1);
+
+    await expectLater(
+      hosts.save(
+        sshHost().copyWith(notes: 'from another window'),
+        expectedRevision: 0,
+      ),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'host_conflict',
+        ),
+      ),
+    );
+
+    await hosts.save(
+      sshHost().copyWith(notes: 'fresh'),
+      expectedRevision: first.revision,
+    );
+    final saved = (await hosts.byId('h1'))!;
+    expect(saved.notes, 'fresh');
+    expect(saved.revision, 2);
+  });
 
   test(
     'система заполняется только у локального Host и не пишется в БД',

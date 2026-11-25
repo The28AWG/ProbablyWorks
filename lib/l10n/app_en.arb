@@ -50,6 +50,10 @@
       }
     }
   },
+  "commonConflict": "Another window changed this item. The data was refreshed; try again.",
+  "@commonConflict": {
+    "description": "Snackbar shown when a save is rejected because the item changed in another window."
+  },
   "navHosts": "Hosts",
   "@navHosts": {
     "description": "Navigation item that opens host management."
@@ -2403,6 +2407,10 @@
   "pluginsRunning": "Wait for the current turn to finish before changing plugins.",
   "@pluginsRunning": {
     "description": "Snackbar shown when plugins are toggled during an active turn."
+  },
+  "pluginsConflict": "Another window changed the plugins. The list was refreshed; toggle the plugin again.",
+  "@pluginsConflict": {
+    "description": "Snackbar shown when toggling plugins on an outdated revision."
   },
   "settingsGroupMcp": "MCP",
   "@settingsGroupMcp": {

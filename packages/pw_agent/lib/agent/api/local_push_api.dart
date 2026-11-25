@@ -17,7 +17,13 @@ final class LocalPushApi implements PushApi {
     PushSettings settings, {
     String? token,
     bool clearToken = false,
-  }) => _service.save(settings, token: token, clearToken: clearToken);
+    int? expectedRevision,
+  }) => _service.save(
+    settings,
+    token: token,
+    clearToken: clearToken,
+    expectedRevision: expectedRevision,
+  );
 
   @override
   Future<void> testPush() => _service.test();

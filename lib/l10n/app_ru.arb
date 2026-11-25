@@ -50,6 +50,10 @@
       }
     }
   },
+  "commonConflict": "Элемент изменился в другом окне. Данные обновлены — повторите действие.",
+  "@commonConflict": {
+    "description": "Снекбар, когда сохранение отклонено из-за изменения в другом окне."
+  },
   "navHosts": "Хосты",
   "@navHosts": {
     "description": "Пункт навигации, открывающий управление хостами."
@@ -2403,6 +2407,10 @@
   "pluginsRunning": "Дождитесь завершения текущего хода, чтобы менять плагины.",
   "@pluginsRunning": {
     "description": "Snackbar shown when plugins are toggled during an active turn."
+  },
+  "pluginsConflict": "Список плагинов изменился в другом окне. Снимок обновлён — переключите плагин ещё раз.",
+  "@pluginsConflict": {
+    "description": "Snackbar shown when toggling plugins on an outdated revision."
   },
   "settingsGroupMcp": "MCP",
   "@settingsGroupMcp": {

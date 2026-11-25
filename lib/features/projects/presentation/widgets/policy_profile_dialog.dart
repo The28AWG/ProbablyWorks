@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/ui/ui.dart';
 import 'package:probably_works/features/settings/presentation/widgets/security_profile_editor.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/policy/security_profile.dart';
@@ -16,10 +17,15 @@ Future<void> showPolicyProfileDialog(
   required Project project,
   required ProjectsApi api,
   PolicyProfile? existing,
+  Project? Function()? latest,
 }) => showDialog<void>(
   context: context,
-  builder: (_) =>
-      _PolicyProfileDialog(project: project, existing: existing, api: api),
+  builder: (_) => _PolicyProfileDialog(
+    project: project,
+    existing: existing,
+    api: api,
+    latest: latest,
+  ),
 );
 
 class _PolicyProfileDialog extends StatefulWidget {
@@ -27,11 +33,16 @@ class _PolicyProfileDialog extends StatefulWidget {
     required this.project,
     required this.api,
     this.existing,
+    this.latest,
   });
 
   final Project project;
   final ProjectsApi api;
   final PolicyProfile? existing;
+
+  /// Актуальный снимок проекта из списка. Нужен после конфликта ревизии,
+  /// чтобы повторное сохранение не получило `409` снова.
+  final Project? Function()? latest;
 
   @override
   State<_PolicyProfileDialog> createState() => _PolicyProfileDialogState();
@@ -43,6 +54,11 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
     text: widget.existing?.description ?? '',
   );
   late SecurityProfile _profile = const SecurityProfile();
+
+  /// Снимок проекта, с которым работает диалог. После конфликта ревизии
+  /// обновляется из [widget.latest], иначе повторная попытка снова получит
+  /// `409 project_conflict`.
+  late Project _project = widget.project;
   String _denylist = '';
   bool _saving = false;
   String? _nameError;
@@ -167,14 +183,15 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
       await widget.api.savePolicyProfile(profile);
       if (!mounted) return;
       await widget.api.saveProject(
-        widget.project.copyWith(policyProfileId: profile.id),
+        _project.copyWith(policyProfileId: profile.id),
+        expectedRevision: _project.revision,
       );
       if (!mounted) return;
       Navigator.pop(context);
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      AppSnackBar.show(context, l10n.commonError('$error'));
+      _showError(l10n, error);
     }
   }
 
@@ -196,14 +213,27 @@ class _PolicyProfileDialogState extends State<_PolicyProfileDialog> {
       await widget.api.deletePolicyProfile(existing.id);
       if (!mounted) return;
       await widget.api.saveProject(
-        widget.project.copyWith(clearPolicyProfile: true),
+        _project.copyWith(clearPolicyProfile: true),
+        expectedRevision: _project.revision,
       );
       if (!mounted) return;
       Navigator.pop(context);
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      AppSnackBar.show(context, l10n.commonError('$error'));
+      _showError(l10n, error);
     }
+  }
+
+  /// Показывает ошибку и подтягивает ревизию проекта после конфликта, чтобы
+  /// повторное сохранение не упиралось в тот же `409`.
+  void _showError(AppLocalizations l10n, Object error) {
+    if (error is AgentApiException && error.code == 'project_conflict') {
+      final latest = widget.latest?.call();
+      if (latest != null) setState(() => _project = latest);
+      AppSnackBar.show(context, l10n.commonConflict);
+      return;
+    }
+    AppSnackBar.show(context, l10n.commonError('$error'));
   }
 }

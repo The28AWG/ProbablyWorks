@@ -50,6 +50,7 @@ import 'agent/project/project_lifecycle.dart' as _i475;
 import 'agent/recovery/startup_recovery.dart' as _i262;
 import 'agent/schedule/scheduled_task_repository.dart' as _i453;
 import 'agent/schedule/task_scheduler.dart' as _i778;
+import 'agent/state/domain_change_bus.dart' as _i206;
 import 'agent/state/session_state_service.dart' as _i154;
 import 'agent/tools/self_tool_handler.dart' as _i865;
 import 'agent/tools/tool_executor.dart' as _i780;
@@ -108,6 +109,7 @@ extension GetItInjectableX on _i174.GetIt {
     gh.singleton<_i1048.ActiveExecRegistry>(() => _i1048.ActiveExecRegistry());
     gh.singleton<_i378.LiveOutputBus>(() => _i378.LiveOutputBus());
     gh.singleton<_i589.InteractionBroker>(() => _i589.InteractionBroker());
+    gh.singleton<_i206.DomainChangeBus>(() => _i206.DomainChangeBus());
     gh.lazySingleton<_i654.ContextBuilder>(() => _i654.ContextBuilder());
     gh.lazySingleton<_i414.HostKeyConfirmations>(
       () => _i414.HostKeyConfirmations(),
@@ -216,14 +218,18 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i249.SecretStore>(),
       ),
     );
-    gh.lazySingleton<_i1055.WorkspaceContextLoader>(
-      () => _i1055.WorkspaceContextLoader(gh<_i384.SettingsRepository>()),
-    );
     gh.lazySingleton<_i737.PushService>(
       () => _i737.PushService(
         gh<_i384.SettingsRepository>(),
         gh<_i249.SecretStore>(),
+        gh<_i206.DomainChangeBus>(),
       ),
+    );
+    gh.lazySingleton<_i1055.WorkspaceContextLoader>(
+      () => _i1055.WorkspaceContextLoader(gh<_i384.SettingsRepository>()),
+    );
+    gh.lazySingleton<_i52.PushApi>(
+      () => _i979.LocalPushApi(gh<_i737.PushService>()),
     );
     gh.lazySingleton<_i290.McpClientManager>(
       () => _i290.McpClientManager(
@@ -291,8 +297,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i611.HostRuntimeFactory>(),
       ),
     );
-    gh.lazySingleton<_i52.PushApi>(
-      () => _i979.LocalPushApi(gh<_i737.PushService>()),
+    gh.lazySingleton<_i907.HostsApi>(
+      () => _i915.LocalHostsApi(
+        gh<_i985.HostRepository>(),
+        gh<_i249.SecretStore>(),
+        gh<_i1011.HostDiagnostics>(),
+        gh<_i400.VirtualHostProvisioner>(),
+        gh<_i206.DomainChangeBus>(),
+      ),
     );
     gh.singleton<_i179.LlmProvider>(
       () => agentCoreModule.llmProvider(gh<_i502.LlmProviderRegistry>()),
@@ -301,19 +313,12 @@ extension GetItInjectableX on _i174.GetIt {
       () =>
           agentCoreModule.modelRuntimeService(gh<_i502.LlmProviderRegistry>()),
     );
-    gh.lazySingleton<_i907.HostsApi>(
-      () => _i915.LocalHostsApi(
-        gh<_i985.HostRepository>(),
-        gh<_i249.SecretStore>(),
-        gh<_i1011.HostDiagnostics>(),
-        gh<_i400.VirtualHostProvisioner>(),
-      ),
-    );
     gh.lazySingleton<_i370.ModelCatalogService>(
       () => _i370.ModelCatalogService(
         gh<_i896.SavedModelRepository>(),
         gh<_i179.LlmProvider>(),
         gh<_i225.ModelRuntimeService>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.lazySingleton<_i894.ContextCompactor>(
@@ -340,6 +345,19 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i179.LlmProvider>(),
       ),
     );
+    gh.lazySingleton<_i346.ProjectsApi>(
+      () => _i623.LocalProjectsApi(
+        gh<_i518.ProjectRepository>(),
+        gh<_i906.ChatRepository>(),
+        gh<_i985.HostRepository>(),
+        gh<_i215.PolicyProfileRepository>(),
+        gh<_i384.SettingsRepository>(),
+        gh<_i666.ProjectMemoryService>(),
+        gh<_i475.ProjectLifecycleService>(),
+        gh<_i92.MentionSearchService>(),
+        gh<_i206.DomainChangeBus>(),
+      ),
+    );
     gh.lazySingleton<_i780.ToolExecutor>(
       () => _i780.ToolExecutor(
         gh<_i906.ChatRepository>(),
@@ -353,12 +371,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i453.ScheduledTaskRepository>(),
       ),
     );
-    gh.lazySingleton<_i176.McpService>(
-      () => _i176.McpService(
-        gh<_i7.McpServerRepository>(),
-        gh<_i290.McpClientManager>(),
+    gh.lazySingleton<_i298.PluginService>(
+      () => _i298.PluginService(
+        gh<_i408.PluginRegistry>(),
+        gh<_i384.SettingsRepository>(),
         gh<_i780.ToolExecutor>(),
+        gh<_i993.CommandExecutor>(),
         gh<_i249.SecretStore>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.lazySingleton<_i110.AgentSettingsApi>(
@@ -371,31 +391,20 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i869.LocalModelsSource>(),
       ),
     );
-    gh.lazySingleton<_i346.ProjectsApi>(
-      () => _i623.LocalProjectsApi(
-        gh<_i518.ProjectRepository>(),
-        gh<_i906.ChatRepository>(),
-        gh<_i985.HostRepository>(),
-        gh<_i215.PolicyProfileRepository>(),
-        gh<_i384.SettingsRepository>(),
-        gh<_i666.ProjectMemoryService>(),
-        gh<_i475.ProjectLifecycleService>(),
-        gh<_i92.MentionSearchService>(),
-      ),
-    );
-    gh.lazySingleton<_i298.PluginService>(
-      () => _i298.PluginService(
-        gh<_i408.PluginRegistry>(),
-        gh<_i384.SettingsRepository>(),
+    gh.lazySingleton<_i176.McpService>(
+      () => _i176.McpService(
+        gh<_i7.McpServerRepository>(),
+        gh<_i290.McpClientManager>(),
         gh<_i780.ToolExecutor>(),
-        gh<_i993.CommandExecutor>(),
         gh<_i249.SecretStore>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.lazySingleton<_i151.McpApi>(
       () => _i300.LocalMcpApi(
         gh<_i7.McpServerRepository>(),
         gh<_i176.McpService>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.singleton<_i667.AgentHub>(
@@ -425,25 +434,20 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i453.ScheduledTaskRepository>(),
       ),
     );
-    gh.lazySingleton<_i269.LocalAgentApi>(
-      () => _i269.LocalAgentApi(
-        gh<_i667.AgentHub>(),
-        gh<_i225.ModelRuntimeService>(),
-      ),
-    );
     gh.lazySingleton<_i773.ChatRunStopper>(
       () => agentCoreModule.chatRunStopper(gh<_i667.AgentHub>()),
-    );
-    gh.lazySingleton<_i866.LocalChatApi>(
-      () => _i866.LocalChatApi(
-        gh<_i667.AgentHub>(),
-        gh<_i225.ModelRuntimeService>(),
-      ),
     );
     gh.lazySingleton<_i778.TaskScheduler>(
       () => _i778.TaskScheduler(
         gh<_i667.AgentHub>(),
         gh<_i453.ScheduledTaskRepository>(),
+      ),
+    );
+    gh.lazySingleton<_i866.LocalChatApi>(
+      () => _i866.LocalChatApi(
+        gh<_i667.AgentHub>(),
+        gh<_i225.ModelRuntimeService>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.lazySingleton<_i60.PluginApi>(
@@ -471,6 +475,14 @@ extension GetItInjectableX on _i174.GetIt {
         gh<_i370.ModelCatalogService>(),
         gh<_i225.ModelRuntimeService>(),
         gh<_i502.LlmProviderRegistry>(),
+        gh<_i206.DomainChangeBus>(),
+      ),
+    );
+    gh.lazySingleton<_i269.LocalAgentApi>(
+      () => _i269.LocalAgentApi(
+        gh<_i667.AgentHub>(),
+        gh<_i225.ModelRuntimeService>(),
+        gh<_i206.DomainChangeBus>(),
       ),
     );
     return this;

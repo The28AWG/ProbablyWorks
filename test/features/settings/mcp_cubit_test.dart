@@ -45,7 +45,7 @@ final class _FakeMcp implements McpApi {
   }
 
   @override
-  Future<void> save(McpServerConfig server) async {
+  Future<void> save(McpServerConfig server, {int? expectedRevision}) async {
     saved = server;
   }
 

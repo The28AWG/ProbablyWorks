@@ -133,7 +133,7 @@ final class LocalAgentSettingsApi
   Future<void> saveProviderBaseUrl(String providerId, String? baseUrl) async {
     final descriptor = _descriptorOf(providerId);
     await _providers.saveBaseUrl(descriptor, baseUrl);
-    await _catalog.loadProviderConfigs();
+    await _catalog.loadProviderConfigs(shared: true);
     await _runtime.restartProvider(providerId);
   }
 
@@ -149,10 +149,10 @@ final class LocalAgentSettingsApi
     if (descriptor.requiresApiKey &&
         (status == null || !status.apiKeySet || status.error != null)) {
       await _restoreKey(descriptor, previous);
-      await _catalog.loadProviderConfigs();
+      await _catalog.loadProviderConfigs(shared: true);
       throw LlmFailure(status?.error ?? 'The API key was rejected');
     }
-    await _catalog.loadProviderConfigs();
+    await _catalog.loadProviderConfigs(shared: true);
     await _runtime.restartProvider(providerId);
     return status ?? await _providers.readStatus(descriptor);
   }
@@ -161,7 +161,7 @@ final class LocalAgentSettingsApi
   Future<void> deleteProviderApiKey(String providerId) async {
     final descriptor = _descriptorOf(providerId);
     await _providers.deleteApiKey(descriptor);
-    await _catalog.loadProviderConfigs();
+    await _catalog.loadProviderConfigs(shared: true);
     await _runtime.restartProvider(providerId);
   }
 
@@ -169,7 +169,7 @@ final class LocalAgentSettingsApi
   Future<void> setProviderEnabled(String providerId, bool enabled) async {
     final descriptor = _descriptorOf(providerId);
     await _providers.setEnabled(descriptor, enabled);
-    await _catalog.loadProviderConfigs();
+    await _catalog.loadProviderConfigs(shared: true);
     await _runtime.restartProvider(providerId);
   }
 
