@@ -604,16 +604,22 @@ void main() {
 
   test('streams SSE events into typed streams', () async {
     final events = <AgentEvent>[];
+    final chatEvents = <AgentEvent>[];
     final approvals = <ApprovalRequest>[];
     final eventsSub = remote.events.listen(events.add);
+    final chatSub = remote.session('c1').events.listen(chatEvents.add);
     final approvalsSub = remote.approvals.listen(approvals.add);
     addTearDown(eventsSub.cancel);
+    addTearDown(chatSub.cancel);
     addTearDown(approvalsSub.cancel);
 
     await remote.startEvents();
     await remote.eventsReady.timeout(const Duration(seconds: 3));
+    await remote.syncChatSubscriptions();
     backend
       ..emit(const AgentTurnStarted('c1'))
+      // Чужой чат не подписан: его тяжёлое событие не должно дойти до окна.
+      ..emit(const AgentUsageUpdated('c2', 999, 32000))
       ..emit(
         const AgentUsageUpdated('c1', 123, 32000, contextWindowKnown: false),
       )
@@ -628,11 +634,35 @@ void main() {
       );
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
-    expect(events, hasLength(2));
-    expect(events.first, isA<AgentTurnStarted>());
-    final usage = events.last as AgentUsageUpdated;
+    // Глобальный поток получает лёгкие события всех чатов и тяжёлые только
+    // подписанного. usage чужого чата отфильтрован на сервере.
+    expect(events.whereType<AgentTurnStarted>(), hasLength(1));
+    final usage = events.whereType<AgentUsageUpdated>().single;
+    expect(usage.chatId, 'c1');
     expect(usage.contextWindowKnown, false);
+    expect(chatEvents.whereType<AgentUsageUpdated>().single.chatId, 'c1');
     expect(approvals.single.id, 'a1');
+  });
+
+  test('chat event stream supports several listeners', () async {
+    final session = remote.session('c1');
+    final stream = session.events;
+    final first = <AgentEvent>[];
+    final second = <AgentEvent>[];
+    final firstSub = stream.listen(first.add);
+    final secondSub = stream.listen(second.add);
+    addTearDown(firstSub.cancel);
+    addTearDown(secondSub.cancel);
+
+    await remote.startEvents();
+    await remote.eventsReady.timeout(const Duration(seconds: 3));
+    await remote.syncChatSubscriptions();
+    backend.emit(const AgentTextDelta('c1', 'hello'));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // Подписка на сервере одна, но событие получают все слушатели потока.
+    expect(first.whereType<AgentTextDelta>(), hasLength(1));
+    expect(second.whereType<AgentTextDelta>(), hasLength(1));
   });
 
   test('delivers chat deletion to the open chat session', () async {
@@ -669,6 +699,7 @@ void main() {
       }
     });
     addTearDown(sub.cancel);
+    await remote.syncChatSubscriptions();
 
     backend.emit(
       AgentQueueChanged('c1', [const QueuedPrompt.user('queued')], revision: 3),
@@ -699,6 +730,7 @@ void main() {
         }
       });
       addTearDown(sub.cancel);
+      await remote.syncChatSubscriptions();
 
       backend.emit(
         AgentQueueChanged('c1', const [
@@ -994,6 +1026,35 @@ void main() {
     // продолжение сессии по одному id без секрета запрещено.
     expect(sessions.single.id, isNot(remote.sessionId));
     expect(sessions.single.id, hasLength(8));
+  });
+
+  test('presence changes from another client arrive as a snapshot', () async {
+    await remote.startEvents();
+    await remote.eventsReady;
+
+    final seen = Completer<List<ClientSessionView>>();
+    final sub = remote.clientSessions.listen((items) {
+      final hasSecondPresence = items.any(
+        (session) => session.activeChatId == 'c1',
+      );
+      if (items.length > 1 && hasSecondPresence && !seen.isCompleted) {
+        seen.complete(items);
+      }
+    });
+    addTearDown(sub.cancel);
+
+    final second = RemoteAgentApi(baseUri: remote.baseUri, token: _token);
+    addTearDown(second.dispose);
+    second.setPresence(focused: true, activeChatId: 'c1');
+
+    // Событие несёт снимок целиком: первый клиент не делает отдельный GET.
+    final sessions = await seen.future.timeout(const Duration(seconds: 3));
+    expect(sessions, hasLength(2));
+    expect(
+      sessions.where((session) => session.activeChatId == 'c1'),
+      hasLength(1),
+    );
+    expect(sessions.where((session) => session.current), hasLength(1));
   });
 
   test('presence refresh reads the session list back', () async {
@@ -1444,6 +1505,94 @@ void main() {
     // схлопнуться в одно уведомление.
     await Future<void>.delayed(const Duration(milliseconds: 50));
     expect(reconnects, hasLength(1));
+  });
+
+  test('a server restart does not freeze the presence snapshot', () async {
+    var instance = 'instance-1';
+    var presenceRevision = 5;
+    var sessionId = 's1';
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    Map<String, Object?> sessionJson(String id) => {
+      'id': id,
+      'deviceId': 'device-1',
+      'clientApp': 'ProbablyWorks',
+      'clientVersion': '1.0.0',
+      'clientBuild': '1',
+      'clientPlatform': 'web',
+      'createdAt': expiresAt,
+      'lastSeenAt': expiresAt,
+      'expiresAt': expiresAt,
+      'focused': false,
+      'online': true,
+      'current': true,
+    };
+
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    httpServer.listen((request) async {
+      await request.drain<void>();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/api/v1/client/handshake':
+          response.write(
+            jsonEncode({
+              'sessionId': sessionId,
+              'instanceId': instance,
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        case '/api/v1/client/sessions':
+          response.write(
+            jsonEncode({
+              'currentSessionId': sessionId,
+              'instanceId': instance,
+              'presenceRevision': presenceRevision,
+              'sessions': [sessionJson(sessionId)],
+            }),
+          );
+        case '/api/v1/health':
+          response.write(
+            jsonEncode({'ok': true, 'version': '1', 'instanceId': instance}),
+          );
+        default:
+          response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    final before = await api.refreshClientSessions();
+    expect(before.single.id, 's1');
+    expect(api.instanceId, 'instance-1');
+
+    final updated = api.clientSessions
+        .firstWhere((items) => items.any((session) => session.id == 's2'))
+        .timeout(const Duration(seconds: 2));
+
+    // Перезапуск сервера: новый экземпляр начинает нумерацию ревизий заново.
+    instance = 'instance-2';
+    presenceRevision = 1;
+    sessionId = 's2';
+    expect(await api.checkConnection(), isTrue);
+    expect(api.instanceId, 'instance-2');
+
+    // Снимок применит сверка после смены экземпляра или явный запрос: низкая
+    // ревизия нового сервера больше не считается устаревшей.
+    unawaited(api.refreshClientSessions());
+    final sessions = await updated;
+    expect(sessions.single.id, 's2');
   });
 
   test('dispose keeps a session stored by another instance', () async {

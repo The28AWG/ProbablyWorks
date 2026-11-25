@@ -152,6 +152,16 @@ class RemoteAgentApi
   Future<void>? _presenceInFlight;
   bool _presenceDirty = false;
 
+  /// Чаты, тяжёлые события которых нужны открытым экранам этого клиента.
+  ///
+  /// Счётчик, а не множество: один чат может слушать несколько подписчиков,
+  /// и событие перестаёт быть нужным только после последнего. Сервер отдаёт
+  /// дельты, очередь и сообщения лишь для этих чатов, а глобальный поток
+  /// остаётся лёгким.
+  final _chatSubscriptions = <String, int>{};
+  Future<void>? _subscriptionsInFlight;
+  bool _subscriptionsDirty = false;
+
   static const _clientSessionHeader = 'x-client-session';
 
   /// Сессия текущего клиента. null — рукопожатие ещё не выполнено.
@@ -259,6 +269,13 @@ class RemoteAgentApi
   /// перезаписывать более новый снимок.
   int _clientSessionsRefreshSequence = 0;
 
+  /// Последняя применённая ревизия снимка присутствия.
+  ///
+  /// Событие `clientSessionsChanged` несёт снимок целиком, но HTTP-ответ
+  /// мог быть отправлен раньше события. Сравнение ревизий не даёт старому
+  /// ответу перезаписать свежий снимок и наоборот.
+  int _clientSessionsRevision = -1;
+
   /// Последний принятый снимок списка сессий.
   ///
   /// Хранится отдельно, потому что отклонённый устаревший ответ нельзя отдавать
@@ -273,6 +290,14 @@ class RemoteAgentApi
   final _mcpStateChanges = StreamController<McpServerState>.broadcast();
   final _stateChanges = StreamController<String>.broadcast();
   final _draftChanges = StreamController<String>.broadcast();
+
+  /// Области, о которых уже сообщили, но ещё не отдали подписчикам.
+  ///
+  /// Всплеск `stateAreaChanged` или несколько сообщений подряд приходят
+  /// почти одновременно. Склейка не даёт списку чатов перечитываться на
+  /// каждое событие, а подписчикам — получать промежуточные снимки.
+  final _pendingStateAreas = <String>{};
+  Timer? _stateFlushTimer;
   McpSnapshot? _mcpSnapshot;
 
   static const _uuid = Uuid();
@@ -325,6 +350,102 @@ class RemoteAgentApi
 
   @override
   Stream<AgentEvent> get events => _events.stream;
+
+  /// Поток событий одного чата и подписка на его тяжёлые SSE-события.
+  ///
+  /// Поток широковещательный, как и у локальной сессии: несколько слушателей
+  /// получают одни и те же события. Пока поток слушают, чат входит в набор
+  /// подписок сервера: только для него приходят дельты ответа, полная очередь
+  /// и сообщения. После последнего слушателя набор сжимается, и окно
+  /// перестаёт получать чужой трафик.
+  Stream<AgentEvent> _chatEvents(String chatId) {
+    late StreamController<AgentEvent> controller;
+    StreamSubscription<AgentEvent>? upstream;
+
+    void subscribe() {
+      _chatSubscriptions.update(
+        chatId,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
+      unawaited(_syncChatSubscriptions());
+      upstream = _events.stream
+          .where((event) => event.chatId == chatId)
+          .listen(
+            controller.add,
+            onError: (Object error, StackTrace stack) =>
+                controller.addError(error, stack),
+            onDone: () => unawaited(controller.close()),
+          );
+    }
+
+    void unsubscribe() {
+      // Захватываем подписку до нового onListen: широковещательный поток
+      // можно слушать повторно, и старый onCancel не должен отменить новый.
+      final current = upstream;
+      upstream = null;
+      final remaining = (_chatSubscriptions[chatId] ?? 1) - 1;
+      if (remaining <= 0) {
+        _chatSubscriptions.remove(chatId);
+      } else {
+        _chatSubscriptions[chatId] = remaining;
+      }
+      unawaited(_syncChatSubscriptions());
+      unawaited(current?.cancel());
+    }
+
+    controller = StreamController<AgentEvent>.broadcast(
+      onListen: subscribe,
+      onCancel: unsubscribe,
+    );
+    return controller.stream;
+  }
+
+  /// Отправляет серверу актуальный набор открытых чатов.
+  ///
+  /// Запросы сериализуются: если набор изменился во время отправки, уходит
+  /// последнее состояние, а не накопленная очередь. Так сервер не получает
+  /// промежуточный набор после свежего из-за перестановки сети.
+  Future<void> _syncChatSubscriptions() {
+    if (_disposed) return Future<void>.value();
+    _subscriptionsDirty = true;
+    final inFlight = _subscriptionsInFlight;
+    if (inFlight != null) return inFlight;
+    final done = Completer<void>();
+    _subscriptionsInFlight = done.future;
+    unawaited(_drainChatSubscriptions(done));
+    return done.future;
+  }
+
+  /// Завершается, когда сервер получил актуальный набор открытых чатов.
+  ///
+  /// Обычно ждать не нужно: снимок чата читается после подписки. Метод нужен
+  /// сценариям и тестам, где важно не потерять самое первое тяжёлое событие,
+  /// пришедшее сразу после открытия потока.
+  Future<void> syncChatSubscriptions() => _syncChatSubscriptions();
+
+  Future<void> _drainChatSubscriptions(Completer<void> done) async {
+    try {
+      while (_subscriptionsDirty && !_disposed) {
+        _subscriptionsDirty = false;
+        final chatIds = _chatSubscriptions.keys.toList()..sort();
+        try {
+          await _send(
+            'PUT',
+            '/client/subscriptions',
+            body: {'chatIds': chatIds},
+          );
+        } on Object {
+          // Старый сервер не знает маршрут, а сеть может быть недоступна.
+          // Следующее открытие чата или переподключение повторит попытку.
+          break;
+        }
+      }
+    } finally {
+      _subscriptionsInFlight = null;
+      if (!done.isCompleted) done.complete();
+    }
+  }
 
   @override
   Stream<ApprovalRequest> get approvals => _approvals.stream;
@@ -386,11 +507,37 @@ class RemoteAgentApi
     final json = await _get('/client/sessions');
     final sessions = _clientSessionsFrom(json);
     if (sequence != _clientSessionsRefreshSequence) return _clientSessions;
+    final revision = json['presenceRevision'];
+    if (revision is num && revision.toInt() < _clientSessionsRevision) {
+      return _clientSessions;
+    }
+    if (revision is num) _clientSessionsRevision = revision.toInt();
     _clientSessions = sessions;
     if (!_clientSessionChanges.isClosed) {
       _clientSessionChanges.add(sessions);
     }
     return sessions;
+  }
+
+  /// Применяет снимок присутствия из события, не делая отдельный запрос.
+  ///
+  /// Устаревший снимок отбрасывается по монотонной ревизии: событие и
+  /// HTTP-ответ могут прийти в любом порядке.
+  void _applyClientSessions(Map<String, dynamic> json) {
+    final revision = json['presenceRevision'];
+    if (revision is num) {
+      final value = revision.toInt();
+      if (value < _clientSessionsRevision) return;
+      _clientSessionsRevision = value;
+    }
+    final sessions = _clientSessionsFrom(json);
+    // Событие уже новее любого запроса, начатого до него. Увеличиваем номер,
+    // чтобы запоздавший ответ не перезаписал этот снимок.
+    _clientSessionsRefreshSequence++;
+    _clientSessions = sessions;
+    if (!_clientSessionChanges.isClosed) {
+      _clientSessionChanges.add(sessions);
+    }
   }
 
   @override
@@ -461,6 +608,10 @@ class RemoteAgentApi
     _disposed = true;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    _stateFlushTimer?.cancel();
+    _stateFlushTimer = null;
+    _pendingStateAreas.clear();
+    _chatSubscriptions.clear();
     final session = _sessionId;
     if (session != null) {
       try {
@@ -1494,7 +1645,24 @@ class RemoteAgentApi
   }
 
   void _publishState(String area) {
-    if (!_stateChanges.isClosed) _stateChanges.add(area);
+    if (_stateChanges.isClosed) return;
+    _pendingStateAreas.add(area);
+    _stateFlushTimer ??= Timer(
+      const Duration(milliseconds: 30),
+      _flushStateAreas,
+    );
+  }
+
+  void _flushStateAreas() {
+    _stateFlushTimer?.cancel();
+    _stateFlushTimer = null;
+    if (_stateChanges.isClosed || _pendingStateAreas.isEmpty) return;
+    final areas = [..._pendingStateAreas];
+    _pendingStateAreas.clear();
+    for (final area in areas) {
+      if (_stateChanges.isClosed) return;
+      _stateChanges.add(area);
+    }
   }
 
   @override
@@ -1695,6 +1863,10 @@ class RemoteAgentApi
     _questionChats.clear();
     _editsById.clear();
     _editChats.clear();
+    // Снимок присутствия тоже принадлежит прошлому экземпляру: сервер
+    // начинает нумерацию ревизий заново, и без сброса все новые события
+    // выглядели бы устаревшими, а список экранов застыл бы на старых данных.
+    _clientSessionsRevision = -1;
     _notifyReconnect();
   }
 
@@ -1819,6 +1991,7 @@ class RemoteAgentApi
     scheduleMicrotask(() {
       _reconnectPending = false;
       if (_disposed) return;
+      _flushStateAreas();
       if (!_stateChanges.isClosed) _stateChanges.add('reconnect');
       if (!_reconnects.isClosed) _reconnects.add(null);
       if (_sessionId == null) return;
@@ -1878,6 +2051,10 @@ class RemoteAgentApi
     while (!_disposed) {
       try {
         await _ensureSession();
+        // Набор открытых чатов живёт на сессии и теряется при её истечении.
+        // Повторяем его при каждом подключении, но не ждём: недоступный
+        // сервер не должен задерживать сам SSE на таймаут REST-запроса.
+        unawaited(_syncChatSubscriptions());
         final session = _sessionId;
         if (session == null) {
           throw const AgentApiException(
@@ -2042,7 +2219,12 @@ class RemoteAgentApi
           EditFileChangesResolved(chatId: chatId, requestId: id),
         );
       case 'clientSessionsChanged':
-        unawaited(_refreshClientSessionsQuietly());
+        if (json['sessions'] is List) {
+          _applyClientSessions(json);
+        } else {
+          // Старый сервер присылал пустое событие: снимок читается запросом.
+          unawaited(_refreshClientSessionsQuietly());
+        }
       case 'turnStarted':
         final chatId = _string(json, 'chatId');
         _running.add(chatId);
@@ -3307,8 +3489,7 @@ final class _RemoteChatSession implements ChatSessionApi {
       _api._turnSnapshots[_chatId] ?? const TurnSnapshot();
 
   @override
-  Stream<AgentEvent> get events =>
-      _api.events.where((event) => event.chatId == _chatId);
+  Stream<AgentEvent> get events => _api._chatEvents(_chatId);
 
   @override
   Future<void> submit(

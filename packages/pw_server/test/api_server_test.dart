@@ -1295,6 +1295,59 @@ void main() {
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
   });
 
+  test('sends stateAreaChanged before chatChanged', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    // Сохранение чата публикует область `chats` до того, как маршрут
+    // запланирует `chatChanged`; окна должны получить их в этом же порядке.
+    backend.onUpdateChat = () => domainChanges.publish(SharedResource.chats);
+    addTearDown(() => backend.onUpdateChat = null);
+
+    final (status, _) = await _request(
+      client,
+      base,
+      'PATCH',
+      '/api/v1/chats/c1',
+      token: _token,
+      body: {'title': 'Renamed'},
+    );
+    expect(status, HttpStatus.noContent);
+
+    final seen = <(String, Map<String, dynamic>)>[];
+    String? event;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current.replaceFirst('event:', '').trim();
+      } else if (lines.current.startsWith('data:') && event != null) {
+        final data = Map<String, dynamic>.from(
+          jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+        );
+        if (event == 'stateAreaChanged' || event == 'chatChanged') {
+          seen.add((event, data));
+        }
+        if (seen.length == 2) break;
+      }
+    }
+    await lines.cancel();
+
+    expect(
+      [for (final (name, _) in seen) name],
+      ['stateAreaChanged', 'chatChanged'],
+    );
+    expect(seen.first.$2['area'], 'chats');
+    expect(seen.last.$2['chatId'], 'c1');
+  });
+
   test('streams chatDeleted after a chat is removed', () async {
     final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
@@ -1479,6 +1532,85 @@ void main() {
     await lines.cancel();
     expect(event, 'event: turnStarted');
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
+  });
+
+  test('coalesces text deltas into one SSE event', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend
+      ..emit(const AgentTextDelta('c1', 'one '))
+      ..emit(const AgentTextDelta('c1', 'two '))
+      ..emit(const AgentTextDelta('c1', 'three'));
+
+    String? event;
+    Map<String, dynamic>? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current.replaceFirst('event:', '').trim();
+      } else if (lines.current.startsWith('data:') && event != null) {
+        data = Map<String, dynamic>.from(
+          jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+        );
+        if (event == 'textDelta') break;
+      }
+    }
+    await lines.cancel();
+
+    expect(event, 'textDelta');
+    expect(data!['text'], 'one two three');
+    expect(data['reset'], isFalse);
+  });
+
+  test('a reset discards deltas accumulated before it', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend
+      ..emit(const AgentTextDelta('c1', 'old'))
+      ..emit(const AgentTextDelta('c1', '', reset: true))
+      ..emit(const AgentTextDelta('c1', 'new'));
+
+    String? event;
+    Map<String, dynamic>? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current.replaceFirst('event:', '').trim();
+      } else if (lines.current.startsWith('data:') && event != null) {
+        data = Map<String, dynamic>.from(
+          jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+        );
+        if (event == 'textDelta') break;
+      }
+    }
+    await lines.cancel();
+
+    // «old» попал в ту же пачку до reset и не должен дойти до клиента.
+    expect(event, 'textDelta');
+    expect(data!['text'], 'new');
+    expect(data['reset'], isTrue);
   });
 
   test('streams unknown context window in usage events', () async {
@@ -2468,6 +2600,190 @@ void main() {
       },
     );
 
+    test(
+      'subscriptions keep heavy events of other chats off the wire',
+      () async {
+        final request = await client.getUrl(
+          Uri.parse('$sessionBase/api/v1/events'),
+        );
+        request.headers
+          ..set(HttpHeaders.authorizationHeader, 'Bearer $_token')
+          ..set('x-client-session', sessionId);
+        final response = await request.close();
+        final lines = StreamIterator(
+          response
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())
+              .timeout(const Duration(seconds: 3)),
+        );
+        expect(await lines.moveNext(), isTrue);
+        expect(lines.current, ': connected');
+
+        final (status, _) = await _request(
+          client,
+          sessionBase,
+          'PUT',
+          '/api/v1/client/subscriptions',
+          token: _token,
+          session: sessionId,
+          body: {
+            'chatIds': ['c1'],
+          },
+        );
+        expect(status, HttpStatus.noContent);
+
+        backend
+          ..emit(const AgentTextDelta('c2', 'hidden'))
+          ..emit(
+            AgentQueueChanged('c2', [
+              const QueuedPrompt.user('hidden'),
+            ], revision: 1),
+          )
+          ..emit(const AgentTextDelta('c1', 'shown'))
+          // Лёгкий маркер: всё, что было до него, уже пришло в поток.
+          ..emit(const AgentTurnFinished('c2', TurnEnd.completed));
+
+        final seen = <(String, Map<String, dynamic>)>[];
+        String? event;
+        while (await lines.moveNext()) {
+          if (lines.current.startsWith('event:')) {
+            event = lines.current.replaceFirst('event:', '').trim();
+          } else if (lines.current.startsWith('data:') && event != null) {
+            final data = Map<String, dynamic>.from(
+              jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+            );
+            seen.add((event, data));
+            if (event == 'turnFinished' && data['chatId'] == 'c2') break;
+          }
+        }
+        await lines.cancel();
+
+        expect(
+          [
+            for (final (name, data) in seen)
+              if (name == 'textDelta') data['chatId'],
+          ],
+          ['c1'],
+        );
+        expect(seen.where((entry) => entry.$1 == 'queueChanged'), isEmpty);
+      },
+    );
+
+    test('a message in an unopened chat becomes a light list change', () async {
+      final request = await client.getUrl(
+        Uri.parse('$sessionBase/api/v1/events'),
+      );
+      request.headers
+        ..set(HttpHeaders.authorizationHeader, 'Bearer $_token')
+        ..set('x-client-session', sessionId);
+      final response = await request.close();
+      final lines = StreamIterator(
+        response
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .timeout(const Duration(seconds: 3)),
+      );
+      expect(await lines.moveNext(), isTrue);
+      expect(lines.current, ': connected');
+
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/subscriptions',
+        token: _token,
+        session: sessionId,
+        body: {'chatIds': <String>[]},
+      );
+      expect(status, HttpStatus.noContent);
+
+      backend.emit(
+        AgentMessageAdded(
+          'c2',
+          ChatMessage(
+            id: 'm2',
+            chatId: 'c2',
+            seq: 1,
+            role: MessageRole.assistant,
+            createdAt: DateTime.utc(2026, 11, 24, 12),
+            text: 'not for this window',
+          ),
+        ),
+      );
+
+      String? event;
+      Map<String, dynamic>? data;
+      var sawMessage = false;
+      while (await lines.moveNext()) {
+        if (lines.current.startsWith('event:')) {
+          event = lines.current.replaceFirst('event:', '').trim();
+        } else if (lines.current.startsWith('data:') && event != null) {
+          data = Map<String, dynamic>.from(
+            jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+          );
+          if (event == 'messageAdded') sawMessage = true;
+          if (event == 'stateAreaChanged') break;
+        }
+      }
+      await lines.cancel();
+
+      expect(event, 'stateAreaChanged');
+      expect(data!['area'], 'chats');
+      expect(sawMessage, isFalse);
+    });
+
+    test('clientSessionsChanged carries the presence snapshot', () async {
+      final request = await client.getUrl(
+        Uri.parse('$sessionBase/api/v1/events'),
+      );
+      request.headers
+        ..set(HttpHeaders.authorizationHeader, 'Bearer $_token')
+        ..set('x-client-session', sessionId);
+      final response = await request.close();
+      final lines = StreamIterator(
+        response
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .timeout(const Duration(seconds: 3)),
+      );
+      expect(await lines.moveNext(), isTrue);
+      expect(lines.current, ': connected');
+
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {'focused': true, 'activeChatId': 'c1', 'presenceRevision': 1},
+      );
+      expect(status, HttpStatus.ok);
+
+      String? event;
+      Map<String, dynamic>? data;
+      while (await lines.moveNext()) {
+        if (lines.current.startsWith('event:')) {
+          event = lines.current.replaceFirst('event:', '').trim();
+        } else if (lines.current.startsWith('data:') && event != null) {
+          data = Map<String, dynamic>.from(
+            jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+          );
+          if (event == 'clientSessionsChanged') break;
+        }
+      }
+      await lines.cancel();
+
+      expect(event, 'clientSessionsChanged');
+      expect(data, isNotNull);
+      expect(data!['presenceRevision'], isA<int>());
+      final sessions = (data['sessions'] as List).cast<Map>();
+      expect(sessions, hasLength(1));
+      expect(sessions.single['current'], isTrue);
+      expect(sessions.single['focused'], isTrue);
+      expect(sessions.single['activeChatId'], 'c1');
+    });
+
     test('delete closes the session', () async {
       final (status, _) = await _request(
         client,
@@ -2551,6 +2867,9 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   var stopped = 0;
   List<String> deletedChatIds = const [];
   final searchQueries = <SearchQuery>[];
+
+  /// Хук для проверки порядка событий: вызывается внутри `updateChat`.
+  void Function()? onUpdateChat;
   Completer<void>? chatsGate;
   Completer<void>? chatsStarted;
   Object? chatsError;
@@ -2670,6 +2989,7 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
     String? workspace,
     bool workspaceSpecified = false,
   }) async {
+    onUpdateChat?.call();
     updatedTitle = title;
     updatedModel = model;
     updatedPolicy = policyMode;

@@ -209,6 +209,16 @@ final class ClientSession {
   /// начинал бы нумерацию заново, и сервер отклонял бы его обновления как
   /// устаревшие.
   int presenceRevision = 0;
+
+  /// Чаты, тяжёлые события которых нужны этому экрану.
+  ///
+  /// `null` — клиент ещё не присылал список подписок: для совместимости со
+  /// старыми клиентами сервер отдаёт ему все события, как раньше. Пустое
+  /// множество — клиент явно сказал, что ни один чат не открыт, и тяжёлые
+  /// события не нужны. Полный поток нужен только для дельт ответа, очереди,
+  /// сообщений и снимка хода; карточки, удаление чата и присутствие остаются
+  /// глобальными, иначе другое окно не узнало бы о запросе подтверждения.
+  Set<String>? chatSubscriptions;
 }
 
 /// Причина, по которой сессия не подошла.
@@ -257,6 +267,14 @@ final class ClientSessionRegistry {
   final Map<String, ClientSession> _sessions = {};
   Timer? _sweepTimer;
   final _changes = StreamController<void>.broadcast();
+  var _revision = 0;
+
+  /// Монотонная ревизия снимка присутствия.
+  ///
+  /// Растёт при каждом реальном изменении состава или присутствия. Клиент
+  /// сравнивает её у события и у ответа `GET /client/sessions`: поздний, но
+  /// более старый снимок не должен перезаписать свежий.
+  int get revision => _revision;
 
   /// События изменения состава сессий или присутствия. Сами данные читаются
   /// через [list], чтобы подписчик не держал устаревший снимок.
@@ -373,6 +391,20 @@ final class ClientSessionRegistry {
       revision: revision,
     );
     if (changed) _notify();
+    return session;
+  }
+
+  /// Заменяет набор чатов, тяжёлые события которых получает сессия.
+  ///
+  /// Список приходит от клиента при открытии и закрытии чата. Он не влияет на
+  /// присутствие и не рассылает событие соседям: это транспортная настройка
+  /// конкретного окна, а не состояние, которое видит пользователь.
+  ClientSession? updateChatSubscriptions(String id, Set<String> chatIds) {
+    final session = _sessions[id];
+    if (session == null) return null;
+    session
+      ..touch(now)
+      ..chatSubscriptions = {...chatIds};
     return session;
   }
 
@@ -496,6 +528,7 @@ final class ClientSessionRegistry {
   }
 
   void _notify() {
+    _revision++;
     if (!_changes.isClosed) _changes.add(null);
   }
 

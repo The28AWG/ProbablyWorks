@@ -85,9 +85,19 @@ final class ApiServer {
     // своё событие в общий _stateEvents и N клиентов получали бы N^2 копий.
     _sessionChangesSub = _clientSessions.changes.listen((_) {
       if (!_stateEvents.isClosed) {
-        _stateEvents.add(const _ClientSessionsChanged());
+        // Снимок уходит вместе с событием: иначе каждое окно после смены
+        // присутствия делало бы отдельный GET /client/sessions, и нагрузка
+        // росла бы вместе с числом экранов.
+        final at = _clientSessions.now;
+        _stateEvents.add(
+          _ClientSessionsChanged([
+            for (final session in _clientSessions.list())
+              _clientSessionJson(session, current: false, now: at),
+          ], _clientSessions.revision),
+        );
       }
     });
+
     // Доменные сервисы публикуют изменения сами. Путь-`switch` больше не
     // решает, что синхронизировать: новый маршрут поверх сервиса получает
     // событие автоматически.
@@ -150,6 +160,21 @@ final class ApiServer {
   late final StreamSubscription<SharedResource>? _domainChangesSub;
   StreamSubscription<void>? _settingsChangesSub;
 
+  /// Области, об изменении которых уже сообщили, но ещё не отправили событие.
+  ///
+  /// Всплеск `stateAreaChanged` склеивается: одно сообщение агента, смена
+  /// заголовка и пересчёт проекта могут прийти почти одновременно, а окнам
+  /// достаточно перечитать снимок один раз.
+  final _pendingStateAreas = <String>{};
+
+  /// Чаты, изменение которых уже случилось, но `chatChanged` ещё не отправлен.
+  ///
+  /// Копится в том же окне, что и [_pendingStateAreas], чтобы общий
+  /// `stateAreaChanged` ушёл раньше: подписчики списков должны сначала
+  /// увидеть изменение ресурса.
+  final _pendingChatChanges = <String>{};
+  Timer? _stateFlushTimer;
+
   /// Необязательный поток изменений доменных сервисов.
   ///
   /// В демоне это общий `DomainChangeBus`; тестовый сервер без него работает
@@ -192,6 +217,10 @@ final class ApiServer {
     await _sessionChangesSub.cancel();
     await _domainChangesSub?.cancel();
     await _settingsChangesSub?.cancel();
+    _stateFlushTimer?.cancel();
+    _stateFlushTimer = null;
+    _pendingStateAreas.clear();
+    _pendingChatChanges.clear();
     _clientSessions.dispose();
     await _stateEvents.close();
     await _server?.close(force: true);
@@ -553,12 +582,43 @@ final class ApiServer {
         platform: _clientHeader(request, 'x-client-platform') ?? '',
       );
 
+  /// Публикует изменение общей области, склеивая близкие всплески.
+  ///
+  /// Задержка в несколько десятков миллисекунд незаметна интерфейсу, но
+  /// поток сообщений агента больше не заставляет каждое окно перечитывать
+  /// список чатов на каждое сообщение.
   void _emitState(String area) {
-    if (!_stateEvents.isClosed) _stateEvents.add(_StateChanged(area));
+    if (_stateEvents.isClosed) return;
+    _pendingStateAreas.add(area);
+    _scheduleStateFlush();
   }
 
-  void _emitChatChanged(String chatId) {
-    if (!_stateEvents.isClosed) _stateEvents.add(_ChatChanged(chatId));
+  /// Запускает общее окно отправки областей и отложенных `chatChanged`.
+  void _scheduleStateFlush() {
+    _stateFlushTimer ??= Timer(
+      const Duration(milliseconds: 50),
+      _flushStateAreas,
+    );
+  }
+
+  void _flushStateAreas() {
+    _stateFlushTimer?.cancel();
+    _stateFlushTimer = null;
+    if (_stateEvents.isClosed) return;
+    final areas = [..._pendingStateAreas];
+    _pendingStateAreas.clear();
+    for (final area in areas) {
+      if (_stateEvents.isClosed) return;
+      _stateEvents.add(_StateChanged(area));
+    }
+    // `chatChanged` идёт следом за областями: подписчики списков сначала
+    // видят изменение ресурса, а затем уточнение по конкретному чату.
+    final chatIds = [..._pendingChatChanges];
+    _pendingChatChanges.clear();
+    for (final chatId in chatIds) {
+      if (_stateEvents.isClosed) return;
+      _stateEvents.add(_ChatChanged(chatId));
+    }
   }
 
   /// Сообщает всем клиентам, что чат удалён. Экран, где он был открыт,
@@ -567,11 +627,16 @@ final class ApiServer {
     if (!_stateEvents.isClosed) _stateEvents.add(_ChatDeleted(chatId));
   }
 
-  /// Откладывает `chatChanged` на микрозадачу: общий `stateAreaChanged`
-  /// должен уйти первым, чтобы существующие подписчики списков не меняли
-  /// порядок обработки.
+  /// Откладывает `chatChanged` в то же окно, что и `stateAreaChanged`.
+  ///
+  /// Общий список чатов должен сначала увидеть изменение ресурса, поэтому
+  /// `chatChanged` отправляется в конце окна, после областей. Микрозадача
+  /// здесь не подходит: `_emitState` теперь откладывает области на таймер, и
+  /// `chatChanged` обогнал бы их.
   void _scheduleChatChanged(String chatId) {
-    scheduleMicrotask(() => _emitChatChanged(chatId));
+    if (_stateEvents.isClosed) return;
+    _pendingChatChanges.add(chatId);
+    _scheduleStateFlush();
   }
 
   Future<void> _route(HttpRequest request) async {
@@ -888,6 +953,11 @@ final class ApiServer {
         request.method == 'GET') {
       return _clientSessionList(request);
     }
+    if (rest.length == 1 &&
+        rest.first == 'subscriptions' &&
+        request.method == 'PUT') {
+      return _updateChatSubscriptions(request);
+    }
     throw const AgentApiException(
       HttpStatus.notFound,
       'not_found',
@@ -1035,12 +1105,52 @@ final class ApiServer {
           ? null
           : ApiAccessLog.fingerprint(current),
       'instanceId': instanceId,
+      'presenceRevision': _clientSessions.revision,
       'sessions': [
         for (final session in sessions)
           _clientSessionJson(session, current: session.id == current, now: at),
       ],
     });
     return Future<void>.value();
+  }
+
+  /// Подписка экрана на тяжёлые события открытых чатов.
+  ///
+  /// Клиент присылает список при открытии и закрытии чата. Пока список не
+  /// пришёл, сессия получает все события как старый клиент; после первого
+  /// запроса сервер отдаёт дельты, очередь и сообщения только для указанных
+  /// чатов. Карточки, удаление чата и присутствие остаются глобальными.
+  Future<void> _updateChatSubscriptions(HttpRequest request) async {
+    final body = await _body(request);
+    final raw = body['chatIds'];
+    final chatIds = <String>{};
+    if (raw != null) {
+      if (raw is! List) {
+        throw const AgentApiException(
+          HttpStatus.badRequest,
+          'bad_subscriptions',
+          'chatIds must be a list of strings',
+        );
+      }
+      for (final item in raw) {
+        if (item is String && item.isNotEmpty) chatIds.add(item);
+      }
+    }
+    final sessionId = request.headers.value(_clientSessionHeader);
+    if (sessionId != null && sessionId.isNotEmpty) {
+      final session = _clientSessions.updateChatSubscriptions(
+        sessionId,
+        chatIds,
+      );
+      if (session == null) {
+        throw const AgentApiException(
+          HttpStatus.gone,
+          'session_expired',
+          'session is unknown or expired',
+        );
+      }
+    }
+    _json(request.response, HttpStatus.noContent, {});
   }
 
   Map<String, Object?> _clientSessionJson(
@@ -2559,11 +2669,26 @@ final class ApiServer {
     }
     response.write(': connected\n\n');
     await response.flush();
-    // Подписку ставим после flush: runtime может прислать снимок сразу,
-    // а запись в ответ во время flush недопустима.
-    final subscription = _allEvents().listen((event) {
-      if (!_matchesChat(event, filterChatId)) return;
-      final encoded = _event(event);
+    final currentSessionFingerprint = sessionId == null || sessionId.isEmpty
+        ? null
+        : ApiAccessLog.fingerprint(sessionId);
+
+    /// Тяжёлые события нужны только открытым чатам этого экрана.
+    ///
+    /// `null` — ограничения нет: старый клиент без подписок или явный
+    /// чат-фильтр в URL. Список читается на каждое событие, а не один раз при
+    /// подключении: клиент может открыть чат уже после установки SSE.
+    Set<String>? subscriptions() {
+      if (filterChatId != null) return null;
+      if (sessionId == null || sessionId.isEmpty) return null;
+      return _clientSessions.byId(sessionId)?.chatSubscriptions;
+    }
+
+    void writeEvent(Object event) {
+      final encoded = _event(
+        event,
+        currentSessionFingerprint: currentSessionFingerprint,
+      );
       try {
         response.write(
           'event: ${encoded.$1}\ndata: ${jsonEncode(encoded.$2)}\n\n',
@@ -2572,12 +2697,105 @@ final class ApiServer {
         // DELETE сессии или обрыв клиента уже закрыли ответ. Новые события
         // этому потоку не нужны, но общий поток не должен падать.
       }
+    }
+
+    // Дельты одного вида и чата склеиваются на коротком окне. Один токен —
+    // одно SSE-сообщение слишком дорого: заголовки события и JSON больше
+    // самого текста, а UI всё равно перерисовывается кадрами.
+    final pendingDeltas = <String, _PendingDelta>{};
+    Timer? deltaTimer;
+    void flushDeltas() {
+      deltaTimer?.cancel();
+      deltaTimer = null;
+      if (pendingDeltas.isEmpty) return;
+      final deltas = [...pendingDeltas.values];
+      pendingDeltas.clear();
+      for (final delta in deltas) {
+        try {
+          response.write(
+            'event: ${delta.event}\n'
+            'data: ${jsonEncode({'chatId': delta.chatId, 'text': delta.text.toString(), 'reset': delta.reset})}\n\n',
+          );
+        } on Object {
+          // Соединение закрыто: остальные дельты тоже не нужны.
+        }
+      }
+    }
+
+    void scheduleDeltaFlush() {
+      deltaTimer ??= Timer(const Duration(milliseconds: 40), flushDeltas);
+    }
+
+    // Сообщение чужого чата не отправляем, но списку чатов нужно знать, что
+    // оно появилось. Одно лёгкое событие на всплеск вместо полного текста.
+    Timer? chatListTimer;
+    void scheduleChatListChanged() {
+      chatListTimer ??= Timer(const Duration(milliseconds: 50), () {
+        chatListTimer = null;
+        writeEvent(_StateChanged(SharedResource.chats.area));
+      });
+    }
+
+    // Подписку ставим после flush: runtime может прислать снимок сразу,
+    // а запись в ответ во время flush недопустима.
+    final subscription = _allEvents().listen((event) {
+      if (!_matchesChat(event, filterChatId)) return;
+      final subscribed = subscriptions();
+      if (event is AgentMessageAdded &&
+          subscribed != null &&
+          !subscribed.contains(event.chatId)) {
+        scheduleChatListChanged();
+        return;
+      }
+      if (subscribed != null && _isHeavyChatEvent(event)) {
+        final eventChatId = _eventChatId(event);
+        if (eventChatId == null || !subscribed.contains(eventChatId)) return;
+      }
+      switch (event) {
+        case AgentTextDelta():
+          final key = 'textDelta:${event.chatId}';
+          final current = pendingDeltas[key];
+          if (current == null || event.reset) {
+            pendingDeltas[key] = _PendingDelta(
+              'textDelta',
+              event.chatId,
+              event.reset,
+              StringBuffer(event.text),
+            );
+          } else {
+            current.text.write(event.text);
+          }
+          scheduleDeltaFlush();
+          return;
+        case AgentReasoningDelta():
+          final key = 'reasoningDelta:${event.chatId}';
+          final current = pendingDeltas[key];
+          if (current == null || event.reset) {
+            pendingDeltas[key] = _PendingDelta(
+              'reasoningDelta',
+              event.chatId,
+              event.reset,
+              StringBuffer(event.text),
+            );
+          } else {
+            current.text.write(event.text);
+          }
+          scheduleDeltaFlush();
+          return;
+        default:
+          // Всё, что идёт после дельт, должно попасть в поток после них.
+          flushDeltas();
+          writeEvent(event);
+      }
     });
     // Клиент, подключившийся посреди ответа, не получит уже отправленные
     // дельты. Сразу отдаём снимок текущего шага.
-    final snapshotChats = filterChatId == null
+    final subscribedNow = subscriptions();
+    final snapshotChats = filterChatId != null
+        ? {filterChatId}
+        : subscribedNow == null
         ? _backend.runningChatIds
-        : {filterChatId};
+        : _backend.runningChatIds.where(subscribedNow.contains).toSet();
     for (final snapshotChatId in snapshotChats) {
       final session = _chatApi?.session(snapshotChatId);
       final snapshot = session?.turnSnapshot;
@@ -2617,6 +2835,8 @@ final class ApiServer {
       // Клиент закрыл соединение.
     } finally {
       heartbeat.cancel();
+      deltaTimer?.cancel();
+      chatListTimer?.cancel();
       await subscription.cancel();
       _clients.remove(response);
       if (sessionId != null && sessionId.isNotEmpty) {
@@ -3170,21 +3390,40 @@ bool _matchesChat(Object event, String? chatId) {
       event is _ClientSessionsChanged) {
     return true;
   }
-  final eventChatId = switch (event) {
-    AgentEvent value => value.chatId,
-    ApprovalRequest value => value.chatId,
-    UserQuestion value => value.chatId,
-    EditFileChangesRequest value => value.chatId,
-    InteractionResolution value => value.chatId,
-    _ChatChanged value => value.chatId,
-    _ChatDeleted value => value.chatId,
-    _DraftChanged value => value.chatId,
-    _ => null,
-  };
+  final eventChatId = _eventChatId(event);
   return chatId == null || eventChatId == chatId;
 }
 
-(String, Map<String, Object?>) _event(Object event) => switch (event) {
+/// Тяжёлые события открытого чата: их не нужно рассылать во все окна.
+///
+/// Карточки (`approval`, `question`, `editFileChanges`), завершение хода,
+/// удаление чата и `stateChanged` остаются глобальными: они нужны бейджам,
+/// уведомлениям и закрытию экрана даже там, где чат не открыт.
+bool _isHeavyChatEvent(Object event) =>
+    event is AgentTextDelta ||
+    event is AgentReasoningDelta ||
+    event is AgentMessageAdded ||
+    event is AgentTurnSnapshot ||
+    event is AgentRunChanged ||
+    event is AgentUsageUpdated ||
+    event is AgentQueueChanged;
+
+String? _eventChatId(Object event) => switch (event) {
+  AgentEvent value => value.chatId,
+  ApprovalRequest value => value.chatId,
+  UserQuestion value => value.chatId,
+  EditFileChangesRequest value => value.chatId,
+  InteractionResolution value => value.chatId,
+  _ChatChanged value => value.chatId,
+  _ChatDeleted value => value.chatId,
+  _DraftChanged value => value.chatId,
+  _ => null,
+};
+
+(String, Map<String, Object?>) _event(
+  Object event, {
+  String? currentSessionFingerprint,
+}) => switch (event) {
   AgentTurnStarted value => ('turnStarted', {'chatId': value.chatId}),
   AgentTurnFinished value => (
     'turnFinished',
@@ -3265,9 +3504,16 @@ bool _matchesChat(Object event, String? chatId) {
   LocalModelsState value => ('localModels', value.toJson()),
   _ChatChanged value => ('chatChanged', {'chatId': value.chatId}),
   _ChatDeleted value => ('chatDeleted', {'chatId': value.chatId}),
-  _ClientSessionsChanged() => (
+  _ClientSessionsChanged value => (
     'clientSessionsChanged',
-    const <String, Object?>{},
+    {
+      'currentSessionId': currentSessionFingerprint,
+      'presenceRevision': value.revision,
+      'sessions': [
+        for (final session in value.sessions)
+          {...session, 'current': session['id'] == currentSessionFingerprint},
+      ],
+    },
   ),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
@@ -3291,8 +3537,16 @@ final class _ChatDeleted {
   final String chatId;
 }
 
+/// Снимок присутствия вместе с событием: окнам не нужен отдельный GET.
+///
+/// `current` выставляется при отправке конкретному соединению, потому что
+/// одно и то же событие получают все клиенты, а «текущая» сессия у каждого
+/// своя.
 final class _ClientSessionsChanged {
-  const _ClientSessionsChanged();
+  const _ClientSessionsChanged(this.sessions, this.revision);
+
+  final List<Map<String, Object?>> sessions;
+  final int revision;
 }
 
 final class _StateChanged {
@@ -3306,4 +3560,15 @@ final class _DraftChanged {
 
   final String chatId;
   final int revision;
+}
+
+/// Накопленная дельта ответа до ближайшего flush.
+final class _PendingDelta {
+  _PendingDelta(this.event, this.chatId, this.reset, this.text);
+
+  /// Имя SSE-события: `textDelta` или `reasoningDelta`.
+  final String event;
+  final String chatId;
+  final bool reset;
+  final StringBuffer text;
 }
