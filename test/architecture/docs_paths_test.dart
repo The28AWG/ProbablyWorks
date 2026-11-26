@@ -46,6 +46,12 @@ const _ignoredPrefixes = [
   'lib/l10n/generated/',
 ];
 
+/// Пути, которые документация называет будущими, а не существующими.
+///
+/// Список намеренно точный, а не префиксный: исключение не должно скрывать
+/// опечатки в реальных путях. Когда пакет появится, строку нужно убрать.
+const _plannedPaths = {'packages/pw_relay'};
+
 void main() {
   test('paths in documentation exist', () {
     final missing = <String>{};
@@ -56,6 +62,7 @@ void main() {
         if (!_looksLikePath(raw)) continue;
         final path = raw.startsWith('./') ? raw.replaceFirst('./', '') : raw;
         if (_ignoredPrefixes.any(path.startsWith)) continue;
+        if (_plannedPaths.contains(path)) continue;
         if (File(path).existsSync() || Directory(path).existsSync()) continue;
         missing.add('${file.path}: $raw');
       }
