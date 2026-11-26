@@ -117,6 +117,12 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
   Future<List<ClientSessionView>> refreshClientSessions() async => const [];
 
   @override
+  // ignore: no-empty-block, у встроенного агента нет внешних клиентских сессий
+  Future<void> closeClientSession(String id) async {
+    // Встроенный агент не имеет внешних клиентских сессий.
+  }
+
+  @override
   void setPresence({
     bool? focused,
     String? activeChatId,

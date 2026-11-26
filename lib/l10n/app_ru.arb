@@ -346,6 +346,28 @@
   "@chatPresenceClose": {
     "description": "Закрывает список клиентских сессий."
   },
+  "chatPresenceDisconnectScreen": "Отключить экран",
+  "@chatPresenceDisconnectScreen": {
+    "description": "Подсказка действия, которое убирает зависшую клиентскую сессию из списка подключённых экранов."
+  },
+  "chatPresenceDisconnectConfirm": "Отключить {device}? Если экран ещё открыт, он подключится заново.",
+  "@chatPresenceDisconnectConfirm": {
+    "description": "Подтверждение перед удалением чужого экрана. Действие убирает зависшую сессию и не отзывает доступ.",
+    "placeholders": {
+      "device": {
+        "type": "String",
+        "example": "ProbablyWorks 2.0.0 · linux · #a1b2c3"
+      }
+    }
+  },
+  "chatPresenceDisconnected": "Экран отключён",
+  "@chatPresenceDisconnected": {
+    "description": "Сообщение после удаления чужой клиентской сессии из списка подключённых экранов."
+  },
+  "chatPresenceDisconnectFailed": "Не удалось отключить экран",
+  "@chatPresenceDisconnectFailed": {
+    "description": "Сообщение, когда удалить чужую клиентскую сессию не получилось."
+  },
   "messageEditHint": "Правка запустит ход заново",
   "@messageEditHint": {
     "description": "Подсказка в поле правки сообщения. Отправка переписывает историю с этого сообщения."

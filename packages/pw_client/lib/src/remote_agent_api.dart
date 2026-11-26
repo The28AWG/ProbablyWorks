@@ -519,6 +519,19 @@ class RemoteAgentApi
     return sessions;
   }
 
+  /// Закрывает другое подключение по fingerprint из списка экранов.
+  ///
+  /// Сырой `sessionId` клиенту неизвестен, поэтому маршрут принимает тот же
+  /// короткий fingerprint, который отдаёт `GET /client/sessions`. Сервер
+  /// отвечает `204` и для уже исчезнувшей сессии: устаревший список не должен
+  /// превращать уборку в ошибку. Список перечитывается сразу, чтобы диалог
+  /// обновился даже без живого SSE.
+  @override
+  Future<void> closeClientSession(String id) async {
+    await _send('DELETE', '/client/sessions/${Uri.encodeComponent(id)}');
+    await _refreshClientSessionsQuietly();
+  }
+
   /// Применяет снимок присутствия из события, не делая отдельный запрос.
   ///
   /// Устаревший снимок отбрасывается по монотонной ревизии: событие и
@@ -2075,6 +2088,7 @@ class RemoteAgentApi
         if (response.statusCode == 401) {
           // Неверный токен не станет верным от повторного запроса: останавливаем
           // цикл, иначе клиент будет долбить сервер каждые несколько секунд.
+          await _discardResponse(response);
           _markStreamBroken();
           return;
         }
@@ -2085,8 +2099,10 @@ class RemoteAgentApi
           _sessionId = null;
         }
         if (response.statusCode != 200) {
+          final status = response.statusCode;
+          await _discardResponse(response);
           throw AgentApiException(
-            response.statusCode,
+            status,
             'events_failed',
             'SSE connection failed',
           );
@@ -2116,6 +2132,35 @@ class RemoteAgentApi
       }
       if (_disposed) break;
       await Future<void>.delayed(_nextReconnectDelay());
+    }
+  }
+
+  /// Дочитывает тело неуспешного SSE-ответа, чтобы освободить соединение.
+  ///
+  /// `HttpClient` держит сокет, пока поток ответа не прочитан до конца.
+  /// Раньше при повторяющихся `410`/`5xx` тело бросали как есть, и каждый
+  /// такой ответ оставлял соединение висеть. Ошибка чтения не важна:
+  /// соединение уже непригодно, а следующий цикл откроет новое. Ожидание
+  /// ограничено: сервер или прокси, который отдал ошибку с бесконечным телом,
+  /// не должен останавливать переподключение.
+  Future<void> _discardResponse(http.StreamedResponse response) async {
+    final finished = Completer<void>();
+    final subscription = response.stream.listen(
+      // ignore: no-empty-block, тело неуспешного ответа не нужно, важно дочитать его
+      (_) {},
+      onDone: () {
+        if (!finished.isCompleted) finished.complete();
+      },
+      onError: (Object _) {
+        if (!finished.isCompleted) finished.complete();
+      },
+      cancelOnError: true,
+    );
+    try {
+      await finished.future.timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // Тело не закончилось: отменяем чтение и освобождаем соединение.
+      await subscription.cancel();
     }
   }
 

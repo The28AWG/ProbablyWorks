@@ -90,6 +90,10 @@ class _FakeApi implements AgentApi, ClientSessionApi {
   @override
   Future<List<ClientSessionView>> refreshClientSessions() async => _sessions;
 
+  @override
+  // ignore: no-empty-block, тест не проверяет закрытие чужих сессий
+  Future<void> closeClientSession(String id) async {}
+
   /// Сколько раз тест попросил обновить присутствие.
   var presenceUpdates = 0;
 

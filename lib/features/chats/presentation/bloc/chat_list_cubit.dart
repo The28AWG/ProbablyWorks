@@ -146,6 +146,21 @@ class ChatListCubit extends Cubit<ChatListState> {
     }
   }
 
+  /// Убирает зависшее подключение другого экрана по fingerprint.
+  ///
+  /// Возвращает `false`, если API не умеет управлять сессиями или запрос не
+  /// прошёл: диалог покажет ошибку и оставит список открытым.
+  Future<bool> disconnectClientSession(String id) async {
+    final Object api = _api;
+    if (api is! ClientSessionApi) return false;
+    try {
+      await api.closeClientSession(id);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
   /// Пересчитывает бейджи: идёт ход или ждётся approve/ответ.
   void _refreshActivity() {
     if (isClosed) return;

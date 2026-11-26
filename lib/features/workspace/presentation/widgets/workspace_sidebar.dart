@@ -305,6 +305,7 @@ class _SidebarPresence extends StatelessWidget {
                 for (final chat in state.chats)
                   chat.id: chat.title.isEmpty ? l10n.chatsNew : chat.title,
               },
+              onCloseSession: cubit.disconnectClientSession,
             ),
           );
         },
@@ -335,6 +336,7 @@ class WorkspacePresenceRail extends StatelessWidget {
               for (final chat in state.chats)
                 chat.id: chat.title.isEmpty ? l10n.chatsNew : chat.title,
             },
+            onCloseSession: cubit.disconnectClientSession,
           );
         },
       );

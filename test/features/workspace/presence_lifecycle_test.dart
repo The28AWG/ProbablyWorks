@@ -26,6 +26,10 @@ final class _RecordingSessionApi implements ClientSessionApi {
   Future<List<ClientSessionView>> refreshClientSessions() async => const [];
 
   @override
+  // ignore: no-empty-block, тест не проверяет закрытие чужих сессий
+  Future<void> closeClientSession(String id) async {}
+
+  @override
   void setPresence({
     bool? focused,
     String? activeChatId,

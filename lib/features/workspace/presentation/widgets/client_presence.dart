@@ -105,6 +105,12 @@ List<ClientSessionDeviceGroup> groupClientSessions(
   return groups..sort(_compareGroups);
 }
 
+/// Убирает другое подключение по fingerprint из списка экранов.
+///
+/// Возвращает `true`, если сервер принял запрос. Ложный результат показывает
+/// ошибку в диалоге, но не закрывает список: пользователь может повторить.
+typedef ClientSessionCloser = Future<bool> Function(String sessionId);
+
 /// Открывает список подключённых экранов.
 ///
 /// [chatTitles] переводит `activeChatId` в название чата: сервер хранит только
@@ -114,14 +120,25 @@ Future<void> showClientPresenceDialog(
   required List<ClientSessionView> sessions,
   Stream<List<ClientSessionView>>? changes,
   Map<String, String> chatTitles = const {},
-}) => showDialog<void>(
-  context: context,
-  builder: (context) => ClientPresenceDialog(
-    sessions: sessions,
-    changes: changes,
-    chatTitles: chatTitles,
-  ),
-);
+  ClientSessionCloser? onCloseSession,
+}) async {
+  final disconnected = await showDialog<bool>(
+    context: context,
+    builder: (context) => ClientPresenceDialog(
+      sessions: sessions,
+      changes: changes,
+      chatTitles: chatTitles,
+      onCloseSession: onCloseSession,
+    ),
+  );
+  // Успех показываем после закрытия диалога: snackbar за модальным барьером
+  // был бы затемнён и легко терялся.
+  if (disconnected != true || !context.mounted) return;
+  AppSnackBar.show(
+    context,
+    AppLocalizations.of(context).chatPresenceDisconnected,
+  );
+}
 
 /// Кнопка присутствия: значок устройств со счётчиком других экранов.
 ///
@@ -133,6 +150,7 @@ class ClientPresenceIconButton extends StatelessWidget {
     this.changes,
     this.badgeCount,
     this.chatTitles = const {},
+    this.onCloseSession,
     super.key,
   });
 
@@ -150,6 +168,10 @@ class ClientPresenceIconButton extends StatelessWidget {
 
   /// Названия чатов по id для строк списка.
   final Map<String, String> chatTitles;
+
+  /// Действие «отключить экран». null — список только для чтения: встроенный
+  /// агент соседей не имеет, а без API закрывать нечего.
+  final ClientSessionCloser? onCloseSession;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +192,7 @@ class ClientPresenceIconButton extends StatelessWidget {
               sessions: sessions,
               changes: changes,
               chatTitles: chatTitles,
+              onCloseSession: onCloseSession,
             ),
     );
   }
@@ -188,12 +211,14 @@ class ClientPresenceDialog extends StatefulWidget {
     required this.sessions,
     this.changes,
     this.chatTitles = const {},
+    this.onCloseSession,
     super.key,
   });
 
   final List<ClientSessionView> sessions;
   final Stream<List<ClientSessionView>>? changes;
   final Map<String, String> chatTitles;
+  final ClientSessionCloser? onCloseSession;
 
   @override
   State<ClientPresenceDialog> createState() => _ClientPresenceDialogState();
@@ -208,6 +233,13 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
   /// раскрыть по нажатию. Состояние переживает обновления присутствия, пока
   /// устройство остаётся в списке.
   final Map<String, bool> _expanded = {};
+
+  /// Ошибка последней попытки отключить экран.
+  ///
+  /// Показывается внутри диалога, а не snackbar-ом: сообщение за модальным
+  /// барьером было бы затемнено, а пользователь должен увидеть, что попытка
+  /// не удалась, и повторить её.
+  String? _error;
 
   StreamSubscription<List<ClientSessionView>>? _changesSub;
 
@@ -278,6 +310,36 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
   bool _isExpanded(ClientSessionDeviceGroup group) =>
       _expanded[group.key] ?? group.sessions.length == 1;
 
+  /// Убирает чужое подключение после подтверждения.
+  ///
+  /// Закрытие чужого экрана — уборка зависшей сессии, а не отзыв доступа:
+  /// открытый экран пройдёт рукопожатие заново. Поэтому диалог не обещает,
+  /// что вкладка закроется. После успеха диалог закрывается, а ошибка
+  /// остаётся внутри него, чтобы попытку можно было повторить.
+  Future<void> _disconnect(ClientSessionView session) async {
+    final closer = widget.onCloseSession;
+    if (closer == null) return;
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await ConfirmDialog.confirm(
+      context,
+      title: l10n.chatPresenceDisconnectScreen,
+      message: l10n.chatPresenceDisconnectConfirm(
+        clientSessionTooltipLabel(session),
+      ),
+      cancelLabel: l10n.chatPresenceClose,
+      confirmLabel: l10n.chatPresenceDisconnectScreen,
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+    final disconnected = await closer(session.id);
+    if (!mounted) return;
+    if (disconnected) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() => _error = l10n.chatPresenceDisconnectFailed);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -303,6 +365,15 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
+              if (_error case final error?) ...[
+                AppBanner(
+                  margin: EdgeInsets.zero,
+                  tone: AppTone.danger,
+                  icon: Icons.error_outline,
+                  message: error,
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
               for (final group in groups)
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -313,6 +384,9 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
                       () => _expanded[group.key] = !_isExpanded(group),
                     ),
                     chatTitles: widget.chatTitles,
+                    onDisconnect: widget.onCloseSession == null
+                        ? null
+                        : _disconnect,
                   ),
                 ),
             ],
@@ -336,12 +410,16 @@ class _DeviceGroup extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.chatTitles,
+    required this.onDisconnect,
   });
 
   final ClientSessionDeviceGroup group;
   final bool expanded;
   final VoidCallback onToggle;
   final Map<String, String> chatTitles;
+
+  /// Подтверждает и убирает чужой экран. null — список только для чтения.
+  final Future<void> Function(ClientSessionView session)? onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -417,6 +495,11 @@ class _DeviceGroup extends StatelessWidget {
                         child: _SessionRow(
                           session: session,
                           chatTitle: chatTitles[session.activeChatId],
+                          onDisconnect: session.current
+                              ? null
+                              : onDisconnect == null
+                              ? null
+                              : () => onDisconnect!(session),
                         ),
                       ),
                   ],
@@ -430,10 +513,13 @@ class _DeviceGroup extends StatelessWidget {
 
 /// Строка сессии внутри устройства: fingerprint и состояние.
 class _SessionRow extends StatelessWidget {
-  const _SessionRow({required this.session, this.chatTitle});
+  const _SessionRow({required this.session, this.chatTitle, this.onDisconnect});
 
   final ClientSessionView session;
   final String? chatTitle;
+
+  /// Убирает этот экран. Для текущего и для списка только для чтения — null.
+  final VoidCallback? onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -477,6 +563,13 @@ class _SessionRow extends StatelessWidget {
             ),
           ),
         ),
+        if (onDisconnect != null)
+          IconButton(
+            tooltip: l10n.chatPresenceDisconnectScreen,
+            icon: const Icon(Icons.link_off, size: 18),
+            visualDensity: VisualDensity.compact,
+            onPressed: onDisconnect,
+          ),
       ],
     );
   }

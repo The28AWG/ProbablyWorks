@@ -948,6 +948,11 @@ final class ApiServer {
         request.method == 'DELETE') {
       return _deleteSession(request);
     }
+    if (rest.length == 2 &&
+        rest.first == 'sessions' &&
+        request.method == 'DELETE') {
+      return _deleteOtherSession(request, rest[1]);
+    }
     if (rest.length == 1 &&
         rest.first == 'sessions' &&
         request.method == 'GET') {
@@ -1086,6 +1091,27 @@ final class ApiServer {
     final sessionId = request.headers.value(_clientSessionHeader);
     if (sessionId != null && sessionId.isNotEmpty) {
       _clientSessions.remove(sessionId);
+    }
+    _json(request.response, HttpStatus.noContent, {});
+    return Future<void>.value();
+  }
+
+  /// Убирает другое подключение по fingerprint из `GET /client/sessions`.
+  ///
+  /// Это не отзыв доступа: Bearer-токен и возможность пройти рукопожатие
+  /// заново остаются. Действие нужно для зависших экранов, которые уже не
+  /// держат SSE, но ещё видны в списке до истечения TTL. Сырой `sessionId` в
+  /// списке не раскрывается, поэтому поиск идёт по тому же короткому
+  /// fingerprint. Повторное удаление и несовпадение fingerprint безопасны:
+  /// ответ всегда `204`, чтобы устаревший список не давал ошибку.
+  Future<void> _deleteOtherSession(HttpRequest request, String fingerprint) {
+    final at = _clientSessions.now;
+    for (final session in _clientSessions.list()) {
+      if (!session.isExpiredAt(at) &&
+          ApiAccessLog.fingerprint(session.id) == fingerprint) {
+        _clientSessions.remove(session.id);
+        break;
+      }
     }
     _json(request.response, HttpStatus.noContent, {});
     return Future<void>.value();

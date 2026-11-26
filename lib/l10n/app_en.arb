@@ -346,6 +346,28 @@
   "@chatPresenceClose": {
     "description": "Closes the list of connected client sessions."
   },
+  "chatPresenceDisconnectScreen": "Disconnect screen",
+  "@chatPresenceDisconnectScreen": {
+    "description": "Tooltip of the action that removes a stale client session from the connected screens list."
+  },
+  "chatPresenceDisconnectConfirm": "Disconnect {device}? If the screen is still open, it will reconnect.",
+  "@chatPresenceDisconnectConfirm": {
+    "description": "Confirmation before removing another connected screen. The action cleans up a stuck session and does not revoke access.",
+    "placeholders": {
+      "device": {
+        "type": "String",
+        "example": "ProbablyWorks 2.0.0 · linux · #a1b2c3"
+      }
+    }
+  },
+  "chatPresenceDisconnected": "Screen disconnected",
+  "@chatPresenceDisconnected": {
+    "description": "Snackbar after another client session was removed from the connected screens list."
+  },
+  "chatPresenceDisconnectFailed": "Could not disconnect the screen",
+  "@chatPresenceDisconnectFailed": {
+    "description": "Snackbar when removing another client session failed."
+  },
   "messageEditHint": "Editing restarts the turn",
   "@messageEditHint": {
     "description": "Placeholder in the inline editor that replaces a user message. Sending rewrites history from that message."

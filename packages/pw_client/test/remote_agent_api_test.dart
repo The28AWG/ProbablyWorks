@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
@@ -1017,6 +1018,74 @@ void main() {
     expect(secondGap, greaterThan(firstGap));
   });
 
+  test('drains a failed SSE response before reconnecting', () async {
+    final errorBody = StreamController<List<int>>();
+    final bodyListened = Completer<void>();
+    final secondEvents = Completer<void>();
+    var bodyCancelled = false;
+    errorBody
+      ..onListen = () {
+        if (!bodyListened.isCompleted) bodyListened.complete();
+      }
+      ..onCancel = () {
+        bodyCancelled = true;
+      };
+    addTearDown(() async {
+      if (!errorBody.isClosed) await errorBody.close();
+    });
+
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    final fake = _FakeSseClient(
+      handshakeBody: jsonEncode({
+        'sessionId': 's1',
+        'instanceId': 'instance-1',
+        'deviceId': 'device-1',
+        'protocol': 1,
+        'expiresAt': expiresAt,
+        'heartbeatIntervalMs': 60000,
+        'presenceRevision': 1,
+      }),
+      eventsResponse: (attempt) {
+        if (attempt > 1) {
+          if (!secondEvents.isCompleted) secondEvents.complete();
+          return http.StreamedResponse(
+            Stream<List<int>>.empty(),
+            HttpStatus.ok,
+          );
+        }
+        return http.StreamedResponse(
+          errorBody.stream,
+          HttpStatus.serviceUnavailable,
+        );
+      },
+    );
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:1'),
+      token: _token,
+      client: fake,
+      reconnectBaseDelay: const Duration(milliseconds: 100),
+      reconnectMaxDelay: const Duration(milliseconds: 200),
+      reconnectJitter: 0,
+    );
+    addTearDown(api.dispose);
+
+    await api.startEvents();
+    // Ошибка SSE дочитывается, а не бросается как есть: иначе соединение
+    // остаётся висеть, и повторные 5xx копят сокеты.
+    await bodyListened.future.timeout(const Duration(seconds: 2));
+    expect(bodyCancelled, isFalse);
+
+    errorBody.add(utf8.encode('{"error":{"code":"events_failed"}}'));
+    await errorBody.close();
+
+    // Переподключение начинается только после того, как тело дочитано.
+    await secondEvents.future.timeout(const Duration(seconds: 2));
+    expect(fake.eventsRequests, greaterThanOrEqualTo(2));
+  });
+
   test('lists client sessions and keeps the current one marked', () async {
     final sessions = await remote.refreshClientSessions();
 
@@ -1026,6 +1095,23 @@ void main() {
     // продолжение сессии по одному id без секрета запрещено.
     expect(sessions.single.id, isNot(remote.sessionId));
     expect(sessions.single.id, hasLength(8));
+  });
+
+  test('closes another screen by its fingerprint', () async {
+    final second = RemoteAgentApi(baseUri: remote.baseUri, token: _token);
+    addTearDown(second.dispose);
+    // Первый запрос второго клиента создаёт его сессию.
+    await second.refreshClientSessions();
+
+    final before = await remote.refreshClientSessions();
+    expect(before, hasLength(2));
+    final other = before.firstWhere((session) => !session.current);
+
+    await remote.closeClientSession(other.id);
+
+    final after = await remote.refreshClientSessions();
+    expect(after, hasLength(1));
+    expect(after.single.current, isTrue);
   });
 
   test('presence changes from another client arrive as a snapshot', () async {
@@ -2585,6 +2671,38 @@ final class _FakeRuntime implements ModelRuntimeSource {
 
   @override
   Future<void> unloadModel(String modelId) => Future<void>.value();
+}
+
+/// Подставной HTTP-клиент для проверки SSE без реального сокета.
+///
+/// Рукопожатие и служебные запросы получают минимальные ответы, а `/events`
+/// отдаёт заданную последовательность ответов по номеру попытки.
+final class _FakeSseClient extends http.BaseClient {
+  _FakeSseClient({required this.handshakeBody, required this.eventsResponse});
+
+  final String handshakeBody;
+  final http.StreamedResponse Function(int attempt) eventsResponse;
+  var eventsRequests = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final path = request.url.path;
+    if (path == '/api/v1/client/handshake') {
+      return http.StreamedResponse(
+        Stream.value(utf8.encode(handshakeBody)),
+        HttpStatus.ok,
+        headers: {'content-type': 'application/json'},
+      );
+    }
+    if (path == '/api/v1/events') {
+      eventsRequests++;
+      return eventsResponse(eventsRequests);
+    }
+    return http.StreamedResponse(
+      Stream<List<int>>.empty(),
+      HttpStatus.noContent,
+    );
+  }
 }
 
 final class _FakeProjects implements ProjectsApi {

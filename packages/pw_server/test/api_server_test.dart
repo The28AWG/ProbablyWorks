@@ -2805,6 +2805,74 @@ void main() {
       );
       expect(after, HttpStatus.gone);
     });
+
+    test('another screen can be removed by its fingerprint', () async {
+      final (secondStatus, secondBody) = await _request(
+        client,
+        sessionBase,
+        'POST',
+        '/api/v1/client/handshake',
+        token: _token,
+        headers: {...clientHeaders, 'x-client-id': 'client-install-2'},
+        body: {'protocol': 1},
+      );
+      expect(secondStatus, HttpStatus.ok);
+      final secondSessionId =
+          (jsonDecode(secondBody) as Map)['sessionId'] as String;
+      final fingerprint = ApiAccessLog.fingerprint(secondSessionId);
+
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'DELETE',
+        '/api/v1/client/sessions/$fingerprint',
+        token: _token,
+        session: sessionId,
+      );
+      expect(status, HttpStatus.noContent);
+
+      final (gone, _) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/chats',
+        token: _token,
+        session: secondSessionId,
+      );
+      expect(gone, HttpStatus.gone);
+
+      // Текущий экран не пострадал: закрывается ровно одно подключение.
+      final (current, _) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/chats',
+        token: _token,
+        session: sessionId,
+      );
+      expect(current, HttpStatus.ok);
+
+      // Повтор по устаревшему списку и неизвестный fingerprint безопасны.
+      final (repeated, _) = await _request(
+        client,
+        sessionBase,
+        'DELETE',
+        '/api/v1/client/sessions/$fingerprint',
+        token: _token,
+        session: sessionId,
+      );
+      expect(repeated, HttpStatus.noContent);
+
+      final (unknown, _) = await _request(
+        client,
+        sessionBase,
+        'DELETE',
+        '/api/v1/client/sessions/unknown1',
+        token: _token,
+        session: sessionId,
+      );
+      expect(unknown, HttpStatus.noContent);
+    });
   });
 }
 

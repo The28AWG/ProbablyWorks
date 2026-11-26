@@ -381,6 +381,7 @@ class _ChatBodyState extends State<ChatBody> {
                                       ? state.chat!.title
                                       : l10n.chatsNew,
                                 },
+                          onCloseSession: bloc.disconnectClientSession,
                         ),
                 ),
                 Expanded(

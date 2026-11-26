@@ -241,4 +241,84 @@ void main() {
     final button = tester.widget<IconButton>(find.byType(IconButton));
     expect(button.onPressed, isNull);
   });
+
+  testWidgets('disconnects another screen after confirmation', (tester) async {
+    final closed = <String>[];
+    final sessions = [
+      _session('s1', current: true),
+      _session('s2', focused: true),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: ClientPresenceIconButton(
+            sessions: sessions,
+            onCloseSession: (id) async {
+              closed.add(id);
+              return true;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ClientPresenceIconButton));
+    await tester.pumpAndSettle();
+
+    // У текущего экрана действия нет: закрывать себя через список соседей
+    // нельзя, для этого есть штатное закрытие.
+    expect(find.byIcon(Icons.link_off), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.link_off));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Disconnect ProbablyWorks'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Disconnect screen'));
+    await tester.pumpAndSettle();
+
+    // Успех закрывает список, а snackbar показывается уже без модального
+    // барьера.
+    expect(closed, ['s2']);
+    expect(find.text('Connected screens'), findsNothing);
+    expect(find.text('Screen disconnected'), findsOneWidget);
+  });
+
+  testWidgets('keeps the list open and shows an error when disconnect fails', (
+    tester,
+  ) async {
+    final sessions = [
+      _session('s1', current: true),
+      _session('s2', focused: true),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: appLocalizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: ClientPresenceIconButton(
+            sessions: sessions,
+            onCloseSession: (id) async => false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ClientPresenceIconButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.link_off));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Disconnect screen'));
+    await tester.pumpAndSettle();
+
+    // Ошибка остаётся в диалоге: snackbar за модальным барьером мог бы
+    // потеряться, а список должен позволить повторить попытку.
+    expect(find.text('Connected screens'), findsOneWidget);
+    expect(find.text('Could not disconnect the screen'), findsOneWidget);
+  });
 }

@@ -48,7 +48,11 @@ final class PlatformClientSessionChannel implements ClientSessionChannel {
       // Запас для вкладки в фоне, где событие BroadcastChannel может быть
       // отложено. Это по-прежнему best-effort: если вкладка не ответила,
       // сервер переиспользует сессию, и дубликат останется одной сессией.
-      return await answer.future.timeout(const Duration(seconds: 1));
+      // Секунда задерживала каждый reload, даже когда соседей нет: ответ
+      // живой вкладки приходит за миллисекунды, а фоновая может не успеть
+      // и за секунду. Длинное ожидание не спасало, а только тормозило
+      // открытие; компромисс — 150 мс.
+      return await answer.future.timeout(const Duration(milliseconds: 150));
     } on TimeoutException {
       return false;
     } finally {

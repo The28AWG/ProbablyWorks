@@ -57,6 +57,7 @@ GET    /api/v1/client/probe         проверка демона и токен�
 POST   /api/v1/client/handshake
 PUT    /api/v1/client/session       heartbeat и присутствие
 DELETE /api/v1/client/session
+DELETE /api/v1/client/sessions/{id} убрать другое подключение по fingerprint
 GET    /api/v1/client/sessions
 GET    /api/v1/hosts
 PUT    /api/v1/hosts/{id}
@@ -222,8 +223,11 @@ Content-Type: application/json
   чтобы reload продолжал нумерацию, а не начинал её заново.
 - `GET /client/sessions` возвращает все клиентские сессии и помечает текущую;
   `id` и `currentSessionId` — короткие fingerprint, а `resumeSecret` в список
-  не попадает. `DELETE` закрывает текущую и её SSE. Изменения состава сессий и
-  присутствия приходят событием `clientSessionsChanged` со снимком и
+  не попадает. `DELETE /client/session` закрывает текущую; `DELETE
+  /client/sessions/{id}` убирает другое подключение по тому же fingerprint.
+  Второй маршрут идемпотентен и нужен для зависших экранов, а не для отзыва
+  доступа: открытый экран сможет пройти рукопожатие заново. Изменения состава
+  сессий и присутствия приходят событием `clientSessionsChanged` со снимком и
   `presenceRevision`; неизменённый heartbeat его не порождает. Снимок избавляет
   каждое окно от отдельного `GET /client/sessions` на каждое изменение.
 - `PUT /client/subscriptions` принимает `{"chatIds": [...]}` — чаты, тяжёлые

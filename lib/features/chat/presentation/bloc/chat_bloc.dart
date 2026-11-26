@@ -1292,6 +1292,21 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     }
   }
 
+  /// Убирает зависшее подключение другого экрана по fingerprint.
+  ///
+  /// Возвращает `false`, если встроенный агент не имеет сессий или запрос не
+  /// прошёл: диалог покажет ошибку и оставит список открытым.
+  Future<bool> disconnectClientSession(String id) async {
+    final sessions = _sessions;
+    if (sessions == null) return false;
+    try {
+      await sessions.closeClientSession(id);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
   List<ClientSessionView> _otherSessions(String? chatId) {
     if (chatId == null) return const [];
     return [
