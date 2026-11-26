@@ -788,6 +788,14 @@ class RemoteAgentApi
   }
 
   @override
+  Future<Chat> markChatRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) =>
+      chatStore.markRead(chatId, seq: seq, expectedRevision: expectedRevision);
+
+  @override
   Future<int> pendingScheduledTasks(
     String chatId, {
     String? untilMessageId,
@@ -2387,6 +2395,10 @@ class RemoteAgentApi
         _events.add(AgentStateChanged(_string(json, 'chatId')));
       case 'chatChanged':
         _events.add(AgentStateChanged(_string(json, 'chatId')));
+      case 'chatReadChanged':
+        // Курсор прочтения — часть снимка списка чатов. Отдельного события
+        // для ленты не нужно: позиция прокрутки остаётся у устройства.
+        _publishState('chats');
       case 'chatDeleted':
         final chatId = _string(json, 'chatId');
         _running.remove(chatId);
@@ -2676,6 +2688,10 @@ Chat _chat(Map<String, dynamic> json) => Chat(
   draftRevision: _int(json, 'draftRevision'),
   messageEditsRevision: _int(json, 'messageEditsRevision'),
   revision: _int(json, 'revision'),
+  lastReadSeq: _int(json, 'lastReadSeq'),
+  readRevision: _int(json, 'readRevision'),
+  lastMessageSeq: _int(json, 'lastMessageSeq'),
+  unreadCount: _int(json, 'unreadCount'),
   createdAt: _time(json, 'createdAt'),
   updatedAt: _time(json, 'updatedAt'),
 );
@@ -3069,6 +3085,27 @@ final class _RemoteChatStore implements ChatStore, DraftRefreshSource {
         'chat not found after update',
       );
     }
+    return chat;
+  }
+
+  @override
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async {
+    final json = await _api.sendJson(
+      'PUT',
+      '/chats/$chatId/read',
+      body: {'seq': seq, 'expectedRevision': ?expectedRevision},
+    );
+    final map = Map<String, dynamic>.from(json as Map);
+    final chat = _chat(map);
+    // Список чатов перечитывается сразу: не полагаемся только на SSE, чтобы
+    // счётчик не отставал при коротком обрыве соединения.
+    _api
+      .._trackChatState(chat.id, map)
+      .._publishState('chats');
     return chat;
   }
 

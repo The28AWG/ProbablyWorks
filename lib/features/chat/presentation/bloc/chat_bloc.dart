@@ -88,6 +88,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     on<ChatQueueRemoved>(_onQueueRemoved);
     on<ChatQueueEdited>(_onQueueEdited);
     on<ChatCompactRequested>(_onCompactRequested);
+    on<ChatReadRequested>(_onReadRequested);
     on<ChatDailyBudgetChanged>(_onDailyBudgetChanged);
     on<_SessionEvent>(_onSessionEvent);
     on<_Reconnect>(_onReconnect);
@@ -129,6 +130,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
   /// Текст поля ввода, как его знает блок: обновляется из [ChatDraftEdited] без перерисовки.
   String _composerText = '';
+
+  /// Последний `seq`, который уже отправлен серверу на прочтение. Нужен,
+  /// чтобы прокрутка и новые сообщения не слали один и тот же запрос.
+  int _lastReadRequested = 0;
 
   /// Упоминания поля ввода. Живут рядом с текстом и не эмитятся на каждый
   /// сдвиг диапазона: контроллер в UI — источник истины для текущего кадра.
@@ -176,6 +181,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   /// остаются от прежнего чата, пока не придут данные нового: без пустого кадра и мелькания. Лента,
   /// подтверждения и вопросы относятся к старому чату и сбрасываются.
   ChatState _switchState(ChatOpened event) {
+    _lastReadRequested = 0;
     // Черновик нового чата берём из памяти или из списка: поле ввода сразу показывает его текст.
     _drafts.prime(event.chatId, event.seedChat);
     final limit = _contextLimitOf(
@@ -464,6 +470,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       await _markDeleted(emit, event.chatId);
       return;
     }
+    _syncReadWatermark(snapshot.chat);
     final shared = await _readShared();
     final usage = await _usageOf(event.chatId);
     final project = await _hub.projectStore.forChat(event.chatId);
@@ -479,8 +486,12 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       _hub.models.state,
       shared.defaultModel,
     );
+    final readSeq = snapshot.chat?.lastReadSeq ?? 0;
+    final hasUnread = (snapshot.chat?.unreadCount ?? 0) > 0;
     // Один emit на открытие: каждый промежуточный emit перестраивает весь экран чата на UI-потоке.
     final loaded = state.copyWith(
+      unreadFromSeq: hasUnread ? readSeq : null,
+      clearUnreadFromSeq: !hasUnread,
       hosts: shared.hosts,
       limits: shared.limits,
       catalog: _hub.models.state,
@@ -986,6 +997,56 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     await session.compactNow(force: true);
   }
 
+  /// Лента дошла до конца: двигаем общий курсор прочтения.
+  ///
+  /// Локальный снимок уменьшается сразу, не дожидаясь ответа сервера: если
+  /// запрос потеряется, следующий проход по ленте повторит его. Ошибка не
+  /// показывает баннер — чтение не должно мешать работе с чатом.
+  Future<void> _onReadRequested(
+    ChatReadRequested event,
+    Emitter<ChatState> emit,
+  ) async {
+    final chat = state.chat;
+    final chatId = state.chatId;
+    if (chat == null || chatId == null) return;
+    final target = event.seq;
+    if (target <= chat.lastReadSeq || target <= _lastReadRequested) return;
+    _lastReadRequested = target;
+    try {
+      final updated = await _hub.chatStore.markRead(chatId, seq: target);
+      if (isClosed || state.chatId != chatId) return;
+      // Курсор мог быть ограничен сервером: следующая отметка сравнивается
+      // с принятым значением, а не с отправленным.
+      _lastReadRequested = updated.lastReadSeq;
+      // Ответ несёт снимок чата на момент чтения курсора: заголовок, модель и
+      // revision могли измениться, пока шёл запрос. Берём только поля чтения,
+      // иначе этот снимок откатил бы чужие изменения в другом окне.
+      final merged = (state.chat ?? updated).copyWith(
+        lastReadSeq: updated.lastReadSeq,
+        readRevision: updated.readRevision,
+        lastMessageSeq: updated.lastMessageSeq,
+        unreadCount: updated.unreadCount,
+      );
+      emit(state.copyWith(chat: merged, clearUnreadFromSeq: true));
+    } on Object catch (error, stack) {
+      // Следующая прокрутка вниз или новое сообщение повторят запрос.
+      _lastReadRequested = 0;
+      AppLog.root.warning('cannot mark chat $chatId read', error, stack);
+    }
+  }
+
+  /// Опускает водяной знак отправленных отметок до курсора из снимка.
+  ///
+  /// Курсор откатывается, когда история перезаписывается (правка,
+  /// перегенерация, «удалить после»): освободившиеся `seq` достаются новым
+  /// сообщениям. Если водяной знак оставить выше, лента у нижней границы не
+  /// сможет отметить их прочитанными, и unread будет висеть на открытом чате,
+  /// пока нумерация не обгонит старое значение.
+  void _syncReadWatermark(Chat? chat) {
+    final lastRead = chat?.lastReadSeq ?? 0;
+    if (_lastReadRequested > lastRead) _lastReadRequested = lastRead;
+  }
+
   Future<void> _onDailyBudgetChanged(
     ChatDailyBudgetChanged event,
     Emitter<ChatState> emit,
@@ -1459,6 +1520,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       await _markDeleted(emit, chatId);
       return;
     }
+    _syncReadWatermark(snapshot.chat);
     final usage = await _usageOf(chatId);
     final activeIds = {
       for (final r in snapshot.runs)

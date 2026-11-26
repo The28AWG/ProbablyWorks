@@ -142,6 +142,21 @@ Future<void> _showChatMenu(
       position.dy,
     ),
     items: [
+      if (chat.hasUnread)
+        PopupMenuItem(
+          value: _ChatAction.markRead,
+          child: Row(
+            children: [
+              const Icon(Icons.mark_email_read_outlined, size: 18),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                l10n.chatMarkRead,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
       PopupMenuItem(
         value: _ChatAction.rename,
         child: Row(
@@ -185,6 +200,8 @@ Future<void> _showChatMenu(
   );
   if (!context.mounted || action == null) return;
   switch (action) {
+    case _ChatAction.markRead:
+      await context.read<ChatListCubit>().markRead(chat);
     case _ChatAction.rename:
       await _renameChat(context, chat);
     case _ChatAction.fork:
@@ -271,7 +288,7 @@ Future<void> _deleteChat(
   }
 }
 
-enum _ChatAction { rename, fork, delete }
+enum _ChatAction { markRead, rename, fork, delete }
 
 /// Заголовок группы, который остаётся у верхнего края списка при прокрутке.
 class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -428,7 +445,7 @@ class _ChatTileState extends State<_ChatTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: widget.selected
+                            fontWeight: widget.selected || chat.hasUnread
                                 ? FontWeight.w600
                                 : FontWeight.w400,
                           ),
@@ -476,7 +493,9 @@ class _ChatTileState extends State<_ChatTile> {
                                 ? AppTone.waiting
                                 : AppTone.progress,
                             pulse: !widget.waiting,
-                          ),
+                          )
+                        else if (chat.hasUnread && !showMenu)
+                          _UnreadBadge(count: chat.unreadCount),
                         AnimatedOpacity(
                           duration: AppDurations.fast,
                           opacity: showMenu ? 1 : 0,
@@ -494,6 +513,45 @@ class _ChatTileState extends State<_ChatTile> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Число непрочитанных сообщений в строке чата.
+///
+/// Пока идёт ход или ждётся решение, строка показывает статус: он важнее
+/// счётчика. Unread появляется после завершения, когда пользователь уже может
+/// читать ответ.
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Tooltip(
+      message: l10n.chatUnreadCount(count),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: AppSpacing.lg),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: scheme.primary,
+          borderRadius: AppRadius.smAll,
+        ),
+        child: Text(
+          '$count',
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: scheme.onPrimary,
+            fontWeight: FontWeight.w600,
+            height: 1.4,
           ),
         ),
       ),

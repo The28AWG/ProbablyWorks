@@ -421,6 +421,11 @@ class AgentHub implements ChatRunStopper, SubagentHost {
         ),
       );
     }
+    // Копия открыта пользователю сразу: её история не должна выглядеть
+    // непрочитанной. Курсор ставится после вставки, когда известен последний seq.
+    if (messages.isNotEmpty) {
+      await chats.markRead(id, seq: messages.last.seq);
+    }
     // Отложенная задача принадлежит своему шагу `schedule_task`: удалённый шаг
     // уносит и её. Поэтому судьба задачи решается там же, где судьба шага:
     // сообщение ниже линии форка не копируется — задача остаётся в исходном
@@ -490,7 +495,9 @@ class AgentHub implements ChatRunStopper, SubagentHost {
       if (!_carryTask(task, copyPendingTasks)) continue;
       if (copiedTaskIds.add(task.id)) await scheduledTasks.copyTo(id, task);
     }
-    return copy;
+    // Читаем копию из БД: у неё уже стоит курсор прочтения, а копия в памяти
+    // создавалась до вставки сообщений и знает только пустые значения.
+    return await chats.chat(id) ?? copy;
   }
 
   /// Можно ли переносить задачу. Выполненные задачи копируются всегда:

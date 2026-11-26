@@ -10,6 +10,8 @@ import 'package:probably_works/features/chat/presentation/widgets/chat_column.da
 import 'package:probably_works/features/chat/presentation/widgets/chat_message_tile.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_step_ledger.dart';
 import 'package:probably_works/features/chat/presentation/widgets/chat_viewport.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/presence_lifecycle.dart';
+import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
 import 'package:pw_agent/agent/tools/tool_catalog.dart';
@@ -28,6 +30,8 @@ class ChatTimeline extends StatefulWidget {
   const ChatTimeline({
     required this.state,
     this.jumpToMessageId,
+    this.unreadMessageId,
+    this.onReadUpTo,
     this.terminalFor,
     this.editingMessageId,
     this.messageEditor,
@@ -41,7 +45,20 @@ class ChatTimeline extends StatefulWidget {
   final ChatState state;
 
   /// Сообщение, к которому нужно прокрутить ленту после открытия.
+  ///
+  /// Это явный переход (поиск, ссылка): цель подсвечивается на пару секунд.
   final String? jumpToMessageId;
+
+  /// Первое непрочитанное сообщение чата.
+  ///
+  /// В отличие от [jumpToMessageId], сюда лента только доезжает, чтобы
+  /// показать контекст. Подсветка не нужна: границу внимания рисует
+  /// разделитель «Новые сообщения», а цветной пузырь выглядел бы как
+  /// отдельный статус сообщения.
+  final String? unreadMessageId;
+
+  /// Лента дошла до конца. Вызывающий двигает общий курсор прочтения.
+  final ValueChanged<int>? onReadUpTo;
 
   /// Терминал активного запуска по его id; `null`, если запуск не выполняется в PTY.
   final HostTerminal? Function(String runId)? terminalFor;
@@ -68,7 +85,8 @@ class ChatTimeline extends StatefulWidget {
   State<ChatTimeline> createState() => _ChatTimelineState();
 }
 
-class _ChatTimelineState extends State<ChatTimeline> {
+class _ChatTimelineState extends State<ChatTimeline>
+    with WidgetsBindingObserver {
   /// Расстояние до конца, в пределах которого считаем, что пользователь «внизу».
   static const _followThreshold = 80.0;
 
@@ -78,9 +96,27 @@ class _ChatTimelineState extends State<ChatTimeline> {
   late final ScrollController _scroll;
   var _follow = true;
 
+  /// Чат, к которому относится текущая позиция прокрутки.
+  String? _chatId;
+
+  /// Идёт программный переход к сообщению. В это время промежуточные
+  /// положения прокрутки не должны включать слежение или отмечать прочтение.
+  var _jumping = false;
+
+  /// Вкладка видима и её анимации включены. Скрытая вкладка не должна
+  /// отмечать новые сообщения прочитанными: пользователь их не видит.
+  var _tickerEnabled = true;
+
+  /// Маршрут показывает именно этот чат. На вкладке настроек стек чатов жив, но
+  /// лента не видна, и отмечать её прочитанной нельзя.
+  var _routeVisible = true;
+
   /// Ключи сообщений для точной прокрутки. Создаются только для видимых строк.
   final _messageKeys = <String, GlobalKey>{};
   String? _pendingJumpId;
+
+  /// Текущий прыжок — явный переход, а не открытие на непрочитанном.
+  var _highlightPendingJump = false;
   String? _highlightId;
   Timer? _highlightTimer;
 
@@ -97,33 +133,131 @@ class _ChatTimelineState extends State<ChatTimeline> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scroll = ScrollController()..addListener(_onScroll);
-    _pendingJumpId = widget.jumpToMessageId;
+    _chatId = widget.state.chatId;
+    _pendingJumpId =
+        widget.jumpToMessageId ??
+        widget.unreadMessageId ??
+        _firstUnreadId(widget.state, widget.state.unreadFromSeq);
+    _highlightPendingJump = widget.jumpToMessageId != null;
+    if (widget.state.unreadFromSeq != null || _pendingJumpId != null) {
+      // Открытие на непрочитанном не должно утаскивать ленту вниз: сначала
+      // показываем первое новое сообщение.
+      _follow = false;
+    }
     if (_pendingJumpId != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRead());
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final enabled = TickerMode.valuesOf(context).enabled;
+    final scope = VisibleChatScope.maybeOf(context);
+    final routeVisible = scope == null || scope.chatId == widget.state.chatId;
+    if ((enabled && !_tickerEnabled) || (routeVisible && !_routeVisible)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRead());
+    }
+    _tickerEnabled = enabled;
+    _routeVisible = routeVisible;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRead());
     }
   }
 
   @override
   void didUpdateWidget(covariant ChatTimeline oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final messages = widget.state.messages;
+    if (widget.state.chatId != oldWidget.state.chatId ||
+        widget.state.chatId != _chatId) {
+      _chatId = widget.state.chatId;
+      _pendingJumpId = null;
+      _jumping = false;
+      _highlightTimer?.cancel();
+      _highlightId = null;
+      _sentId = null;
+      _seenIds.clear();
+      final target =
+          widget.jumpToMessageId ??
+          widget.unreadMessageId ??
+          _firstUnreadId(widget.state, widget.state.unreadFromSeq);
+      _follow = widget.state.unreadFromSeq == null && target == null;
+      if (target != null) {
+        _pendingJumpId = target;
+        _highlightPendingJump = widget.jumpToMessageId != null;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
+      }
+      return;
+    }
     final target = widget.jumpToMessageId;
     if (target != null && target != oldWidget.jumpToMessageId) {
       _pendingJumpId = target;
+      _highlightPendingJump = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
     }
-    final messages = widget.state.messages;
+    if (widget.state.unreadFromSeq != null &&
+        widget.state.unreadFromSeq != oldWidget.state.unreadFromSeq) {
+      final unread =
+          widget.unreadMessageId ??
+          _firstUnreadId(widget.state, widget.state.unreadFromSeq);
+      if (unread != null) {
+        _pendingJumpId = unread;
+        _highlightPendingJump = false;
+        _follow = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
+      }
+    }
     final sentNow =
         messages.length > oldWidget.state.messages.length &&
+        messages.isNotEmpty &&
         messages.last.role == MessageRole.user;
-    if (!sentNow) return;
-    // Перестроение уже идёт: достаточно поменять поля, setState здесь не нужен.
-    _sentId = messages.last.id;
-    _follow = true;
+    if (sentNow) {
+      // Перестроение уже идёт: достаточно поменять поля, setState здесь не нужен.
+      _sentId = messages.last.id;
+      _follow = true;
+    }
+    // Новое сообщение при видимом конце ленты тоже считается прочитанным.
+    if (_follow) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _reportRead());
+    }
+  }
+
+  /// Первое видимое сообщение после границы непрочитанного.
+  static String? _firstUnreadId(ChatState state, int? from) {
+    if (from == null) return null;
+    for (final message in state.messages) {
+      if (message.seq > from && message.role != MessageRole.tool) {
+        return message.id;
+      }
+    }
+    return null;
+  }
+
+  /// Сообщает наверх последний `seq` ленты, если пользователь у нижней границы.
+  void _reportRead() {
+    if (!mounted || !_follow || !_tickerEnabled || !_routeVisible) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    var seq = 0;
+    for (final message in widget.state.messages) {
+      if (message.seq > seq) seq = message.seq;
+    }
+    if (seq <= 0) return;
+    widget.onReadUpTo?.call(seq);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _highlightTimer?.cancel();
     _scroll
       ..removeListener(_onScroll)
@@ -134,8 +268,36 @@ class _ChatTimelineState extends State<ChatTimeline> {
   void _jumpToPending() {
     final id = _pendingJumpId;
     if (id == null || !mounted) return;
+    _jumping = true;
     if (_follow) setState(() => _follow = false);
     _attemptJump(id, 0);
+  }
+
+  /// Завершает программный переход: только теперь положение прокрутки
+  /// считается намерением пользователя.
+  void _endJump() {
+    _jumping = false;
+    if (!mounted || !_scroll.hasClients) return;
+    final atEnd = _scroll.position.extentAfter <= _followThreshold;
+    if (atEnd != _follow) setState(() => _follow = atEnd);
+    // Прочтение не отмечается самим переходом: иначе открытие непрочитанного
+    // у нижней границы сразу гасит разделитель, и пользователь не видит, что
+    // именно было новым. Отметит следующая прокрутка или «К последним».
+  }
+
+  /// Доезжает до найденной строки и только после этого снова разрешает
+  /// обычную логику слежения и прочтения.
+  Future<void> _animateToContext(BuildContext context) async {
+    try {
+      await Scrollable.ensureVisible(
+        context,
+        alignment: 0.12,
+        duration: AppDurations.normal,
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      if (mounted) _endJump();
+    }
   }
 
   /// Точная прокрутка работает, только когда строка построена. Для далёкого
@@ -144,24 +306,25 @@ class _ChatTimelineState extends State<ChatTimeline> {
     if (!mounted || _pendingJumpId != id) return;
     final context = _messageKeys[id]?.currentContext;
     if (context != null) {
+      final highlight = _highlightPendingJump;
       _pendingJumpId = null;
-      setState(() => _highlightId = id);
-      _highlightTimer?.cancel();
-      _highlightTimer = Timer(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _highlightId = null);
-      });
-      unawaited(
-        Scrollable.ensureVisible(
-          context,
-          alignment: 0.12,
-          duration: AppDurations.normal,
-          curve: Curves.easeOutCubic,
-        ),
-      );
+      _highlightPendingJump = false;
+      if (highlight) {
+        setState(() => _highlightId = id);
+        _highlightTimer?.cancel();
+        _highlightTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted) setState(() => _highlightId = null);
+        });
+      }
+      unawaited(_animateToContext(context));
       return;
     }
     if (attempt >= 5 || !_scroll.hasClients) {
-      if (attempt >= 5) _pendingJumpId = null;
+      if (attempt >= 5) {
+        _pendingJumpId = null;
+        _highlightPendingJump = false;
+        _endJump();
+      }
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _attemptJump(id, attempt + 1),
       );
@@ -174,6 +337,8 @@ class _ChatTimelineState extends State<ChatTimeline> {
     final index = visible.indexWhere((message) => message.id == id);
     if (index < 0) {
       _pendingJumpId = null;
+      _highlightPendingJump = false;
+      _endJump();
       return;
     }
     final max = _scroll.position.maxScrollExtent;
@@ -185,13 +350,41 @@ class _ChatTimelineState extends State<ChatTimeline> {
   }
 
   void _onScroll() {
-    if (!_scroll.hasClients) return;
+    if (!_scroll.hasClients || _jumping) return;
     // Внизу — когда конец ответа виден. Нижний отступ входит в прокрутку, поэтому конец — это maxScrollExtent.
     final atEnd = _scroll.position.extentAfter <= _followThreshold;
-    if (atEnd == _follow) return;
+    if (atEnd == _follow) {
+      if (atEnd) _reportRead();
+      return;
+    }
     setState(() {
       _follow = atEnd;
     });
+    if (atEnd) _reportRead();
+  }
+
+  /// Плавно возвращает к концу ленты и отмечает её прочитанной.
+  void _jumpToLatest() {
+    if (!mounted) return;
+    _pendingJumpId = null;
+    _jumping = false;
+    setState(() => _follow = true);
+    unawaited(_animateToLatest());
+  }
+
+  /// Довозит ленту до конца и только после этого отмечает её прочитанной:
+  /// случайное нажатие не должно скрывать unread раньше времени.
+  Future<void> _animateToLatest() async {
+    if (_scroll.hasClients) {
+      await _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: AppDurations.normal,
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) return;
+    if (!_follow) setState(() => _follow = true);
+    _reportRead();
   }
 
   /// Элемент новый, если его ещё не было в ленте. Первую отрисовку не анимируем: чат открывается сразу.
@@ -236,6 +429,10 @@ class _ChatTimelineState extends State<ChatTimeline> {
     // Строки собираем от старого к новому: лента сверху вниз.
     // Шаги (рассуждения и команды) подряд, без видимого текста между ними, образуют одну группу.
     _liveIds.clear();
+    final unreadFrom = widget.state.unreadFromSeq;
+    final dividerIndex = unreadFrom == null
+        ? -1
+        : visible.indexWhere((message) => message.seq > unreadFrom);
     final display = state.stepsDisplay;
     final rows = <Widget>[];
     var anchor = 'start';
@@ -311,6 +508,9 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     for (var i = 0; i < visible.length; i++) {
       final message = visible[i];
+      if (i == dividerIndex) {
+        item('unread-divider', const _UnreadDivider());
+      }
       if (i == boundary) {
         item(
           'compaction',
@@ -461,16 +661,30 @@ class _ChatTimelineState extends State<ChatTimeline> {
 
     return ChatViewport(
       height: viewportHeight,
-      child: CustomScrollView(
-        controller: _scroll,
-        slivers: [
-          AnchoredSliverList(
-            following: _follow,
-            delegate: SliverChildListDelegate([
-              const SizedBox(height: AppSpacing.md),
-              ...children,
-            ]),
+      child: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scroll,
+            slivers: [
+              AnchoredSliverList(
+                following: _follow,
+                delegate: SliverChildListDelegate([
+                  const SizedBox(height: AppSpacing.md),
+                  ...children,
+                ]),
+              ),
+            ],
           ),
+          if (!_follow)
+            Positioned(
+              right: AppSpacing.lg,
+              bottom: AppSpacing.md,
+              child: FilledButton.tonalIcon(
+                onPressed: _jumpToLatest,
+                icon: const Icon(Icons.arrow_downward, size: 18),
+                label: Text(AppLocalizations.of(context).chatJumpToLatest),
+              ),
+            ),
         ],
       ),
     );
@@ -556,6 +770,42 @@ class _ChatTimelineState extends State<ChatTimeline> {
     if (until <= 0) return -1;
     final index = visible.indexWhere((m) => m.seq > until);
     return index > 0 ? index : -1;
+  }
+}
+
+/// Разделитель «Новые сообщения» над первым непрочитанным.
+///
+/// Линия и подпись используют цвет `primary`, как и бейдж unread в списке:
+/// это одна и та же граница внимания, а не статус хода.
+class _UnreadDivider extends StatelessWidget {
+  const _UnreadDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    // Линии нейтральные, акцент только в подписи: граница должна читаться,
+    // но не спорить с цветом пузырей и статусов.
+    final line = theme.colorScheme.outlineVariant;
+    return Semantics(
+      header: true,
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: line, thickness: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: Text(
+              l10n.chatNewMessages,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: line, thickness: 1)),
+        ],
+      ),
+    );
   }
 }
 

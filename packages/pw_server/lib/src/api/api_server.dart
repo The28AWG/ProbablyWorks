@@ -1234,6 +1234,10 @@ final class ApiServer {
           if (rest.length == 2 && request.method == 'PUT') {
             return _saveMessageEdits(request, chatId);
           }
+        case 'read':
+          if (rest.length == 2 && request.method == 'PUT') {
+            return _markChatRead(request, chatId);
+          }
         case 'messages':
           if (rest.length == 2 && request.method == 'GET') {
             return _messages(request, chatId);
@@ -2440,6 +2444,58 @@ final class ApiServer {
     _json(request.response, HttpStatus.ok, {'revision': revision});
   }
 
+  /// Двигает общий курсор прочтения чата.
+  ///
+  /// `seq` — последнее сообщение, которое устройство действительно видело.
+  /// Сервер сам ограничивает его последним записанным сообщением и не
+  /// двигает курсор назад. `chatReadChanged` нужен остальным окнам: список
+  /// чатов уменьшает unread, а позиция прокрутки у каждого устройства своя.
+  Future<void> _markChatRead(HttpRequest request, String chatId) async {
+    final body = await _body(request);
+    final raw = body['seq'];
+    if (raw is! num || !raw.isFinite) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_seq',
+        'seq must be a number',
+      );
+    }
+    final seq = raw.toInt();
+    if (seq < 0) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_seq',
+        'seq must not be negative',
+      );
+    }
+    final chat = await _backend.markChatRead(
+      chatId,
+      seq: seq,
+      expectedRevision: _expectedRevisionOf(body),
+    );
+    _emitState(SharedResource.chats.area);
+    if (!_stateEvents.isClosed) {
+      _stateEvents.add(
+        _ChatReadChanged(
+          chatId,
+          lastReadSeq: chat.lastReadSeq,
+          lastMessageSeq: chat.lastMessageSeq,
+          unreadCount: chat.unreadCount,
+          readRevision: chat.readRevision,
+        ),
+      );
+    }
+    _json(
+      request.response,
+      HttpStatus.ok,
+      _chatJson(
+        chat,
+        running: _backend.runningChatIds.contains(chat.id),
+        waiting: _backend.waitingChatIds.contains(chat.id),
+      ),
+    );
+  }
+
   int? _revisionOf(Map<String, dynamic> body) {
     final raw = body['expectedRevision'] ?? body['revision'];
     return raw is num ? raw.toInt() : null;
@@ -3243,6 +3299,18 @@ Chat _chatFromJson(String id, Map<String, dynamic> json) {
     lastPromptTokens: json['lastPromptTokens'] as int?,
     lastCompletionTokens: json['lastCompletionTokens'] as int?,
     contextLength: json['contextLength'] as int?,
+    lastReadSeq: json['lastReadSeq'] is num
+        ? (json['lastReadSeq'] as num).toInt()
+        : 0,
+    readRevision: json['readRevision'] is num
+        ? (json['readRevision'] as num).toInt()
+        : 0,
+    lastMessageSeq: json['lastMessageSeq'] is num
+        ? (json['lastMessageSeq'] as num).toInt()
+        : 0,
+    unreadCount: json['unreadCount'] is num
+        ? (json['unreadCount'] as num).toInt()
+        : 0,
     createdAt: _date(json['createdAt']) ?? now,
     updatedAt: _date(json['updatedAt']) ?? now,
   );
@@ -3292,6 +3360,10 @@ Map<String, Object?> _chatJson(
   'draftRevision': chat.draftRevision,
   'messageEditsRevision': chat.messageEditsRevision,
   'revision': chat.revision,
+  'lastReadSeq': chat.lastReadSeq,
+  'readRevision': chat.readRevision,
+  'lastMessageSeq': chat.lastMessageSeq,
+  'unreadCount': chat.unreadCount,
   'createdAt': chat.createdAt.toUtc().toIso8601String(),
   'updatedAt': chat.updatedAt.toUtc().toIso8601String(),
 };
@@ -3442,6 +3514,7 @@ String? _eventChatId(Object event) => switch (event) {
   InteractionResolution value => value.chatId,
   _ChatChanged value => value.chatId,
   _ChatDeleted value => value.chatId,
+  _ChatReadChanged value => value.chatId,
   _DraftChanged value => value.chatId,
   _ => null,
 };
@@ -3530,6 +3603,16 @@ String? _eventChatId(Object event) => switch (event) {
   LocalModelsState value => ('localModels', value.toJson()),
   _ChatChanged value => ('chatChanged', {'chatId': value.chatId}),
   _ChatDeleted value => ('chatDeleted', {'chatId': value.chatId}),
+  _ChatReadChanged value => (
+    'chatReadChanged',
+    {
+      'chatId': value.chatId,
+      'lastReadSeq': value.lastReadSeq,
+      'lastMessageSeq': value.lastMessageSeq,
+      'unreadCount': value.unreadCount,
+      'readRevision': value.readRevision,
+    },
+  ),
   _ClientSessionsChanged value => (
     'clientSessionsChanged',
     {
@@ -3561,6 +3644,24 @@ final class _ChatDeleted {
   const _ChatDeleted(this.chatId);
 
   final String chatId;
+}
+
+/// Курсор прочтения сдвинулся. Событие несёт готовый счётчик, чтобы окна
+/// могли обновить бейдж, не дожидаясь перечитывания списка.
+final class _ChatReadChanged {
+  const _ChatReadChanged(
+    this.chatId, {
+    required this.lastReadSeq,
+    required this.lastMessageSeq,
+    required this.unreadCount,
+    required this.readRevision,
+  });
+
+  final String chatId;
+  final int lastReadSeq;
+  final int lastMessageSeq;
+  final int unreadCount;
+  final int readRevision;
 }
 
 /// Снимок присутствия вместе с событием: окнам не нужен отдельный GET.

@@ -15,6 +15,7 @@ part 'app_database.g.dart';
   tables: [
     Hosts,
     Chats,
+    ChatReadStates,
     Messages,
     ToolRuns,
     SessionRevisions,
@@ -34,7 +35,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 27;
+  static const currentSchemaVersion = 28;
 
   static const _uuid = Uuid();
 
@@ -206,8 +207,34 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(mcpServers, mcpServers.revision);
         }
       }
+      // Версия 28: курсор прочтения и unread. Отдельная таблица, чтобы полное
+      // сохранение чата не сбрасывало прогресс чтения. Существующие чаты при
+      // обновлении считаются прочитанными до последнего сообщения: иначе весь
+      // список после запуска выглядел бы непрочитанным.
+      if (from < 28) {
+        await m.createTable(chatReadStates);
+        await _backfillChatReadStates();
+      }
     },
   );
+
+  /// Заполняет курсоры прочтения для чатов, существовавших до v28.
+  ///
+  /// `last_message_seq` и `last_read_seq` ставятся на максимум уже записанных
+  /// сообщений, поэтому обновление не приносит ложных непрочитанных. Новые
+  /// сообщения после миграции считаются как обычно.
+  Future<void> _backfillChatReadStates() async {
+    final hasChats = await _hasTable('chats');
+    final hasMessages = await _hasTable('messages');
+    if (!hasChats || !hasMessages) return;
+    await customStatement(
+      'INSERT INTO chat_read_states '
+      '(chat_id, last_message_seq, last_read_seq, unread_count, read_revision) '
+      'SELECT c.id, COALESCE(MAX(m.seq), 0), COALESCE(MAX(m.seq), 0), 0, 0 '
+      'FROM chats c LEFT JOIN messages m ON m.chat_id = c.id '
+      'GROUP BY c.id',
+    );
+  }
 
   /// Есть ли таблица в базе. Нужно миграциям, которые трогают таблицы,
   /// отсутствующие в очень старых или тестовых базах.

@@ -97,6 +97,16 @@ abstract interface class AgentApi {
     bool workspaceSpecified = false,
   });
 
+  /// Сдвигает общий курсор прочтения чата до [seq] включительно.
+  ///
+  /// Курсор монотонен и ограничен последним сообщением сервера. Возвращает
+  /// обновлённый чат с `lastReadSeq`, `lastMessageSeq` и `unreadCount`.
+  Future<Chat> markChatRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  });
+
   /// Дубликат чата. [untilMessageId] обрывает историю на указанном ответе:
   /// всё, что ниже линии, в копию не идёт, включая задачи этих сообщений.
   ///

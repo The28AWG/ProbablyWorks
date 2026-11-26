@@ -1777,6 +1777,65 @@ void main() {
   );
 
   test(
+    'read watermark follows a cursor rolled back by a history rewrite',
+    () async {
+      final chatId = await createChat();
+      final now = DateTime.now();
+      Future<void> message(String id, int seq, MessageRole role) =>
+          hub.chats.insertMessage(
+            ChatMessage(
+              id: id,
+              chatId: chatId,
+              seq: seq,
+              role: role,
+              createdAt: now,
+              text: id,
+            ),
+          );
+      await message('u1', 1, MessageRole.user);
+      await message('a2', 2, MessageRole.assistant);
+      await message('a3', 3, MessageRole.assistant);
+      // Пользователь дочитал до второго ответа, но не до третьего.
+      await hub.chats.markRead(chatId, seq: 2);
+
+      final bloc = ChatBloc(LocalChatApi(hub), LiveOutputBus(), drafts);
+      addTearDown(bloc.close);
+      final opened = bloc.stream.firstWhere(
+        (s) => !s.loading && s.chat != null,
+      );
+      bloc.add(ChatOpened(chatId));
+      await opened;
+
+      // Лента у конца: водяной знак доходит до последнего сообщения.
+      final read = bloc.stream.firstWhere((s) => s.chat?.lastReadSeq == 3);
+      bloc.add(const ChatReadRequested(3));
+      await read;
+
+      // Перезапись истории: ответы с seq 2 удалены, курсор откатился до 1.
+      await hub.chats.deleteMessagesFrom(chatId, 2);
+      await message('a2-new', 2, MessageRole.assistant);
+      expect((await hub.chats.chat(chatId))!.lastReadSeq, 1);
+
+      // Открытие заново читает откатанный курсор и опускает водяной знак.
+      final reopened = bloc.stream.firstWhere(
+        (s) => !s.loading && s.chat?.lastReadSeq == 1,
+      );
+      bloc.add(ChatOpened(chatId));
+      await reopened;
+
+      // seq 2 меньше прежнего водяного знака 3, но его всё равно нужно
+      // отправить: иначе новый ответ останется непрочитанным в списке чатов.
+      final reread = bloc.stream.firstWhere((s) => s.chat?.lastReadSeq == 2);
+      bloc.add(const ChatReadRequested(2));
+      await reread;
+
+      final chat = (await hub.chats.chat(chatId))!;
+      expect(chat.lastReadSeq, 2);
+      expect(chat.unreadCount, 0);
+    },
+  );
+
+  test(
     'deleting an open chat closes it instead of reloading an empty record',
     () async {
       final chatId = await createChat();

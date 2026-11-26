@@ -9,6 +9,12 @@ import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
 
+/// Строка списка чатов вместе с курсором прочтения.
+///
+/// Пара нужна для `distinct`: черновик и read state меняются разными путями,
+/// и список должен перестраиваться только на значимых изменениях.
+typedef _ChatListEntry = ({ChatRow chat, ChatReadRow? read});
+
 /// Чаты, сообщения, tool runs и ревизии состояния. Все многотабличные
 /// изменения выполняются через [transaction].
 @lazySingleton
@@ -18,6 +24,7 @@ class ChatRepository implements DraftPersistence {
   final AppDatabase _db;
 
   $ChatsTable get _chatsTable => _db.chats;
+  $ChatReadStatesTable get _readTable => _db.chatReadStates;
   $MessagesTable get _messagesTable => _db.messages;
   $ToolRunsTable get _toolRunsTable => _db.toolRuns;
   $SessionRevisionsTable get _sessionRevisionsTable => _db.sessionRevisions;
@@ -28,18 +35,42 @@ class ChatRepository implements DraftPersistence {
   // ---- chats -------------------------------------------------------------
 
   /// Черновик пишется при паузах в наборе текста: такие записи не должны перестраивать список чатов.
-  Stream<List<Chat>> watchChats() =>
-      (_db.select(_chatsTable)
-            ..where((t) => t.kind.equals(ChatKind.main.name))
-            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
-          .watch()
-          .distinct(_sameChatsIgnoringDrafts)
-          .map((rows) => rows.map(_chat).toList());
+  ///
+  /// Курсор прочтения приходит из отдельной таблицы. Без `distinct` каждое
+  /// сохранение черновика перестраивало бы весь список, а с ним и unread.
+  Stream<List<Chat>> watchChats() {
+    final query =
+        _db.select(_chatsTable).join([
+            leftOuterJoin(
+              _readTable,
+              _readTable.chatId.equalsExp(_chatsTable.id),
+            ),
+          ])
+          ..where(_chatsTable.kind.equals(ChatKind.main.name))
+          ..orderBy([OrderingTerm.desc(_chatsTable.updatedAt)]);
+    return query
+        .watch()
+        .map(
+          (rows) => [
+            for (final row in rows)
+              (
+                chat: row.readTable(_chatsTable),
+                read: row.readTableOrNull(_readTable),
+              ),
+          ],
+        )
+        .distinct(_sameChatsIgnoringDrafts)
+        .map((rows) => [for (final item in rows) _chat(item.chat, item.read)]);
+  }
 
-  static bool _sameChatsIgnoringDrafts(List<ChatRow> a, List<ChatRow> b) {
+  static bool _sameChatsIgnoringDrafts(
+    List<_ChatListEntry> a,
+    List<_ChatListEntry> b,
+  ) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
-      if (_withoutDraft(a[i]) != _withoutDraft(b[i])) return false;
+      if (_withoutDraft(a[i].chat) != _withoutDraft(b[i].chat)) return false;
+      if (a[i].read != b[i].read) return false;
     }
     return true;
   }
@@ -54,16 +85,26 @@ class ChatRepository implements DraftPersistence {
   );
 
   /// Чаты проекта, новые сверху. Карточка проекта открывает их отсюда.
-  Stream<List<Chat>> watchByProject(String projectId) =>
-      (_db.select(_chatsTable)
-            ..where(
-              (t) =>
-                  t.projectId.equals(projectId) &
-                  t.kind.equals(ChatKind.main.name),
-            )
-            ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
-          .watch()
-          .map((rows) => rows.map(_chat).toList());
+  Stream<List<Chat>> watchByProject(String projectId) {
+    final query =
+        _db.select(_chatsTable).join([
+            leftOuterJoin(
+              _readTable,
+              _readTable.chatId.equalsExp(_chatsTable.id),
+            ),
+          ])
+          ..where(
+            _chatsTable.projectId.equals(projectId) &
+                _chatsTable.kind.equals(ChatKind.main.name),
+          )
+          ..orderBy([OrderingTerm.desc(_chatsTable.updatedAt)]);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          _chat(row.readTable(_chatsTable), row.readTableOrNull(_readTable)),
+      ],
+    );
+  }
 
   /// Неотправленные правки сообщений. Как [saveDraft], не трогает updatedAt.
   @override
@@ -172,10 +213,21 @@ class ChatRepository implements DraftPersistence {
 
   @override
   Future<Chat?> chat(String id) async {
-    final row = await (_db.select(
-      _chatsTable,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    return row == null ? null : _chat(row);
+    final entry = await _chatEntry(id);
+    return entry == null ? null : _chat(entry.chat, entry.read);
+  }
+
+  /// Чат вместе с read state. Один запрос на открытие чата и его список.
+  Future<_ChatListEntry?> _chatEntry(String id) async {
+    final query = _db.select(_chatsTable).join([
+      leftOuterJoin(_readTable, _readTable.chatId.equalsExp(_chatsTable.id)),
+    ])..where(_chatsTable.id.equals(id));
+    final row = await query.getSingleOrNull();
+    if (row == null) return null;
+    return (
+      chat: row.readTable(_chatsTable),
+      read: row.readTableOrNull(_readTable),
+    );
   }
 
   Future<void> saveChat(Chat chat) => _db
@@ -259,7 +311,8 @@ class ChatRepository implements DraftPersistence {
     final updated = await (_db.select(
       _chatsTable,
     )..where((t) => t.id.equals(chatId))).getSingle();
-    return _chat(updated);
+    final read = await _readRow(chatId);
+    return _chat(updated, read);
   });
 
   /// Удаляет чат и всех его скрытых потомков-субагентов.
@@ -336,6 +389,7 @@ class ChatRepository implements DraftPersistence {
           ),
         );
     await _indexMessage(message);
+    await _bumpReadState(message);
   });
 
   Future<void> _indexMessage(ChatMessage message) async {
@@ -438,11 +492,15 @@ class ChatRepository implements DraftPersistence {
   /// Нужно правке: заметка о просроченной задаче стоит отдельным событием перед
   /// промптом и должна уходить вместе с ним.
   Future<void> deleteMessage(String id) async {
+    final row = await (_db.select(
+      _messagesTable,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     await _db.customStatement(
       'DELETE FROM message_search WHERE message_id = ?',
       [id],
     );
     await (_db.delete(_messagesTable)..where((t) => t.id.equals(id))).go();
+    if (row != null) await _recomputeReadState(row.chatId);
   }
 
   /// Удаляет сообщения с seq >= [fromSeq] и связанные записи. Возвращает удалённые id.
@@ -462,8 +520,167 @@ class ChatRepository implements DraftPersistence {
       );
     }
     await (_db.delete(_messagesTable)..where((t) => t.id.isIn(ids))).go();
+    await _recomputeReadState(chatId);
     return ids;
   }
+
+  // ---- read state --------------------------------------------------------
+
+  /// Сдвигает общий курсор прочтения вперёд и возвращает чат с новым unread.
+  ///
+  /// [seq] ограничивается серверным `lastMessageSeq`: клиент не может
+  /// случайно (или из устаревшего снимка) прочитать сообщения, которых он не
+  /// видел. Курсор не двигается назад; поздний запрос с меньшим `seq` — no-op.
+  /// [expectedRevision] проверяется, только если передан.
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) => _db.transaction(() async {
+    final entry = await _chatEntry(chatId);
+    if (entry == null) {
+      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
+    }
+    final read = entry.read;
+    final currentRevision = read?.readRevision ?? 0;
+    if (expectedRevision != null && expectedRevision != currentRevision) {
+      throw const AgentApiException(
+        409,
+        'read_conflict',
+        'read cursor revision changed',
+      );
+    }
+    // Последний seq читаем из сообщений, а не из счётчика: так устаревшая
+    // строка read state не может ограничить курсор слишком рано.
+    final lastMessage = await _maxSeq(chatId);
+    final target = seq <= 0 ? 0 : (seq > lastMessage ? lastMessage : seq);
+    final currentRead = read?.lastReadSeq ?? 0;
+    if (target <= currentRead) return _chat(entry.chat, read);
+    final unread = await _unreadCount(chatId, target);
+    final nextRevision = currentRevision + 1;
+    await _writeReadState(
+      chatId,
+      lastMessageSeq: lastMessage,
+      lastReadSeq: target,
+      unreadCount: unread,
+      readRevision: nextRevision,
+    );
+    return _chat(
+      entry.chat,
+      ChatReadRow(
+        chatId: chatId,
+        lastMessageSeq: lastMessage,
+        lastReadSeq: target,
+        unreadCount: unread,
+        readRevision: nextRevision,
+      ),
+    );
+  });
+
+  Future<ChatReadRow?> _readRow(String chatId) => (_db.select(
+    _readTable,
+  )..where((t) => t.chatId.equals(chatId))).getSingleOrNull();
+
+  Future<int> _maxSeq(String chatId) async {
+    final max = _messagesTable.seq.max();
+    final row =
+        await (_db.selectOnly(_messagesTable)
+              ..addColumns([max])
+              ..where(_messagesTable.chatId.equals(chatId)))
+            .getSingle();
+    return row.read(max) ?? 0;
+  }
+
+  /// Непрочитанное — сообщения агента и служебные строки после [fromSeq].
+  ///
+  /// Собственные сообщения пользователя и результаты инструментов не должны
+  /// поднимать счётчик: они либо уже видны отправителю, либо не рисуются в ленте.
+  Future<int> _unreadCount(String chatId, int fromSeq) async {
+    final count = _messagesTable.id.count();
+    final query = _db.selectOnly(_messagesTable)
+      ..addColumns([count])
+      ..where(
+        _messagesTable.chatId.equals(chatId) &
+            _messagesTable.seq.isBiggerThanValue(fromSeq) &
+            _messagesTable.role.isIn([
+              MessageRole.assistant.name,
+              MessageRole.event.name,
+            ]),
+      );
+    final row = await query.getSingle();
+    return row.read(count) ?? 0;
+  }
+
+  Future<void> _writeReadState(
+    String chatId, {
+    required int lastMessageSeq,
+    required int lastReadSeq,
+    required int unreadCount,
+    required int readRevision,
+  }) => _db
+      .into(_readTable)
+      .insertOnConflictUpdate(
+        ChatReadStatesCompanion.insert(
+          chatId: chatId,
+          lastMessageSeq: Value(lastMessageSeq),
+          lastReadSeq: Value(lastReadSeq),
+          unreadCount: Value(unreadCount),
+          readRevision: Value(readRevision),
+        ),
+      );
+
+  /// Обновляет счётчик после нового сообщения.
+  ///
+  /// Считать заново всю историю на каждое сообщение дороже, чем хранить
+  /// счётчик: при вставке он меняется на единицу, а при удалении
+  /// пересчитывается точно (см. [_recomputeReadState]).
+  Future<void> _bumpReadState(ChatMessage message) async {
+    final read = await _readRow(message.chatId);
+    final lastRead = read?.lastReadSeq ?? 0;
+    final lastMessage = read?.lastMessageSeq ?? 0;
+    final unread =
+        (read?.unreadCount ?? 0) +
+        (_isUnreadRole(message.role) && message.seq > lastRead ? 1 : 0);
+    await _writeReadState(
+      message.chatId,
+      lastMessageSeq: message.seq > lastMessage ? message.seq : lastMessage,
+      lastReadSeq: lastRead,
+      unreadCount: unread,
+      readRevision: read?.readRevision ?? 0,
+    );
+  }
+
+  /// Пересчитывает курсор и счётчик после удаления сообщений.
+  ///
+  /// Курсор не может оказаться выше последнего сообщения: `nextSeq` берёт
+  /// максимум по оставшимся, поэтому удалённый номер снова достанется новому
+  /// сообщению. Без ограничения такое сообщение выглядело бы прочитанным, а
+  /// после перезаписи истории (правка, перегенерация, «удалить после») курсор
+  /// откатывается к последнему уцелевшему сообщению именно по этой причине.
+  /// Это единственное исключение из монотонности курсора.
+  Future<void> _recomputeReadState(String chatId) async {
+    final read = await _readRow(chatId);
+    if (read == null) return;
+    final lastMessage = await _maxSeq(chatId);
+    final lastRead = read.lastReadSeq > lastMessage
+        ? lastMessage
+        : read.lastReadSeq;
+    final unread = await _unreadCount(chatId, lastRead);
+    final changed =
+        lastMessage != read.lastMessageSeq ||
+        lastRead != read.lastReadSeq ||
+        unread != read.unreadCount;
+    await _writeReadState(
+      chatId,
+      lastMessageSeq: lastMessage,
+      lastReadSeq: lastRead,
+      unreadCount: unread,
+      readRevision: read.readRevision + (changed ? 1 : 0),
+    );
+  }
+
+  static bool _isUnreadRole(MessageRole role) =>
+      role == MessageRole.assistant || role == MessageRole.event;
 
   // ---- tool runs ---------------------------------------------------------
 
@@ -595,7 +812,7 @@ class ChatRepository implements DraftPersistence {
 
   // ---- mapping -----------------------------------------------------------
 
-  Chat _chat(ChatRow row) => Chat(
+  Chat _chat(ChatRow row, [ChatReadRow? read]) => Chat(
     id: row.id,
     hostId: row.hostId,
     kind: ChatKind.values.byName(row.kind),
@@ -630,6 +847,10 @@ class ChatRepository implements DraftPersistence {
     draftRevision: row.draftRevision,
     messageEditsRevision: row.messageEditsRevision,
     revision: row.revision,
+    lastReadSeq: read?.lastReadSeq ?? 0,
+    readRevision: read?.readRevision ?? 0,
+    lastMessageSeq: read?.lastMessageSeq ?? 0,
+    unreadCount: read?.unreadCount ?? 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );

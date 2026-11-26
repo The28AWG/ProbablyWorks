@@ -273,6 +273,10 @@ class Chat {
     this.draftRevision = 0,
     this.messageEditsRevision = 0,
     this.revision = 0,
+    this.lastReadSeq = 0,
+    this.readRevision = 0,
+    this.lastMessageSeq = 0,
+    this.unreadCount = 0,
   });
 
   final String id;
@@ -329,6 +333,25 @@ class Chat {
   /// Нужна для точечного PATCH без затирания чужих изменений.
   final int revision;
 
+  /// Общий курсор прочтения: последний `seq`, который пользователь видел
+  /// до конца. Максимум по устройствам; двигается только вперёд.
+  final int lastReadSeq;
+
+  /// Ревизия курсора прочтения. Нужна для порядка событий `chatReadChanged`;
+  /// в отличие от [lastReadSeq], растёт даже при перечитывании без сдвига.
+  final int readRevision;
+
+  /// Номер последнего сообщения чата. Сервер отдаёт его вместе с курсом,
+  /// чтобы клиент не считал unread по неполной ленте.
+  final int lastMessageSeq;
+
+  /// Сколько сообщений агента и служебных строк появилось после
+  /// [lastReadSeq]. Собственные сообщения пользователя сюда не входят.
+  final int unreadCount;
+
+  /// Есть ли что читать после последнего открытия чата.
+  bool get hasUnread => unreadCount > 0;
+
   Chat copyWith({
     String? id,
     String? hostId,
@@ -359,6 +382,10 @@ class Chat {
     int? draftRevision,
     int? messageEditsRevision,
     int? revision,
+    int? lastReadSeq,
+    int? readRevision,
+    int? lastMessageSeq,
+    int? unreadCount,
   }) => Chat(
     id: id ?? this.id,
     hostId: hostId ?? this.hostId,
@@ -388,6 +415,10 @@ class Chat {
     draftRevision: draftRevision ?? this.draftRevision,
     messageEditsRevision: messageEditsRevision ?? this.messageEditsRevision,
     revision: revision ?? this.revision,
+    lastReadSeq: lastReadSeq ?? this.lastReadSeq,
+    readRevision: readRevision ?? this.readRevision,
+    lastMessageSeq: lastMessageSeq ?? this.lastMessageSeq,
+    unreadCount: unreadCount ?? this.unreadCount,
   );
 }
 

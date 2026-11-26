@@ -311,6 +311,19 @@ final class ChatCompactRequested extends ChatEvent {
   List<Object?> get props => [];
 }
 
+/// Лента дошла до конца: отметить прочитанным до [seq] включительно.
+///
+/// Событие приходит из [ChatTimeline] только когда пользователь реально у
+/// нижней границы; открытие на первом непрочитанном его не отправляет.
+final class ChatReadRequested extends ChatEvent {
+  const ChatReadRequested(this.seq);
+
+  final int seq;
+
+  @override
+  List<Object?> get props => [seq];
+}
+
 /// Внутренние события: поток из сессии, брокера и шины вывода.
 final class _SessionEvent extends ChatEvent {
   const _SessionEvent(this.event);

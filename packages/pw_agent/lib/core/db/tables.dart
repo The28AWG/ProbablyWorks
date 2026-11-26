@@ -191,6 +191,39 @@ class Chats extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+/// Курсор прочтения и счётчик непрочитанного.
+///
+/// Таблица отдельная от [Chats], потому что это не свойство разговора:
+/// полное сохранение чата (`PUT /chats/{id}`) не должно сбрасывать прогресс
+/// чтения, а запись курсора не должна менять `updatedAt` и порядок списка.
+/// Строка появляется при первом сообщении или первом явном прочтении; её
+/// отсутствие означает «ещё ничего не прочитано».
+@DataClassName('ChatReadRow')
+class ChatReadStates extends Table {
+  TextColumn get chatId =>
+      text().references(Chats, #id, onDelete: KeyAction.cascade)();
+
+  /// Максимум `seq` среди всех сообщений чата.
+  IntColumn get lastMessageSeq => integer().withDefault(const Constant(0))();
+
+  /// Общий read-horizon пользователя. Двигается только вперёд, но не может
+  /// быть выше [lastMessageSeq]: удалённые сообщения освобождают свой `seq`,
+  /// и новое сообщение на нём не должно выглядеть прочитанным.
+  IntColumn get lastReadSeq => integer().withDefault(const Constant(0))();
+
+  /// Сколько сообщений после [lastReadSeq] ещё не прочитано. Считаются
+  /// сообщения агента и служебные строки; собственные сообщения и `tool`
+  /// не создают непрочитанного.
+  IntColumn get unreadCount => integer().withDefault(const Constant(0))();
+
+  /// Растёт при каждом сдвиге курсора. Позволяет клиенту отличать более
+  /// свежее событие от запоздавшего и строить дайджест.
+  IntColumn get readRevision => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {chatId};
+}
+
 @DataClassName('MessageRow')
 @TableIndex(
   name: 'messages_chat_client_message_id',

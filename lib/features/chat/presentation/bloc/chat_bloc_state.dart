@@ -6,6 +6,7 @@ class ChatState extends Equatable {
   const ChatState({
     this.chatId,
     this.chat,
+    this.unreadFromSeq,
     this.project,
     this.messages = const [],
     this.runs = const [],
@@ -53,6 +54,26 @@ class ChatState extends Equatable {
 
   final String? chatId;
   final Chat? chat;
+
+  /// Курсор, с которого при открытии чата начинаются новые сообщения.
+  ///
+  /// Это снимок `lastReadSeq` на момент открытия: соседнее устройство может
+  /// прочитать чат раньше, но разделитель и позиция ленты этого окна не
+  /// должны прыгать. Null — новых сообщений не было.
+  final int? unreadFromSeq;
+
+  /// Первое непрочитанное сообщение ленты. По нему открывается чат и
+  /// рисуется разделитель «Новые сообщения».
+  String? get firstUnreadMessageId {
+    final from = unreadFromSeq;
+    if (from == null) return null;
+    for (final message in messages) {
+      if (message.seq > from && message.role != MessageRole.tool) {
+        return message.id;
+      }
+    }
+    return null;
+  }
 
   /// Проект открытого чата. Null у нового чата до первой отправки.
   final Project? project;
@@ -240,6 +261,8 @@ class ChatState extends Equatable {
   ChatState copyWith({
     String? chatId,
     Chat? chat,
+    int? unreadFromSeq,
+    bool clearUnreadFromSeq = false,
     Project? project,
     bool clearProject = false,
     List<ChatMessage>? messages,
@@ -292,6 +315,9 @@ class ChatState extends Equatable {
   }) => ChatState(
     chatId: chatId ?? this.chatId,
     chat: chat ?? this.chat,
+    unreadFromSeq: clearUnreadFromSeq
+        ? null
+        : (unreadFromSeq ?? this.unreadFromSeq),
     project: clearProject ? null : (project ?? this.project),
     messages: messages ?? this.messages,
     runs: runs ?? this.runs,
@@ -349,6 +375,7 @@ class ChatState extends Equatable {
   List<Object?> get props => [
     chatId,
     chat,
+    unreadFromSeq,
     project,
     messages,
     runs,

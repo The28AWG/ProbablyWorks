@@ -586,6 +586,16 @@ void main() {
     expect(editsRevision, 2);
   });
 
+  test('moves the shared read cursor through the remote chat store', () async {
+    final chat = await remote.chatStore.markRead('c1', seq: 2);
+
+    expect(chat.lastReadSeq, 2);
+    expect(chat.lastMessageSeq, 4);
+    expect(chat.unreadCount, 0);
+    expect(chat.readRevision, 1);
+    expect(backend.lastReadSeq, 2);
+  });
+
   test('streams draft changes from another client', () async {
     await remote.startEvents();
     await remote.eventsReady;
@@ -1786,6 +1796,10 @@ final class _FakeAgent implements AgentApi {
   int pendingTasks = 0;
   bool? copiedPendingTasks;
   String? forkedUntilMessageId;
+  var lastReadSeq = 0;
+  var readRevision = 0;
+  var lastMessageSeq = 4;
+  var unreadCount = 1;
 
   final _chat = Chat(
     id: 'c1',
@@ -1794,6 +1808,35 @@ final class _FakeAgent implements AgentApi {
     createdAt: DateTime.utc(2026, 11, 11),
     updatedAt: DateTime.utc(2026, 11, 11),
   );
+
+  Chat get _chatWithRead => _chat.copyWith(
+    lastReadSeq: lastReadSeq,
+    readRevision: readRevision,
+    lastMessageSeq: lastMessageSeq,
+    unreadCount: unreadCount,
+  );
+
+  @override
+  Future<Chat> markChatRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async {
+    if (expectedRevision != null && expectedRevision != readRevision) {
+      throw const AgentApiException(
+        409,
+        'read_conflict',
+        'read cursor revision changed',
+      );
+    }
+    final target = seq > lastMessageSeq ? lastMessageSeq : seq;
+    if (target > lastReadSeq) {
+      lastReadSeq = target;
+      unreadCount = 0;
+      readRevision++;
+    }
+    return _chatWithRead;
+  }
 
   void emit(Object event) {
     switch (event) {
@@ -1832,7 +1875,7 @@ final class _FakeAgent implements AgentApi {
   Set<String> get waitingChatIds => const {};
 
   @override
-  Stream<List<Chat>> watchChats() => Stream.value([_chat]);
+  Stream<List<Chat>> watchChats() => Stream.value([_chatWithRead]);
 
   @override
   Stream<List<Host>> watchHosts() => Stream.value(const []);
@@ -1864,7 +1907,7 @@ final class _FakeAgent implements AgentApi {
   ];
 
   @override
-  Future<List<Chat>> chats() async => [_chat];
+  Future<List<Chat>> chats() async => [_chatWithRead];
 
   @override
   Future<List<SearchHit>> search(SearchQuery query) async {
@@ -1882,7 +1925,7 @@ final class _FakeAgent implements AgentApi {
   }
 
   @override
-  Future<Chat?> chat(String id) async => id == 'c1' ? _chat : null;
+  Future<Chat?> chat(String id) async => id == 'c1' ? _chatWithRead : null;
 
   @override
   Future<Chat> createChat(String hostId) async => _chat.copyWith(id: 'c2');
@@ -2293,6 +2336,13 @@ final class _FakeDraftStore implements ChatStore {
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async => (await chat(chatId))!.copyWith(lastReadSeq: seq);
 
   @override
   Future<int> saveDraft(

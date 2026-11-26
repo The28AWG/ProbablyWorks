@@ -179,6 +179,13 @@ class ChatListCubit extends Cubit<ChatListState> {
     await _api.renameChat(chatId, trimmed);
   }
 
+  /// Ручное «прочитать всё»: двигает общий курсор до последнего сообщения.
+  ///
+  /// Список обновится сам: локальный агент пишет в БД, удалённый присылает
+  /// `chatReadChanged` и перечитывает снимок.
+  Future<Chat> markRead(Chat chat) =>
+      _api.markChatRead(chat.id, seq: chat.lastMessageSeq);
+
   /// Сколько отложенных задач чата ещё не сработало.
   ///
   /// null — прочитать не удалось. Тогда вопрос задать нельзя, и вызывающая

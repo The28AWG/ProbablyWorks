@@ -142,13 +142,9 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
 
   Stream<List<Host>> watchHosts() => _hub.hosts.watchAll();
 
-  Future<List<Chat>> chats() async {
-    final all = await _hub.chats.allChats();
-    return [
-      for (final chat in all)
-        if (!chat.isSubagent) chat,
-    ];
-  }
+  /// Список отдаёт read state вместе с чатами: сервер API отвечает этим
+  /// снимком, и без join клиент получал бы нулевой unread.
+  Future<List<Chat>> chats() => _hub.chats.watchChats().first;
 
   Future<Chat?> chat(String id) => _hub.chats.chat(id);
 
@@ -189,6 +185,13 @@ class LocalChatApi implements ChatApi, ClientSessionApi {
     );
     _publishChats(projects: workspaceSpecified);
   }
+
+  Future<Chat> markChatRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) =>
+      chatStore.markRead(chatId, seq: seq, expectedRevision: expectedRevision);
 
   @override
   Future<int> pendingScheduledTasks(String chatId, {String? untilMessageId}) =>
@@ -474,6 +477,21 @@ final class _LocalChatStore implements ChatStore {
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async {
+    final chat = await _chats.markRead(
+      chatId,
+      seq: seq,
+      expectedRevision: expectedRevision,
+    );
+    _changes?.publish(SharedResource.chats);
+    return chat;
+  }
 
   @override
   Future<int> saveDraft(

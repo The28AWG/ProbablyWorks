@@ -47,8 +47,9 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    // Переход к сообщению анимированный: даём кадрам доиграть, иначе цель
+    // остаётся за пределами окна до следующего pump.
+    await tester.pumpAndSettle();
 
     expect(find.text('message 30'), findsOneWidget);
   });

@@ -110,6 +110,34 @@ AppDatabase _openSharedV26() => AppDatabase(
   ),
 );
 
+/// База v27 с чатом и сообщениями: проверяет начальный курсор прочтения.
+AppDatabase _openReadV27() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(
+          'CREATE TABLE messages ('
+          'id TEXT NOT NULL PRIMARY KEY, chat_id TEXT NOT NULL, '
+          'seq INTEGER NOT NULL, role TEXT NOT NULL, payload TEXT NOT NULL, '
+          'opened_revision_id TEXT, sealed_before_revision_id TEXT, '
+          'client_message_id TEXT, created_at INTEGER NOT NULL, '
+          'UNIQUE(chat_id, seq))',
+        )
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'chat', 0, 0)",
+        )
+        ..execute(
+          'INSERT INTO messages (id, chat_id, seq, role, payload, created_at) '
+          "VALUES ('m1', 'c1', 1, 'user', '{\"text\":\"hi\"}', 0), "
+          "('m2', 'c1', 2, 'assistant', '{\"text\":\"hello\"}', 0)",
+        )
+        ..execute('PRAGMA user_version = 27');
+    },
+  ),
+);
+
 /// База v17 с сообщениями и (опционально) старым FTS-индексом.
 AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
   NativeDatabase.memory(
@@ -799,6 +827,20 @@ void main() {
     expect(columns.first.read<String>('dflt_value'), '0');
     expect(columns.last.read<String>('name'), 'revision');
     expect(columns.last.read<String>('dflt_value'), '0');
+  });
+
+  test('v27 → v28 backfills read cursors without false unread', () async {
+    final db = _openReadV27();
+    addTearDown(db.close);
+
+    final row = await db
+        .customSelect('SELECT * FROM chat_read_states')
+        .getSingle();
+    expect(row.read<String>('chat_id'), 'c1');
+    expect(row.read<int>('last_message_seq'), 2);
+    expect(row.read<int>('last_read_seq'), 2);
+    expect(row.read<int>('unread_count'), 0);
+    expect(row.read<int>('read_revision'), 0);
   });
 
   test('v26 → v27 adds revisions to hosts, projects and MCP servers', () async {

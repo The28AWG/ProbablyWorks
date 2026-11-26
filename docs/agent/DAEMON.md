@@ -80,6 +80,7 @@ PATCH  /api/v1/chats/{id}/messages/{messageId}
 DELETE /api/v1/chats/{id}/messages/{messageId}/following
 PUT    /api/v1/chats/{id}/draft            {"text": "...", "attachments": [...], "revision": 1}
 PUT    /api/v1/chats/{id}/message-edits    {"edits": {...}, "revision": 1}
+PUT    /api/v1/chats/{id}/read             {"seq": 42, "expectedRevision": 3}
 GET    /api/v1/chats/{id}/session    очередь, ревизия и turnSnapshot
 PATCH  /api/v1/chats/{id}/queue/{itemId}   {"expectedRevision": 3, "position": 0}
 DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
@@ -259,10 +260,24 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 идемпотентно регистрирует карточки после перезапуска — как открытие чата в GUI.
 `DELETE /chats/{id}/turn` останавливает текущий ход; повторный вызов безопасен.
 
+Снимок чата (`GET /chats`, `GET /chats/{id}` и ответ `PUT /chats/{id}/read`)
+несёт `lastReadSeq`, `lastMessageSeq`, `unreadCount` и `readRevision`.
+`lastReadSeq` — общий для всех устройств read-horizon: максимум `seq`, который
+пользователь прочитал до конца. `unreadCount` считает сообщения агента и
+служебные строки после курсора; собственные сообщения пользователя и `tool`
+счётчик не поднимают. `PUT /chats/{id}/read` принимает `seq`, двигает курсор
+только вперёд и ограничивает его последним записанным сообщением: устаревший
+снимок не может «прочитать» то, чего клиент не видел. Позиция прокрутки
+остаётся локальной у устройства и в курсор не входит. Курсор никогда не бывает
+выше последнего сообщения: перезапись истории (правка или перегенерация) и
+удаление последнего сообщения откатывают его к последнему уцелевшему, иначе
+новые сообщения на освободившихся `seq` выглядели бы прочитанными.
+
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `turnSnapshot`, `runChanged`, `queueChanged`, `failure`,
 `trustNeeded`, `usage`, `stateChanged`, `chatChanged`, `chatDeleted`,
-`stateAreaChanged`, `draftChanged`, `approval`, `approvalResolved`, `question`,
+`chatReadChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
+`approvalResolved`, `question`,
 `questionResolved`, `editFileChanges`, `editFileChangesResolved`,
 `clientSessionsChanged`, `modelRuntime`. `modelRuntime` — глобальное
 состояние загрузки моделей, не привязанное к чату; оно приходит и в
@@ -283,7 +298,9 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `DomainChangeBus`, а не конкретный HTTP-маршрут: правка `mcp.json` снаружи и
 фоновое изменение каталога моделей тоже доходят до окон. `chatChanged`
 обновляет открытый чат; `chatDeleted` с `chatId` сообщает, что чат удалён, и
-открытый экран закрывает маршрут, а не перечитывает пустую запись. Удаление
+открытый экран закрывает маршрут, а не перечитывает пустую запись.
+`chatReadChanged` несёт `lastReadSeq`, `lastMessageSeq`, `unreadCount` и
+`readRevision`: соседнее окно уменьшает бейдж, но не двигает свою прокрутку. Удаление
 чата и каскадная очистка истории публикуют событие по одному на каждый
 удалённый чат, включая скрытых субагентов.
 `queueChanged` несёт полную очередь и

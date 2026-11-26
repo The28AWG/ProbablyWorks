@@ -3,6 +3,31 @@ import 'package:flutter/widgets.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 
+/// Какой чат пользователь видит прямо сейчас.
+///
+/// Это не presence сервера, а локальное знание тех же маршрутов: вкладка
+/// «Настройки» оставляет стек чатов живым, но лента на экране не видна.
+/// По этому признаку лента решает, можно ли отмечать новые сообщения
+/// прочитанными. Без области (виджет-тесты, отдельный экран) видимость не
+/// ограничивается.
+class VisibleChatScope extends InheritedWidget {
+  const VisibleChatScope({
+    required this.chatId,
+    required super.child,
+    super.key,
+  });
+
+  /// Открытый чат или null, если пользователь не на вкладке чатов.
+  final String? chatId;
+
+  static VisibleChatScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<VisibleChatScope>();
+
+  @override
+  bool updateShouldNotify(VisibleChatScope oldWidget) =>
+      chatId != oldWidget.chatId;
+}
+
 /// Сообщает серверу, когда окно приложения в фокусе и какой чат реально
 /// видит пользователь. Это нужно для presence, списка экранов и чтобы не
 /// отправлять push туда, где пользователь уже смотрит чат.
@@ -51,6 +76,10 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
   /// heartbeat на каждую перестройку.
   bool _presenceSent = false;
 
+  /// Видимый чат для [VisibleChatScope]. Отдельный notifier, чтобы смена
+  /// вкладки не перестраивала всю рабочую область через `setState`.
+  final _visibleChat = ValueNotifier<String?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +122,7 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
     _tabs.removeListener(_onTabsChanged);
     _chatsStack?.removeListener(_onChatsStackChanged);
     _listener.dispose();
+    _visibleChat.dispose();
     super.dispose();
   }
 
@@ -137,6 +167,9 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
     if (!includeFocus && _presenceSent && chatId == _lastChatId) return;
     _presenceSent = true;
     _lastChatId = chatId;
+    // Лента зависит от видимости: при уходе на другую вкладку она перестаёт
+    // отмечать сообщения прочитанными, а при возврате догоняет конец.
+    _visibleChat.value = chatId;
     widget.sessionApi?.setPresence(
       focused: includeFocus ? _focused : null,
       activeChatId: chatId,
@@ -145,5 +178,10 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => ValueListenableBuilder<String?>(
+    valueListenable: _visibleChat,
+    builder: (context, chatId, child) =>
+        VisibleChatScope(chatId: chatId, child: child!),
+    child: widget.child,
+  );
 }

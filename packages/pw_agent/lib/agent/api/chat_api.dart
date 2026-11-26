@@ -99,6 +99,17 @@ abstract interface class ChatStore implements DraftPersistence {
     int? expectedRevision,
   });
 
+  /// Сдвигает общий курсор прочтения до [seq] включительно.
+  ///
+  /// Курсор двигается только вперёд и ограничивается последним сообщением
+  /// сервера: устаревший клиент не может прочитать то, чего ещё не видел.
+  /// Возвращает чат с новыми `lastReadSeq` и `unreadCount`.
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  });
+
   /// Изменения черновиков, сделанные другим клиентом.
   Stream<String> watchDraftChanges();
 }

@@ -1739,6 +1739,27 @@
   "@chatsGroupEarlier": {
     "description": "Chat list group header: chats updated before yesterday."
   },
+  "chatUnreadCount": "{count, plural, =0{Нет непрочитанных сообщений} one{{count} непрочитанное сообщение} few{{count} непрочитанных сообщения} many{{count} непрочитанных сообщений} other{{count} непрочитанного сообщения}}",
+  "@chatUnreadCount": {
+    "description": "Подсказка бейджа непрочитанных в списке чатов.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatMarkRead": "Отметить прочитанным",
+  "@chatMarkRead": {
+    "description": "Пункт меню чата, который двигает общий курсор прочтения до последнего сообщения."
+  },
+  "chatNewMessages": "Новые сообщения",
+  "@chatNewMessages": {
+    "description": "Разделитель над первым непрочитанным сообщением в ленте."
+  },
+  "chatJumpToLatest": "К последним",
+  "@chatJumpToLatest": {
+    "description": "Кнопка возврата ленты к концу."
+  },
   "chatContextTitle": "Контекст чата",
   "@chatContextTitle": {
     "description": "Title of the side panel with workspace and context usage; also its toolbar tooltip."

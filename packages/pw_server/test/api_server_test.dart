@@ -498,6 +498,76 @@ void main() {
     final chats = (jsonDecode(body) as Map)['chats'] as List;
     expect(chats, hasLength(1));
     expect(chats.single['title'], 'Test chat');
+    expect(chats.single['lastReadSeq'], 0);
+    expect(chats.single['lastMessageSeq'], 3);
+    expect(chats.single['unreadCount'], 2);
+    expect(chats.single['readRevision'], 0);
+  });
+
+  test('marks a chat read and streams the new cursor', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/chats/c1/read',
+      token: _token,
+      body: {'seq': 2},
+    );
+
+    expect(status, HttpStatus.ok);
+    final chat = jsonDecode(body) as Map;
+    expect(chat['lastReadSeq'], 2);
+    expect(chat['lastMessageSeq'], 3);
+    expect(chat['unreadCount'], 0);
+    expect(chat['readRevision'], 1);
+    expect(backend.lastReadSeq, 2);
+
+    String? event;
+    Map<String, dynamic>? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current.replaceFirst('event:', '').trim();
+      } else if (lines.current.startsWith('data:') && event != null) {
+        data = Map<String, dynamic>.from(
+          jsonDecode(lines.current.replaceFirst('data:', '').trim()) as Map,
+        );
+        if (event == 'chatReadChanged') break;
+      }
+    }
+    await lines.cancel();
+
+    expect(event, 'chatReadChanged');
+    expect(data, containsPair('chatId', 'c1'));
+    expect(data, containsPair('lastReadSeq', 2));
+    expect(data, containsPair('unreadCount', 0));
+    expect(data, containsPair('readRevision', 1));
+  });
+
+  test('rejects an invalid read cursor', () async {
+    for (final seq in [-1, 'two']) {
+      final (status, body) = await _request(
+        client,
+        base,
+        'PUT',
+        '/api/v1/chats/c1/read',
+        token: _token,
+        body: {'seq': seq},
+      );
+      expect(status, HttpStatus.badRequest);
+      expect((jsonDecode(body) as Map)['error']['code'], 'bad_seq');
+    }
   });
 
   test('lists hosts and creates a chat', () async {
@@ -2935,6 +3005,10 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   var stopped = 0;
   List<String> deletedChatIds = const [];
   final searchQueries = <SearchQuery>[];
+  var lastReadSeq = 0;
+  var readRevision = 0;
+  var lastMessageSeq = 3;
+  var unreadCount = 2;
 
   /// Хук для проверки порядка событий: вызывается внутри `updateChat`.
   void Function()? onUpdateChat;
@@ -2948,6 +3022,13 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
     title: 'Test chat',
     createdAt: DateTime(2026, 11, 11),
     updatedAt: DateTime(2026, 11, 11),
+  );
+
+  Chat get _chatWithRead => _chat.copyWith(
+    lastReadSeq: lastReadSeq,
+    readRevision: readRevision,
+    lastMessageSeq: lastMessageSeq,
+    unreadCount: unreadCount,
   );
 
   void emit(Object event) {
@@ -3017,7 +3098,7 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
     if (gate != null) await gate.future;
     final error = chatsError;
     if (error != null) throw error;
-    return [_chat];
+    return [_chatWithRead];
   }
 
   @override
@@ -3106,7 +3187,32 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
   }
 
   @override
-  Future<Chat?> chat(String id) async => id == 'c1' ? _chat : null;
+  Future<Chat> markChatRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async {
+    if (chatId != 'c1') {
+      throw AgentApiException(404, 'chat_not_found', 'chat $chatId not found');
+    }
+    if (expectedRevision != null && expectedRevision != readRevision) {
+      throw const AgentApiException(
+        409,
+        'read_conflict',
+        'read cursor revision changed',
+      );
+    }
+    final target = seq > lastMessageSeq ? lastMessageSeq : seq;
+    if (target > lastReadSeq) {
+      lastReadSeq = target;
+      unreadCount = 0;
+      readRevision++;
+    }
+    return _chatWithRead;
+  }
+
+  @override
+  Future<Chat?> chat(String id) async => id == 'c1' ? _chatWithRead : null;
 
   @override
   Future<List<ChatMessage>> messages(String id) async {
@@ -3466,6 +3572,13 @@ final class _FakeDraftStore implements ChatStore {
 
   @override
   Stream<String> watchDraftChanges() => const Stream.empty();
+
+  @override
+  Future<Chat> markRead(
+    String chatId, {
+    required int seq,
+    int? expectedRevision,
+  }) async => (await chat(chatId))!.copyWith(lastReadSeq: seq);
 
   @override
   Future<int> saveDraft(

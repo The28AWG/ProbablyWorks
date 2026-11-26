@@ -1739,6 +1739,27 @@
   "@chatsGroupEarlier": {
     "description": "Chat list group header: chats updated before yesterday."
   },
+  "chatUnreadCount": "{count, plural, =0{No unread messages} one{1 unread message} other{{count} unread messages}}",
+  "@chatUnreadCount": {
+    "description": "Tooltip of the unread badge in the chat list.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatMarkRead": "Mark as read",
+  "@chatMarkRead": {
+    "description": "Chat context menu item that moves the shared read cursor to the last message."
+  },
+  "chatNewMessages": "New messages",
+  "@chatNewMessages": {
+    "description": "Divider above the first unread message in the timeline."
+  },
+  "chatJumpToLatest": "To latest",
+  "@chatJumpToLatest": {
+    "description": "Button that scrolls the timeline back to the end."
+  },
   "chatContextTitle": "Chat context",
   "@chatContextTitle": {
     "description": "Title of the side panel with workspace and context usage; also its toolbar tooltip."

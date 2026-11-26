@@ -392,7 +392,12 @@ class _ChatBodyState extends State<ChatBody> {
                             ? const Center(child: CircularProgressIndicator())
                             : ChatTimeline(
                                 state: state,
+                                // Явный маршрут важнее непрочитанного: поиск
+                                // ведёт к конкретному сообщению.
                                 jumpToMessageId: widget.jumpToMessageId,
+                                unreadMessageId: state.firstUnreadMessageId,
+                                onReadUpTo: (seq) =>
+                                    bloc.add(ChatReadRequested(seq)),
                                 terminalFor: bloc.terminalFor,
                                 editingMessageId: _editingId,
                                 editDraftTexts: _editDraftTexts(state.chatId),
