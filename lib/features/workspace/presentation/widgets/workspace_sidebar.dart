@@ -19,6 +19,8 @@ class WorkspaceSidebar extends StatelessWidget {
     required this.onOpenChat,
     required this.onNewChat,
     required this.onOpenTab,
+    this.inboxCount = 0,
+    this.onOpenInbox,
     super.key,
   });
 
@@ -39,6 +41,13 @@ class WorkspaceSidebar extends StatelessWidget {
 
   /// Перейти к разделу «Хосты» или «Настройки».
   final void Function(WorkspaceTab tab) onOpenTab;
+
+  /// Сколько решений ждёт пользователя. Ноль скрывает бейдж.
+  final int inboxCount;
+
+  /// Открыть входящие. Null скрывает пункт: так панель можно
+  /// использовать в изолированной тестовой раскладке без экрана входящих.
+  final VoidCallback? onOpenInbox;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +90,20 @@ class WorkspaceSidebar extends StatelessWidget {
               onTap: onNewChat,
             ),
           ),
+          if (onOpenInbox != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              child: _SidebarRow(
+                icon: Icons.inbox_outlined,
+                label: l10n.navInbox,
+                badgeCount: inboxCount,
+                selected: activeTab == WorkspaceTab.inbox,
+                onTap: onOpenInbox!,
+              ),
+            ),
           Expanded(
             child: ChatListPanel(
               onOpen: onOpenChat,
@@ -137,6 +160,8 @@ class WorkspaceRail extends StatelessWidget {
     required this.onNewChat,
     required this.onOpenTab,
     this.presence,
+    this.inboxCount = 0,
+    this.onOpenInbox,
     super.key,
   });
 
@@ -155,6 +180,12 @@ class WorkspaceRail extends StatelessWidget {
   /// Индикатор других экранов. Необязателен: вне оболочки данных о клиентах
   /// может не быть, и тогда полоса остаётся прежней.
   final Widget? presence;
+
+  /// Сколько решений ждёт пользователя. Ноль скрывает бейдж.
+  final int inboxCount;
+
+  /// Открыть входящие. Null скрывает иконку в изолированной раскладке.
+  final VoidCallback? onOpenInbox;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +208,17 @@ class WorkspaceRail extends StatelessWidget {
               icon: const Icon(Icons.add),
               onPressed: onNewChat,
             ),
+            if (onOpenInbox != null)
+              IconButton(
+                tooltip: l10n.navInbox,
+                icon: Badge.count(
+                  count: inboxCount,
+                  isLabelVisible: inboxCount > 0,
+                  child: const Icon(Icons.inbox_outlined),
+                ),
+                isSelected: activeTab == WorkspaceTab.inbox,
+                onPressed: onOpenInbox,
+              ),
             ?presence,
             const Spacer(),
             IconButton(
@@ -214,6 +256,7 @@ class _SidebarRow extends StatelessWidget {
     required this.onTap,
     this.accent = false,
     this.selected = false,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
@@ -225,6 +268,9 @@ class _SidebarRow extends StatelessWidget {
 
   /// Раздел открыт: фон и подпись выделены.
   final bool selected;
+
+  /// Число решений, ожидающих пользователя. Ноль скрывает бейдж.
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +314,44 @@ class _SidebarRow extends StatelessWidget {
                   ),
                 ),
               ),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: AppSpacing.sm),
+                _CountBadge(count: badgeCount, selected: selected),
+              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Небольшой счётчик в строке навигации. Цвет следует выделению строки,
+/// чтобы бейдж не спорил с фоном открытого раздела.
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count, required this.selected});
+
+  final int count;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: selected ? scheme.onSecondaryContainer : scheme.primary,
+        borderRadius: AppRadius.smAll,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs + 2,
+          vertical: 1,
+        ),
+        child: Text(
+          count > 99 ? '99+' : '$count',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: selected ? scheme.secondaryContainer : scheme.onPrimary,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),

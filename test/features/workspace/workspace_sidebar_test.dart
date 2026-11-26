@@ -153,6 +153,8 @@ Future<ChatListCubit> _pumpSidebar(
   String? selectedChatId,
   WorkspaceTab activeTab = WorkspaceTab.chats,
   void Function(WorkspaceTab tab)? onOpenTab,
+  VoidCallback? onOpenInbox,
+  int inboxCount = 0,
 }) async {
   final cubit = ChatListCubit(
     _FakeApi(chats, hosts, sessions),
@@ -178,6 +180,8 @@ Future<ChatListCubit> _pumpSidebar(
               onOpenChat: _openedChats.add,
               onNewChat: () => _newChatCount++,
               onOpenTab: onOpenTab ?? _openedTabs.add,
+              onOpenInbox: onOpenInbox,
+              inboxCount: inboxCount,
             ),
           ),
         ),
@@ -343,6 +347,26 @@ void main() {
     await tester.pump();
 
     expect(opened, [WorkspaceTab.settings]);
+  });
+
+  testWidgets('inbox row shows pending decisions and opens the section', (
+    tester,
+  ) async {
+    var opened = 0;
+    await _pumpSidebar(
+      tester,
+      chats: const [],
+      onOpenInbox: () => opened++,
+      inboxCount: 3,
+    );
+
+    expect(find.text('Inbox'), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+
+    await tester.tap(find.text('Inbox'));
+    await tester.pump();
+
+    expect(opened, 1);
   });
 
   group('golden', () {

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -13,6 +14,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -502,6 +504,82 @@ void main() {
     expect(chats.single['lastMessageSeq'], 3);
     expect(chats.single['unreadCount'], 2);
     expect(chats.single['readRevision'], 0);
+  });
+
+  test('returns the attention snapshot and dismisses one chat', () async {
+    backend.attentionValue = AttentionSnapshot(
+      revision: 3,
+      items: [
+        ChatAttention(
+          chatId: 'c1',
+          hostId: 'local',
+          title: 'Test chat',
+          reasons: const {ChatAttentionReason.unread},
+          approvals: const [],
+          questions: const [],
+          editFileChanges: const [],
+          unreadCount: 2,
+          lastReadSeq: 1,
+          lastMessageSeq: 3,
+          running: false,
+          updatedAt: DateTime(2026, 11, 27, 12),
+        ),
+      ],
+    );
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/attention',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final snapshot = jsonDecode(body) as Map;
+    expect(snapshot['revision'], 3);
+    final items = snapshot['items'] as List;
+    expect(items, hasLength(1));
+    expect(items.single['chatId'], 'c1');
+    expect(items.single['reasons'], ['unread']);
+    expect(items.single['unreadCount'], 2);
+
+    final (deleteStatus, _) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/attention/c1',
+      token: _token,
+    );
+    expect(deleteStatus, HttpStatus.noContent);
+    expect(backend.dismissedAttention, ['c1']);
+  });
+
+  test('streams attention changes over SSE', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emitAttention(const AttentionSnapshot(revision: 4, items: []));
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: chatStatusChanged');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['revision'], 4);
   });
 
   test('marks a chat read and streams the new cursor', () async {
@@ -2981,12 +3059,16 @@ Future<(int, String)> _request(
   return (response.statusCode, await utf8.decoder.bind(response).join());
 }
 
-final class _FakeBackend implements AgentApi, InteractionEventsApi {
+final class _FakeBackend
+    implements AgentApi, InteractionEventsApi, AttentionApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _resolutions = StreamController<InteractionResolution>.broadcast();
+  final _attention = StreamController<AttentionSnapshot>.broadcast();
+  AttentionSnapshot attentionValue = AttentionSnapshot.empty;
+  final dismissedAttention = <String>[];
   final sent = <(String, String, bool)>[];
   final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
@@ -3052,6 +3134,24 @@ final class _FakeBackend implements AgentApi, InteractionEventsApi {
     await _questions.close();
     await _editChanges.close();
     await _resolutions.close();
+    await _attention.close();
+  }
+
+  @override
+  Future<AttentionSnapshot> attention() async => attentionValue;
+
+  @override
+  Stream<AttentionSnapshot> get attentionChanges => _attention.stream;
+
+  @override
+  Future<void> dismissAttention(String chatId) async {
+    dismissedAttention.add(chatId);
+  }
+
+  /// Публикует снимок входящих так же, как это делает живой сервис.
+  void emitAttention(AttentionSnapshot snapshot) {
+    attentionValue = snapshot;
+    _attention.add(snapshot);
   }
 
   @override

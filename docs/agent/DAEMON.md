@@ -85,6 +85,9 @@ GET    /api/v1/chats/{id}/session    очередь, ревизия и turnSnaps
 PATCH  /api/v1/chats/{id}/queue/{itemId}   {"expectedRevision": 3, "position": 0}
 DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
 
+GET    /api/v1/attention             входящие
+DELETE /api/v1/attention/{chatId}    убрать проблемное завершение хода
+
 GET    /api/v1/chats/{id}/messages
 POST   /api/v1/chats/{id}/messages   {"text": "...", "sendNow": false, "clientMessageId": "..."}
 GET    /api/v1/chats/{id}/runs
@@ -273,15 +276,34 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 удаление последнего сообщения откатывают его к последнему уцелевшему, иначе
 новые сообщения на освободившихся `seq` выглядели бы прочитанными.
 
+`GET /attention` возвращает снимок входящих: `revision` и
+`items`, где у каждого чата есть `chatId`, `hostId`, `projectId`, `title`,
+`reasons`, готовые карточки `approvals`/`questions`/`editFileChanges`,
+`unreadCount`, `lastReadSeq`, `lastMessageSeq`, `running`, `turnAt` и
+`updatedAt`. `reasons` — `approval`, `question`, `editFiles`, `failed`,
+`stepLimit`, `budget`, `stalled` или `unread`. Снимок собирается из списка
+чатов, курсора прочтения, карточек брокера и сохранённого проблемного
+завершения хода; отдельной таблицы входящих нет. Проблемное завершение
+(`failed`, `stepLimit`, `budget`, `stalled`) хранится в `chat_attention_states`
+и переживает перезапуск: его снимает новый ход или
+`DELETE /attention/{chatId}`, а чтение чата не снимает. Непрочитанное
+снимается обычным `PUT /chats/{id}/read`. Карточки в снимке можно закрыть
+существующими `PUT /approvals/...`, `PUT /questions/...` и
+`PUT /edit-file-changes/...`; продолжение хода после лимита — `PUT
+/chats/{id}/turn`. `revision` монотонна: запоздавший ответ `GET /attention`
+не должен вернуть уже закрытую карточку.
+
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `turnSnapshot`, `runChanged`, `queueChanged`, `failure`,
 `trustNeeded`, `usage`, `stateChanged`, `chatChanged`, `chatDeleted`,
 `chatReadChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
 `approvalResolved`, `question`,
 `questionResolved`, `editFileChanges`, `editFileChangesResolved`,
-`clientSessionsChanged`, `modelRuntime`. `modelRuntime` — глобальное
-состояние загрузки моделей, не привязанное к чату; оно приходит и в
-чат-фильтрованный SSE.
+`chatStatusChanged`, `clientSessionsChanged`, `modelRuntime`. `modelRuntime` —
+глобальное состояние загрузки моделей, не привязанное к чату; оно приходит и в
+чат-фильтрованный SSE. `chatStatusChanged` несёт тот же снимок, что и
+`GET /attention`, с новой ревизией: окно обновляет бейдж и список решений без
+отдельного запроса.
 
 Без `?chatId=` поток остаётся глобальным, но тяжёлые события открытых чатов
 (`textDelta`, `reasoningDelta`, `messageAdded`, `turnSnapshot`, `runChanged`,

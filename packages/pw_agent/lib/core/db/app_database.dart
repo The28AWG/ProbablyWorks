@@ -16,6 +16,7 @@ part 'app_database.g.dart';
     Hosts,
     Chats,
     ChatReadStates,
+    ChatAttentionStates,
     Messages,
     ToolRuns,
     SessionRevisions,
@@ -35,7 +36,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 28;
+  static const currentSchemaVersion = 29;
 
   static const _uuid = Uuid();
 
@@ -215,6 +216,10 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(chatReadStates);
         await _backfillChatReadStates();
       }
+      // Версия 29: проблемное завершение хода, которое ждёт пользователя.
+      // Отдельная таблица, чтобы перезапуск приложения не терял лимит шагов
+      // или ошибку, а полное сохранение чата их не стирало.
+      if (from < 29) await m.createTable(chatAttentionStates);
     },
   );
 

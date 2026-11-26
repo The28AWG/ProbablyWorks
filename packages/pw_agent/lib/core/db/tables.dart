@@ -224,6 +224,28 @@ class ChatReadStates extends Table {
   Set<Column<Object>> get primaryKey => {chatId};
 }
 
+/// Проблемное завершение хода, которое ещё ждёт пользователя.
+///
+/// Одна строка на чат: новый проблемный ход заменяет предыдущий, а обычный
+/// ход удаляет запись. Отдельная таблица, как у [ChatReadStates], не даёт
+/// полному сохранению чата стереть состояние, которое переживает перезапуск.
+@DataClassName('ChatAttentionRow')
+class ChatAttentionStates extends Table {
+  TextColumn get chatId =>
+      text().references(Chats, #id, onDelete: KeyAction.cascade)();
+
+  /// `failed`, `stepLimit`, `budget` или `stalled`.
+  TextColumn get turn => text()();
+  DateTimeColumn get occurredAt => dateTime()();
+
+  /// Растёт при каждой записи. Нужна, чтобы отличить более свежий снимок от
+  /// запоздавшего, когда два окна видят одно состояние.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {chatId};
+}
+
 @DataClassName('MessageRow')
 @TableIndex(
   name: 'messages_chat_client_message_id',

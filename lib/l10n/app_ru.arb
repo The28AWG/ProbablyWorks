@@ -66,6 +66,117 @@
   "@navSettings": {
     "description": "Пункт навигации, открывающий настройки приложения."
   },
+  "navInbox": "Входящие",
+  "@navInbox": {
+    "description": "Пункт навигации, открывающий решения и проблемы, ждущие пользователя."
+  },
+  "inboxTitle": "Входящие",
+  "@inboxTitle": {
+    "description": "Заголовок входящих с подтверждениями, вопросами, упавшими ходами и непрочитанным."
+  },
+  "inboxEmptyTitle": "Входящие пусты",
+  "@inboxEmptyTitle": {
+    "description": "Заголовок пустого состояния входящих."
+  },
+  "inboxEmptyMessage": "Здесь появятся подтверждения, вопросы, упавшие ходы и непрочитанные ответы.",
+  "@inboxEmptyMessage": {
+    "description": "Пояснение пустого состояния входящих."
+  },
+  "inboxDecisionsSection": "Ждут вашего решения",
+  "@inboxDecisionsSection": {
+    "description": "Раздел входящих с подтверждениями, вопросами и выбором отката файлов."
+  },
+  "inboxProblemsSection": "Проблемные ходы",
+  "@inboxProblemsSection": {
+    "description": "Раздел входящих с ошибками, лимитами шагов и бюджета, остановкой из-за застоя."
+  },
+  "inboxUnreadSection": "Непрочитанное",
+  "@inboxUnreadSection": {
+    "description": "Раздел входящих с чатами, где есть непрочитанные ответы без решений и проблем."
+  },
+  "inboxApprovalTitle": "Нужно подтверждение",
+  "@inboxApprovalTitle": {
+    "description": "Заголовок карточки подтверждения во входящих."
+  },
+  "inboxQuestionTitle": "Вопрос агента",
+  "@inboxQuestionTitle": {
+    "description": "Заголовок карточки вопроса во входящих."
+  },
+  "inboxUnreadTitle": "{count, plural, one{{count} непрочитанное сообщение} few{{count} непрочитанных сообщения} many{{count} непрочитанных сообщений} other{{count} непрочитанного}}",
+  "@inboxUnreadTitle": {
+    "description": "Заголовок карточки непрочитанного чата во входящих.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxUnreadBody": "Откройте чат, чтобы прочитать ответ, или отметьте его прочитанным.",
+  "@inboxUnreadBody": {
+    "description": "Пояснение карточки непрочитанного чата во входящих."
+  },
+  "inboxOpenChat": "Открыть чат",
+  "@inboxOpenChat": {
+    "description": "Кнопка, открывающая чат из карточки входящих."
+  },
+  "inboxApprove": "Разрешить",
+  "@inboxApprove": {
+    "description": "Кнопка, подтверждающая действие из входящих."
+  },
+  "inboxDeny": "Отклонить",
+  "@inboxDeny": {
+    "description": "Кнопка, отклоняющая действие из входящих."
+  },
+  "inboxAnswer": "Ответить",
+  "@inboxAnswer": {
+    "description": "Кнопка, отправляющая ответ агенту из входящих."
+  },
+  "inboxAnswerHint": "Ваш ответ",
+  "@inboxAnswerHint": {
+    "description": "Подсказка поля ответа во входящих."
+  },
+  "inboxDismiss": "Скрыть",
+  "@inboxDismiss": {
+    "description": "Кнопка, убирающая завершённую проблему из входящих без нового хода."
+  },
+  "inboxMarkRead": "Отметить прочитанным",
+  "@inboxMarkRead": {
+    "description": "Кнопка, сдвигающая курсор прочтения до последнего сообщения из входящих."
+  },
+  "inboxContinue": "Продолжить",
+  "@inboxContinue": {
+    "description": "Кнопка, продолжающая ход после лимита шагов, бюджета или застоя."
+  },
+  "inboxBulkApprove": "Разрешить все ({count})",
+  "@inboxBulkApprove": {
+    "description": "Кнопка, подтверждающая все ожидающие подтверждения одного чата из входящих.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxUnavailable": "Сервер не поддерживает входящие. Обновите его или используйте карточки в чате.",
+  "@inboxUnavailable": {
+    "description": "Показывается, когда API агента не поддерживает входящие."
+  },
+  "inboxLoadFailed": "Не удалось загрузить входящие: {message}",
+  "@inboxLoadFailed": {
+    "description": "Ошибка на экране входящих.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxProblemFailedTitle": "Ход завершился ошибкой",
+  "@inboxProblemFailedTitle": {
+    "description": "Заголовок карточки входящих, когда ход завершился ошибкой."
+  },
+  "inboxProblemFailedBody": "Откройте чат, чтобы увидеть ошибку.",
+  "@inboxProblemFailedBody": {
+    "description": "Пояснение карточки входящих, когда ход завершился ошибкой."
+  },
   "onboardingTitle": "Подключите OpenRouter",
   "@onboardingTitle": {
     "description": "Заголовок первого экрана, который запрашивает API-ключ."

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -14,6 +15,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -594,6 +596,44 @@ void main() {
     expect(chat.unreadCount, 0);
     expect(chat.readRevision, 1);
     expect(backend.lastReadSeq, 2);
+  });
+
+  test('reads attention and applies an SSE snapshot', () async {
+    backend.attentionValue = AttentionSnapshot(
+      revision: 2,
+      items: [
+        ChatAttention(
+          chatId: 'c1',
+          hostId: 'local',
+          title: 'Test chat',
+          reasons: const {ChatAttentionReason.failed},
+          approvals: const [],
+          questions: const [],
+          editFileChanges: const [],
+          unreadCount: 1,
+          lastReadSeq: 0,
+          lastMessageSeq: 4,
+          running: false,
+          updatedAt: DateTime.utc(2026, 11, 27),
+        ),
+      ],
+    );
+    final loaded = await remote.attention();
+    expect(loaded.revision, 2);
+    expect(loaded.items.single.reasons, {ChatAttentionReason.failed});
+
+    await remote.startEvents();
+    await remote.eventsReady;
+    final received = Completer<AttentionSnapshot>();
+    final sub = remote.attentionChanges.listen(received.complete);
+    addTearDown(sub.cancel);
+
+    backend.emitAttention(const AttentionSnapshot(revision: 3, items: []));
+    final pushed = await received.future.timeout(const Duration(seconds: 3));
+    expect(pushed.revision, 3);
+
+    await remote.dismissAttention('c1');
+    expect(backend.dismissedAttention, ['c1']);
   });
 
   test('streams draft changes from another client', () async {
@@ -1691,6 +1731,71 @@ void main() {
     expect(sessions.single.id, 's2');
   });
 
+  test('a server restart does not freeze the attention snapshot', () async {
+    var instance = 'instance-1';
+    var attentionRevision = 5;
+    var sessionId = 's1';
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    httpServer.listen((request) async {
+      await request.drain<void>();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/api/v1/client/handshake':
+          response.write(
+            jsonEncode({
+              'sessionId': sessionId,
+              'instanceId': instance,
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        case '/api/v1/attention':
+          response.write(
+            jsonEncode({'revision': attentionRevision, 'items': <Object>[]}),
+          );
+        case '/api/v1/health':
+          response.write(
+            jsonEncode({'ok': true, 'version': '1', 'instanceId': instance}),
+          );
+        default:
+          response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    expect((await api.attention()).revision, 5);
+    expect(api.instanceId, 'instance-1');
+
+    final updated = api.attentionChanges
+        .firstWhere((snapshot) => snapshot.revision == 1)
+        .timeout(const Duration(seconds: 2));
+
+    // Перезапуск сервера: новый экземпляр начинает нумерацию ревизий заново.
+    instance = 'instance-2';
+    attentionRevision = 1;
+    sessionId = 's2';
+    expect(await api.checkConnection(), isTrue);
+    expect(api.instanceId, 'instance-2');
+
+    expect((await api.attention()).revision, 1);
+    expect((await updated).revision, 1);
+  });
+
   test('dispose keeps a session stored by another instance', () async {
     final store = MemoryClientSessionStore();
     final releaseDelete = Completer<void>();
@@ -1778,8 +1883,11 @@ final class _FakeData implements DataApi {
   Future<void> resetSettings() async => resets++;
 }
 
-final class _FakeAgent implements AgentApi {
+final class _FakeAgent implements AgentApi, AttentionApi {
   final changes = DomainChangeBus();
+  final _attention = StreamController<AttentionSnapshot>.broadcast();
+  AttentionSnapshot attentionValue = AttentionSnapshot.empty;
+  final dismissedAttention = <String>[];
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -1856,7 +1964,24 @@ final class _FakeAgent implements AgentApi {
     await _approvals.close();
     await _questions.close();
     await _editChanges.close();
+    await _attention.close();
     await changes.close();
+  }
+
+  @override
+  Future<AttentionSnapshot> attention() async => attentionValue;
+
+  @override
+  Stream<AttentionSnapshot> get attentionChanges => _attention.stream;
+
+  @override
+  Future<void> dismissAttention(String chatId) async {
+    dismissedAttention.add(chatId);
+  }
+
+  void emitAttention(AttentionSnapshot snapshot) {
+    attentionValue = snapshot;
+    _attention.add(snapshot);
   }
 
   @override

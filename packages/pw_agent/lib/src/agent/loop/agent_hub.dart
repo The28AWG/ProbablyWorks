@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/chat_run_stopper.dart';
+import 'package:pw_agent/agent/attention/chat_attention_service.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
@@ -92,6 +94,14 @@ class AgentHub implements ChatRunStopper, SubagentHost {
   late final SubagentManager subagents;
   final SessionStateService state;
   final InteractionBroker broker;
+
+  /// Сводка «что требует внимания» по всем чатам. Ленивая инициализация:
+  /// сервису нужны репозиторий и брокер, уже переданные в конструктор.
+  late final ChatAttentionService attention = ChatAttentionService(
+    chats,
+    broker,
+  );
+
   final ActiveExecRegistry registry;
   final ExecLogStore logs;
   final TurnChangesetService turnChangesets;
@@ -172,6 +182,15 @@ class AgentHub implements ChatRunStopper, SubagentHost {
     for (final session in _sessions.values)
       if (session.isRunning) session.chatId,
   };
+
+  /// Текущий снимок входящих.
+  AttentionSnapshot get attentionSnapshot => attention.snapshot;
+
+  /// Изменения входящих для окон и сервера.
+  Stream<AttentionSnapshot> get attentionChanges => attention.changes;
+
+  /// Пользователь разобрал проблемное завершение хода вручную.
+  Future<void> dismissAttention(String chatId) => attention.dismiss(chatId);
 
   /// Возвращает сессию чата, создавая её при необходимости. Повторное открытие
   /// того же чата получает прежний экземпляр, пока его не вытеснили.

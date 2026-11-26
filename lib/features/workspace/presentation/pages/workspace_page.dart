@@ -57,6 +57,7 @@ class WorkspacePage extends StatelessWidget {
               initialHosts: profile.isLocal
                   ? getIt<StartupHosts>().value
                   : const [],
+              chatApi: chatApi,
             ),
           ),
           BlocProvider(
@@ -74,16 +75,7 @@ class WorkspacePage extends StatelessWidget {
           ),
         ],
         child: AutoTabsRouter(
-          routes: [
-            ChatsTabRoute(),
-            ProjectsTabRoute(),
-            HostsRoute(),
-            SettingsRoute(
-              initialGroup: agentApi.status == AgentStatus.offline
-                  ? 'agents'
-                  : 'account',
-            ),
-          ],
+          routes: workspaceTabRoutes(agentApi.status),
           builder: (context, child) => PresenceLifecycle(
             tabs: AutoTabsRouter.of(context),
             sessionApi: _sessionApi(agentApi),
@@ -94,6 +86,21 @@ class WorkspacePage extends StatelessWidget {
     );
   }
 }
+
+/// Вкладки оболочки в порядке [WorkspaceTab].
+///
+/// Список вынесен из `build`, чтобы порядок маршрутов и индексы
+/// [WorkspaceTab] проверялись тестом: расхождение открывает не тот раздел и
+/// выходит за границы списка.
+List<PageRouteInfo> workspaceTabRoutes(AgentStatus status) => [
+  const ChatsTabRoute(),
+  const InboxRoute(),
+  const ProjectsTabRoute(),
+  const HostsRoute(),
+  SettingsRoute(
+    initialGroup: status == AgentStatus.offline ? 'agents' : 'account',
+  ),
+];
 
 ClientSessionApi? _sessionApi(AgentApi api) {
   final Object value = api;

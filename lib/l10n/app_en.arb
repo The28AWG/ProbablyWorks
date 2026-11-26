@@ -66,6 +66,117 @@
   "@navSettings": {
     "description": "Navigation item that opens application settings."
   },
+  "navInbox": "Inbox",
+  "@navInbox": {
+    "description": "Navigation item that opens decisions and problems waiting for the user."
+  },
+  "inboxTitle": "Inbox",
+  "@inboxTitle": {
+    "description": "Title of the inbox with approvals, questions, failed turns and unread replies."
+  },
+  "inboxEmptyTitle": "Your inbox is empty",
+  "@inboxEmptyTitle": {
+    "description": "Empty state title of the inbox."
+  },
+  "inboxEmptyMessage": "Approvals, questions, failed turns and unread replies will appear here.",
+  "@inboxEmptyMessage": {
+    "description": "Empty state explanation of the inbox."
+  },
+  "inboxDecisionsSection": "Waiting for your decision",
+  "@inboxDecisionsSection": {
+    "description": "Inbox section with approvals, questions and file rollback choices."
+  },
+  "inboxProblemsSection": "Turn problems",
+  "@inboxProblemsSection": {
+    "description": "Inbox section with failed turns, step and budget limits, and stalled turns."
+  },
+  "inboxUnreadSection": "Unread",
+  "@inboxUnreadSection": {
+    "description": "Inbox section with chats that have unread replies but no decisions or problems."
+  },
+  "inboxApprovalTitle": "Approval needed",
+  "@inboxApprovalTitle": {
+    "description": "Title of an approval card in the inbox."
+  },
+  "inboxQuestionTitle": "Agent question",
+  "@inboxQuestionTitle": {
+    "description": "Title of a question card in the inbox."
+  },
+  "inboxUnreadTitle": "{count, plural, =1{1 unread message} other{{count} unread messages}}",
+  "@inboxUnreadTitle": {
+    "description": "Title of an unread chat card in the inbox.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxUnreadBody": "Open the chat to read the reply, or mark it as read.",
+  "@inboxUnreadBody": {
+    "description": "Explanation of an unread chat card in the inbox."
+  },
+  "inboxOpenChat": "Open chat",
+  "@inboxOpenChat": {
+    "description": "Button that opens the chat from an inbox card."
+  },
+  "inboxApprove": "Approve",
+  "@inboxApprove": {
+    "description": "Button that approves an action from the inbox."
+  },
+  "inboxDeny": "Deny",
+  "@inboxDeny": {
+    "description": "Button that denies an action from the inbox."
+  },
+  "inboxAnswer": "Answer",
+  "@inboxAnswer": {
+    "description": "Button that sends an answer to the agent from the inbox."
+  },
+  "inboxAnswerHint": "Your answer",
+  "@inboxAnswerHint": {
+    "description": "Placeholder of the answer field in the inbox."
+  },
+  "inboxDismiss": "Dismiss",
+  "@inboxDismiss": {
+    "description": "Button that removes a finished problem from the inbox without starting a new turn."
+  },
+  "inboxMarkRead": "Mark as read",
+  "@inboxMarkRead": {
+    "description": "Button that moves the read cursor to the last message from the inbox."
+  },
+  "inboxContinue": "Continue",
+  "@inboxContinue": {
+    "description": "Button that continues a turn after a step limit, budget or stalled state."
+  },
+  "inboxBulkApprove": "Approve all ({count})",
+  "@inboxBulkApprove": {
+    "description": "Button that approves all pending approvals of one chat from the inbox.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxUnavailable": "The connected server does not support the inbox. Update it or use the cards in the chat.",
+  "@inboxUnavailable": {
+    "description": "Shown when the agent API has no inbox support."
+  },
+  "inboxLoadFailed": "Could not load the inbox: {message}",
+  "@inboxLoadFailed": {
+    "description": "Error shown on the inbox screen.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "inboxProblemFailedTitle": "The turn failed",
+  "@inboxProblemFailedTitle": {
+    "description": "Inbox card title when a turn ended with an error."
+  },
+  "inboxProblemFailedBody": "Open the chat to see the error.",
+  "@inboxProblemFailedBody": {
+    "description": "Inbox card explanation when a turn ended with an error."
+  },
   "onboardingTitle": "Connect OpenRouter",
   "@onboardingTitle": {
     "description": "Title of the first-run screen that asks for the API key."

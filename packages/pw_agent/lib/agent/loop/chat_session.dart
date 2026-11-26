@@ -247,6 +247,9 @@ class ChatSession {
   /// чтобы [whenIdle] всегда знал, чего ждать.
   void _beginTurn() {
     _running = true;
+    // Пока идёт новый ход, прошлое проблемное завершение не показывается:
+    // пользователь уже продолжил работу, а итог хода заменит старую ошибку.
+    _hub.attention.turnStarted(chatId);
     _liveText.clear();
     _liveReasoning.clear();
     _idleTurn ??= Completer<void>();

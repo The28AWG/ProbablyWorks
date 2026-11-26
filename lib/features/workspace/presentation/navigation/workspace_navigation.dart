@@ -6,7 +6,7 @@ import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/router/app_router.dart';
 
 /// Разделы оболочки. Порядок совпадает с вкладками [AutoTabsRouter].
-enum WorkspaceTab { chats, projects, hosts, settings }
+enum WorkspaceTab { chats, inbox, projects, hosts, settings }
 
 /// Стек вкладки чатов. Вкладка создаётся при старте и живёт, пока открыта оболочка, поэтому стек есть всегда.
 StackRouter? _chatsStack(TabsRouter tabs) =>

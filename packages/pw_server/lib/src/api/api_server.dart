@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
@@ -15,6 +16,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -901,6 +903,8 @@ final class ApiServer {
         if (rest.isEmpty && request.method == 'GET') return _search(request);
       case 'chats':
         return _routeChats(request, rest);
+      case 'attention':
+        return _routeAttention(request, rest);
       case 'approvals':
         if (rest.length == 2 &&
             rest[1] == 'decision' &&
@@ -1203,6 +1207,38 @@ final class ApiServer {
     'online': !session.isExpiredAt(now),
     'current': current,
   };
+
+  /// Входящие: сводный снимок и ручное скрытие проблемы.
+  ///
+  /// Отдельный маршрут, а не поле в `GET /chats`: старый клиент не должен
+  /// получать тяжёлые карточки, а новый экран — перечитывать весь список
+  /// чатов ради одного счётчика.
+  Future<void> _routeAttention(HttpRequest request, List<String> rest) async {
+    final api = _requireAttentionApi();
+    if (rest.isEmpty && request.method == 'GET') {
+      final snapshot = await api.attention();
+      return _json(request.response, HttpStatus.ok, _attentionJson(snapshot));
+    }
+    if (rest.length == 1 && request.method == 'DELETE') {
+      await api.dismissAttention(rest.first);
+      return _json(request.response, HttpStatus.noContent, {});
+    }
+    throw const AgentApiException(
+      HttpStatus.notFound,
+      'not_found',
+      'unknown attention endpoint',
+    );
+  }
+
+  AttentionApi _requireAttentionApi() {
+    final Object backend = _backend;
+    if (backend is AttentionApi) return backend;
+    throw const AgentApiException(
+      HttpStatus.notImplemented,
+      'not_supported',
+      'attention API is not available',
+    );
+  }
 
   Future<void> _routeChats(HttpRequest request, List<String> rest) async {
     if (rest.isEmpty && request.method == 'GET') return _chats(request);
@@ -2940,6 +2976,8 @@ final class ApiServer {
       _backend.editChanges.listen(controller.add),
       if (backend is InteractionEventsApi)
         backend.resolutions.listen(controller.add),
+      if (backend is AttentionApi)
+        backend.attentionChanges.listen(controller.add),
       _stateEvents.stream.listen(controller.add),
       if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
@@ -3332,6 +3370,38 @@ Map<String, Object?> _searchHitJson(SearchHit hit) => {
   'snippet': hit.snippet,
 };
 
+/// Снимок входящих. Карточки сериализуются теми же помощниками, что и
+/// события `approval`/`question`/`editFileChanges`: форма одна, чтобы окно
+/// не разбирало один и тот же объект двумя способами.
+Map<String, Object?> _attentionJson(AttentionSnapshot snapshot) => {
+  'revision': snapshot.revision,
+  'items': [
+    for (final item in snapshot.items)
+      {
+        'chatId': item.chatId,
+        'hostId': item.hostId,
+        'projectId': item.projectId,
+        'title': item.title,
+        'reasons': [for (final reason in item.reasons) reason.name],
+        'approvals': [
+          for (final request in item.approvals) _approvalJson(request),
+        ],
+        'questions': [
+          for (final question in item.questions) _questionJson(question),
+        ],
+        'editFileChanges': [
+          for (final request in item.editFileChanges) _editJson(request),
+        ],
+        'unreadCount': item.unreadCount,
+        'lastReadSeq': item.lastReadSeq,
+        'lastMessageSeq': item.lastMessageSeq,
+        'running': item.running,
+        'turnAt': item.turnAt?.toUtc().toIso8601String(),
+        'updatedAt': item.updatedAt.toUtc().toIso8601String(),
+      },
+  ],
+};
+
 Map<String, Object?> _chatJson(
   Chat chat, {
   required bool running,
@@ -3485,6 +3555,7 @@ bool _matchesChat(Object event, String? chatId) {
   // Runtime и файлы моделей — глобальное состояние, а не событие чата.
   if (event is ModelRuntimeState ||
       event is LocalModelsState ||
+      event is AttentionSnapshot ||
       event is _ClientSessionsChanged) {
     return true;
   }
@@ -3624,6 +3695,7 @@ String? _eventChatId(Object event) => switch (event) {
       ],
     },
   ),
+  AttentionSnapshot value => ('chatStatusChanged', _attentionJson(value)),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',

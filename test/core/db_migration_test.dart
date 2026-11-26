@@ -138,6 +138,30 @@ AppDatabase _openReadV27() => AppDatabase(
   ),
 );
 
+/// База v28 с чатом и курсором прочтения: проверяет таблицу внимания.
+AppDatabase _openReadV28() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(
+          'CREATE TABLE chat_read_states ('
+          'chat_id TEXT NOT NULL PRIMARY KEY REFERENCES chats(id) '
+          'ON DELETE CASCADE, '
+          'last_message_seq INTEGER NOT NULL DEFAULT 0, '
+          'last_read_seq INTEGER NOT NULL DEFAULT 0, '
+          'unread_count INTEGER NOT NULL DEFAULT 0, '
+          'read_revision INTEGER NOT NULL DEFAULT 0)',
+        )
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'chat', 0, 0)",
+        )
+        ..execute('PRAGMA user_version = 28');
+    },
+  ),
+);
+
 /// База v17 с сообщениями и (опционально) старым FTS-индексом.
 AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
   NativeDatabase.memory(
@@ -842,6 +866,28 @@ void main() {
     expect(row.read<int>('unread_count'), 0);
     expect(row.read<int>('read_revision'), 0);
   });
+
+  test(
+    'v28 → v29 creates the attention table without touching chats',
+    () async {
+      final db = _openReadV28();
+      addTearDown(db.close);
+
+      final columns = await db
+          .customSelect(
+            "SELECT name FROM pragma_table_info('chat_attention_states')",
+          )
+          .get();
+      expect(
+        columns.map((row) => row.read<String>('name')),
+        containsAll(['chat_id', 'turn', 'occurred_at', 'revision']),
+      );
+      final chats = await db
+          .customSelect('SELECT COUNT(*) AS n FROM chats')
+          .get();
+      expect(chats.single.read<int>('n'), 1);
+    },
+  );
 
   test('v26 → v27 adds revisions to hosts, projects and MCP servers', () async {
     final db = _openSharedV26();

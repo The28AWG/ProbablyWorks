@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -16,6 +17,7 @@ import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/api/state_events_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
@@ -64,7 +66,8 @@ class RemoteAgentApi
         PushApi,
         InteractionEventsApi,
         StateEventsApi,
-        ClientSessionApi {
+        ClientSessionApi,
+        AttentionApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -254,6 +257,8 @@ class RemoteAgentApi
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _clientSessionChanges =
       StreamController<List<ClientSessionView>>.broadcast();
+  final _attentionChanges = StreamController<AttentionSnapshot>.broadcast();
+  AttentionSnapshot _attentionSnapshot = AttentionSnapshot.empty;
   final _reconnects = StreamController<void>.broadcast();
   bool _reconnectPending = false;
 
@@ -347,6 +352,32 @@ class RemoteAgentApi
 
   @override
   Set<String> get waitingChatIds => Set.unmodifiable(_waiting);
+
+  @override
+  Future<AttentionSnapshot> attention() async {
+    final json = await _get('/attention');
+    final snapshot = _attentionSnapshotFrom(json);
+    _applyAttention(snapshot);
+    return snapshot;
+  }
+
+  @override
+  Stream<AttentionSnapshot> get attentionChanges => _attentionChanges.stream;
+
+  @override
+  Future<void> dismissAttention(String chatId) async {
+    await _send('DELETE', '/attention/$chatId');
+  }
+
+  /// Применяет снимок, только если он не старше уже показанного.
+  ///
+  /// Ответ `GET /attention` мог прийти после SSE-события: без проверки
+  /// ревизии старый снимок вернул бы уже закрытую карточку.
+  void _applyAttention(AttentionSnapshot snapshot) {
+    if (snapshot.revision < _attentionSnapshot.revision) return;
+    _attentionSnapshot = snapshot;
+    if (!_attentionChanges.isClosed) _attentionChanges.add(snapshot);
+  }
 
   @override
   Stream<AgentEvent> get events => _events.stream;
@@ -653,6 +684,7 @@ class RemoteAgentApi
     await _editChanges.close();
     await _resolutions.close();
     await _clientSessionChanges.close();
+    await _attentionChanges.close();
     await _reconnects.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
@@ -1888,6 +1920,11 @@ class RemoteAgentApi
     // начинает нумерацию ревизий заново, и без сброса все новые события
     // выглядели бы устаревшими, а список экранов застыл бы на старых данных.
     _clientSessionsRevision = -1;
+    // Внимание устроено так же: ревизия живёт в сервисе нового сервера и
+    // начинается с нуля. Без сброса запоздавший high-water mark отбрасывал бы
+    // каждый свежий `chatStatusChanged`, и входящие застыли бы до тех пор,
+    // пока новая ревизия не перегонит старую.
+    _attentionSnapshot = AttentionSnapshot.empty;
     _notifyReconnect();
   }
 
@@ -2278,6 +2315,8 @@ class RemoteAgentApi
           // Старый сервер присылал пустое событие: снимок читается запросом.
           unawaited(_refreshClientSessionsQuietly());
         }
+      case 'chatStatusChanged':
+        _applyAttention(_attentionSnapshotFrom(json));
       case 'turnStarted':
         final chatId = _string(json, 'chatId');
         _running.add(chatId);
@@ -2887,6 +2926,46 @@ Host _host(Map<String, dynamic> json) => Host(
   updatedAt:
       _date(json['updatedAt']) ??
       DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+);
+
+AttentionSnapshot _attentionSnapshotFrom(Map<String, dynamic> json) =>
+    AttentionSnapshot(
+      revision: _int(json, 'revision'),
+      items: [
+        for (final item in (json['items'] as List? ?? const []))
+          if (item is Map) _chatAttention(Map<String, dynamic>.from(item)),
+      ],
+    );
+
+ChatAttention _chatAttention(Map<String, dynamic> json) => ChatAttention(
+  chatId: _string(json, 'chatId'),
+  hostId: _string(json, 'hostId'),
+  projectId: json['projectId'] as String?,
+  title: '${json['title'] ?? ''}',
+  reasons: {
+    for (final reason in (json['reasons'] as List? ?? const []))
+      if (reason is String &&
+          ChatAttentionReason.values.asNameMap().containsKey(reason))
+        ChatAttentionReason.values.byName(reason),
+  },
+  approvals: [
+    for (final item in (json['approvals'] as List? ?? const []))
+      if (item is Map) _approval(Map<String, dynamic>.from(item)),
+  ],
+  questions: [
+    for (final item in (json['questions'] as List? ?? const []))
+      if (item is Map) _question(Map<String, dynamic>.from(item)),
+  ],
+  editFileChanges: [
+    for (final item in (json['editFileChanges'] as List? ?? const []))
+      if (item is Map) _editChangesRequest(Map<String, dynamic>.from(item)),
+  ],
+  unreadCount: _int(json, 'unreadCount'),
+  lastReadSeq: _int(json, 'lastReadSeq'),
+  lastMessageSeq: _int(json, 'lastMessageSeq'),
+  running: json['running'] == true,
+  turnAt: _date(json['turnAt']),
+  updatedAt: _time(json, 'updatedAt'),
 );
 
 ApprovalRequest _approval(Map<String, dynamic> json) => ApprovalRequest(

@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/draft_persistence.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
@@ -25,6 +26,7 @@ class ChatRepository implements DraftPersistence {
 
   $ChatsTable get _chatsTable => _db.chats;
   $ChatReadStatesTable get _readTable => _db.chatReadStates;
+  $ChatAttentionStatesTable get _attentionTable => _db.chatAttentionStates;
   $MessagesTable get _messagesTable => _db.messages;
   $ToolRunsTable get _toolRunsTable => _db.toolRuns;
   $SessionRevisionsTable get _sessionRevisionsTable => _db.sessionRevisions;
@@ -681,6 +683,61 @@ class ChatRepository implements DraftPersistence {
 
   static bool _isUnreadRole(MessageRole role) =>
       role == MessageRole.assistant || role == MessageRole.event;
+
+  // ---- attention ---------------------------------------------------------
+
+  /// Проблемные завершения ходов, которые ещё ждут пользователя.
+  ///
+  /// Входящие строятся по снимку чатов и этому состоянию. Поток отдельный,
+  /// потому что запись не меняет `updatedAt` и не должна переставлять чаты
+  /// в списке.
+  Stream<List<ChatAttentionRecord>> watchAttentionStates() => _db
+      .select(_attentionTable)
+      .watch()
+      .map(
+        (rows) => [
+          for (final row in rows)
+            ChatAttentionRecord(
+              chatId: row.chatId,
+              turn:
+                  ChatAttentionTurn.fromStorage(row.turn) ??
+                  // Неизвестное значение читается как ошибка: лучше лишний
+                  // раз показать проблему, чем молча потерять её.
+                  ChatAttentionTurn.failed,
+              occurredAt: row.occurredAt,
+              revision: row.revision,
+            ),
+        ],
+      );
+
+  /// Запоминает проблемное завершение хода.
+  ///
+  /// Одна строка на чат: новый проблемный ход заменяет предыдущий, а его
+  /// ревизия растёт, чтобы окна не приняли старый снимок за свежий.
+  Future<void> recordAttention(
+    String chatId,
+    ChatAttentionTurn turn, {
+    required DateTime occurredAt,
+  }) => _db.transaction(() async {
+    final current = await (_db.select(
+      _attentionTable,
+    )..where((t) => t.chatId.equals(chatId))).getSingleOrNull();
+    await _db
+        .into(_attentionTable)
+        .insertOnConflictUpdate(
+          ChatAttentionStatesCompanion.insert(
+            chatId: chatId,
+            turn: turn.name,
+            occurredAt: occurredAt,
+            revision: Value((current?.revision ?? 0) + 1),
+          ),
+        );
+  });
+
+  /// Снимает проблемное завершение хода: начался новый ход или пользователь
+  /// разобрал его во входящих.
+  Future<void> clearAttention(String chatId) =>
+      (_db.delete(_attentionTable)..where((t) => t.chatId.equals(chatId))).go();
 
   // ---- tool runs ---------------------------------------------------------
 

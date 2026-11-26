@@ -222,10 +222,23 @@ class InteractionBroker {
     for (final request in _pendingEditFileChanges.values) request.chatId,
   };
 
+  /// Все неотвеченные подтверждения. Нужны сводке внимания: ей нужен не один
+  /// чат, а полный снимок ожидающих решений.
+  List<ApprovalRequest> get allPendingApprovals =>
+      List.unmodifiable(_pendingApprovals.values);
+
   List<ApprovalRequest> pendingApprovals(String chatId) => [
     for (final r in _pendingApprovals.values)
       if (r.chatId == chatId) r,
   ];
+
+  /// Все неотвеченные вопросы агента.
+  List<UserQuestion> get allPendingQuestions =>
+      List.unmodifiable(_pendingQuestions.values);
+
+  /// Все необработанные запросы отката файлов.
+  List<EditFileChangesRequest> get allPendingEditFileChanges =>
+      List.unmodifiable(_pendingEditFileChanges.values);
 
   List<UserQuestion> pendingQuestions(String chatId) => [
     for (final q in _pendingQuestions.values)

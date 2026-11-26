@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
+import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';
@@ -394,6 +395,10 @@ class _RailSlot extends StatelessWidget {
     onExpand: onExpand,
     onNewChat: () => openNewChat(context),
     onOpenTab: (tab) => showWorkspaceTab(context, tab),
+    onOpenInbox: () => showWorkspaceTab(context, WorkspaceTab.inbox),
+    inboxCount: context.select<ChatListCubit, int>(
+      (cubit) => cubit.state.actionableCount,
+    ),
     presence: const WorkspacePresenceRail(),
   );
 }
@@ -420,6 +425,10 @@ class _ShellSidebar extends StatelessWidget {
     onOpenChat: (chatId) => _openChat(context, chatId),
     onNewChat: () => _newChat(context),
     onOpenTab: (tab) => _openTab(context, tab),
+    onOpenInbox: () => _openInbox(context),
+    inboxCount: context.select<ChatListCubit, int>(
+      (cubit) => cubit.state.actionableCount,
+    ),
   );
 
   void _openChat(BuildContext context, String chatId) {
@@ -434,6 +443,11 @@ class _ShellSidebar extends StatelessWidget {
 
   void _openTab(BuildContext context, WorkspaceTab tab) {
     showWorkspaceTab(context, tab);
+    onAction?.call();
+  }
+
+  void _openInbox(BuildContext context) {
+    showWorkspaceTab(context, WorkspaceTab.inbox);
     onAction?.call();
   }
 }
