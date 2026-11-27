@@ -6,6 +6,7 @@ library;
 
 export 'package:app_ui/app_ui.dart';
 
+export 'chat_snooze_menu.dart';
 export 'code_block.dart';
 export 'command_output.dart';
 export 'copy_button.dart';

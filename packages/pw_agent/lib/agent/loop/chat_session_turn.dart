@@ -337,6 +337,11 @@ extension _ChatSessionTurn on ChatSession {
 
   /// Системное уведомление о событии этого чата. Название чата читается здесь, потому что
   /// оно принадлежит данным сессии. Сбой чтения или показа уведомление не ломает ход агента.
+  ///
+  /// Пока пользователь отложил чат, уведомления молчат: он сам попросил не
+  /// напоминать до срока, а карточки и сообщения остаются в чате. Напоминание
+  /// после срока приходит отдельным событием сервиса внимания, поэтому эта
+  /// проверка не может его подавить.
   Future<void> _notify(
     AgentNoticeKind kind, {
     String? detail,
@@ -345,6 +350,7 @@ extension _ChatSessionTurn on ChatSession {
     String? questionId,
     String? eventId,
   }) async {
+    if (_hub.isAttentionSnoozed(chatId)) return;
     final id =
         noticeId ??
         agentNoticeId(

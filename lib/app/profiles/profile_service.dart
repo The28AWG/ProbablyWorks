@@ -10,6 +10,7 @@ import 'package:probably_works/core/session/session_close_signal.dart';
 import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -394,6 +395,10 @@ class ProfileService {
   /// сессии на другом экране, пользователь уже видит событие. Проверка
   /// запрашивает свежий список, чтобы сначала уведомление не появилось из-за
   /// устаревшего снимка после переключения устройства.
+  ///
+  /// Там же проверяется отложенный чат: пока действует срок «напомнить
+  /// позже», уведомления молчат, а после срока приходит отдельное событие
+  /// `attentionDue`.
   List<StreamSubscription<Object?>> _listenNotices(
     AgentApi api,
     String profileId,
@@ -402,7 +407,27 @@ class ProfileService {
     notifier: _notifier,
     profileId: profileId,
     isVisible: (chatId) => _chatVisibleInFocusedSession(api, chatId),
+    isSnoozed: (chatId) => _chatSnoozed(api, chatId),
   ).listen();
+
+  /// Читает входящие и проверяет, отложен ли чат.
+  ///
+  /// Снимок входящих небольшой, а уведомления приходят редко. Если сервер не
+  /// поддерживает входящие или проверка не прошла, считаем чат неотложенным:
+  /// пропустить важное хуже, чем показать лишнее.
+  Future<bool> _chatSnoozed(AgentApi api, String chatId) async {
+    final Object source = api;
+    if (source is! AttentionApi) return false;
+    try {
+      final snapshot = await source.attention().timeout(
+        const Duration(seconds: 2),
+      );
+      final snooze = snapshot.snoozeOf(chatId);
+      return snooze != null && snooze.until.isAfter(DateTime.now());
+    } on Object {
+      return false;
+    }
+  }
 
   Future<bool> _chatVisibleInFocusedSession(AgentApi api, String chatId) async {
     final Object source = api;

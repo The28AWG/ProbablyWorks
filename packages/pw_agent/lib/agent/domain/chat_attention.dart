@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 
@@ -172,13 +173,34 @@ final class ChatAttention extends Equatable {
 /// Снимок, а не дельта: входящих мало, а окно после обрыва SSE не должно
 /// собирать состояние из пропущенных частей. Ревизия отсекает запоздавший
 /// ответ HTTP, пришедший после более свежего события.
+///
+/// Отложенные чаты в [items] не попадают, но остаются в [snoozed]: иначе
+/// окно не могло бы показать «напомнить до …» и предложить вернуть чат раньше
+/// срока. Оба списка приходят одним снимком, поэтому срок не расходится между
+/// устройствами.
 final class AttentionSnapshot extends Equatable {
-  const AttentionSnapshot({required this.revision, required this.items});
+  const AttentionSnapshot({
+    required this.revision,
+    required this.items,
+    this.snoozed = const [],
+  });
 
   static const empty = AttentionSnapshot(revision: 0, items: []);
 
   final int revision;
   final List<ChatAttention> items;
+
+  /// Активные напоминания. Чат может быть отложен, даже если ничего не ждёт
+  /// решения: новые сообщения до срока останутся незамеченными намеренно.
+  final List<ChatSnooze> snoozed;
+
+  /// Напоминание о чате, если оно ещё действует.
+  ChatSnooze? snoozeOf(String chatId) {
+    for (final snooze in snoozed) {
+      if (snooze.chatId == chatId) return snooze;
+    }
+    return null;
+  }
 
   /// Сколько решений ждёт пользователя во всех чатах. Это число показывает
   /// бейдж навигации; непрочитанное в него не входит.
@@ -188,5 +210,5 @@ final class AttentionSnapshot extends Equatable {
   int get unreadCount => items.fold(0, (sum, item) => sum + item.unreadCount);
 
   @override
-  List<Object?> get props => [revision, items];
+  List<Object?> get props => [revision, items, snoozed];
 }

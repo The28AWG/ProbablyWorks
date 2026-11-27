@@ -56,6 +56,8 @@ class InboxPage extends StatelessWidget {
                 previous.attentionLoading != current.attentionLoading ||
                 previous.attentionError != current.attentionError ||
                 previous.attentionSupported != current.attentionSupported ||
+                previous.snoozeSupported != current.snoozeSupported ||
+                previous.chats != current.chats ||
                 previous.hosts != current.hosts,
             builder: (context, state) => _InboxBody(state: state),
           );
@@ -85,9 +87,11 @@ class _InboxBody extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
     final hosts = {for (final host in state.hosts) host.id: host};
+    final chats = {for (final chat in state.chats) chat.id: chat};
     final decisions = <Widget>[];
     final problems = <Widget>[];
     final unread = <Widget>[];
+    final snoozed = <Widget>[];
     for (final item in state.attention.items) {
       final host = hosts[item.hostId];
       final chatLabel = _chatLabel(item, host, l10n);
@@ -136,6 +140,20 @@ class _InboxBody extends StatelessWidget {
         unread.add(_UnreadInboxCard(item: item, chatLabel: chatLabel));
       }
     }
+    // Отложенные чаты не попадают в решения и проблемы, но пользователь
+    // должен видеть, на когда назначено напоминание и вернуть чат раньше.
+    for (final snooze in state.attention.snoozed) {
+      final chat = chats[snooze.chatId];
+      snoozed.add(
+        _SnoozedInboxCard(
+          key: ValueKey('snoozed-${snooze.chatId}'),
+          chatId: snooze.chatId,
+          until: snooze.until,
+          title: chat?.title ?? '',
+          host: chat == null ? null : hosts[chat.hostId],
+        ),
+      );
+    }
     final content = <Widget>[
       if (error != null)
         AppBanner(
@@ -158,6 +176,11 @@ class _InboxBody extends StatelessWidget {
           const SizedBox(height: AppSpacing.xl),
         AppSection(title: l10n.inboxUnreadSection, children: unread),
       ],
+      if (snoozed.isNotEmpty) ...[
+        if (decisions.isNotEmpty || problems.isNotEmpty || unread.isNotEmpty)
+          const SizedBox(height: AppSpacing.xl),
+        AppSection(title: l10n.inboxSnoozedSection, children: snoozed),
+      ],
     ];
     if (content.isEmpty) {
       return AppEmptyState(
@@ -176,13 +199,18 @@ class _InboxBody extends StatelessWidget {
     ChatAttention item,
     Host? host,
     AppLocalizations l10n,
-  ) {
-    final title = item.title.trim().isEmpty ? l10n.chatsNew : item.title;
+  ) => _labelFor(item.title, host, l10n);
+
+  /// Подпись чата по названию и хосту. Отложенная карточка знает только id и
+  /// название из списка чатов, поэтому подпись не должна требовать снимка
+  /// входящих целиком.
+  static String _labelFor(String title, Host? host, AppLocalizations l10n) {
+    final text = title.trim().isEmpty ? l10n.chatsNew : title;
     // Локальный хост в базе называется `Local`; в интерфейсе его подпись
     // зависит от платформы и переводится, как в списке чатов.
     final hostName = host == null ? null : hostDisplayName(host, l10n).trim();
-    if (hostName == null || hostName.isEmpty) return title;
-    return '$title · $hostName';
+    if (hostName == null || hostName.isEmpty) return text;
+    return '$text · $hostName';
   }
 
   static Future<void> _approveAll(
@@ -231,6 +259,7 @@ class _ApprovalInboxCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final cubit = context.read<ChatListCubit>();
     final diff = request.diff;
+    final snoozeSupported = cubit.state.snoozeSupported;
     return ActionCard(
       title: l10n.inboxApprovalTitle,
       icon: Icons.lock_clock_outlined,
@@ -240,6 +269,7 @@ class _ApprovalInboxCard extends StatelessWidget {
           onPressed: () => openChat(context, item.chatId),
           child: Text(l10n.inboxOpenChat),
         ),
+        if (snoozeSupported) _SnoozeAction(chatId: item.chatId),
         TextButton(
           onPressed: () => cubit.deny(request.id),
           child: Text(l10n.inboxDeny),
@@ -297,6 +327,8 @@ class _QuestionInboxCardState extends State<_QuestionInboxCard> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final cubit = context.read<ChatListCubit>();
+    final snoozeSupported = cubit.state.snoozeSupported;
     return ActionCard(
       title: l10n.inboxQuestionTitle,
       icon: Icons.help_outline,
@@ -306,6 +338,7 @@ class _QuestionInboxCardState extends State<_QuestionInboxCard> {
           onPressed: () => openChat(context, widget.item.chatId),
           child: Text(l10n.inboxOpenChat),
         ),
+        if (snoozeSupported) _SnoozeAction(chatId: widget.item.chatId),
         FilledButton(onPressed: _answer, child: Text(l10n.inboxAnswer)),
       ],
       children: [
@@ -347,6 +380,7 @@ class _EditFilesInboxCard extends StatelessWidget {
       for (final file in request.files)
         '${_editFileKindLabel(l10n, file.kind)}  ${file.path}',
     ].join('\n');
+    final snoozeSupported = cubit.state.snoozeSupported;
     return ActionCard(
       title: hasFiles
           ? l10n.editFileChangesTitle
@@ -358,6 +392,7 @@ class _EditFilesInboxCard extends StatelessWidget {
           onPressed: () => openChat(context, item.chatId),
           child: Text(l10n.inboxOpenChat),
         ),
+        if (snoozeSupported) _SnoozeAction(chatId: item.chatId),
         TextButton(
           onPressed: () => cubit.resolveEditChanges(
             request.id,
@@ -445,6 +480,7 @@ class _ProblemInboxCard extends StatelessWidget {
       host,
       AppLocalizations.of(context),
     );
+    final snoozeSupported = cubit.state.snoozeSupported;
     return ActionCard(
       title: title,
       icon: Icons.error_outline,
@@ -454,6 +490,7 @@ class _ProblemInboxCard extends StatelessWidget {
           onPressed: () => openChat(context, item.chatId),
           child: Text(l10n.inboxOpenChat),
         ),
+        if (snoozeSupported) _SnoozeAction(chatId: item.chatId),
         TextButton(
           onPressed: () => cubit.dismissAttention(item.chatId),
           child: Text(l10n.inboxDismiss),
@@ -482,6 +519,7 @@ class _UnreadInboxCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final cubit = context.read<ChatListCubit>();
+    final snoozeSupported = cubit.state.snoozeSupported;
     return ActionCard(
       title: l10n.inboxUnreadTitle(item.unreadCount),
       icon: Icons.mark_chat_unread_outlined,
@@ -491,6 +529,7 @@ class _UnreadInboxCard extends StatelessWidget {
           onPressed: () => openChat(context, item.chatId),
           child: Text(l10n.inboxOpenChat),
         ),
+        if (snoozeSupported) _SnoozeAction(chatId: item.chatId),
         FilledButton(
           onPressed: () => cubit.markAttentionRead(item),
           child: Text(l10n.inboxMarkRead),
@@ -500,6 +539,70 @@ class _UnreadInboxCard extends StatelessWidget {
         _ChatLabel(text: chatLabel),
         Text(
           l10n.inboxUnreadBody,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+}
+
+/// Кнопка «Напомнить позже» для карточки входящих.
+///
+/// Решение о доступности принимает вызывающая карточка: на старом сервере
+/// без маршрута напоминаний действие не показывается вовсе, а не заменяется
+/// пустым местом в ряду кнопок.
+class _SnoozeAction extends StatelessWidget {
+  const _SnoozeAction({required this.chatId});
+
+  final String chatId;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<ChatListCubit>();
+    return ChatSnoozeButton(
+      onSelected: (until) => cubit.snoozeAttention(chatId, until),
+    );
+  }
+}
+
+/// Карточка отложенного чата: видно, до какого срока он молчит.
+class _SnoozedInboxCard extends StatelessWidget {
+  const _SnoozedInboxCard({
+    required this.chatId,
+    required this.until,
+    required this.title,
+    required this.host,
+    super.key,
+  });
+
+  final String chatId;
+  final DateTime until;
+  final String title;
+  final Host? host;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final cubit = context.read<ChatListCubit>();
+    final chatLabel = _InboxBody._labelFor(title, host, l10n);
+    return ActionCard(
+      title: l10n.inboxSnoozeTitle(formatChatSnoozeUntil(l10n, until)),
+      icon: Icons.snooze_outlined,
+      tone: AppTone.info,
+      actions: [
+        TextButton(
+          onPressed: () => openChat(context, chatId),
+          child: Text(l10n.inboxOpenChat),
+        ),
+        FilledButton(
+          onPressed: () => cubit.unsnoozeAttention(chatId),
+          child: Text(l10n.inboxSnoozeReturn),
+        ),
+      ],
+      children: [
+        _ChatLabel(text: chatLabel),
+        Text(
+          l10n.inboxSnoozeBody,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],

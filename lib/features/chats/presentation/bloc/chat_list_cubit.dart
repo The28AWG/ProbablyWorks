@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
@@ -28,6 +29,7 @@ class ChatListState extends Equatable {
     this.attentionLoading = false,
     this.attentionError,
     this.attentionSupported = true,
+    this.snoozeSupported = false,
     this.digest,
   });
 
@@ -60,6 +62,12 @@ class ChatListState extends Equatable {
   /// Поддерживает ли подключённый агент входящие. false — старый сервер без
   /// `GET /attention`; экран показывает пояснение вместо пустого списка.
   final bool attentionSupported;
+
+  /// Поддерживает ли подключённый агент отложенные напоминания. false —
+  /// старый сервер без маршрута `PUT /attention/{chatId}/snooze` или снимок
+  /// входящих ещё не показал поле `snoozed`: меню «Напомнить позже» не
+  /// показывается, остальное работает как раньше.
+  final bool snoozeSupported;
 
   /// Дайджест «пока вас не было». Null — сводка ещё не запрошена или сервер
   /// её не поддерживает; пустой объект скрывает карточку.
@@ -96,6 +104,7 @@ class ChatListState extends Equatable {
     String? attentionError,
     bool clearAttentionError = false,
     bool? attentionSupported,
+    bool? snoozeSupported,
     AttentionDigest? digest,
     bool clearDigest = false,
   }) => ChatListState(
@@ -110,6 +119,7 @@ class ChatListState extends Equatable {
         ? null
         : (attentionError ?? this.attentionError),
     attentionSupported: attentionSupported ?? this.attentionSupported,
+    snoozeSupported: snoozeSupported ?? this.snoozeSupported,
     digest: clearDigest ? null : (digest ?? this.digest),
   );
 
@@ -124,6 +134,7 @@ class ChatListState extends Equatable {
     attentionLoading,
     attentionError,
     attentionSupported,
+    snoozeSupported,
     digest,
   ];
 }
@@ -172,6 +183,8 @@ class ChatListCubit extends Cubit<ChatListState> {
     if (presence != null) unawaited(_refreshSessions(presence));
     _attentionApi = api is AttentionApi ? api : null;
     _digestApi = api is AttentionDigestApi ? api : null;
+    _snoozeApi = api is AttentionSnoozeApi ? api : null;
+    emit(state.copyWith(snoozeSupported: _supportsSnooze));
     if (_attentionApi == null) {
       emit(state.copyWith(attentionSupported: false));
     }
@@ -187,7 +200,12 @@ class ChatListCubit extends Cubit<ChatListState> {
     _statusSub = _api.statusChanges.listen((status) {
       // При потере сервера не показываем устаревший список как живой.
       if (status == AgentStatus.offline && !isClosed) {
-        emit(ChatListState(attentionSupported: state.attentionSupported));
+        emit(
+          ChatListState(
+            attentionSupported: state.attentionSupported,
+            snoozeSupported: state.snoozeSupported,
+          ),
+        );
       } else if (status == AgentStatus.online) {
         unawaited(refreshAttention(force: true));
       }
@@ -204,6 +222,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   final ChatApi? chatApi;
   AttentionApi? _attentionApi;
   AttentionDigestApi? _digestApi;
+  AttentionSnoozeApi? _snoozeApi;
   Future<void>? _digestInFlight;
 
   /// Поколение карточки: растёт при каждом скрытии. Ответ на запрос, начатый
@@ -228,7 +247,30 @@ class ChatListCubit extends Cubit<ChatListState> {
   StreamSubscription<void>? _reconnectSub;
 
   void _clear() {
-    if (!isClosed) emit(const ChatListState());
+    if (!isClosed) {
+      emit(
+        ChatListState(
+          attentionSupported: state.attentionSupported,
+          snoozeSupported: state.snoozeSupported,
+        ),
+      );
+    }
+  }
+
+  /// Поддержка откладывания подключённым агентом прямо сейчас.
+  ///
+  /// У удалённого сервера возможность известна только после первого снимка
+  /// входящих; до него действие скрыто, чтобы не обещать несуществующий
+  /// маршрут. Без входящих откладывать тоже нечего.
+  bool get _supportsSnooze =>
+      _attentionApi != null && (_snoozeApi?.supportsSnooze ?? false);
+
+  /// Приводит флаг в состоянии к текущей возможности агента.
+  void _syncSnoozeSupport() {
+    if (isClosed) return;
+    final supported = _supportsSnooze;
+    if (state.snoozeSupported == supported) return;
+    emit(state.copyWith(snoozeSupported: supported));
   }
 
   /// Снимок присутствия пришёл с сервера: обновляем значки в списке чатов
@@ -258,6 +300,9 @@ class ChatListCubit extends Cubit<ChatListState> {
         // Снимок пришёл — сервер точно поддерживает входящие. Это важно после
         // обновления демона, которое случилось при открытом приложении.
         attentionSupported: true,
+        // Поле `snoozed` в снимке — единственный признак, что новый демон
+        // умеет откладывать напоминания. Старый демон его не присылает.
+        snoozeSupported: _supportsSnooze,
         clearAttentionError: true,
       ),
     );
@@ -291,6 +336,8 @@ class ChatListCubit extends Cubit<ChatListState> {
             attention: AttentionSnapshot.empty,
             attentionLoading: false,
             attentionSupported: false,
+            // Без маршрута входящих не может быть и маршрута напоминаний.
+            snoozeSupported: false,
             clearAttentionError: true,
           ),
         );
@@ -381,6 +428,29 @@ class ChatListCubit extends Cubit<ChatListState> {
     final api = _attentionApi;
     if (api == null) return Future.value(false);
     return _attentionAction(() => api.dismissAttention(chatId));
+  }
+
+  /// Откладывает напоминание о чате до [until].
+  ///
+  /// Срок выбирает клиент (в локальной зоне), а хранит и применяет сервер:
+  /// поэтому «завтра утром» означает одно и то же время на всех устройствах,
+  /// даже если у них разные часовые пояса. Если сервер не знает маршрут,
+  /// действие после ответа скрывается.
+  Future<bool> snoozeAttention(String chatId, DateTime until) async {
+    final api = _snoozeApi;
+    if (api == null) return false;
+    final ok = await _attentionAction(() => api.snoozeAttention(chatId, until));
+    _syncSnoozeSupport();
+    return ok;
+  }
+
+  /// Возвращает отложенный чат во входящие раньше срока.
+  Future<bool> unsnoozeAttention(String chatId) async {
+    final api = _snoozeApi;
+    if (api == null) return false;
+    final ok = await _attentionAction(() => api.unsnoozeAttention(chatId));
+    _syncSnoozeSupport();
+    return ok;
   }
 
   /// Выполняет действие из входящих и оставляет ошибку в состоянии.

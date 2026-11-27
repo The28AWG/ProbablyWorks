@@ -162,6 +162,28 @@ AppDatabase _openReadV28() => AppDatabase(
   ),
 );
 
+/// База v29 с проблемным завершением хода и чатом.
+AppDatabase _openReadV29() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(
+          'CREATE TABLE chat_attention_states ('
+          'chat_id TEXT NOT NULL PRIMARY KEY REFERENCES chats(id) '
+          'ON DELETE CASCADE, '
+          'turn TEXT NOT NULL, occurred_at INTEGER NOT NULL, '
+          'revision INTEGER NOT NULL DEFAULT 0)',
+        )
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'chat', 0, 0)",
+        )
+        ..execute('PRAGMA user_version = 29');
+    },
+  ),
+);
+
 /// База v17 с сообщениями и (опционально) старым FTS-индексом.
 AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
   NativeDatabase.memory(
@@ -888,6 +910,25 @@ void main() {
       expect(chats.single.read<int>('n'), 1);
     },
   );
+
+  test('v29 → v30 creates the snooze table without touching chats', () async {
+    final db = _openReadV29();
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name FROM pragma_table_info('chat_attention_snoozes')",
+        )
+        .get();
+    expect(
+      columns.map((row) => row.read<String>('name')),
+      containsAll(['chat_id', 'until', 'revision']),
+    );
+    final chats = await db
+        .customSelect('SELECT COUNT(*) AS n FROM chats')
+        .get();
+    expect(chats.single.read<int>('n'), 1);
+  });
 
   test('v26 → v27 adds revisions to hosts, projects and MCP servers', () async {
     final db = _openSharedV26();

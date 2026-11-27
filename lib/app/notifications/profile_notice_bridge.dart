@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
@@ -14,6 +17,14 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
 /// проверки вызывающий код трактует как «не видит»: лучше лишнее уведомление,
 /// чем пропущенный запрос подтверждения.
 typedef ChatVisibleProbe = Future<bool> Function(String chatId);
+
+/// Проверяет, отложен ли чат на сервере.
+///
+/// Пока действует срок «напомнить позже», уведомления о чате молчат: срок —
+/// это и есть просьба не напоминать. Ошибку проверки вызывающий код трактует
+/// как «не отложен»: пропустить запрос подтверждения хуже, чем показать
+/// уведомление о чате, который сейчас отложен.
+typedef ChatSnoozedProbe = Future<bool> Function(String chatId);
 
 /// Переводит события удалённого агента в системные уведомления профиля.
 ///
@@ -28,18 +39,23 @@ typedef ChatVisibleProbe = Future<bool> Function(String chatId);
 /// [listen] возвращает подписки, чтобы владелец профиля мог снять их вместе с
 /// SSE-соединением. Повторных подписок на те же потоки класс не создаёт:
 /// подписка живёт столько же, сколько API профиля.
+///
+/// Уведомления отложенного чата не показываются и снимаются при откладывании,
+/// а наступивший срок приходит отдельным событием `attentionDue`.
 final class ProfileNoticeBridge {
   ProfileNoticeBridge({
     required this.api,
     required this.notifier,
     required this.profileId,
     this.isVisible,
+    this.isSnoozed,
   });
 
   final AgentApi api;
   final AppNotifier notifier;
   final String profileId;
   final ChatVisibleProbe? isVisible;
+  final ChatSnoozedProbe? isSnoozed;
 
   /// Карточки, для которых уведомление показано или ещё показывается.
   ///
@@ -48,6 +64,10 @@ final class ProfileNoticeBridge {
   /// показать уже отменённое уведомление после `cancel`. Она же нужна, чтобы
   /// после обрыва связи сверить уведомления с карточками на сервере.
   final _cards = <String, _CardNotice>{};
+
+  /// Чаты, отложенные по последнему снимку входящих. Хранится, чтобы
+  /// заметить именно новое откладывание и снять уведомления его карточек.
+  final _snoozedChats = <String>{};
 
   /// Подписывает уведомления на события этого профиля.
   List<StreamSubscription<Object?>> listen() {
@@ -98,6 +118,24 @@ final class ProfileNoticeBridge {
     if (source case final InteractionEventsApi interactions) {
       subscriptions.add(interactions.resolutions.listen(_onResolution));
     }
+    if (source case final AttentionApi attention) {
+      subscriptions.add(attention.attentionChanges.listen(_onAttention));
+    }
+    if (source case final AttentionSnoozeApi snooze) {
+      // Наступил срок «напомнить позже»: сервер уже вернул чат во входящие, а
+      // уведомление объясняет, почему и о чём напомнить.
+      subscriptions.add(
+        snooze.attentionDue.listen(
+          (chatId) => unawaited(
+            _notify(
+              chatId,
+              AgentNoticeKind.snoozeDue,
+              noticeId: _dueNoticeId(chatId),
+            ),
+          ),
+        ),
+      );
+    }
     // Событие закрытия могло потеряться в обрыве связи: после восстановления
     // сверяем показанные уведомления с карточками на сервере.
     if (source case final ChatReconnectApi reconnect) {
@@ -108,11 +146,36 @@ final class ProfileNoticeBridge {
     return subscriptions;
   }
 
+  /// Чат отложили на любом устройстве — уведомления его карточек в трее
+  /// больше неактуальны: решение всё равно можно принять, но срок напомнит о
+  /// нём позже. Снимаем только уведомления, которые появились до откладывания.
+  void _onAttention(AttentionSnapshot snapshot) {
+    final snoozed = {for (final item in snapshot.snoozed) item.chatId};
+    for (final chatId in snoozed.difference(_snoozedChats)) {
+      _cancelChatCards(chatId);
+      // Старое напоминание о наступившем сроке тоже больше неактуально:
+      // пользователь снова попросил не напоминать до нового срока.
+      _cancelSnoozeDue(chatId);
+    }
+    _snoozedChats
+      ..clear()
+      ..addAll(snoozed);
+  }
+
+  /// Устойчивый ключ напоминания: одно на чат, поэтому повторное срабатывание
+  /// обновляет уведомление, а не копит строки в трее.
+  String _dueNoticeId(String chatId) => agentNoticeId(
+    kind: AgentNoticeKind.snoozeDue,
+    scope: profileId,
+    chatId: chatId,
+  );
+
   void _onEvent(AgentEvent event) {
     if (event is AgentChatDeleted) {
       // Вместе с чатом исчезают и его карточки: отдельного события закрытия
       // для каждой может не прийти.
       _cancelChatCards(event.chatId);
+      _cancelSnoozeDue(event.chatId);
       return;
     }
     final kind = switch (event) {
@@ -139,6 +202,11 @@ final class ProfileNoticeBridge {
       _cards.remove(noticeId);
       unawaited(_cancel(noticeId));
     }
+  }
+
+  /// Убирает напоминание о наступившем сроке, если оно ещё висит в трее.
+  void _cancelSnoozeDue(String chatId) {
+    unawaited(_cancel(_dueNoticeId(chatId)));
   }
 
   /// Закрытая карточка больше не ждёт решения: уведомление с её id нужно убрать.
@@ -228,6 +296,12 @@ final class ProfileNoticeBridge {
       _cards.remove(resolvedNoticeId);
       return;
     }
+    // Отложенный чат намеренно молчит до срока. Напоминание о наступившем
+    // сроке сюда не попадает: к этому моменту чат уже не отложен.
+    if (kind != AgentNoticeKind.snoozeDue && await _snoozedElsewhere(chatId)) {
+      _cards.remove(resolvedNoticeId);
+      return;
+    }
     var title = '';
     try {
       title = (await api.chat(chatId))?.title ?? '';
@@ -266,6 +340,17 @@ final class ProfileNoticeBridge {
       return await probe(chatId);
     } on Object catch (error) {
       AppLog.root.fine('presence check before notice failed: $error');
+      return false;
+    }
+  }
+
+  Future<bool> _snoozedElsewhere(String chatId) async {
+    final probe = isSnoozed;
+    if (probe == null) return false;
+    try {
+      return await probe(chatId);
+    } on Object catch (error) {
+      AppLog.root.fine('snooze check before notice failed: $error');
       return false;
     }
   }

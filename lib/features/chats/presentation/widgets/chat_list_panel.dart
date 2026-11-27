@@ -55,6 +55,8 @@ class ChatListPanel extends StatelessWidget {
               previous.chats != current.chats ||
               previous.hosts != current.hosts ||
               previous.sessions != current.sessions ||
+              previous.attention != current.attention ||
+              previous.snoozeSupported != current.snoozeSupported ||
               previous.runningIds != current.runningIds ||
               previous.waitingIds != current.waitingIds,
           builder: (context, state) {
@@ -101,6 +103,9 @@ class ChatListPanel extends StatelessWidget {
                               selected: chat.id == selectedId,
                               running: state.runningIds.contains(chat.id),
                               waiting: state.waitingIds.contains(chat.id),
+                              snoozedUntil: state.attention
+                                  .snoozeOf(chat.id)
+                                  ?.until,
                               onTap: () => onOpen(chat.id),
                               onMenu: (position) => _showChatMenu(
                                 context,
@@ -108,6 +113,9 @@ class ChatListPanel extends StatelessWidget {
                                 position,
                                 onOpen: onOpen,
                                 onDeleted: onDeleted,
+                                snoozed:
+                                    state.attention.snoozeOf(chat.id) != null,
+                                snoozeSupported: state.snoozeSupported,
                               ),
                             );
                           },
@@ -130,6 +138,8 @@ Future<void> _showChatMenu(
   Offset position, {
   required void Function(String chatId) onOpen,
   void Function(String chatId)? onDeleted,
+  required bool snoozed,
+  required bool snoozeSupported,
 }) async {
   final l10n = AppLocalizations.of(context);
   final scheme = Theme.of(context).colorScheme;
@@ -142,6 +152,26 @@ Future<void> _showChatMenu(
       position.dy,
     ),
     items: [
+      if (snoozeSupported)
+        PopupMenuItem(
+          value: snoozed ? _ChatAction.unsnooze : _ChatAction.snooze,
+          child: Row(
+            children: [
+              Icon(
+                snoozed
+                    ? Icons.notifications_active_outlined
+                    : Icons.snooze_outlined,
+                size: 18,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text(
+                snoozed ? l10n.chatSnoozeClear : l10n.inboxSnooze,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
       if (chat.hasUnread)
         PopupMenuItem(
           value: _ChatAction.markRead,
@@ -200,6 +230,15 @@ Future<void> _showChatMenu(
   );
   if (!context.mounted || action == null) return;
   switch (action) {
+    case _ChatAction.snooze:
+      // Второй шаг с теми же сроками, что и в карточке входящих: Material не
+      // поддерживает подменю, а срок должен выбираться одинаково.
+      final until = await showChatSnoozeMenuAt(context, position);
+      if (until != null && context.mounted) {
+        await context.read<ChatListCubit>().snoozeAttention(chat.id, until);
+      }
+    case _ChatAction.unsnooze:
+      await context.read<ChatListCubit>().unsnoozeAttention(chat.id);
     case _ChatAction.markRead:
       await context.read<ChatListCubit>().markRead(chat);
     case _ChatAction.rename:
@@ -288,7 +327,7 @@ Future<void> _deleteChat(
   }
 }
 
-enum _ChatAction { markRead, rename, fork, delete }
+enum _ChatAction { snooze, unsnooze, markRead, rename, fork, delete }
 
 /// Заголовок группы, который остаётся у верхнего края списка при прокрутке.
 class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -349,6 +388,7 @@ class _ChatTile extends StatefulWidget {
     required this.waiting,
     required this.onTap,
     required this.onMenu,
+    this.snoozedUntil,
   });
 
   final Chat chat;
@@ -360,6 +400,10 @@ class _ChatTile extends StatefulWidget {
   final bool selected;
   final bool running;
   final bool waiting;
+
+  /// Срок «напомнить позже». Null — чат не отложен. Значок в строке
+  /// объясняет, почему чат не появляется во входящих и молчит.
+  final DateTime? snoozedUntil;
   final VoidCallback onTap;
   final void Function(Offset position) onMenu;
 
@@ -450,7 +494,9 @@ class _ChatTileState extends State<_ChatTile> {
                                 : FontWeight.w400,
                           ),
                         ),
-                        if (hostName != null || widget.viewers.isNotEmpty) ...[
+                        if (hostName != null ||
+                            widget.viewers.isNotEmpty ||
+                            widget.snoozedUntil != null) ...[
                           const SizedBox(height: 2),
                           Row(
                             children: [
@@ -476,6 +522,12 @@ class _ChatTileState extends State<_ChatTile> {
                                 const SizedBox(width: AppSpacing.sm),
                               if (widget.viewers.isNotEmpty)
                                 _PresenceBadge(viewers: widget.viewers),
+                              if (widget.snoozedUntil != null) ...[
+                                if (hostName != null ||
+                                    widget.viewers.isNotEmpty)
+                                  const SizedBox(width: AppSpacing.sm),
+                                _SnoozeBadge(until: widget.snoozedUntil!),
+                              ],
                             ],
                           ),
                         ],
@@ -554,6 +606,30 @@ class _UnreadBadge extends StatelessWidget {
             height: 1.4,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Значок отложенного чата: срок виден по подсказке.
+///
+/// Отдельный значок, а не бейдж: «напомнить позже» не уменьшает важность
+/// сообщений, а объясняет, почему чат молчит и не попадает во входящие.
+class _SnoozeBadge extends StatelessWidget {
+  const _SnoozeBadge({required this.until});
+
+  final DateTime until;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: l10n.chatSnoozeTooltip(formatChatSnoozeUntil(l10n, until)),
+      child: Icon(
+        Icons.snooze_outlined,
+        size: 12,
+        color: scheme.onSurfaceVariant,
       ),
     );
   }

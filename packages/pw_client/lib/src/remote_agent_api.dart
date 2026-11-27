@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -21,6 +22,7 @@ import 'package:pw_agent/agent/api/state_events_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -70,7 +72,8 @@ class RemoteAgentApi
         StateEventsApi,
         ClientSessionApi,
         AttentionApi,
-        AttentionDigestApi {
+        AttentionDigestApi,
+        AttentionSnoozeApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -262,6 +265,20 @@ class RemoteAgentApi
       StreamController<List<ClientSessionView>>.broadcast();
   final _attentionChanges = StreamController<AttentionSnapshot>.broadcast();
   AttentionSnapshot _attentionSnapshot = AttentionSnapshot.empty;
+
+  /// Поддерживает ли подключённый сервер отложенные напоминания.
+  ///
+  /// Старый демон не присылает в снимке входящих поле `snoozed`, поэтому до
+  /// первого снимка действие «Напомнить позже» скрыто. Новый сервер присылает
+  /// поле всегда, даже с пустым списком.
+  bool _supportsSnooze = false;
+
+  /// Сроки напоминаний, о которых сообщил сервер.
+  ///
+  /// Отдельный поток от снимка: возвращение чата во входящие уже видно по
+  /// `chatStatusChanged`, а это событие объясняет, почему чат вернулся, и
+  /// позволяет показать системное напоминание.
+  final _attentionDue = StreamController<String>.broadcast();
   final _reconnects = StreamController<void>.broadcast();
   bool _reconnectPending = false;
 
@@ -359,10 +376,15 @@ class RemoteAgentApi
   @override
   Future<AttentionSnapshot> attention() async {
     final json = await _get('/attention');
+    // Наличие поля, а не пустота списка: старый сервер его не присылает вовсе.
+    _supportsSnooze = json.containsKey('snoozed');
     final snapshot = _attentionSnapshotFrom(json);
     _applyAttention(snapshot);
     return snapshot;
   }
+
+  @override
+  bool get supportsSnooze => _supportsSnooze;
 
   @override
   Stream<AttentionSnapshot> get attentionChanges => _attentionChanges.stream;
@@ -377,6 +399,45 @@ class RemoteAgentApi
     final json = await _get('/attention/digest');
     return _attentionDigestFrom(json);
   }
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) async {
+    try {
+      await _send(
+        'PUT',
+        '/attention/$chatId/snooze',
+        body: {'until': until.toUtc().toIso8601String()},
+      );
+      _supportsSnooze = true;
+    } on AgentApiException catch (error) {
+      // Сервер без маршрута: интерфейс должен убрать действие, а не повторять
+      // заведомо неуспешный запрос.
+      if (_isMissingSnoozeRoute(error)) _supportsSnooze = false;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) async {
+    try {
+      await _send('DELETE', '/attention/$chatId/snooze');
+      _supportsSnooze = true;
+    } on AgentApiException catch (error) {
+      if (_isMissingSnoozeRoute(error)) _supportsSnooze = false;
+      rethrow;
+    }
+  }
+
+  /// Ошибка означает, что подключённый сервер не знает маршрут напоминаний.
+  ///
+  /// `404 chat_not_found` сюда не входит: это ответ нового сервера на
+  /// откладывание несуществующего чата, и он не должен скрывать действие.
+  static bool _isMissingSnoozeRoute(AgentApiException error) =>
+      error.code == 'not_supported' ||
+      (error.status == 404 && error.code == 'not_found');
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
 
   /// Применяет снимок, только если он не старше уже показанного.
   ///
@@ -694,6 +755,7 @@ class RemoteAgentApi
     await _resolutions.close();
     await _clientSessionChanges.close();
     await _attentionChanges.close();
+    await _attentionDue.close();
     await _reconnects.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
@@ -1934,6 +1996,9 @@ class RemoteAgentApi
     // каждый свежий `chatStatusChanged`, и входящие застыли бы до тех пор,
     // пока новая ревизия не перегонит старую.
     _attentionSnapshot = AttentionSnapshot.empty;
+    // Возможность откладывать относится к прошлому экземпляру: новый сервер
+    // может быть старой версии, поэтому до первого снимка действие скрыто.
+    _supportsSnooze = false;
     _notifyReconnect();
   }
 
@@ -2325,7 +2390,16 @@ class RemoteAgentApi
           unawaited(_refreshClientSessionsQuietly());
         }
       case 'chatStatusChanged':
+        // Новый сервер присылает `snoozed` в каждом снимке. Отсутствие поля
+        // у старого демона не должно сбрасывать уже известную возможность:
+        // после обновления демона снимок снова придёт с пустым списком.
+        if (json.containsKey('snoozed')) _supportsSnooze = true;
         _applyAttention(_attentionSnapshotFrom(json));
+      case 'attentionDue':
+        final chatId = _string(json, 'chatId');
+        if (chatId.isNotEmpty && !_attentionDue.isClosed) {
+          _attentionDue.add(chatId);
+        }
       case 'turnStarted':
         final chatId = _string(json, 'chatId');
         _running.add(chatId);
@@ -2944,7 +3018,28 @@ AttentionSnapshot _attentionSnapshotFrom(Map<String, dynamic> json) =>
         for (final item in (json['items'] as List? ?? const []))
           if (item is Map) _chatAttention(Map<String, dynamic>.from(item)),
       ],
+      snoozed: (json['snoozed'] as List? ?? const [])
+          .whereType<Map>()
+          .map((item) => _chatSnooze(Map<String, dynamic>.from(item)))
+          .whereType<ChatSnooze>()
+          .toList(),
     );
+
+/// Срок из снимка входящих.
+///
+/// Старый сервер поля не присылает — тогда напоминаний просто нет. Без срока
+/// запись пропускается: скрыть чат «навсегда» из-за битого поля хуже, чем
+/// показать его в обычном списке.
+ChatSnooze? _chatSnooze(Map<String, dynamic> json) {
+  final until = _date(json['until']);
+  final chatId = _string(json, 'chatId');
+  if (until == null || chatId.isEmpty) return null;
+  return ChatSnooze(
+    chatId: chatId,
+    until: until,
+    revision: _int(json, 'revision'),
+  );
+}
 
 ChatAttention _chatAttention(Map<String, dynamic> json) => ChatAttention(
   chatId: _string(json, 'chatId'),

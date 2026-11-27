@@ -147,6 +147,78 @@
   "@inboxContinue": {
     "description": "Button that continues a turn after a step limit, budget or stalled state."
   },
+  "inboxSnooze": "Remind later",
+  "@inboxSnooze": {
+    "description": "Menu item that defers the reminder about a chat to a chosen time."
+  },
+  "inboxSnoozedSection": "Snoozed",
+  "@inboxSnoozedSection": {
+    "description": "Inbox section with chats whose reminder is deferred."
+  },
+  "inboxSnoozeTitle": "Snoozed until {when}",
+  "@inboxSnoozeTitle": {
+    "description": "Title of a snoozed chat card in the inbox.",
+    "placeholders": {
+      "when": {"type": "String", "example": "tomorrow, 09:00"}
+    }
+  },
+  "inboxSnoozeBody": "Until then the chat stays out of the inbox and sends no notifications.",
+  "@inboxSnoozeBody": {
+    "description": "Explanation of a snoozed chat card in the inbox."
+  },
+  "inboxSnoozeReturn": "Return now",
+  "@inboxSnoozeReturn": {
+    "description": "Button that clears the reminder and returns the chat to the inbox before the deadline."
+  },
+  "chatSnoozePresetHour": "In an hour",
+  "@chatSnoozePresetHour": {
+    "description": "Reminder time: an hour from now."
+  },
+  "chatSnoozePresetEvening": "This evening",
+  "@chatSnoozePresetEvening": {
+    "description": "Reminder time: today at 18:00, or tomorrow at 18:00 if that time has passed."
+  },
+  "chatSnoozePresetTomorrow": "Tomorrow morning",
+  "@chatSnoozePresetTomorrow": {
+    "description": "Reminder time: tomorrow at 09:00."
+  },
+  "chatSnoozePresetNextWorkday": "Next work day",
+  "@chatSnoozePresetNextWorkday": {
+    "description": "Reminder time: the nearest weekday at 09:00."
+  },
+  "chatSnoozeClear": "Clear reminder",
+  "@chatSnoozeClear": {
+    "description": "Menu item that returns a snoozed chat to the inbox before the deadline."
+  },
+  "chatSnoozeTooltip": "Reminder until {when}",
+  "@chatSnoozeTooltip": {
+    "description": "Tooltip of the badge in a snoozed chat row.",
+    "placeholders": {
+      "when": {"type": "String", "example": "tomorrow, 09:00"}
+    }
+  },
+  "chatSnoozeToday": "today, {time}",
+  "@chatSnoozeToday": {
+    "description": "Reminder time today: 'today, 18:00'.",
+    "placeholders": {
+      "time": {"type": "String", "example": "18:00"}
+    }
+  },
+  "chatSnoozeTomorrow": "tomorrow, {time}",
+  "@chatSnoozeTomorrow": {
+    "description": "Reminder time tomorrow: 'tomorrow, 09:00'.",
+    "placeholders": {
+      "time": {"type": "String", "example": "09:00"}
+    }
+  },
+  "chatSnoozeMoment": "{date}, {time}",
+  "@chatSnoozeMoment": {
+    "description": "Reminder time on a later date: '28.11, 09:00'.",
+    "placeholders": {
+      "date": {"type": "String", "example": "28.11"},
+      "time": {"type": "String", "example": "09:00"}
+    }
+  },
   "inboxDigestTitle": "While you were away",
   "@inboxDigestTitle": {
     "description": "Title of the digest card shown after the user returns to the app."
@@ -3216,6 +3288,14 @@
         "example": "done"
       }
     }
+  },
+  "notifySnoozedDueTitle": "Reminder",
+  "@notifySnoozedDueTitle": {
+    "description": "System notification title (action part) when a snooze deadline is reached."
+  },
+  "notifySnoozedDueBody": "The snoozed chat is waiting for your attention again.",
+  "@notifySnoozedDueBody": {
+    "description": "System notification body when a snooze deadline is reached."
   },
   "securityProfileTitle": "Command levels",
   "@securityProfileTitle": {

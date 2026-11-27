@@ -3,8 +3,12 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/notifications/profile_notice_bridge.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -244,7 +248,9 @@ void main() {
     api.addEvent(const AgentChatDeleted('c1'));
     await pumpEventQueue();
 
-    expect(notifier.cancelled, ['p1:approvalNeeded:a1']);
+    // Вместе с чатом снимается и напоминание о наступившем сроке, если оно
+    // ещё висело в трее.
+    expect(notifier.cancelled, ['p1:approvalNeeded:a1', 'p1:snoozeDue:c1']);
   });
 
   test(
@@ -285,7 +291,82 @@ void main() {
       expect(notifier.events.last, 'cancel:p1:approvalNeeded:a1');
     },
   );
+
+  test('cancels card notices when the chat becomes snoozed', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+    );
+    _listen(bridge);
+
+    api.addApproval(
+      const ApprovalRequest(
+        id: 'a1',
+        chatId: 'c1',
+        toolName: 'run_command',
+        summary: 'ls',
+        reason: 'ask',
+      ),
+    );
+    await pumpEventQueue();
+    expect(notifier.notices, hasLength(1));
+
+    api.addAttention(_snoozedSnapshot('c1', revision: 2));
+    await pumpEventQueue();
+
+    expect(notifier.cancelled, contains('p1:approvalNeeded:a1'));
+  });
+
+  test('suppresses notices for a chat snoozed on the server', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+      isSnoozed: (chatId) async => chatId == 'c1',
+    );
+    _listen(bridge);
+
+    api.addEvent(const AgentTurnFinished('c1', TurnEnd.completed));
+    await pumpEventQueue();
+    expect(notifier.notices, isEmpty);
+
+    api.addEvent(const AgentTurnFinished('c2', TurnEnd.completed));
+    await pumpEventQueue();
+    expect(notifier.notices, hasLength(1));
+    expect(notifier.notices.single.chatId, 'c2');
+  });
+
+  test('cancels the due reminder when the chat is snoozed again', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+    );
+    _listen(bridge);
+
+    api.addDue('c1');
+    await pumpEventQueue();
+    expect(notifier.notices.single.kind, AgentNoticeKind.snoozeDue);
+    expect(notifier.notices.single.noticeId, 'p1:snoozeDue:c1');
+
+    // Пользователь снова отложил чат: старое напоминание не должно висеть.
+    api.addAttention(_snoozedSnapshot('c1', revision: 3));
+    await pumpEventQueue();
+
+    expect(notifier.cancelled, contains('p1:snoozeDue:c1'));
+  });
 }
+
+/// Снимок входящих с одним отложенным чатом.
+AttentionSnapshot _snoozedSnapshot(String chatId, {required int revision}) =>
+    AttentionSnapshot(
+      revision: revision,
+      items: const [],
+      snoozed: [
+        ChatSnooze(chatId: chatId, until: DateTime.utc(2030), revision: 1),
+      ],
+    );
 
 /// Подписывает мост и снимает подписки после теста.
 void _listen(ProfileNoticeBridge bridge) {
@@ -298,12 +379,19 @@ void _listen(ProfileNoticeBridge bridge) {
 }
 
 final class _FakeAgentApi
-    implements AgentApi, InteractionEventsApi, ChatReconnectApi {
+    implements
+        AgentApi,
+        InteractionEventsApi,
+        ChatReconnectApi,
+        AttentionApi,
+        AttentionSnoozeApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _reconnects = StreamController<void>.broadcast();
+  final _attention = StreamController<AttentionSnapshot>.broadcast();
+  final _attentionDue = StreamController<String>.broadcast();
 
   /// Что сервер вернёт при сверке карточек после обрыва связи.
   var pendingApprovalsResult = <ApprovalRequest>[];
@@ -348,7 +436,33 @@ final class _FakeAgentApi
   void addResolution(InteractionResolution resolution) =>
       _resolutions.add(resolution);
 
+  void addAttention(AttentionSnapshot snapshot) => _attention.add(snapshot);
+
+  void addDue(String chatId) => _attentionDue.add(chatId);
+
   void reconnect() => _reconnects.add(null);
+
+  @override
+  Stream<AttentionSnapshot> get attentionChanges => _attention.stream;
+
+  @override
+  Future<AttentionSnapshot> attention() async => AttentionSnapshot.empty;
+
+  @override
+  Future<void> dismissAttention(String chatId) => Future<void>.value();
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) =>
+      Future<void>.value();
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) => Future<void>.value();
+
+  @override
+  bool get supportsSnooze => true;
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
 
   Future<void> close() async {
     await _events.close();
@@ -356,6 +470,8 @@ final class _FakeAgentApi
     await _questions.close();
     await _resolutions.close();
     await _reconnects.close();
+    await _attention.close();
+    await _attentionDue.close();
   }
 
   @override

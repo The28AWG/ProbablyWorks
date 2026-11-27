@@ -147,6 +147,78 @@
   "@inboxContinue": {
     "description": "Кнопка, продолжающая ход после лимита шагов, бюджета или застоя."
   },
+  "inboxSnooze": "Напомнить позже",
+  "@inboxSnooze": {
+    "description": "Пункт меню, откладывающий напоминание о чате на выбранный срок."
+  },
+  "inboxSnoozedSection": "Отложено",
+  "@inboxSnoozedSection": {
+    "description": "Раздел входящих с чатами, напоминание о которых отложено."
+  },
+  "inboxSnoozeTitle": "Отложено до {when}",
+  "@inboxSnoozeTitle": {
+    "description": "Заголовок карточки отложенного чата во входящих.",
+    "placeholders": {
+      "when": {"type": "String", "example": "завтра, 09:00"}
+    }
+  },
+  "inboxSnoozeBody": "До этого срока чат не попадает во входящие и не присылает уведомлений.",
+  "@inboxSnoozeBody": {
+    "description": "Пояснение к отложенному чату во входящих."
+  },
+  "inboxSnoozeReturn": "Вернуть сейчас",
+  "@inboxSnoozeReturn": {
+    "description": "Кнопка, снимающая напоминание и возвращающая чат во входящие раньше срока."
+  },
+  "chatSnoozePresetHour": "Через час",
+  "@chatSnoozePresetHour": {
+    "description": "Срок напоминания: через час от текущего момента."
+  },
+  "chatSnoozePresetEvening": "Сегодня вечером",
+  "@chatSnoozePresetEvening": {
+    "description": "Срок напоминания: сегодня в 18:00, а если это время уже прошло — завтра в 18:00."
+  },
+  "chatSnoozePresetTomorrow": "Завтра утром",
+  "@chatSnoozePresetTomorrow": {
+    "description": "Срок напоминания: завтра в 09:00."
+  },
+  "chatSnoozePresetNextWorkday": "В следующий рабочий день",
+  "@chatSnoozePresetNextWorkday": {
+    "description": "Срок напоминания: ближайший будний день в 09:00."
+  },
+  "chatSnoozeClear": "Снять напоминание",
+  "@chatSnoozeClear": {
+    "description": "Пункт меню, возвращающий отложенный чат во входящие раньше срока."
+  },
+  "chatSnoozeTooltip": "Напоминание до {when}",
+  "@chatSnoozeTooltip": {
+    "description": "Подсказка значка в строке отложенного чата.",
+    "placeholders": {
+      "when": {"type": "String", "example": "завтра, 09:00"}
+    }
+  },
+  "chatSnoozeToday": "сегодня, {time}",
+  "@chatSnoozeToday": {
+    "description": "Срок напоминания на сегодня: «сегодня, 18:00».",
+    "placeholders": {
+      "time": {"type": "String", "example": "18:00"}
+    }
+  },
+  "chatSnoozeTomorrow": "завтра, {time}",
+  "@chatSnoozeTomorrow": {
+    "description": "Срок напоминания на завтра: «завтра, 09:00».",
+    "placeholders": {
+      "time": {"type": "String", "example": "09:00"}
+    }
+  },
+  "chatSnoozeMoment": "{date}, {time}",
+  "@chatSnoozeMoment": {
+    "description": "Срок напоминания на дальнюю дату: «28.11, 09:00».",
+    "placeholders": {
+      "date": {"type": "String", "example": "28.11"},
+      "time": {"type": "String", "example": "09:00"}
+    }
+  },
   "inboxDigestTitle": "Пока вас не было",
   "@inboxDigestTitle": {
     "description": "Заголовок карточки дайджеста после возврата в приложение."
@@ -3216,6 +3288,14 @@
         "example": "done"
       }
     }
+  },
+  "notifySnoozedDueTitle": "Напоминание",
+  "@notifySnoozedDueTitle": {
+    "description": "Заголовок системного уведомления (часть про действие), когда наступил срок «напомнить позже»."
+  },
+  "notifySnoozedDueBody": "Отложенный чат снова ждёт вашего внимания.",
+  "@notifySnoozedDueBody": {
+    "description": "Текст системного уведомления, когда наступил срок «напомнить позже»."
   },
   "securityProfileTitle": "Уровни команд",
   "@securityProfileTitle": {

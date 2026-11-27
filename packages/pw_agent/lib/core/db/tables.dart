@@ -246,6 +246,30 @@ class ChatAttentionStates extends Table {
   Set<Column<Object>> get primaryKey => {chatId};
 }
 
+/// Отложенное напоминание о чате.
+///
+/// Отдельная таблица, как входящие и курсор прочтения: сохранение чата не
+/// должно сбрасывать срок, а запись напоминания не должна менять `updatedAt`
+/// и переставлять чат в списке. Одна строка на чат, потому что повторное
+/// «напомнить позже» сдвигает срок, а не копит напоминания.
+@DataClassName('ChatSnoozeRow')
+class ChatAttentionSnoozes extends Table {
+  TextColumn get chatId =>
+      text().references(Chats, #id, onDelete: KeyAction.cascade)();
+
+  /// До какого момента чат отложен. Просроченная строка ещё может лежать в
+  /// базе, если таймер не успел её убрать: снимок сравнивает срок с текущим
+  /// временем и такую строку не скрывает.
+  DateTimeColumn get until => dateTime()();
+
+  /// Растёт при каждом изменении срока, чтобы окна отличали свежий снимок от
+  /// запоздавшего.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {chatId};
+}
+
 @DataClassName('MessageRow')
 @TableIndex(
   name: 'messages_chat_client_message_id',

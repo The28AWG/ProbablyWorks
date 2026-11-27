@@ -101,6 +101,7 @@ class AgentHub implements ChatRunStopper, SubagentHost {
   late final ChatAttentionService attention = ChatAttentionService(
     chats,
     broker,
+    notifier: notifier,
   );
 
   final ActiveExecRegistry registry;
@@ -150,6 +151,10 @@ class AgentHub implements ChatRunStopper, SubagentHost {
   /// чата. Вызов, которому карточка не нужна, выполняется сразу. Прерванный
   /// процесс заново не запускается.
   Future<void> resumeAfterRestart() async {
+    // Внимание и отложенные напоминания запускаются сразу: срок мог истечь,
+    // пока приложение было выключено, и напоминание должно уйти даже в демоне
+    // без подключённых окон.
+    attention.start();
     await subagents.restore();
     for (final id in await chats.chatIds()) {
       if (!await ChatSession.hasUnfinishedStep(chats, id)) continue;
@@ -192,6 +197,19 @@ class AgentHub implements ChatRunStopper, SubagentHost {
 
   /// Пользователь разобрал проблемное завершение хода вручную.
   Future<void> dismissAttention(String chatId) => attention.dismiss(chatId);
+
+  /// Пользователь отложил напоминание о чате до [until].
+  Future<void> snoozeAttention(String chatId, DateTime until) =>
+      attention.snooze(chatId, until);
+
+  /// Пользователь вернул отложенный чат раньше срока.
+  Future<void> unsnoozeAttention(String chatId) => attention.unsnooze(chatId);
+
+  /// Сроки напоминаний, которые только что наступили.
+  Stream<String> get attentionDue => attention.due;
+
+  /// Отложен ли чат прямо сейчас. Уведомления молчат, пока действует срок.
+  bool isAttentionSnoozed(String chatId) => attention.isSnoozed(chatId);
 
   /// Дайджест «пока вас не было» по общей базе агента.
   Future<AttentionDigest> attentionDigest() => attention.digest();

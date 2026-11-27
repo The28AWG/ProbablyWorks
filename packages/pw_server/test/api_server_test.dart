@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -18,6 +19,7 @@ import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -557,6 +559,87 @@ void main() {
     expect(backend.dismissedAttention, ['c1']);
   });
 
+  test('snoozes and unsnoozes a chat through the attention routes', () async {
+    final until = DateTime.utc(2026, 11, 28, 9);
+    final (status, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/attention/c1/snooze',
+      token: _token,
+      body: {'until': until.toIso8601String()},
+    );
+    expect(status, HttpStatus.noContent);
+    expect(backend.snoozed, [('c1', until)]);
+
+    final (deleteStatus, _) = await _request(
+      client,
+      base,
+      'DELETE',
+      '/api/v1/attention/c1/snooze',
+      token: _token,
+    );
+    expect(deleteStatus, HttpStatus.noContent);
+    expect(backend.unsnoozed, ['c1']);
+  });
+
+  test('rejects a snooze without a valid deadline', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/attention/c1/snooze',
+      token: _token,
+      body: {'until': 'tomorrow'},
+    );
+    expect(status, HttpStatus.badRequest);
+    final error = (jsonDecode(body) as Map)['error'] as Map;
+    expect(error['code'], 'bad_field');
+    expect(backend.snoozed, isEmpty);
+  });
+
+  test('treats a snooze deadline without a zone as UTC', () async {
+    final (status, _) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/attention/c1/snooze',
+      token: _token,
+      body: {'until': '2026-11-28T09:00:00'},
+    );
+    expect(status, HttpStatus.noContent);
+    expect(backend.snoozed, [('c1', DateTime.utc(2026, 11, 28, 9))]);
+  });
+
+  test('the attention snapshot includes snoozed chats', () async {
+    backend.attentionValue = AttentionSnapshot(
+      revision: 5,
+      items: const [],
+      snoozed: [
+        ChatSnooze(
+          chatId: 'c1',
+          until: DateTime.utc(2026, 11, 28, 9),
+          revision: 2,
+        ),
+      ],
+    );
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/attention',
+      token: _token,
+    );
+    expect(status, HttpStatus.ok);
+    final snapshot = jsonDecode(body) as Map;
+    expect(snapshot['items'], isEmpty);
+    final snoozed = snapshot['snoozed'] as List;
+    expect(snoozed.single['chatId'], 'c1');
+    expect(snoozed.single['until'], '2026-11-28T09:00:00.000Z');
+    expect(snoozed.single['revision'], 2);
+  });
+
   test('returns the attention digest', () async {
     backend.digestValue = const AttentionDigest(
       items: [
@@ -617,6 +700,33 @@ void main() {
     await lines.cancel();
     expect(event, 'event: chatStatusChanged');
     expect(jsonDecode(data!.replaceFirst('data: ', ''))['revision'], 4);
+  });
+
+  test('streams attention due reminders over SSE', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emitDue('c1');
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: attentionDue');
+    expect(jsonDecode(data!.replaceFirst('data: ', ''))['chatId'], 'c1');
   });
 
   test('marks a chat read and streams the new cursor', () async {
@@ -3101,16 +3211,20 @@ final class _FakeBackend
         AgentApi,
         InteractionEventsApi,
         AttentionApi,
-        AttentionDigestApi {
+        AttentionDigestApi,
+        AttentionSnoozeApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
   final _editChanges = StreamController<EditFileChangesRequest>.broadcast();
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
+  final _attentionDue = StreamController<String>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
   AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
+  final snoozed = <(String, DateTime)>[];
+  final unsnoozed = <String>[];
   final sent = <(String, String, bool)>[];
   final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
@@ -3177,6 +3291,7 @@ final class _FakeBackend
     await _editChanges.close();
     await _resolutions.close();
     await _attention.close();
+    await _attentionDue.close();
   }
 
   @override
@@ -3192,6 +3307,24 @@ final class _FakeBackend
   Future<void> dismissAttention(String chatId) async {
     dismissedAttention.add(chatId);
   }
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) async {
+    snoozed.add((chatId, until));
+  }
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) async {
+    unsnoozed.add(chatId);
+  }
+
+  @override
+  bool get supportsSnooze => true;
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
+
+  void emitDue(String chatId) => _attentionDue.add(chatId);
 
   /// Публикует снимок входящих так же, как это делает живой сервис.
   void emitAttention(AttentionSnapshot snapshot) {

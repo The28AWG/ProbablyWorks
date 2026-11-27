@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/attention/chat_attention_service.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -10,6 +11,7 @@ import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
 
 void main() {
@@ -24,7 +26,7 @@ void main() {
     chats = ChatRepository(db);
     broker = InteractionBroker();
     await HostRepository(db, MemorySecretStore()).ensureLocalHost(now);
-    attention = ChatAttentionService(chats, broker);
+    attention = ChatAttentionService(chats, broker, now: () => now);
   });
 
   tearDown(() async {
@@ -270,4 +272,234 @@ void main() {
     final digest = await attention.digest();
     expect(digest.items.map((item) => item.chatId), ['main']);
   });
+
+  test('a snoozed chat leaves the inbox and returns on unsnooze', () async {
+    await chat('c1');
+    await reply('c1');
+    await pumpEventQueue();
+    expect(attention.snapshot.items.map((item) => item.chatId), ['c1']);
+
+    final until = now.add(const Duration(hours: 1));
+    await attention.snooze('c1', until);
+    await pumpEventQueue();
+
+    expect(attention.snapshot.items, isEmpty);
+    expect(attention.snapshot.snoozed.single.chatId, 'c1');
+    expect(
+      attention.snapshot.snoozed.single.until.isAtSameMomentAs(until),
+      isTrue,
+    );
+    expect(attention.isSnoozed('c1'), isTrue);
+    // Отложенное не попадает и в дайджест: пользователь попросил не
+    // напоминать до срока.
+    expect((await attention.digest()).items, isEmpty);
+
+    await attention.unsnooze('c1');
+    await pumpEventQueue();
+
+    expect(attention.snapshot.snoozed, isEmpty);
+    expect(attention.snapshot.items.single.chatId, 'c1');
+    expect(attention.isSnoozed('c1'), isFalse);
+  });
+
+  test('snoozing cancels the notices already shown for the chat', () async {
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(
+      chats,
+      broker,
+      notifier: notifier,
+      now: () => now,
+    );
+    await chat('c1');
+    unawaited(
+      broker.requestApproval(
+        ApprovalRequest(
+          id: 'a1',
+          chatId: 'c1',
+          toolName: 'run_command',
+          summary: 'ls',
+          reason: 'подтверждение',
+        ),
+      ),
+    );
+    await pumpEventQueue();
+
+    await attention.snooze('c1', now.add(const Duration(hours: 1)));
+    await pumpEventQueue();
+
+    expect(
+      notifier.cancelled,
+      contains(
+        agentNoticeId(
+          kind: AgentNoticeKind.approvalNeeded,
+          chatId: 'c1',
+          approvalId: 'a1',
+        ),
+      ),
+    );
+  });
+
+  test(
+    'repeated snooze moves the deadline instead of adding a second',
+    () async {
+      await chat('c1');
+      await reply('c1');
+      await pumpEventQueue();
+
+      await attention.snooze('c1', now.add(const Duration(hours: 1)));
+      await attention.snooze('c1', now.add(const Duration(hours: 5)));
+      await pumpEventQueue();
+
+      final snooze = attention.snapshot.snoozed.single;
+      expect(
+        snooze.until.isAtSameMomentAs(now.add(const Duration(hours: 5))),
+        isTrue,
+      );
+      expect(snooze.revision, 2);
+    },
+  );
+
+  test('snooze rejects a past deadline and an unknown chat', () async {
+    await chat('c1');
+    await pumpEventQueue();
+
+    await expectLater(
+      attention.snooze('c1', now.subtract(const Duration(minutes: 1))),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'snooze_in_past',
+        ),
+      ),
+    );
+    await expectLater(
+      attention.snooze('missing', now.add(const Duration(hours: 1))),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'chat_not_found',
+        ),
+      ),
+    );
+    expect(attention.snapshot.snoozed, isEmpty);
+  });
+
+  test(
+    'a deadline that passed while the app was off is cleared on start',
+    () async {
+      await chat('c1');
+      await reply('c1');
+      await chats.snoozeAttention('c1', now.subtract(const Duration(hours: 1)));
+
+      // Сервис запускается уже после срока: таймера, который его наступил, не
+      // было, и просроченная строка не должна остаться навсегда.
+      await attention.dispose();
+      final notifier = _RecordingNotifier();
+      attention = ChatAttentionService(
+        chats,
+        broker,
+        notifier: notifier,
+        now: () => now,
+      );
+      final due = <String>[];
+      final sub = attention.due.listen(due.add);
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      await pumpEventQueue();
+
+      expect(attention.snapshot.snoozed, isEmpty);
+      expect(attention.snapshot.items.single.chatId, 'c1');
+      expect(due, ['c1']);
+      expect(await chats.watchAttentionSnoozes().first, isEmpty);
+    },
+  );
+
+  test('an expired snooze returns the chat and reminds once', () async {
+    // Здесь нужны настоящие часы: срок проверяет таймер сервиса. База хранит
+    // время с точностью до секунды, поэтому запас срока — больше секунды.
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(chats, broker, notifier: notifier);
+    await chat('c1');
+    await reply('c1');
+    await pumpEventQueue();
+
+    final due = <String>[];
+    final sub = attention.due.listen(due.add);
+    addTearDown(sub.cancel);
+
+    await attention.snooze(
+      'c1',
+      DateTime.now().add(const Duration(milliseconds: 1200)),
+    );
+    await pumpEventQueue();
+    expect(attention.snapshot.items, isEmpty);
+
+    await Future<void>.delayed(const Duration(milliseconds: 3000));
+    await pumpEventQueue();
+
+    expect(attention.snapshot.snoozed, isEmpty);
+    expect(attention.snapshot.items.single.chatId, 'c1');
+    expect(due, ['c1']);
+    expect(notifier.kinds, [AgentNoticeKind.snoozeDue]);
+    expect(await chats.watchAttentionSnoozes().first, isEmpty);
+  });
+
+  test('re-snoozing cancels the previous due reminder', () async {
+    await chat('c1');
+    await reply('c1');
+    await chats.snoozeAttention('c1', now.subtract(const Duration(minutes: 5)));
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(
+      chats,
+      broker,
+      notifier: notifier,
+      now: () => now,
+    );
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    final dueId = agentNoticeId(kind: AgentNoticeKind.snoozeDue, chatId: 'c1');
+    expect(notifier.kinds, contains(AgentNoticeKind.snoozeDue));
+    expect(notifier.notices, contains(dueId));
+
+    // Новый срок заменяет старое напоминание: уведомление о наступившем сроке
+    // не должно остаться в трее, пока чат снова молчит.
+    await attention.snooze('c1', now.add(const Duration(hours: 1)));
+    await pumpEventQueue();
+
+    expect(notifier.cancelled, contains(dueId));
+  });
+}
+
+/// Notifier, который запоминает типы уведомлений: проверяем, что напоминание
+/// о наступившем сроке действительно уходит наружу, а не остаётся снимком.
+final class _RecordingNotifier implements AppNotifier {
+  final kinds = <AgentNoticeKind>[];
+  final notices = <String, String>{};
+  final cancelled = <String>[];
+
+  @override
+  Future<void> notify({
+    required AgentNoticeKind kind,
+    required String chatTitle,
+    String? detail,
+    String? profileId,
+    String? chatId,
+    String? approvalId,
+    String? noticeId,
+  }) async {
+    kinds.add(kind);
+    if (noticeId != null) notices[noticeId] = chatTitle;
+  }
+
+  @override
+  Future<void> cancel(String noticeId) async {
+    cancelled.add(noticeId);
+    notices.remove(noticeId);
+  }
 }

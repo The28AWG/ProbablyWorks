@@ -9,6 +9,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
@@ -1230,6 +1231,21 @@ final class ApiServer {
       final snapshot = await api.attention();
       return _json(request.response, HttpStatus.ok, _attentionJson(snapshot));
     }
+    // Напоминание о чате. `rest.first` — chatId; срок приходит в теле, чтобы
+    // клиент сам выбрал «через час» или «завтра утром» и не зависел от часов
+    // сервера.
+    if (rest.length == 2 && rest.last == 'snooze') {
+      final snoozeApi = _requireAttentionSnoozeApi();
+      if (request.method == 'PUT') {
+        final body = await _body(request);
+        await snoozeApi.snoozeAttention(rest.first, _snoozeDeadline(body));
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+      if (request.method == 'DELETE') {
+        await snoozeApi.unsnoozeAttention(rest.first);
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+    }
     if (rest.length == 1 && request.method == 'DELETE') {
       await api.dismissAttention(rest.first);
       return _json(request.response, HttpStatus.noContent, {});
@@ -1241,6 +1257,35 @@ final class ApiServer {
     );
   }
 
+  /// Срок напоминания из тела `PUT /attention/{chatId}/snooze`.
+  ///
+  /// Принимается ISO-8601 с часовым поясом или без: без пояса время считается
+  /// UTC, чтобы одинаковый запрос из разных часовых поясов не сдвигал срок.
+  static DateTime _snoozeDeadline(Map<String, dynamic> body) {
+    final raw = _string(body, 'until');
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      throw const AgentApiException(
+        HttpStatus.badRequest,
+        'bad_field',
+        'expected ISO-8601 date field "until"',
+      );
+    }
+    if (parsed.isUtc) return parsed;
+    // `DateTime.parse` без пояса возвращает локальное время. Для контракта
+    // такие поля — UTC, поэтому берём те же календарные значения как UTC.
+    return DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    );
+  }
+
   AttentionApi _requireAttentionApi() {
     final Object backend = _backend;
     if (backend is AttentionApi) return backend;
@@ -1248,6 +1293,16 @@ final class ApiServer {
       HttpStatus.notImplemented,
       'not_supported',
       'attention API is not available',
+    );
+  }
+
+  AttentionSnoozeApi _requireAttentionSnoozeApi() {
+    final Object backend = _backend;
+    if (backend is AttentionSnoozeApi) return backend;
+    throw const AgentApiException(
+      HttpStatus.notImplemented,
+      'not_supported',
+      'attention snooze API is not available',
     );
   }
 
@@ -2999,6 +3054,10 @@ final class ApiServer {
         backend.resolutions.listen(controller.add),
       if (backend is AttentionApi)
         backend.attentionChanges.listen(controller.add),
+      if (backend is AttentionSnoozeApi)
+        backend.attentionDue
+            .map<_AttentionDue>(_AttentionDue.new)
+            .listen(controller.add),
       _stateEvents.stream.listen(controller.add),
       if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
@@ -3421,7 +3480,26 @@ Map<String, Object?> _attentionJson(AttentionSnapshot snapshot) => {
         'updatedAt': item.updatedAt.toUtc().toIso8601String(),
       },
   ],
+  // Отложенные чаты в `items` отсутствуют, но окно должно показать срок и
+  // предложить вернуть чат раньше. Один снимок — один момент времени, поэтому
+  // срок не расходится между устройствами.
+  'snoozed': [
+    for (final snooze in snapshot.snoozed)
+      {
+        'chatId': snooze.chatId,
+        'until': snooze.until.toUtc().toIso8601String(),
+        'revision': snooze.revision,
+      },
+  ],
 };
+
+/// Сроки напоминаний, которые только что наступили.
+///
+/// Отдельно от `chatStatusChanged`: снимок уже вернул чат во входящие, а это
+/// событие позволяет окну показать системное напоминание и объяснить, почему
+/// чат снова здесь. Необязательно для старых клиентов: они увидят только
+/// возвращённый чат.
+Map<String, Object?> _attentionDueJson(String chatId) => {'chatId': chatId};
 
 /// Дайджест «пока вас не было».
 ///
@@ -3637,6 +3715,7 @@ String? _eventChatId(Object event) => switch (event) {
   _ChatDeleted value => value.chatId,
   _ChatReadChanged value => value.chatId,
   _DraftChanged value => value.chatId,
+  _AttentionDue value => value.chatId,
   _ => null,
 };
 
@@ -3746,6 +3825,7 @@ String? _eventChatId(Object event) => switch (event) {
     },
   ),
   AttentionSnapshot value => ('chatStatusChanged', _attentionJson(value)),
+  _AttentionDue value => ('attentionDue', _attentionDueJson(value.chatId)),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',
@@ -3809,6 +3889,15 @@ final class _DraftChanged {
 
   final String chatId;
   final int revision;
+}
+
+/// Наступил срок «напомнить позже». Отдельный тип, потому что поток сервиса
+/// внимания отдаёт только id чата, а SSE нужно и имя события, и фильтр по
+/// открытому чату.
+final class _AttentionDue {
+  const _AttentionDue(this.chatId);
+
+  final String chatId;
 }
 
 /// Накопленная дельта ответа до ближайшего flush.

@@ -5,14 +5,17 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
+import 'package:probably_works/app/ui/chat_snooze_menu.dart';
 import 'package:probably_works/app/ui/local_host_presentation.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:probably_works/features/inbox/presentation/pages/inbox_page.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -147,6 +150,113 @@ void main() {
       'answer for q1',
     );
   });
+
+  testWidgets('snoozes a card and shows the deferred reminder', (tester) async {
+    final until = DateTime.now().add(const Duration(hours: 3));
+    final api = _FakeInboxApi(
+      AttentionSnapshot(
+        revision: 1,
+        items: [
+          ChatAttention(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Fix the build',
+            reasons: const {ChatAttentionReason.unread},
+            approvals: const [],
+            questions: const [],
+            editFileChanges: const [],
+            unreadCount: 2,
+            lastReadSeq: 0,
+            lastMessageSeq: 2,
+            running: false,
+            updatedAt: DateTime.utc(2026, 11, 27),
+          ),
+        ],
+        snoozed: [ChatSnooze(chatId: 'c2', until: until, revision: 1)],
+      ),
+      hostList: const [],
+    );
+    await _pump(tester, api);
+
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    // Отложенный чат живёт в отдельном разделе: срок виден по подписи.
+    expect(find.text('Snoozed'), findsOneWidget);
+    expect(
+      find.text('Snoozed until ${formatChatSnoozeUntil(l10n, until)}'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Return now'));
+    await tester.pump();
+    expect(api.unsnoozed, ['c2']);
+  });
+
+  testWidgets('the card action picks a snooze deadline', (tester) async {
+    final api = _FakeInboxApi(
+      AttentionSnapshot(
+        revision: 1,
+        items: [
+          ChatAttention(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Fix the build',
+            reasons: const {ChatAttentionReason.unread},
+            approvals: const [],
+            questions: const [],
+            editFileChanges: const [],
+            unreadCount: 1,
+            lastReadSeq: 0,
+            lastMessageSeq: 1,
+            running: false,
+            updatedAt: DateTime.utc(2026, 11, 27),
+          ),
+        ],
+      ),
+    );
+    await _pump(tester, api);
+
+    final before = DateTime.now();
+    await tester.tap(find.text('Remind later'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('In an hour'));
+    await tester.pumpAndSettle();
+
+    expect(api.snoozed, hasLength(1));
+    expect(api.snoozed.single.$1, 'c1');
+    expect(
+      api.snoozed.single.$2.difference(before),
+      greaterThanOrEqualTo(const Duration(minutes: 59)),
+    );
+  });
+
+  testWidgets('a server without snooze support hides the reminder', (
+    tester,
+  ) async {
+    final api = _FakeInboxApi(
+      AttentionSnapshot(
+        revision: 1,
+        items: [
+          ChatAttention(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Fix the build',
+            reasons: const {ChatAttentionReason.unread},
+            approvals: const [],
+            questions: const [],
+            editFileChanges: const [],
+            unreadCount: 1,
+            lastReadSeq: 0,
+            lastMessageSeq: 1,
+            running: false,
+            updatedAt: DateTime.utc(2026, 11, 27),
+          ),
+        ],
+      ),
+    )..snoozeAvailable = false;
+    await _pump(tester, api);
+
+    expect(find.text('Remind later'), findsNothing);
+  });
 }
 
 Future<void> _pump(WidgetTester tester, _FakeInboxApi api) async {
@@ -167,14 +277,19 @@ Future<void> _pump(WidgetTester tester, _FakeInboxApi api) async {
   await tester.pumpAndSettle();
 }
 
-final class _FakeInboxApi implements AgentApi, AttentionApi {
+final class _FakeInboxApi
+    implements AgentApi, AttentionApi, AttentionSnoozeApi {
   _FakeInboxApi(this._snapshot, {this.hostList = const []});
 
   AttentionSnapshot _snapshot;
   final List<Host> hostList;
   final _statuses = StreamController<AgentStatus>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
+  final _attentionDue = StreamController<String>.broadcast();
   final actions = <ApprovalAction>[];
+  final snoozed = <(String, DateTime)>[];
+  final unsnoozed = <String>[];
+  var snoozeAvailable = true;
 
   /// Публикует новый снимок так же, как живой сервис.
   void emit(AttentionSnapshot snapshot) {
@@ -185,6 +300,7 @@ final class _FakeInboxApi implements AgentApi, AttentionApi {
   Future<void> dispose() async {
     await _statuses.close();
     await _attention.close();
+    await _attentionDue.close();
   }
 
   @override
@@ -195,6 +311,22 @@ final class _FakeInboxApi implements AgentApi, AttentionApi {
 
   @override
   Future<void> dismissAttention(String chatId) => Future<void>.value();
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) async {
+    snoozed.add((chatId, until));
+  }
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) async {
+    unsnoozed.add(chatId);
+  }
+
+  @override
+  bool get supportsSnooze => snoozeAvailable;
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
 
   @override
   Future<void> resolveApproval(

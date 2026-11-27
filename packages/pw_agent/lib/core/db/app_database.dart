@@ -17,6 +17,7 @@ part 'app_database.g.dart';
     Chats,
     ChatReadStates,
     ChatAttentionStates,
+    ChatAttentionSnoozes,
     Messages,
     ToolRuns,
     SessionRevisions,
@@ -36,7 +37,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 29;
+  static const currentSchemaVersion = 30;
 
   static const _uuid = Uuid();
 
@@ -220,6 +221,10 @@ class AppDatabase extends _$AppDatabase {
       // Отдельная таблица, чтобы перезапуск приложения не терял лимит шагов
       // или ошибку, а полное сохранение чата их не стирало.
       if (from < 29) await m.createTable(chatAttentionStates);
+      // Версия 30: отложенное напоминание о чате. Отдельная таблица, чтобы
+      // сохранение чата не сбрасывало срок, а «напомнить позже» не меняло
+      // `updatedAt` и порядок списка.
+      if (from < 30) await m.createTable(chatAttentionSnoozes);
     },
   );
 

@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -19,6 +20,7 @@ import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -636,6 +638,37 @@ void main() {
 
     await remote.dismissAttention('c1');
     expect(backend.dismissedAttention, ['c1']);
+  });
+
+  test('snoozes a chat and receives the due reminder', () async {
+    final until = DateTime.utc(2026, 11, 28, 9);
+    await remote.snoozeAttention('c1', until);
+    expect(backend.snoozed, [('c1', until)]);
+    await remote.unsnoozeAttention('c1');
+    expect(backend.unsnoozed, ['c1']);
+
+    backend.attentionValue = AttentionSnapshot(
+      revision: 6,
+      items: const [],
+      snoozed: [ChatSnooze(chatId: 'c1', until: until, revision: 3)],
+    );
+    final loaded = await remote.attention();
+    expect(loaded.items, isEmpty);
+    expect(loaded.snoozed.single.chatId, 'c1');
+    expect(loaded.snoozed.single.until, until);
+    expect(loaded.snoozed.single.revision, 3);
+    // Новый демон присылает `snoozed` даже с пустым списком, поэтому действие
+    // «Напомнить позже» доступно.
+    expect(remote.supportsSnooze, isTrue);
+
+    await remote.startEvents();
+    await remote.eventsReady;
+    final due = Completer<String>();
+    final sub = remote.attentionDue.listen(due.complete);
+    addTearDown(sub.cancel);
+
+    backend.emitDue('c1');
+    expect(await due.future.timeout(const Duration(seconds: 3)), 'c1');
   });
 
   test('reads the attention digest', () async {
@@ -1805,6 +1838,9 @@ void main() {
     addTearDown(api.dispose);
 
     expect((await api.attention()).revision, 5);
+    // Старый сервер не присылает `snoozed`: действие «напомнить позже» должно
+    // остаться скрытым.
+    expect(api.supportsSnooze, isFalse);
     expect(api.instanceId, 'instance-1');
 
     final updated = api.attentionChanges
@@ -1909,12 +1945,16 @@ final class _FakeData implements DataApi {
   Future<void> resetSettings() async => resets++;
 }
 
-final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
+final class _FakeAgent
+    implements AgentApi, AttentionApi, AttentionDigestApi, AttentionSnoozeApi {
   final changes = DomainChangeBus();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
+  final _attentionDue = StreamController<String>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
   AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
+  final snoozed = <(String, DateTime)>[];
+  final unsnoozed = <String>[];
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -1992,6 +2032,7 @@ final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
     await _questions.close();
     await _editChanges.close();
     await _attention.close();
+    await _attentionDue.close();
     await changes.close();
   }
 
@@ -2008,6 +2049,24 @@ final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
   Future<void> dismissAttention(String chatId) async {
     dismissedAttention.add(chatId);
   }
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) async {
+    snoozed.add((chatId, until));
+  }
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) async {
+    unsnoozed.add(chatId);
+  }
+
+  @override
+  bool get supportsSnooze => true;
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
+
+  void emitDue(String chatId) => _attentionDue.add(chatId);
 
   void emitAttention(AttentionSnapshot snapshot) {
     attentionValue = snapshot;

@@ -87,6 +87,8 @@ DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
 
 GET    /api/v1/attention             входящие
 GET    /api/v1/attention/digest      дайджест «пока вас не было»
+PUT    /api/v1/attention/{chatId}/snooze   {"until": "2026-11-28T09:00:00Z"}
+DELETE /api/v1/attention/{chatId}/snooze   снять напоминание
 DELETE /api/v1/attention/{chatId}    убрать проблемное завершение хода
 
 GET    /api/v1/chats/{id}/messages
@@ -277,8 +279,8 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 удаление последнего сообщения откатывают его к последнему уцелевшему, иначе
 новые сообщения на освободившихся `seq` выглядели бы прочитанными.
 
-`GET /attention` возвращает снимок входящих: `revision` и
-`items`, где у каждого чата есть `chatId`, `hostId`, `projectId`, `title`,
+`GET /attention` возвращает снимок входящих: `revision`, `items` и
+`snoozed`. У каждого чата в `items` есть `chatId`, `hostId`, `projectId`, `title`,
 `reasons`, готовые карточки `approvals`/`questions`/`editFileChanges`,
 `unreadCount`, `lastReadSeq`, `lastMessageSeq`, `running`, `turnAt` и
 `updatedAt`. `reasons` — `approval`, `question`, `editFiles`, `failed`,
@@ -293,6 +295,20 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 `PUT /edit-file-changes/...`; продолжение хода после лимита — `PUT
 /chats/{id}/turn`. `revision` монотонна: запоздавший ответ `GET /attention`
 не должен вернуть уже закрытую карточку.
+
+`PUT /attention/{chatId}/snooze` откладывает напоминание о чате до `until`
+(ISO-8601), а `DELETE /attention/{chatId}/snooze` снимает его. Пока срок не
+наступил, чат не попадает в `items` и в дайджест и не присылает системных и
+push-уведомлений; сам чат при этом открывается как обычно. `snoozed` в снимке
+присутствует всегда, даже пустым: по нему клиент отличает новый сервер от
+старого. Он содержит `chatId`, `until` и `revision` — по нему окна показывают
+срок и предлагают вернуть чат раньше. Срок один на все устройства и хранится в
+`chat_attention_snoozes`, поэтому переживает перезапуск. Повторный `PUT`
+сдвигает срок, а не создаёт второе напоминание; срок в прошлом — `400
+snooze_in_past`, неизвестный чат — `404 chat_not_found`. По наступлении срока
+сервер убирает запись и возвращает чат в снимок. Если чату есть что решать, он
+публикует `attentionDue` с `chatId` и отправляет системное напоминание; если
+решать уже нечего, событие и напоминание не отправляются.
 
 `GET /attention/digest` возвращает сводку «пока вас не было»:
 `newMessages`, `finishedTurns`, `approvals`, `questions`, `editFileChanges`,
@@ -312,11 +328,15 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `chatReadChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
 `approvalResolved`, `question`,
 `questionResolved`, `editFileChanges`, `editFileChangesResolved`,
-`chatStatusChanged`, `clientSessionsChanged`, `modelRuntime`. `modelRuntime` —
+`chatStatusChanged`, `clientSessionsChanged`, `attentionDue`, `modelRuntime`. `modelRuntime` —
 глобальное состояние загрузки моделей, не привязанное к чату; оно приходит и в
 чат-фильтрованный SSE. `chatStatusChanged` несёт тот же снимок, что и
 `GET /attention`, с новой ревизией: окно обновляет бейдж и список решений без
-отдельного запроса.
+отдельного запроса. `attentionDue` с `chatId` сообщает, что срок «напомнить
+позже» наступил и чату есть что решать: чат уже вернулся в `chatStatusChanged`,
+а событие позволяет показать системное напоминание и объяснить, почему чат снова
+здесь. Если решать нечего, событие не приходит. Оно приходит и в SSE,
+отфильтрованный по чату.
 
 Без `?chatId=` поток остаётся глобальным, но тяжёлые события открытых чатов
 (`textDelta`, `reasoningDelta`, `messageAdded`, `turnSnapshot`, `runChanged`,

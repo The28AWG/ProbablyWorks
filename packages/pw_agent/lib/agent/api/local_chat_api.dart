@@ -4,6 +4,7 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
@@ -38,7 +39,12 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
 class LocalChatApi
-    implements ChatApi, ClientSessionApi, AttentionApi, AttentionDigestApi {
+    implements
+        ChatApi,
+        ClientSessionApi,
+        AttentionApi,
+        AttentionDigestApi,
+        AttentionSnoozeApi {
   LocalChatApi(AgentHub hub, [this.runtime, this.changes]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
     // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
@@ -152,6 +158,20 @@ class LocalChatApi
 
   @override
   Future<AttentionDigest> attentionDigest() => _hub.attentionDigest();
+
+  @override
+  bool get supportsSnooze => true;
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) =>
+      _hub.snoozeAttention(chatId, until);
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) =>
+      _hub.unsnoozeAttention(chatId);
+
+  @override
+  Stream<String> get attentionDue => _hub.attentionDue;
 
   Future<List<Host>> hosts() => _hub.hosts.all();
 

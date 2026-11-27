@@ -26,6 +26,7 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
     AgentNoticeKind.stepLimitReached => l10n.notifyStepLimitTitle,
     AgentNoticeKind.turnBudgetReached => l10n.notifyBudgetTitle,
     AgentNoticeKind.progressStalled => l10n.notifyStalledTitle,
+    AgentNoticeKind.snoozeDue => l10n.notifySnoozedDueTitle,
     AgentNoticeKind.backgroundFinished => l10n.notifyBackgroundTitle,
   };
   final body = switch (kind) {
@@ -36,6 +37,7 @@ import 'package:pw_agent/core/notify/app_notifier.dart';
     AgentNoticeKind.stepLimitReached => l10n.notifyStepLimitBody,
     AgentNoticeKind.turnBudgetReached => l10n.notifyBudgetBody,
     AgentNoticeKind.progressStalled => l10n.notifyStalledBody,
+    AgentNoticeKind.snoozeDue => l10n.notifySnoozedDueBody,
     AgentNoticeKind.backgroundFinished => l10n.notifyBackgroundBody(
       detail ?? '',
     ),

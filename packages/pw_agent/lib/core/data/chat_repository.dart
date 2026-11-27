@@ -6,6 +6,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/chat_snooze.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
@@ -27,6 +28,7 @@ class ChatRepository implements DraftPersistence {
   $ChatsTable get _chatsTable => _db.chats;
   $ChatReadStatesTable get _readTable => _db.chatReadStates;
   $ChatAttentionStatesTable get _attentionTable => _db.chatAttentionStates;
+  $ChatAttentionSnoozesTable get _snoozeTable => _db.chatAttentionSnoozes;
   $MessagesTable get _messagesTable => _db.messages;
   $ToolRunsTable get _toolRunsTable => _db.toolRuns;
   $SessionRevisionsTable get _sessionRevisionsTable => _db.sessionRevisions;
@@ -792,6 +794,71 @@ class ChatRepository implements DraftPersistence {
   /// разобрал его во входящих.
   Future<void> clearAttention(String chatId) =>
       (_db.delete(_attentionTable)..where((t) => t.chatId.equals(chatId))).go();
+
+  // ---- snooze ------------------------------------------------------------
+
+  /// Отложенные напоминания по всем чатам.
+  ///
+  /// Поток отдельный, как у входящих: срок не меняет `updatedAt` и не должен
+  /// переставлять чаты в списке. Просроченные строки сюда тоже попадают:
+  /// фильтрует их сервис внимания по текущему времени, а саму очистку
+  /// выполняет таймер или следующее чтение.
+  Stream<List<ChatSnooze>> watchAttentionSnoozes() => _db
+      .select(_snoozeTable)
+      .watch()
+      .map(
+        (rows) => [
+          for (final row in rows)
+            ChatSnooze(
+              chatId: row.chatId,
+              until: row.until,
+              revision: row.revision,
+            ),
+        ],
+      );
+
+  /// Откладывает напоминание о чате до [until].
+  ///
+  /// Повторный вызов двигает срок. Ревизия растёт даже при том же сроке:
+  /// окно, которое ещё показывает прежнее значение, должно получить новое.
+  Future<void> snoozeAttention(String chatId, DateTime until) =>
+      _db.transaction(() async {
+        final current = await (_db.select(
+          _snoozeTable,
+        )..where((t) => t.chatId.equals(chatId))).getSingleOrNull();
+        await _db
+            .into(_snoozeTable)
+            .insertOnConflictUpdate(
+              ChatAttentionSnoozesCompanion.insert(
+                chatId: chatId,
+                until: until,
+                revision: Value((current?.revision ?? 0) + 1),
+              ),
+            );
+      });
+
+  /// Снимает напоминание. Идемпотентно: снимать нечего — не ошибка.
+  Future<void> clearAttentionSnooze(String chatId) =>
+      (_db.delete(_snoozeTable)..where((t) => t.chatId.equals(chatId))).go();
+
+  /// Удаляет просроченные напоминания и возвращает их чаты.
+  ///
+  /// Срок сравнивается в базе, а не списком из памяти: пока демон был
+  /// выключен, срок мог пройти, и такие строки не должны остаться навсегда.
+  Future<List<String>> clearExpiredAttentionSnoozes(DateTime now) =>
+      _db.transaction(() async {
+        final expired =
+            await (_db.selectOnly(_snoozeTable)
+                  ..addColumns([_snoozeTable.chatId])
+                  ..where(_snoozeTable.until.isSmallerOrEqualValue(now)))
+                .map((row) => row.read(_snoozeTable.chatId)!)
+                .get();
+        if (expired.isEmpty) return const <String>[];
+        await (_db.delete(
+          _snoozeTable,
+        )..where((t) => t.chatId.isIn(expired))).go();
+        return expired;
+      });
 
   // ---- tool runs ---------------------------------------------------------
 

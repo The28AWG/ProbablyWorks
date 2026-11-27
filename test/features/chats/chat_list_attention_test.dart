@@ -5,6 +5,7 @@ import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
@@ -41,6 +42,53 @@ void main() {
     },
   );
 
+  test('snoozes and returns a chat through the agent API', () async {
+    final api = _FakeAgent();
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+    expect(cubit.state.snoozeSupported, isTrue);
+
+    final until = DateTime.utc(2026, 11, 28, 9);
+    expect(await cubit.snoozeAttention('c1', until), isTrue);
+    expect(api.snoozed, [('c1', until)]);
+
+    expect(await cubit.unsnoozeAttention('c1'), isTrue);
+    expect(api.unsnoozed, ['c1']);
+  });
+
+  test('a server without snooze support hides the action', () async {
+    // remote_agent_api узнаёт поддержку по полю `snoozed`: старый демон его
+    // не присылает, и действие не должно обещать несуществующий маршрут.
+    final api = _FakeAgent()..snoozeAvailable = false;
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+
+    expect(cubit.state.snoozeSupported, isFalse);
+  });
+
+  test('hides the action after the server rejects snooze', () async {
+    final api = _FakeAgent()..snoozeFailure = true;
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+    expect(cubit.state.snoozeSupported, isTrue);
+
+    final until = DateTime.utc(2026, 11, 28, 9);
+    expect(await cubit.snoozeAttention('c1', until), isFalse);
+    expect(cubit.state.snoozeSupported, isFalse);
+  });
+
   test('approves and answers from the inbox through the agent API', () async {
     final api = _FakeAgent();
     final cubit = ChatListCubit(api, ChatDraftStore.unbound());
@@ -68,12 +116,14 @@ void main() {
     await pumpEventQueue();
 
     expect(cubit.state.attentionSupported, isFalse);
+    expect(cubit.state.snoozeSupported, isFalse);
     expect(cubit.state.attentionError, isNull);
 
     // Обновлённый демон отвечает снимком: экран должен снова стать рабочим.
     api.attentionFailure = false;
     await cubit.refreshAttention();
     expect(cubit.state.attentionSupported, isTrue);
+    expect(cubit.state.snoozeSupported, isTrue);
     expect(cubit.state.attention.revision, 1);
   });
 
@@ -196,12 +246,18 @@ AttentionSnapshot _snapshot({required int revision, required int unread}) =>
       ],
     );
 
-final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
+final class _FakeAgent
+    implements AgentApi, AttentionApi, AttentionDigestApi, AttentionSnoozeApi {
   final _statuses = StreamController<AgentStatus>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
+  final _attentionDue = StreamController<String>.broadcast();
   final actions = <ApprovalAction>[];
+  final snoozed = <(String, DateTime)>[];
+  final unsnoozed = <String>[];
   var failNext = false;
   var attentionFailure = false;
+  var snoozeAvailable = true;
+  var snoozeFailure = false;
   var digestValue = AttentionDigest.empty;
   var digestCalls = 0;
   Completer<AttentionDigest>? digestGate;
@@ -215,6 +271,7 @@ final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
   Future<void> dispose() async {
     await _statuses.close();
     await _attention.close();
+    await _attentionDue.close();
   }
 
   @override
@@ -234,6 +291,30 @@ final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
 
   @override
   Future<void> dismissAttention(String chatId) => Future<void>.value();
+
+  @override
+  Future<void> snoozeAttention(String chatId, DateTime until) async {
+    if (snoozeFailure) {
+      snoozeAvailable = false;
+      throw const AgentApiException(
+        404,
+        'not_found',
+        'unknown attention endpoint',
+      );
+    }
+    snoozed.add((chatId, until));
+  }
+
+  @override
+  Future<void> unsnoozeAttention(String chatId) async {
+    unsnoozed.add(chatId);
+  }
+
+  @override
+  bool get supportsSnooze => snoozeAvailable;
+
+  @override
+  Stream<String> get attentionDue => _attentionDue.stream;
 
   @override
   Future<AttentionDigest> attentionDigest() {
