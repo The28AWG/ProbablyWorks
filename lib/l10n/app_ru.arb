@@ -1243,6 +1243,70 @@
   "@settingsDigestOffHint": {
     "description": "Пояснение к варианту: не показывать дайджест."
   },
+  "settingsPauseTitle": "Тихие часы и фокус",
+  "@settingsPauseTitle": {
+    "description": "Заголовок раздела настроек общей паузы уведомлений."
+  },
+  "settingsPauseHint": "Выключает системные и push-уведомления сразу на всех устройствах. Чаты и карточки продолжают накапливаться, а по окончании паузы приходит один дайджест вместо пачки запоздавших уведомлений.",
+  "@settingsPauseHint": {
+    "description": "Пояснение, что пауза общая и после неё приходит дайджест."
+  },
+  "settingsPauseActive": "{reason} · пауза до {when}",
+  "@settingsPauseActive": {
+    "description": "Текущее состояние паузы; {reason} — короткая причина, например «Встреча», {when} — локальные дата и время, например «сегодня, 18:00».",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Встреча"
+      },
+      "when": {
+        "type": "String",
+        "example": "сегодня, 18:00"
+      }
+    }
+  },
+  "settingsPauseFocus": "Фокус на 30 минут",
+  "@settingsPauseFocus": {
+    "description": "Кнопка: выключить уведомления на полчаса."
+  },
+  "settingsPauseMeeting": "Встреча на час",
+  "@settingsPauseMeeting": {
+    "description": "Кнопка: выключить уведомления на время встречи."
+  },
+  "settingsPauseOvernight": "До утра",
+  "@settingsPauseOvernight": {
+    "description": "Кнопка: выключить уведомления до завтрашнего утра."
+  },
+  "settingsPauseFailed": "Не удалось изменить паузу уведомлений.",
+  "@settingsPauseFailed": {
+    "description": "Сообщение, если общую паузу уведомлений не удалось изменить."
+  },
+  "notificationPauseResume": "Включить уведомления",
+  "@notificationPauseResume": {
+    "description": "Кнопка и пункт меню: снять общую паузу уведомлений."
+  },
+  "notificationPauseReasonFocus": "Фокус",
+  "@notificationPauseReasonFocus": {
+    "description": "Короткая причина паузы на фокус; показывается рядом со сроком."
+  },
+  "notificationPauseReasonMeeting": "Встреча",
+  "@notificationPauseReasonMeeting": {
+    "description": "Короткая причина паузы на время встречи; показывается рядом со сроком."
+  },
+  "notificationPauseReasonOvernight": "На ночь",
+  "@notificationPauseReasonOvernight": {
+    "description": "Короткая причина паузы до утра; показывается рядом со сроком."
+  },
+  "notificationPauseTooltip": "Уведомления на паузе до {when}",
+  "@notificationPauseTooltip": {
+    "description": "Подсказка значка колокольчика, пока уведомления на паузе; {when} — локальные дата и время.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "сегодня, 18:00"
+      }
+    }
+  },
   "settingsStepsGroupOnHint": "Шаги одного ответа собираются в один журнал.",
   "@settingsStepsGroupOnHint": {
     "description": "Подпись карточки варианта: шаги сгруппированы."
@@ -3297,6 +3361,14 @@
   "@notifySnoozedDueBody": {
     "description": "Текст системного уведомления, когда наступил срок «напомнить позже»."
   },
+  "notifyDigestTitle": "Пока вас не было",
+  "@notifyDigestTitle": {
+    "description": "Заголовок системного уведомления (часть про действие) после окончания общей паузы уведомлений."
+  },
+  "notifyDigestBody": "Уведомления были на паузе. Откройте входящие, чтобы увидеть, что произошло.",
+  "@notifyDigestBody": {
+    "description": "Текст системного уведомления после окончания общей паузы уведомлений. Подробности во входящих."
+  },
   "securityProfileTitle": "Уровни команд",
   "@securityProfileTitle": {
     "description": "Settings section: risk levels for command categories, commands, and arguments."
@@ -3646,6 +3718,20 @@
   "@paletteGroupNavigation": {"description": "Группа палитры с основными разделами."},
   "paletteGroupProject": "Проект",
   "@paletteGroupProject": {"description": "Группа палитры с действиями проекта."},
+  "paletteGroupNotifications": "Уведомления",
+  "@paletteGroupNotifications": {"description": "Группа палитры с действиями паузы уведомлений."},
+  "palettePauseSet": "Уведомления на паузе до {when}",
+  "@palettePauseSet": {
+    "description": "Снекбар после включения паузы уведомлений из палитры; {when} — локальные дата и время.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "сегодня, 18:00"
+      }
+    }
+  },
+  "palettePauseResumed": "Уведомления снова включены",
+  "@palettePauseResumed": {"description": "Снекбар после досрочного включения уведомлений из палитры."},
   "paletteCommandNewChat": "Новый чат",
   "@paletteCommandNewChat": {"description": "Действие палитры: открыть новый чат."},
   "paletteCommandChats": "Чаты",

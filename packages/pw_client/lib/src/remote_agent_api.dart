@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
@@ -23,6 +24,7 @@ import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -73,7 +75,8 @@ class RemoteAgentApi
         ClientSessionApi,
         AttentionApi,
         AttentionDigestApi,
-        AttentionSnoozeApi {
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -279,6 +282,14 @@ class RemoteAgentApi
   /// `chatStatusChanged`, а это событие объясняет, почему чат вернулся, и
   /// позволяет показать системное напоминание.
   final _attentionDue = StreamController<String>.broadcast();
+  final _pauseDigestDue = StreamController<AttentionDigest>.broadcast();
+
+  /// Поддерживает ли подключённый сервер общую паузу уведомлений.
+  ///
+  /// Признак — поле `pause` в снимке входящих: новый сервер присылает его
+  /// даже со значением null, старый не присылает вовсе.
+  bool _supportsPause = false;
+
   final _reconnects = StreamController<void>.broadcast();
   bool _reconnectPending = false;
 
@@ -378,6 +389,7 @@ class RemoteAgentApi
     final json = await _get('/attention');
     // Наличие поля, а не пустота списка: старый сервер его не присылает вовсе.
     _supportsSnooze = json.containsKey('snoozed');
+    _supportsPause = json.containsKey('pause');
     final snapshot = _attentionSnapshotFrom(json);
     _applyAttention(snapshot);
     return snapshot;
@@ -438,6 +450,46 @@ class RemoteAgentApi
 
   @override
   Stream<String> get attentionDue => _attentionDue.stream;
+
+  @override
+  bool get supportsPause => _supportsPause;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async {
+    try {
+      await _send(
+        'PUT',
+        '/attention/pause',
+        body: {'until': until.toUtc().toIso8601String(), 'reason': reason.name},
+      );
+      _supportsPause = true;
+    } on AgentApiException catch (error) {
+      if (_isMissingPauseRoute(error)) _supportsPause = false;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> resumeNotifications() async {
+    try {
+      await _send('DELETE', '/attention/pause');
+      _supportsPause = true;
+    } on AgentApiException catch (error) {
+      if (_isMissingPauseRoute(error)) _supportsPause = false;
+      rethrow;
+    }
+  }
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _pauseDigestDue.stream;
+
+  /// Ошибка означает, что подключённый сервер не знает маршрут паузы.
+  static bool _isMissingPauseRoute(AgentApiException error) =>
+      error.code == 'not_supported' ||
+      (error.status == 404 && error.code == 'not_found');
 
   /// Применяет снимок, только если он не старше уже показанного.
   ///
@@ -756,6 +808,7 @@ class RemoteAgentApi
     await _clientSessionChanges.close();
     await _attentionChanges.close();
     await _attentionDue.close();
+    await _pauseDigestDue.close();
     await _reconnects.close();
     await _catalogChanges.close();
     await _runtimeChanges.close();
@@ -1999,6 +2052,7 @@ class RemoteAgentApi
     // Возможность откладывать относится к прошлому экземпляру: новый сервер
     // может быть старой версии, поэтому до первого снимка действие скрыто.
     _supportsSnooze = false;
+    _supportsPause = false;
     _notifyReconnect();
   }
 
@@ -2394,7 +2448,12 @@ class RemoteAgentApi
         // у старого демона не должно сбрасывать уже известную возможность:
         // после обновления демона снимок снова придёт с пустым списком.
         if (json.containsKey('snoozed')) _supportsSnooze = true;
+        if (json.containsKey('pause')) _supportsPause = true;
         _applyAttention(_attentionSnapshotFrom(json));
+      case 'notificationDigestDue':
+        if (!_pauseDigestDue.isClosed) {
+          _pauseDigestDue.add(_attentionDigestFrom(json));
+        }
       case 'attentionDue':
         final chatId = _string(json, 'chatId');
         if (chatId.isNotEmpty && !_attentionDue.isClosed) {
@@ -3023,7 +3082,25 @@ AttentionSnapshot _attentionSnapshotFrom(Map<String, dynamic> json) =>
           .map((item) => _chatSnooze(Map<String, dynamic>.from(item)))
           .whereType<ChatSnooze>()
           .toList(),
+      pause: json['pause'] is Map
+          ? _notificationPause(Map<String, dynamic>.from(json['pause'] as Map))
+          : null,
     );
+
+/// Пауза уведомлений из снимка входящих. Битое поле читается как отсутствие
+/// паузы: лучше показать уведомление, чем молчать из-за неизвестного срока.
+NotificationPause? _notificationPause(Map<String, dynamic> json) {
+  final until = _date(json['until']);
+  if (until == null) return null;
+  final reason = json['reason'];
+  return NotificationPause(
+    until: until,
+    reason: NotificationPauseReason.fromStorage(
+      reason is String ? reason : null,
+    ),
+    revision: _int(json, 'revision'),
+  );
+}
 
 /// Срок из снимка входящих.
 ///

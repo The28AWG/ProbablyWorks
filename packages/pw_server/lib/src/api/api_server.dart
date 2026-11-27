@@ -9,6 +9,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -21,6 +22,7 @@ import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -1231,6 +1233,23 @@ final class ApiServer {
       final snapshot = await api.attention();
       return _json(request.response, HttpStatus.ok, _attentionJson(snapshot));
     }
+    // Общая пауза уведомлений. Срок и причину выбирает клиент: «до утра» —
+    // это утро в его часовом поясе.
+    if (rest.length == 1 && rest.first == 'pause') {
+      final pauseApi = _requireAttentionPauseApi();
+      if (request.method == 'PUT') {
+        final body = await _body(request);
+        await pauseApi.pauseNotifications(
+          _utcDeadline(body),
+          reason: _pauseReason(body['reason']),
+        );
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+      if (request.method == 'DELETE') {
+        await pauseApi.resumeNotifications();
+        return _json(request.response, HttpStatus.noContent, {});
+      }
+    }
     // Напоминание о чате. `rest.first` — chatId; срок приходит в теле, чтобы
     // клиент сам выбрал «через час» или «завтра утром» и не зависел от часов
     // сервера.
@@ -1238,7 +1257,7 @@ final class ApiServer {
       final snoozeApi = _requireAttentionSnoozeApi();
       if (request.method == 'PUT') {
         final body = await _body(request);
-        await snoozeApi.snoozeAttention(rest.first, _snoozeDeadline(body));
+        await snoozeApi.snoozeAttention(rest.first, _utcDeadline(body));
         return _json(request.response, HttpStatus.noContent, {});
       }
       if (request.method == 'DELETE') {
@@ -1257,11 +1276,11 @@ final class ApiServer {
     );
   }
 
-  /// Срок напоминания из тела `PUT /attention/{chatId}/snooze`.
+  /// Срок из тела `PUT /attention/{chatId}/snooze` и `PUT /attention/pause`.
   ///
   /// Принимается ISO-8601 с часовым поясом или без: без пояса время считается
   /// UTC, чтобы одинаковый запрос из разных часовых поясов не сдвигал срок.
-  static DateTime _snoozeDeadline(Map<String, dynamic> body) {
+  static DateTime _utcDeadline(Map<String, dynamic> body) {
     final raw = _string(body, 'until');
     final parsed = DateTime.tryParse(raw);
     if (parsed == null) {
@@ -1286,6 +1305,22 @@ final class ApiServer {
     );
   }
 
+  /// Причина паузы из тела запроса. Неизвестное значение — ошибка, а не тихая
+  /// подмена: клиент и сервер должны одинаково понимать подпись.
+  static NotificationPauseReason _pauseReason(Object? raw) {
+    if (raw == null) return NotificationPauseReason.focus;
+    if (raw is String) {
+      for (final reason in NotificationPauseReason.values) {
+        if (reason.name == raw) return reason;
+      }
+    }
+    throw const AgentApiException(
+      HttpStatus.badRequest,
+      'bad_field',
+      'unknown notification pause reason',
+    );
+  }
+
   AttentionApi _requireAttentionApi() {
     final Object backend = _backend;
     if (backend is AttentionApi) return backend;
@@ -1303,6 +1338,16 @@ final class ApiServer {
       HttpStatus.notImplemented,
       'not_supported',
       'attention snooze API is not available',
+    );
+  }
+
+  AttentionPauseApi _requireAttentionPauseApi() {
+    final Object backend = _backend;
+    if (backend is AttentionPauseApi) return backend;
+    throw const AgentApiException(
+      HttpStatus.notImplemented,
+      'not_supported',
+      'attention pause API is not available',
     );
   }
 
@@ -3058,6 +3103,10 @@ final class ApiServer {
         backend.attentionDue
             .map<_AttentionDue>(_AttentionDue.new)
             .listen(controller.add),
+      if (backend is AttentionPauseApi)
+        backend.pauseDigestDue
+            .map<_NotificationDigestDue>(_NotificationDigestDue.new)
+            .listen(controller.add),
       _stateEvents.stream.listen(controller.add),
       if (settingsApi case final api?) ...[
         api.modelRuntime.watchRuntime().listen(controller.add),
@@ -3480,6 +3529,15 @@ Map<String, Object?> _attentionJson(AttentionSnapshot snapshot) => {
         'updatedAt': item.updatedAt.toUtc().toIso8601String(),
       },
   ],
+  // Общая пауза уведомлений. Поле присутствует всегда, даже с null: по нему
+  // новый клиент отличает сервер с поддержкой паузы от старого.
+  'pause': snapshot.pause == null
+      ? null
+      : {
+          'until': snapshot.pause!.until.toUtc().toIso8601String(),
+          'reason': snapshot.pause!.reason.name,
+          'revision': snapshot.pause!.revision,
+        },
   // Отложенные чаты в `items` отсутствуют, но окно должно показать срок и
   // предложить вернуть чат раньше. Один снимок — один момент времени, поэтому
   // срок не расходится между устройствами.
@@ -3680,11 +3738,13 @@ Map<String, Object?> _editJson(EditFileChangesRequest request) => {
 };
 
 bool _matchesChat(Object event, String? chatId) {
-  // Runtime и файлы моделей — глобальное состояние, а не событие чата.
+  // Runtime, файлы моделей, снимок входящих и дайджест после паузы —
+  // глобальное состояние, а не событие конкретного чата.
   if (event is ModelRuntimeState ||
       event is LocalModelsState ||
       event is AttentionSnapshot ||
-      event is _ClientSessionsChanged) {
+      event is _ClientSessionsChanged ||
+      event is _NotificationDigestDue) {
     return true;
   }
   final eventChatId = _eventChatId(event);
@@ -3826,6 +3886,10 @@ String? _eventChatId(Object event) => switch (event) {
   ),
   AttentionSnapshot value => ('chatStatusChanged', _attentionJson(value)),
   _AttentionDue value => ('attentionDue', _attentionDueJson(value.chatId)),
+  _NotificationDigestDue value => (
+    'notificationDigestDue',
+    _attentionDigestJson(value.digest),
+  ),
   _StateChanged value => ('stateAreaChanged', {'area': value.area}),
   _DraftChanged value => (
     'draftChanged',
@@ -3898,6 +3962,17 @@ final class _AttentionDue {
   const _AttentionDue(this.chatId);
 
   final String chatId;
+}
+
+/// Дайджест после окончания общей паузы уведомлений.
+///
+/// Отдельный тип, а не часть снимка входящих: снимок уже показывает снятую
+/// паузу, а это событие объясняет, что накопилось, и позволяет показать одно
+/// уведомление вместо пачки запоздавших.
+final class _NotificationDigestDue {
+  const _NotificationDigestDue(this.digest);
+
+  final AttentionDigest digest;
 }
 
 /// Накопленная дельта ответа до ближайшего flush.

@@ -408,6 +408,7 @@ class ProfileService {
     profileId: profileId,
     isVisible: (chatId) => _chatVisibleInFocusedSession(api, chatId),
     isSnoozed: (chatId) => _chatSnoozed(api, chatId),
+    isPaused: () => _notificationsPaused(api),
   ).listen();
 
   /// Читает входящие и проверяет, отложен ли чат.
@@ -424,6 +425,24 @@ class ProfileService {
       );
       final snooze = snapshot.snoozeOf(chatId);
       return snooze != null && snooze.until.isAfter(DateTime.now());
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Проверяет общую паузу уведомлений по снимку входящих.
+  ///
+  /// Снимок небольшой, а уведомления приходят редко. Если сервер не
+  /// поддерживает входящие или проверка не прошла, считаем паузу выключенной:
+  /// пропустить важное хуже, чем показать лишнее.
+  Future<bool> _notificationsPaused(AgentApi api) async {
+    final Object source = api;
+    if (source is! AttentionApi) return false;
+    try {
+      final snapshot = await source.attention().timeout(
+        const Duration(seconds: 2),
+      );
+      return snapshot.notificationsPaused;
     } on Object {
       return false;
     }

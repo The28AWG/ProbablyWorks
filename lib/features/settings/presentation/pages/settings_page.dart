@@ -24,6 +24,7 @@ import 'package:probably_works/features/settings/presentation/widgets/keybinding
 import 'package:probably_works/features/settings/presentation/widgets/local_models_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/mcp_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/model_setting_field.dart';
+import 'package:probably_works/features/settings/presentation/widgets/notification_pause_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/plugin_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/provider_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/push_notifications_section.dart';
@@ -34,6 +35,8 @@ import 'package:probably_works/features/workspace/presentation/widgets/workspace
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
+import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -226,6 +229,15 @@ class _SettingsViewState extends State<_SettingsView> {
     final securityAuditApi =
         scope?.securityAuditApi ?? getIt<SecurityAuditApi>();
     final pushApi = scope?.pushApi ?? getIt<PushApi>();
+    // Пауза и входящие живут на одном адаптере чата: так раздел настроек не
+    // делает отдельный HTTP-клиент и видит те же события, что и список чатов.
+    final Object attentionSource = scope?.chatApi ?? getIt<ChatApi>();
+    final attentionApi = attentionSource is AttentionApi
+        ? attentionSource
+        : null;
+    final pauseApi = attentionSource is AttentionPauseApi
+        ? attentionSource
+        : null;
     final settingsApi = scope?.settingsApi ?? getIt<AgentSettingsApi>();
     return BlocConsumer<SettingsCubit, SettingsState>(
       listenWhen: (previous, current) => current.saved != previous.saved,
@@ -304,6 +316,8 @@ class _SettingsViewState extends State<_SettingsView> {
                 cubit,
                 l10n,
                 pushApi,
+                attentionApi,
+                pauseApi,
                 offline: offline,
               ),
               _Group.safety: _safetySections(
@@ -635,7 +649,9 @@ class _SettingsViewState extends State<_SettingsView> {
     SettingsState state,
     SettingsCubit cubit,
     AppLocalizations l10n,
-    PushApi pushApi, {
+    PushApi pushApi,
+    AttentionApi? attentionApi,
+    AttentionPauseApi? pauseApi, {
     required bool offline,
   }) => [
     AppSection(
@@ -803,6 +819,8 @@ class _SettingsViewState extends State<_SettingsView> {
       ],
     ),
     if (!offline) PushNotificationsSection(api: pushApi),
+    if (!offline && attentionApi != null && pauseApi != null)
+      NotificationPauseSection(attentionApi: attentionApi, pauseApi: pauseApi),
   ];
 
   Future<void> _resetSecurityProfile(

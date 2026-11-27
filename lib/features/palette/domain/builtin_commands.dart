@@ -11,6 +11,10 @@ abstract final class BuiltinPaletteActions {
   static const settings = 'settings';
   static const projectMemory = 'project_memory';
   static const refreshModels = 'refresh_models';
+  static const pauseFocus = 'pause_focus';
+  static const pauseMeeting = 'pause_meeting';
+  static const pauseOvernight = 'pause_overnight';
+  static const resumeNotifications = 'resume_notifications';
 }
 
 /// Встроенные команды. Группы имеют `action == null`.
@@ -18,6 +22,8 @@ List<PaletteCommand> builtinPaletteCommands(
   AppLocalizations en,
   AppLocalizations ru, {
   required bool hasProject,
+  required bool pauseSupported,
+  required bool notificationsPaused,
 }) => [
   PaletteCommand(
     id: 'new_chat',
@@ -130,6 +136,86 @@ List<PaletteCommand> builtinPaletteCommands(
     enabled: hasProject,
     order: 0,
   ),
+  if (pauseSupported) ...[
+    PaletteCommand(
+      id: 'notifications',
+      titles: LocalizedText(
+        ru: ru.paletteGroupNotifications,
+        en: en.paletteGroupNotifications,
+      ),
+      keywords: const LocalizedText(
+        ru: 'уведомления пауза тишина не беспокоить focus quiet dnd',
+        en: 'notifications pause quiet focus silence dnd',
+      ),
+      icon: notificationsPaused
+          ? Icons.notifications_off_outlined
+          : Icons.notifications_outlined,
+      order: 25,
+    ),
+    PaletteCommand(
+      id: 'notifications.focus',
+      parentId: 'notifications',
+      titles: LocalizedText(
+        ru: ru.settingsPauseFocus,
+        en: en.settingsPauseFocus,
+      ),
+      keywords: const LocalizedText(
+        ru: 'уведомления пауза фокус 30 минут тишина',
+        en: 'notifications pause focus 30 minutes quiet',
+      ),
+      icon: Icons.notifications_off_outlined,
+      action: const BuiltinPaletteAction(BuiltinPaletteActions.pauseFocus),
+      order: 0,
+    ),
+    PaletteCommand(
+      id: 'notifications.meeting',
+      parentId: 'notifications',
+      titles: LocalizedText(
+        ru: ru.settingsPauseMeeting,
+        en: en.settingsPauseMeeting,
+      ),
+      keywords: const LocalizedText(
+        ru: 'уведомления пауза встреча час',
+        en: 'notifications pause meeting hour',
+      ),
+      icon: Icons.notifications_off_outlined,
+      action: const BuiltinPaletteAction(BuiltinPaletteActions.pauseMeeting),
+      order: 1,
+    ),
+    PaletteCommand(
+      id: 'notifications.overnight',
+      parentId: 'notifications',
+      titles: LocalizedText(
+        ru: ru.settingsPauseOvernight,
+        en: en.settingsPauseOvernight,
+      ),
+      keywords: const LocalizedText(
+        ru: 'уведомления пауза до утра ночь',
+        en: 'notifications pause until morning night',
+      ),
+      icon: Icons.bedtime_outlined,
+      action: const BuiltinPaletteAction(BuiltinPaletteActions.pauseOvernight),
+      order: 2,
+    ),
+    PaletteCommand(
+      id: 'notifications.resume',
+      parentId: 'notifications',
+      titles: LocalizedText(
+        ru: ru.notificationPauseResume,
+        en: en.notificationPauseResume,
+      ),
+      keywords: const LocalizedText(
+        ru: 'уведомления включить снять паузу',
+        en: 'notifications resume enable pause off',
+      ),
+      icon: Icons.notifications_active_outlined,
+      action: const BuiltinPaletteAction(
+        BuiltinPaletteActions.resumeNotifications,
+      ),
+      enabled: notificationsPaused,
+      order: 3,
+    ),
+  ],
   PaletteCommand(
     id: 'refresh_models',
     titles: LocalizedText(

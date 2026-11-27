@@ -21,6 +21,7 @@ import 'package:probably_works/features/settings/presentation/settings_navigatio
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 
 /// Перехватывает глобальную горячую клавишу и показывает единую палитру.
@@ -103,8 +104,15 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
     _pluginCommands
       ..clear()
       ..addAll(plugin.byId);
+    final chatList = context.read<ChatListCubit>();
     final registry = CommandRegistry([
-      ...builtinPaletteCommands(en, ru, hasProject: currentProjectId != null),
+      ...builtinPaletteCommands(
+        en,
+        ru,
+        hasProject: currentProjectId != null,
+        pauseSupported: chatList.state.pauseSupported,
+        notificationsPaused: chatList.state.attention.pause != null,
+      ),
       ...plugin.commands,
     ]);
     final projectsCubit = context.read<ProjectsCubit>();
@@ -113,7 +121,7 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
       registry: registry,
       searchApi: agentApi,
       projects: projectsCubit.state.projects,
-      chats: context.read<ChatListCubit>().state.chats,
+      chats: chatList.state.chats,
       labels: PaletteLabels(
         command: l10n.paletteFilterCommand,
         project: l10n.paletteSuggestionProject,
@@ -197,7 +205,54 @@ class _CommandPaletteHostState extends State<CommandPaletteHost> {
         if (target != null) openProject(context, target);
       case BuiltinPaletteActions.refreshModels:
         unawaited(_refreshModels());
+      case BuiltinPaletteActions.pauseFocus:
+        _pauseNotifications(NotificationPauseChoice.focus);
+      case BuiltinPaletteActions.pauseMeeting:
+        _pauseNotifications(NotificationPauseChoice.meeting);
+      case BuiltinPaletteActions.pauseOvernight:
+        _pauseNotifications(NotificationPauseChoice.overnight);
+      case BuiltinPaletteActions.resumeNotifications:
+        unawaited(_resumeNotifications());
     }
+  }
+
+  /// Выключает уведомления из палитры на срок выбранного пресета.
+  ///
+  /// Срок считает клиент в локальной зоне, как и меню во входящих. Команда
+  /// закрывает палитру до выполнения, поэтому результат показывается snackbar.
+  void _pauseNotifications(NotificationPauseChoice choice) {
+    final until = choice.deadline(DateTime.now());
+    final reason = choice.reason;
+    if (until == null || reason == null) return;
+    unawaited(_applyNotificationPause(until, reason));
+  }
+
+  Future<void> _applyNotificationPause(
+    DateTime until,
+    NotificationPauseReason reason,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await context.read<ChatListCubit>().pauseNotifications(
+      until,
+      reason: reason,
+    );
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      ok
+          ? l10n.palettePauseSet(formatNotificationPauseUntil(l10n, until))
+          : l10n.settingsPauseFailed,
+    );
+  }
+
+  Future<void> _resumeNotifications() async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await context.read<ChatListCubit>().resumeNotifications();
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      ok ? l10n.palettePauseResumed : l10n.settingsPauseFailed,
+    );
   }
 
   Future<({List<PaletteCommand> commands, Map<String, PluginCommand> byId})>

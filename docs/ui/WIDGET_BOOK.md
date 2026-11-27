@@ -359,6 +359,20 @@ FileChangeView(change: change, maxHeight: 220)
 ChatSnoozeButton(onSelected: (until) => cubit.snoozeAttention(chatId, until))
 ```
 
+**`NotificationPauseButton`** и меню паузы (`lib/app/ui/notification_pause_menu.dart`):
+быстрое действие «выключить уведомления». Меню предлагает фокус на 30 минут, встречу на
+час, паузу до утра и снятие паузы; срок считает клиент в локальной зоне, поэтому «до утра»
+означает утро пользователя. Кнопка показывает перечёркнутый колокольчик и подсказку со
+сроком, пока пауза действует. Подпись срока (`formatNotificationPauseUntil`) использует
+тот же формат «сегодня, 18:00» / «завтра, 08:00», что и напоминания чата.
+
+```dart
+NotificationPauseButton(
+  activeUntil: state.attention.pause?.until,
+  onSelected: (choice) => applyPause(choice),
+)
+```
+
 **`ContextUsageBar`**: заполнение окна контекста. Цвет становится `error` при доле выше 0.9.
 
 ```dart

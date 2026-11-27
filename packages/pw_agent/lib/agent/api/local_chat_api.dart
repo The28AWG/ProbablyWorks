@@ -4,6 +4,7 @@ import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
@@ -11,6 +12,7 @@ import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -44,7 +46,8 @@ class LocalChatApi
         ClientSessionApi,
         AttentionApi,
         AttentionDigestApi,
-        AttentionSnoozeApi {
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   LocalChatApi(AgentHub hub, [this.runtime, this.changes]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
     // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
@@ -172,6 +175,28 @@ class LocalChatApi
 
   @override
   Stream<String> get attentionDue => _hub.attentionDue;
+
+  @override
+  bool get supportsPause => true;
+
+  /// Выключены ли уведомления общей паузой прямо сейчас. Синхронная проверка
+  /// нужна push-notifier до того, как он решит отправлять событие.
+  bool get isNotificationsPaused => _hub.isNotificationsPaused;
+
+  /// Действующая пауза уведомлений. Null — уведомления включены.
+  NotificationPause? get notificationPause => _hub.notificationPause;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) => _hub.pauseNotifications(until, reason: reason);
+
+  @override
+  Future<void> resumeNotifications() => _hub.resumeNotifications();
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _hub.notificationPauseDigest;
 
   Future<List<Host>> hosts() => _hub.hosts.all();
 

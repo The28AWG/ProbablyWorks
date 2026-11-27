@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
 import 'package:pw_agent/agent/api/local_agent_api.dart';
+import 'package:pw_agent/agent/api/local_chat_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
 import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
@@ -93,6 +94,9 @@ Future<int> runDaemon(List<String> args) async {
       PushAppNotifier(
         () => getIt<PushService>(),
         clientSessions: clientSessions,
+        // Ленивая проверка: при регистрации notifier агент ещё не собран, а
+        // уведомление всегда приходит уже после первого хода.
+        isPaused: () => getIt<LocalChatApi>().isNotificationsPaused,
       ),
     )
     ..registerSingleton<AppearancePort>(const NoopAppearance())

@@ -1243,6 +1243,70 @@
   "@settingsDigestOffHint": {
     "description": "Choice card hint for hiding the digest."
   },
+  "settingsPauseTitle": "Quiet hours and focus",
+  "@settingsPauseTitle": {
+    "description": "Settings section title for the shared notification pause."
+  },
+  "settingsPauseHint": "Pauses system and push notifications on all devices. Chats and cards keep accumulating; when the pause ends, one digest arrives instead of a batch of late notifications.",
+  "@settingsPauseHint": {
+    "description": "Settings section hint explaining that the pause is shared and a digest follows."
+  },
+  "settingsPauseActive": "{reason} · paused until {when}",
+  "@settingsPauseActive": {
+    "description": "Current pause state; {reason} is a short reason such as “Meeting”, {when} is a local date and time such as “today, 18:00”.",
+    "placeholders": {
+      "reason": {
+        "type": "String",
+        "example": "Meeting"
+      },
+      "when": {
+        "type": "String",
+        "example": "today, 18:00"
+      }
+    }
+  },
+  "settingsPauseFocus": "Focus for 30 minutes",
+  "@settingsPauseFocus": {
+    "description": "Button: pause notifications for half an hour."
+  },
+  "settingsPauseMeeting": "Meeting for an hour",
+  "@settingsPauseMeeting": {
+    "description": "Button: pause notifications for a meeting."
+  },
+  "settingsPauseOvernight": "Until morning",
+  "@settingsPauseOvernight": {
+    "description": "Button: pause notifications until tomorrow morning."
+  },
+  "settingsPauseFailed": "Could not change the notification pause.",
+  "@settingsPauseFailed": {
+    "description": "Snackbar when the shared notification pause could not be changed."
+  },
+  "notificationPauseResume": "Resume notifications",
+  "@notificationPauseResume": {
+    "description": "Button and menu item: remove the shared notification pause."
+  },
+  "notificationPauseReasonFocus": "Focus",
+  "@notificationPauseReasonFocus": {
+    "description": "Short reason label for a focus pause; shown next to the deadline."
+  },
+  "notificationPauseReasonMeeting": "Meeting",
+  "@notificationPauseReasonMeeting": {
+    "description": "Short reason label for a meeting pause; shown next to the deadline."
+  },
+  "notificationPauseReasonOvernight": "Overnight",
+  "@notificationPauseReasonOvernight": {
+    "description": "Short reason label for an overnight pause; shown next to the deadline."
+  },
+  "notificationPauseTooltip": "Notifications paused until {when}",
+  "@notificationPauseTooltip": {
+    "description": "Tooltip of the bell icon while notifications are paused; {when} is a local date and time.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "today, 18:00"
+      }
+    }
+  },
   "settingsStepsGroupOnHint": "The steps of one answer go into one journal.",
   "@settingsStepsGroupOnHint": {
     "description": "Choice card hint for grouped steps."
@@ -3297,6 +3361,14 @@
   "@notifySnoozedDueBody": {
     "description": "System notification body when a snooze deadline is reached."
   },
+  "notifyDigestTitle": "While you were away",
+  "@notifyDigestTitle": {
+    "description": "System notification title (action part) after a shared notification pause ends."
+  },
+  "notifyDigestBody": "Notifications were paused. Open the inbox to see what happened.",
+  "@notifyDigestBody": {
+    "description": "System notification body after a shared notification pause ends. The inbox has the details."
+  },
   "securityProfileTitle": "Command levels",
   "@securityProfileTitle": {
     "description": "Settings section: risk levels for command categories, commands, and arguments."
@@ -3646,6 +3718,20 @@
   "@paletteGroupNavigation": {"description": "Command palette group with main workspace sections."},
   "paletteGroupProject": "Project",
   "@paletteGroupProject": {"description": "Command palette group with project actions."},
+  "paletteGroupNotifications": "Notifications",
+  "@paletteGroupNotifications": {"description": "Command palette group with notification pause actions."},
+  "palettePauseSet": "Notifications paused until {when}",
+  "@palettePauseSet": {
+    "description": "Snackbar after a notification pause was set from the command palette; {when} is a local date and time.",
+    "placeholders": {
+      "when": {
+        "type": "String",
+        "example": "today, 18:00"
+      }
+    }
+  },
+  "palettePauseResumed": "Notifications are back on",
+  "@palettePauseResumed": {"description": "Snackbar after notifications were resumed from the command palette."},
   "paletteCommandNewChat": "New chat",
   "@paletteCommandNewChat": {"description": "Command palette action: open a new chat."},
   "paletteCommandChats": "Chats",

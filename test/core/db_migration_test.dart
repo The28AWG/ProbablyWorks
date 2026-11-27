@@ -184,6 +184,27 @@ AppDatabase _openReadV29() => AppDatabase(
   ),
 );
 
+/// База v30 с отложенным напоминанием и чатом.
+AppDatabase _openReadV30() => AppDatabase(
+  NativeDatabase.memory(
+    setup: (raw) {
+      raw
+        ..execute(_chatsV4)
+        ..execute(
+          'CREATE TABLE chat_attention_snoozes ('
+          'chat_id TEXT NOT NULL PRIMARY KEY REFERENCES chats(id) '
+          'ON DELETE CASCADE, until INTEGER NOT NULL, '
+          'revision INTEGER NOT NULL DEFAULT 0)',
+        )
+        ..execute(
+          'INSERT INTO chats (id, host_id, title, created_at, updated_at) '
+          "VALUES ('c1', 'local', 'chat', 0, 0)",
+        )
+        ..execute('PRAGMA user_version = 30');
+    },
+  ),
+);
+
 /// База v17 с сообщениями и (опционально) старым FTS-индексом.
 AppDatabase _openSearchV17({bool withIndex = true}) => AppDatabase(
   NativeDatabase.memory(
@@ -923,6 +944,25 @@ void main() {
     expect(
       columns.map((row) => row.read<String>('name')),
       containsAll(['chat_id', 'until', 'revision']),
+    );
+    final chats = await db
+        .customSelect('SELECT COUNT(*) AS n FROM chats')
+        .get();
+    expect(chats.single.read<int>('n'), 1);
+  });
+
+  test('v30 → v31 creates the notification pause table', () async {
+    final db = _openReadV30();
+    addTearDown(db.close);
+
+    final columns = await db
+        .customSelect(
+          "SELECT name FROM pragma_table_info('notification_pauses')",
+        )
+        .get();
+    expect(
+      columns.map((row) => row.read<String>('name')),
+      containsAll(['id', 'until', 'reason', 'revision']),
     );
     final chats = await db
         .customSelect('SELECT COUNT(*) AS n FROM chats')

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/attention/chat_attention_service.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/data/chat_repository.dart';
@@ -473,6 +475,138 @@ void main() {
     await pumpEventQueue();
 
     expect(notifier.cancelled, contains(dueId));
+  });
+
+  test('a shared pause is exposed in the snapshot and can move', () async {
+    final until = now.add(const Duration(minutes: 30));
+    await attention.pauseNotifications(
+      until,
+      reason: NotificationPauseReason.meeting,
+    );
+    await pumpEventQueue();
+
+    expect(attention.isNotificationsPaused, isTrue);
+    final pause = attention.snapshot.pause;
+    expect(pause?.until.isAtSameMomentAs(until), isTrue);
+    expect(pause?.reason, NotificationPauseReason.meeting);
+    expect(pause?.revision, 1);
+
+    final next = now.add(const Duration(hours: 2));
+    await attention.pauseNotifications(
+      next,
+      reason: NotificationPauseReason.overnight,
+    );
+    await pumpEventQueue();
+
+    expect(attention.snapshot.pause?.until.isAtSameMomentAs(next), isTrue);
+    expect(attention.snapshot.pause?.revision, 2);
+
+    await attention.resumeNotifications();
+    await pumpEventQueue();
+
+    expect(attention.snapshot.pause, isNull);
+    expect(attention.isNotificationsPaused, isFalse);
+  });
+
+  test('a pause in the past is rejected instead of firing at once', () async {
+    await expectLater(
+      attention.pauseNotifications(now.subtract(const Duration(minutes: 1))),
+      throwsA(
+        isA<AgentApiException>().having(
+          (error) => error.code,
+          'code',
+          'pause_in_past',
+        ),
+      ),
+    );
+    expect(attention.snapshot.pause, isNull);
+  });
+
+  test('a pause that expired while the app was off sends one digest', () async {
+    await chat('c1');
+    await reply('c1');
+    await chats.setNotificationPause(
+      now.subtract(const Duration(hours: 1)),
+      NotificationPauseReason.overnight,
+    );
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(
+      chats,
+      broker,
+      notifier: notifier,
+      now: () => now,
+    );
+    final digests = <AttentionDigest>[];
+    final sub = attention.pauseDigest.listen(digests.add);
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+    await pumpEventQueue();
+
+    expect(attention.snapshot.pause, isNull);
+    expect(notifier.kinds, [AgentNoticeKind.attentionDigest]);
+    expect(digests, hasLength(1));
+    expect(digests.single.newMessages, 1);
+    expect(await chats.watchNotificationPause().first, isNull);
+  });
+
+  test('a pause that ends while running sends exactly one digest', () async {
+    // Здесь нужны настоящие часы: срок проверяет таймер сервиса. Запас
+    // больше секунды — база хранит время с точностью до секунды.
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(chats, broker, notifier: notifier);
+    await chat('c1');
+    await reply('c1');
+    await pumpEventQueue();
+
+    final digests = <AttentionDigest>[];
+    final sub = attention.pauseDigest.listen(digests.add);
+    addTearDown(sub.cancel);
+
+    await attention.pauseNotifications(
+      DateTime.now().add(const Duration(milliseconds: 1200)),
+    );
+    await pumpEventQueue();
+    expect(attention.isNotificationsPaused, isTrue);
+
+    await Future<void>.delayed(const Duration(milliseconds: 3000));
+    await pumpEventQueue();
+
+    expect(attention.isNotificationsPaused, isFalse);
+    expect(digests, hasLength(1));
+    expect(
+      notifier.kinds.where((kind) => kind == AgentNoticeKind.attentionDigest),
+      hasLength(1),
+    );
+    expect(await chats.watchNotificationPause().first, isNull);
+  });
+
+  test('resuming manually does not send a digest', () async {
+    await chat('c1');
+    await reply('c1');
+    await pumpEventQueue();
+    await attention.dispose();
+    final notifier = _RecordingNotifier();
+    attention = ChatAttentionService(
+      chats,
+      broker,
+      notifier: notifier,
+      now: () => now,
+    );
+    final digests = <AttentionDigest>[];
+    final sub = attention.pauseDigest.listen(digests.add);
+    addTearDown(sub.cancel);
+    await pumpEventQueue();
+
+    await attention.pauseNotifications(now.add(const Duration(hours: 1)));
+    await pumpEventQueue();
+    await attention.resumeNotifications();
+    await pumpEventQueue();
+
+    expect(digests, isEmpty);
+    expect(notifier.kinds, isEmpty);
+    expect(await chats.watchNotificationPause().first, isNull);
   });
 }
 

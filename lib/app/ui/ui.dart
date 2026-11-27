@@ -13,4 +13,5 @@ export 'copy_button.dart';
 export 'deferred_route_placeholder.dart';
 export 'file_change_view.dart';
 export 'local_host_presentation.dart';
+export 'notification_pause_menu.dart';
 export 'read_file_view.dart';

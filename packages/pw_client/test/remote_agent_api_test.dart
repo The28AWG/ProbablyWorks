@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
@@ -21,6 +22,7 @@ import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -669,6 +671,53 @@ void main() {
 
     backend.emitDue('c1');
     expect(await due.future.timeout(const Duration(seconds: 3)), 'c1');
+  });
+
+  test('pauses notifications and receives the digest', () async {
+    final until = DateTime.utc(2026, 11, 28, 9);
+    await remote.pauseNotifications(
+      until,
+      reason: NotificationPauseReason.meeting,
+    );
+    expect(backend.paused, [(until, NotificationPauseReason.meeting)]);
+    await remote.resumeNotifications();
+    expect(backend.resumed, 1);
+
+    backend.attentionValue = AttentionSnapshot(
+      revision: 7,
+      items: const [],
+      pause: NotificationPause(
+        until: until,
+        reason: NotificationPauseReason.overnight,
+        revision: 4,
+      ),
+    );
+    final loaded = await remote.attention();
+    expect(loaded.notificationsPaused, isTrue);
+    expect(loaded.pause?.reason, NotificationPauseReason.overnight);
+    expect(remote.supportsPause, isTrue);
+
+    await remote.startEvents();
+    await remote.eventsReady;
+    final digest = Completer<AttentionDigest>();
+    final sub = remote.pauseDigestDue.listen(digest.complete);
+    addTearDown(sub.cancel);
+
+    backend.emitPauseDigest(
+      const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 2,
+          ),
+        ],
+      ),
+    );
+    final pushed = await digest.future.timeout(const Duration(seconds: 3));
+    expect(pushed.newMessages, 2);
+    expect(pushed.items.single.chatId, 'c1');
   });
 
   test('reads the attention digest', () async {
@@ -1946,15 +1995,23 @@ final class _FakeData implements DataApi {
 }
 
 final class _FakeAgent
-    implements AgentApi, AttentionApi, AttentionDigestApi, AttentionSnoozeApi {
+    implements
+        AgentApi,
+        AttentionApi,
+        AttentionDigestApi,
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   final changes = DomainChangeBus();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   final _attentionDue = StreamController<String>.broadcast();
+  final _pauseDigest = StreamController<AttentionDigest>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
   AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
   final snoozed = <(String, DateTime)>[];
   final unsnoozed = <String>[];
+  final paused = <(DateTime, NotificationPauseReason)>[];
+  var resumed = 0;
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -2033,6 +2090,7 @@ final class _FakeAgent
     await _editChanges.close();
     await _attention.close();
     await _attentionDue.close();
+    await _pauseDigest.close();
     await changes.close();
   }
 
@@ -2067,6 +2125,23 @@ final class _FakeAgent
   Stream<String> get attentionDue => _attentionDue.stream;
 
   void emitDue(String chatId) => _attentionDue.add(chatId);
+
+  @override
+  bool get supportsPause => true;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async => paused.add((until, reason));
+
+  @override
+  Future<void> resumeNotifications() async => resumed++;
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _pauseDigest.stream;
+
+  void emitPauseDigest(AttentionDigest digest) => _pauseDigest.add(digest);
 
   void emitAttention(AttentionSnapshot snapshot) {
     attentionValue = snapshot;

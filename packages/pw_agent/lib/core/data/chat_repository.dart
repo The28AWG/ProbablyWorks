@@ -7,6 +7,7 @@ import 'package:pw_agent/agent/api/draft_persistence.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/providers/ai/reasoning.dart';
@@ -29,6 +30,7 @@ class ChatRepository implements DraftPersistence {
   $ChatReadStatesTable get _readTable => _db.chatReadStates;
   $ChatAttentionStatesTable get _attentionTable => _db.chatAttentionStates;
   $ChatAttentionSnoozesTable get _snoozeTable => _db.chatAttentionSnoozes;
+  $NotificationPausesTable get _pauseTable => _db.notificationPauses;
   $MessagesTable get _messagesTable => _db.messages;
   $ToolRunsTable get _toolRunsTable => _db.toolRuns;
   $SessionRevisionsTable get _sessionRevisionsTable => _db.sessionRevisions;
@@ -840,6 +842,61 @@ class ChatRepository implements DraftPersistence {
   /// Снимает напоминание. Идемпотентно: снимать нечего — не ошибка.
   Future<void> clearAttentionSnooze(String chatId) =>
       (_db.delete(_snoozeTable)..where((t) => t.chatId.equals(chatId))).go();
+
+  // ---- notification pause ------------------------------------------------
+
+  /// Текущая пауза уведомлений. Null — уведомления не выключены.
+  ///
+  /// Просроченная строка тоже возвращается: сервис внимания сам решает, что
+  /// пауза уже не действует, и убирает её таймером или при следующем чтении.
+  Stream<NotificationPause?> watchNotificationPause() =>
+      _db.select(_pauseTable).watchSingleOrNull().map(_pauseFromRow);
+
+  /// Ставит паузу до [until]. Повторный вызов двигает срок и увеличивает
+  /// ревизию, даже если момент совпадает: окна должны получить обновление.
+  Future<void> setNotificationPause(
+    DateTime until,
+    NotificationPauseReason reason,
+  ) => _db.transaction(() async {
+    final current = await _db.select(_pauseTable).getSingleOrNull();
+    await _db
+        .into(_pauseTable)
+        .insertOnConflictUpdate(
+          NotificationPausesCompanion.insert(
+            id: const Value(0),
+            until: until,
+            reason: Value(reason.name),
+            revision: Value((current?.revision ?? 0) + 1),
+          ),
+        );
+  });
+
+  /// Снимает паузу. Идемпотентно: снимать нечего — не ошибка.
+  Future<void> clearNotificationPause() =>
+      (_db.delete(_pauseTable)..where((t) => t.id.equals(0))).go();
+
+  /// Удаляет паузу, срок которой уже прошёл.
+  ///
+  /// Возвращает true, только если была удалена именно просроченная запись.
+  /// Условие по времени не даёт таймеру старой паузы снять новую, которую
+  /// поставили с другого устройства.
+  Future<bool> clearExpiredNotificationPause(
+    DateTime now,
+  ) => _db.transaction(() async {
+    final deleted = await (_db.delete(
+      _pauseTable,
+    )..where((t) => t.id.equals(0) & t.until.isSmallerOrEqualValue(now))).go();
+    return deleted > 0;
+  });
+
+  static NotificationPause? _pauseFromRow(NotificationPauseRow? row) {
+    if (row == null) return null;
+    return NotificationPause(
+      until: row.until,
+      reason: NotificationPauseReason.fromStorage(row.reason),
+      revision: row.revision,
+    );
+  }
 
   /// Удаляет просроченные напоминания и возвращает их чаты.
   ///

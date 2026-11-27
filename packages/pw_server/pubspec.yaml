@@ -23,5 +23,6 @@ dependencies:
     path: ../pw_agent
 
 dev_dependencies:
+  http: ^1.5.0
   lints: ^6.1.0
   test: ^1.31.1

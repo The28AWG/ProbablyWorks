@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/context/context_compactor.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
 import 'package:pw_agent/agent/exec/active_exec_registry.dart';
 import 'package:pw_agent/agent/exec/exec_log_store.dart';
@@ -210,6 +211,24 @@ class AgentHub implements ChatRunStopper, SubagentHost {
 
   /// Отложен ли чат прямо сейчас. Уведомления молчат, пока действует срок.
   bool isAttentionSnoozed(String chatId) => attention.isSnoozed(chatId);
+
+  /// Выключены ли уведомления общей паузой прямо сейчас.
+  bool get isNotificationsPaused => attention.isNotificationsPaused;
+
+  /// Общая пауза уведомлений для снимка входящих.
+  NotificationPause? get notificationPause => attention.notificationPause;
+
+  /// Ставит общую паузу уведомлений. Срок виден на всех устройствах.
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) => attention.pauseNotifications(until, reason: reason);
+
+  /// Снимает общую паузу уведомлений.
+  Future<void> resumeNotifications() => attention.resumeNotifications();
+
+  /// Дайджесты, собранные к окончанию паузы.
+  Stream<AttentionDigest> get notificationPauseDigest => attention.pauseDigest;
 
   /// Дайджест «пока вас не было» по общей базе агента.
   Future<AttentionDigest> attentionDigest() => attention.digest();

@@ -5,10 +5,12 @@ import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -58,6 +60,32 @@ void main() {
 
     expect(await cubit.unsnoozeAttention('c1'), isTrue);
     expect(api.unsnoozed, ['c1']);
+  });
+
+  test('pauses and resumes notifications through the agent API', () async {
+    final api = _FakeAgent();
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+    expect(cubit.state.pauseSupported, isTrue);
+
+    final until = DateTime.utc(2026, 11, 28, 9);
+    expect(
+      await cubit.pauseNotifications(
+        until,
+        reason: NotificationPauseReason.meeting,
+      ),
+      isTrue,
+    );
+    expect(api.paused, [(until, NotificationPauseReason.meeting)]);
+    expect(cubit.state.attention.pause?.until.isAtSameMomentAs(until), isTrue);
+
+    expect(await cubit.resumeNotifications(), isTrue);
+    expect(api.resumed, 1);
+    expect(cubit.state.attention.pause, isNull);
   });
 
   test('a server without snooze support hides the action', () async {
@@ -247,13 +275,21 @@ AttentionSnapshot _snapshot({required int revision, required int unread}) =>
     );
 
 final class _FakeAgent
-    implements AgentApi, AttentionApi, AttentionDigestApi, AttentionSnoozeApi {
+    implements
+        AgentApi,
+        AttentionApi,
+        AttentionDigestApi,
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   final _statuses = StreamController<AgentStatus>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   final _attentionDue = StreamController<String>.broadcast();
+  final _pauseDigest = StreamController<AttentionDigest>.broadcast();
   final actions = <ApprovalAction>[];
   final snoozed = <(String, DateTime)>[];
   final unsnoozed = <String>[];
+  final paused = <(DateTime, NotificationPauseReason)>[];
+  var resumed = 0;
   var failNext = false;
   var attentionFailure = false;
   var snoozeAvailable = true;
@@ -272,6 +308,7 @@ final class _FakeAgent
     await _statuses.close();
     await _attention.close();
     await _attentionDue.close();
+    await _pauseDigest.close();
   }
 
   @override
@@ -315,6 +352,40 @@ final class _FakeAgent
 
   @override
   Stream<String> get attentionDue => _attentionDue.stream;
+
+  @override
+  bool get supportsPause => true;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async {
+    paused.add((until, reason));
+    _snapshotValue = AttentionSnapshot(
+      revision: _snapshotValue.revision + 1,
+      items: _snapshotValue.items,
+      pause: NotificationPause(
+        until: until,
+        reason: reason,
+        revision: _snapshotValue.pause == null
+            ? 1
+            : _snapshotValue.pause!.revision + 1,
+      ),
+    );
+  }
+
+  @override
+  Future<void> resumeNotifications() async {
+    resumed++;
+    _snapshotValue = AttentionSnapshot(
+      revision: _snapshotValue.revision + 1,
+      items: _snapshotValue.items,
+    );
+  }
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _pauseDigest.stream;
 
   @override
   Future<AttentionDigest> attentionDigest() {

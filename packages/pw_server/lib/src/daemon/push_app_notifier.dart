@@ -7,10 +7,17 @@ import 'package:pw_server/src/api/client_session.dart';
 /// Сервис резолвится лениво: DI агента регистрирует [PushService] после
 /// регистрации [AppNotifier].
 final class PushAppNotifier implements AppNotifier {
-  PushAppNotifier(this._service, {this._clientSessions});
+  PushAppNotifier(this._service, {this._clientSessions, this.isPaused});
 
   final PushService Function() _service;
   final ClientSessionRegistry? _clientSessions;
+
+  /// Действует ли сейчас общая пауза уведомлений.
+  ///
+  /// Проверка читает состояние сервиса внимания, а не настройку с диска:
+  /// уведомление приходит на каждый шаг хода, и лишний запрос к базе здесь
+  /// не нужен. Колбэк ленивый: при создании демона агент ещё не собран.
+  final bool Function()? isPaused;
 
   @override
   Future<void> notify({
@@ -25,6 +32,12 @@ final class PushAppNotifier implements AppNotifier {
     // Если чат открыт и в фокусе, пользователь уже видит событие. Push нужен
     // только когда все клиенты свернуты или закрыты.
     if (_clientSessions?.hasFocusedChat(chatId) ?? false) {
+      return Future<void>.value();
+    }
+    // Общая пауза выключает уведомления на всех устройствах. Событие не
+    // теряется: чат, карточка и непрочитанное остаются, а после паузы
+    // приходит один дайджест.
+    if (isPaused?.call() ?? false) {
       return Future<void>.value();
     }
     return _service().notify(kind: kind, chatTitle: chatTitle, detail: detail);

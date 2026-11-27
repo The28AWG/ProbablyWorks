@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -25,6 +27,12 @@ typedef ChatVisibleProbe = Future<bool> Function(String chatId);
 /// как «не отложен»: пропустить запрос подтверждения хуже, чем показать
 /// уведомление о чате, который сейчас отложен.
 typedef ChatSnoozedProbe = Future<bool> Function(String chatId);
+
+/// Проверяет, выключены ли уведомления общей паузой прямо сейчас.
+///
+/// Ошибку проверки вызывающий код трактует как «не на паузе»: лучше лишнее
+/// уведомление, чем пропущенный запрос подтверждения.
+typedef NotificationsPausedProbe = Future<bool> Function();
 
 /// Переводит события удалённого агента в системные уведомления профиля.
 ///
@@ -49,6 +57,7 @@ final class ProfileNoticeBridge {
     required this.profileId,
     this.isVisible,
     this.isSnoozed,
+    this.isPaused,
   });
 
   final AgentApi api;
@@ -56,6 +65,7 @@ final class ProfileNoticeBridge {
   final String profileId;
   final ChatVisibleProbe? isVisible;
   final ChatSnoozedProbe? isSnoozed;
+  final NotificationsPausedProbe? isPaused;
 
   /// Карточки, для которых уведомление показано или ещё показывается.
   ///
@@ -68,6 +78,10 @@ final class ProfileNoticeBridge {
   /// Чаты, отложенные по последнему снимку входящих. Хранится, чтобы
   /// заметить именно новое откладывание и снять уведомления его карточек.
   final _snoozedChats = <String>{};
+
+  /// Действует ли общая пауза по последнему снимку. Уведомления, пришедшие
+  /// до первого снимка, проверяет [isPaused].
+  var _paused = false;
 
   /// Подписывает уведомления на события этого профиля.
   List<StreamSubscription<Object?>> listen() {
@@ -121,6 +135,10 @@ final class ProfileNoticeBridge {
     if (source case final AttentionApi attention) {
       subscriptions.add(attention.attentionChanges.listen(_onAttention));
     }
+    if (source case final AttentionPauseApi pause) {
+      // Пауза закончилась: одно уведомление вместо накопившихся карточек.
+      subscriptions.add(pause.pauseDigestDue.listen(_onPauseDigest));
+    }
     if (source case final AttentionSnoozeApi snooze) {
       // Наступил срок «напомнить позже»: сервер уже вернул чат во входящие, а
       // уведомление объясняет, почему и о чём напомнить.
@@ -150,6 +168,15 @@ final class ProfileNoticeBridge {
   /// больше неактуальны: решение всё равно можно принять, но срок напомнит о
   /// нём позже. Снимаем только уведомления, которые появились до откладывания.
   void _onAttention(AttentionSnapshot snapshot) {
+    final paused = snapshot.notificationsPaused;
+    if (paused && !_paused) {
+      // Паузу включили на другом устройстве: уже показанные карточки и
+      // дайджест прошлой паузы больше не должны отвлекать. Записи в _cards
+      // оставляем, чтобы отследить закрытие карточек и не показать их повторно.
+      _cancelShownCards();
+      _cancelPauseDigest();
+    }
+    _paused = paused;
     final snoozed = {for (final item in snapshot.snoozed) item.chatId};
     for (final chatId in snoozed.difference(_snoozedChats)) {
       _cancelChatCards(chatId);
@@ -160,6 +187,44 @@ final class ProfileNoticeBridge {
     _snoozedChats
       ..clear()
       ..addAll(snoozed);
+  }
+
+  /// Пауза закончилась: показываем одну сводку.
+  ///
+  /// Событие приходит уже после снятия паузы, поэтому отдельная проверка не
+  /// нужна. Пустой дайджест сервер не присылает; повторный показ с тем же
+  /// [agentNoticeId] обновит строку в трее, а не добавит вторую.
+  Future<void> _onPauseDigest(AttentionDigest digest) async {
+    if (digest.isEmpty) return;
+    try {
+      await notifier.notify(
+        kind: AgentNoticeKind.attentionDigest,
+        chatTitle: '',
+        profileId: profileId,
+        noticeId: agentNoticeId(
+          kind: AgentNoticeKind.attentionDigest,
+          scope: profileId,
+        ),
+      );
+    } on Object catch (error) {
+      AppLog.root.warning('pause digest notice failed', error);
+    }
+  }
+
+  /// Снимает показанные уведомления карточек, не забывая их сами.
+  void _cancelShownCards() {
+    for (final noticeId in _cards.keys) {
+      unawaited(_cancel(noticeId));
+    }
+  }
+
+  /// Убирает дайджест прошлой паузы: новая пауза начинается заново.
+  void _cancelPauseDigest() {
+    unawaited(
+      _cancel(
+        agentNoticeId(kind: AgentNoticeKind.attentionDigest, scope: profileId),
+      ),
+    );
   }
 
   /// Устойчивый ключ напоминания: одно на чат, поэтому повторное срабатывание
@@ -292,6 +357,11 @@ final class ProfileNoticeBridge {
           approvalId: approvalId,
           questionId: questionId,
         );
+    if (_paused || await _pausedElsewhere()) {
+      // Карточку не убираем из _cards: решение по ней всё ещё может прийти,
+      // а после паузы о накопленном расскажет один дайджест.
+      return;
+    }
     if (await _visibleElsewhere(chatId)) {
       _cards.remove(resolvedNoticeId);
       return;
@@ -351,6 +421,17 @@ final class ProfileNoticeBridge {
       return await probe(chatId);
     } on Object catch (error) {
       AppLog.root.fine('snooze check before notice failed: $error');
+      return false;
+    }
+  }
+
+  Future<bool> _pausedElsewhere() async {
+    final probe = isPaused;
+    if (probe == null) return false;
+    try {
+      return await probe();
+    } on Object catch (error) {
+      AppLog.root.fine('pause check before notice failed: $error');
       return false;
     }
   }

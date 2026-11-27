@@ -4,11 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/app/notifications/profile_notice_bridge.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -356,7 +359,119 @@ void main() {
 
     expect(notifier.cancelled, contains('p1:snoozeDue:c1'));
   });
+
+  test('suppresses notices while notifications are paused', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+      isPaused: () async => true,
+    );
+    _listen(bridge);
+
+    api.addEvent(const AgentTurnFinished('c1', TurnEnd.completed));
+    await pumpEventQueue();
+
+    expect(notifier.notices, isEmpty);
+  });
+
+  test(
+    'a pause snapshot cancels shown cards but keeps tracking them',
+    () async {
+      final bridge = ProfileNoticeBridge(
+        api: api,
+        notifier: notifier,
+        profileId: 'p1',
+      );
+      _listen(bridge);
+
+      api.addApproval(
+        const ApprovalRequest(
+          id: 'a1',
+          chatId: 'c1',
+          toolName: 'run_command',
+          summary: 'ls',
+          reason: 'ask',
+        ),
+      );
+      await pumpEventQueue();
+      expect(notifier.notices, hasLength(1));
+
+      api.addAttention(_pausedSnapshot(revision: 2));
+      await pumpEventQueue();
+
+      expect(notifier.cancelled, contains('p1:approvalNeeded:a1'));
+    },
+  );
+
+  test('an ended pause shows one digest notice', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+    );
+    _listen(bridge);
+
+    api.addPauseDigest(
+      const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 2,
+            approvals: 1,
+          ),
+        ],
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(notifier.notices, hasLength(1));
+    expect(notifier.notices.single.kind, AgentNoticeKind.attentionDigest);
+    expect(notifier.notices.single.noticeId, 'p1:attentionDigest:');
+  });
+
+  test('a new pause cancels the digest notice of the previous pause', () async {
+    final bridge = ProfileNoticeBridge(
+      api: api,
+      notifier: notifier,
+      profileId: 'p1',
+    );
+    _listen(bridge);
+
+    api.addPauseDigest(
+      const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 1,
+          ),
+        ],
+      ),
+    );
+    await pumpEventQueue();
+    expect(notifier.notices.single.kind, AgentNoticeKind.attentionDigest);
+
+    api.addAttention(_pausedSnapshot(revision: 3));
+    await pumpEventQueue();
+
+    expect(notifier.cancelled, contains('p1:attentionDigest:'));
+  });
 }
+
+/// Снимок входящих с действующей паузой уведомлений.
+AttentionSnapshot _pausedSnapshot({required int revision}) => AttentionSnapshot(
+  revision: revision,
+  items: const [],
+  pause: NotificationPause(
+    until: DateTime.utc(2030),
+    reason: NotificationPauseReason.focus,
+    revision: 1,
+  ),
+);
 
 /// Снимок входящих с одним отложенным чатом.
 AttentionSnapshot _snoozedSnapshot(String chatId, {required int revision}) =>
@@ -384,7 +499,8 @@ final class _FakeAgentApi
         InteractionEventsApi,
         ChatReconnectApi,
         AttentionApi,
-        AttentionSnoozeApi {
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -392,6 +508,7 @@ final class _FakeAgentApi
   final _reconnects = StreamController<void>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   final _attentionDue = StreamController<String>.broadcast();
+  final _pauseDigest = StreamController<AttentionDigest>.broadcast();
 
   /// Что сервер вернёт при сверке карточек после обрыва связи.
   var pendingApprovalsResult = <ApprovalRequest>[];
@@ -440,6 +557,8 @@ final class _FakeAgentApi
 
   void addDue(String chatId) => _attentionDue.add(chatId);
 
+  void addPauseDigest(AttentionDigest digest) => _pauseDigest.add(digest);
+
   void reconnect() => _reconnects.add(null);
 
   @override
@@ -464,6 +583,21 @@ final class _FakeAgentApi
   @override
   Stream<String> get attentionDue => _attentionDue.stream;
 
+  @override
+  bool get supportsPause => true;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) => Future<void>.value();
+
+  @override
+  Future<void> resumeNotifications() => Future<void>.value();
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _pauseDigest.stream;
+
   Future<void> close() async {
     await _events.close();
     await _approvals.close();
@@ -472,6 +606,7 @@ final class _FakeAgentApi
     await _reconnects.close();
     await _attention.close();
     await _attentionDue.close();
+    await _pauseDigest.close();
   }
 
   @override

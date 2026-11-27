@@ -89,6 +89,8 @@ GET    /api/v1/attention             входящие
 GET    /api/v1/attention/digest      дайджест «пока вас не было»
 PUT    /api/v1/attention/{chatId}/snooze   {"until": "2026-11-28T09:00:00Z"}
 DELETE /api/v1/attention/{chatId}/snooze   снять напоминание
+PUT    /api/v1/attention/pause             {"until": "2026-11-28T08:00:00Z", "reason": "overnight"}
+DELETE /api/v1/attention/pause             включить уведомления раньше срока
 DELETE /api/v1/attention/{chatId}    убрать проблемное завершение хода
 
 GET    /api/v1/chats/{id}/messages
@@ -279,8 +281,8 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 удаление последнего сообщения откатывают его к последнему уцелевшему, иначе
 новые сообщения на освободившихся `seq` выглядели бы прочитанными.
 
-`GET /attention` возвращает снимок входящих: `revision`, `items` и
-`snoozed`. У каждого чата в `items` есть `chatId`, `hostId`, `projectId`, `title`,
+`GET /attention` возвращает снимок входящих: `revision`, `items`, `snoozed` и
+`pause`. У каждого чата в `items` есть `chatId`, `hostId`, `projectId`, `title`,
 `reasons`, готовые карточки `approvals`/`questions`/`editFileChanges`,
 `unreadCount`, `lastReadSeq`, `lastMessageSeq`, `running`, `turnAt` и
 `updatedAt`. `reasons` — `approval`, `question`, `editFiles`, `failed`,
@@ -310,6 +312,21 @@ snooze_in_past`, неизвестный чат — `404 chat_not_found`. По н
 публикует `attentionDue` с `chatId` и отправляет системное напоминание; если
 решать уже нечего, событие и напоминание не отправляются.
 
+`PUT /attention/pause` выключает системные и push-уведомления до `until`
+(ISO-8601) на всех устройствах, `DELETE /attention/pause` снимает паузу
+раньше срока. `reason` — `focus`, `meeting` или `overnight`; неизвестное
+значение получает `400 bad_field`, срок в прошлом — `400 pause_in_past`.
+Поле `pause` в снимке присутствует всегда, даже со значением `null`: по нему
+клиент отличает новый сервер от старого. Пока пауза действует, `items`,
+курсор прочтения и карточки продолжают обновляться, но уведомления не
+показываются. Запись одна на агента и живёт в `notification_pauses`, поэтому
+срок общий для всех устройств и переживает перезапуск. По окончании срока
+сервер убирает запись, собирает `GET /attention/digest` и, если он не пуст,
+публикует SSE `notificationDigestDue` с тем же телом, что и `GET
+/attention/digest`, и отправляет одно системное уведомление. Пачка
+запоздавших уведомлений не показывается. Ручное `DELETE` паузы дайджест не
+отправляет.
+
 `GET /attention/digest` возвращает сводку «пока вас не было»:
 `newMessages`, `finishedTurns`, `approvals`, `questions`, `editFileChanges`,
 `problems` и `items` с теми же счётчиками по чатам. Сводка строится по общему
@@ -328,7 +345,8 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `chatReadChanged`, `stateAreaChanged`, `draftChanged`, `approval`,
 `approvalResolved`, `question`,
 `questionResolved`, `editFileChanges`, `editFileChangesResolved`,
-`chatStatusChanged`, `clientSessionsChanged`, `attentionDue`, `modelRuntime`. `modelRuntime` —
+`chatStatusChanged`, `clientSessionsChanged`, `attentionDue`,
+`notificationDigestDue`, `modelRuntime`. `modelRuntime` —
 глобальное состояние загрузки моделей, не привязанное к чату; оно приходит и в
 чат-фильтрованный SSE. `chatStatusChanged` несёт тот же снимок, что и
 `GET /attention`, с новой ревизией: окно обновляет бейдж и список решений без
@@ -336,7 +354,9 @@ SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 позже» наступил и чату есть что решать: чат уже вернулся в `chatStatusChanged`,
 а событие позволяет показать системное напоминание и объяснить, почему чат снова
 здесь. Если решать нечего, событие не приходит. Оно приходит и в SSE,
-отфильтрованный по чату.
+отфильтрованный по чату. `notificationDigestDue` приходит после окончания
+общей паузы уведомлений и несёт дайджест; окно показывает по нему одно
+системное уведомление.
 
 Без `?chatId=` поток остаётся глобальным, но тяжёлые события открытых чатов
 (`textDelta`, `reasoningDelta`, `messageAdded`, `turnSnapshot`, `runChanged`,

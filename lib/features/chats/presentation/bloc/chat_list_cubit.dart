@@ -6,12 +6,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -30,6 +32,7 @@ class ChatListState extends Equatable {
     this.attentionError,
     this.attentionSupported = true,
     this.snoozeSupported = false,
+    this.pauseSupported = false,
     this.digest,
   });
 
@@ -69,6 +72,10 @@ class ChatListState extends Equatable {
   /// показывается, остальное работает как раньше.
   final bool snoozeSupported;
 
+  /// Поддерживает ли подключённый агент общую паузу уведомлений. false —
+  /// старый сервер без маршрута или снимок ещё не показал поле `pause`.
+  final bool pauseSupported;
+
   /// Дайджест «пока вас не было». Null — сводка ещё не запрошена или сервер
   /// её не поддерживает; пустой объект скрывает карточку.
   final AttentionDigest? digest;
@@ -105,6 +112,7 @@ class ChatListState extends Equatable {
     bool clearAttentionError = false,
     bool? attentionSupported,
     bool? snoozeSupported,
+    bool? pauseSupported,
     AttentionDigest? digest,
     bool clearDigest = false,
   }) => ChatListState(
@@ -120,6 +128,7 @@ class ChatListState extends Equatable {
         : (attentionError ?? this.attentionError),
     attentionSupported: attentionSupported ?? this.attentionSupported,
     snoozeSupported: snoozeSupported ?? this.snoozeSupported,
+    pauseSupported: pauseSupported ?? this.pauseSupported,
     digest: clearDigest ? null : (digest ?? this.digest),
   );
 
@@ -135,6 +144,7 @@ class ChatListState extends Equatable {
     attentionError,
     attentionSupported,
     snoozeSupported,
+    pauseSupported,
     digest,
   ];
 }
@@ -184,7 +194,13 @@ class ChatListCubit extends Cubit<ChatListState> {
     _attentionApi = api is AttentionApi ? api : null;
     _digestApi = api is AttentionDigestApi ? api : null;
     _snoozeApi = api is AttentionSnoozeApi ? api : null;
-    emit(state.copyWith(snoozeSupported: _supportsSnooze));
+    _pauseApi = api is AttentionPauseApi ? api : null;
+    emit(
+      state.copyWith(
+        snoozeSupported: _supportsSnooze,
+        pauseSupported: _supportsPause,
+      ),
+    );
     if (_attentionApi == null) {
       emit(state.copyWith(attentionSupported: false));
     }
@@ -204,6 +220,7 @@ class ChatListCubit extends Cubit<ChatListState> {
           ChatListState(
             attentionSupported: state.attentionSupported,
             snoozeSupported: state.snoozeSupported,
+            pauseSupported: state.pauseSupported,
           ),
         );
       } else if (status == AgentStatus.online) {
@@ -223,6 +240,7 @@ class ChatListCubit extends Cubit<ChatListState> {
   AttentionApi? _attentionApi;
   AttentionDigestApi? _digestApi;
   AttentionSnoozeApi? _snoozeApi;
+  AttentionPauseApi? _pauseApi;
   Future<void>? _digestInFlight;
 
   /// Поколение карточки: растёт при каждом скрытии. Ответ на запрос, начатый
@@ -252,6 +270,7 @@ class ChatListCubit extends Cubit<ChatListState> {
         ChatListState(
           attentionSupported: state.attentionSupported,
           snoozeSupported: state.snoozeSupported,
+          pauseSupported: state.pauseSupported,
         ),
       );
     }
@@ -265,12 +284,24 @@ class ChatListCubit extends Cubit<ChatListState> {
   bool get _supportsSnooze =>
       _attentionApi != null && (_snoozeApi?.supportsSnooze ?? false);
 
+  /// Поддержка общей паузы подключённым агентом прямо сейчас.
+  bool get _supportsPause =>
+      _attentionApi != null && (_pauseApi?.supportsPause ?? false);
+
   /// Приводит флаг в состоянии к текущей возможности агента.
   void _syncSnoozeSupport() {
     if (isClosed) return;
     final supported = _supportsSnooze;
     if (state.snoozeSupported == supported) return;
     emit(state.copyWith(snoozeSupported: supported));
+  }
+
+  /// Приводит флаг паузы в состоянии к текущей возможности агента.
+  void _syncPauseSupport() {
+    if (isClosed) return;
+    final supported = _supportsPause;
+    if (state.pauseSupported == supported) return;
+    emit(state.copyWith(pauseSupported: supported));
   }
 
   /// Снимок присутствия пришёл с сервера: обновляем значки в списке чатов
@@ -303,6 +334,8 @@ class ChatListCubit extends Cubit<ChatListState> {
         // Поле `snoozed` в снимке — единственный признак, что новый демон
         // умеет откладывать напоминания. Старый демон его не присылает.
         snoozeSupported: _supportsSnooze,
+        // Поле `pause` так же отличает новый демон от старого.
+        pauseSupported: _supportsPause,
         clearAttentionError: true,
       ),
     );
@@ -336,8 +369,10 @@ class ChatListCubit extends Cubit<ChatListState> {
             attention: AttentionSnapshot.empty,
             attentionLoading: false,
             attentionSupported: false,
-            // Без маршрута входящих не может быть и маршрута напоминаний.
+            // Без маршрута входящих не может быть и маршрута напоминаний или
+            // паузы уведомлений.
             snoozeSupported: false,
+            pauseSupported: false,
             clearAttentionError: true,
           ),
         );
@@ -450,6 +485,35 @@ class ChatListCubit extends Cubit<ChatListState> {
     if (api == null) return false;
     final ok = await _attentionAction(() => api.unsnoozeAttention(chatId));
     _syncSnoozeSupport();
+    return ok;
+  }
+
+  /// Ставит уведомления на паузу до [until] на всех устройствах.
+  ///
+  /// Срок и причину выбирает клиент в своей локальной зоне, хранит и применяет
+  /// сервер. После ответа снимок входящих перечитывается, чтобы состояние
+  /// паузы сразу стало общим для окон, даже если SSE задерживается.
+  Future<bool> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async {
+    final api = _pauseApi;
+    if (api == null) return false;
+    final ok = await _attentionAction(
+      () => api.pauseNotifications(until, reason: reason),
+    );
+    _syncPauseSupport();
+    if (ok) await refreshAttention(force: true);
+    return ok;
+  }
+
+  /// Снимает паузу уведомлений раньше срока.
+  Future<bool> resumeNotifications() async {
+    final api = _pauseApi;
+    if (api == null) return false;
+    final ok = await _attentionAction(api.resumeNotifications);
+    _syncPauseSupport();
+    if (ok) await refreshAttention(force: true);
     return ok;
   }
 

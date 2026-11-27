@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 
@@ -183,6 +184,7 @@ final class AttentionSnapshot extends Equatable {
     required this.revision,
     required this.items,
     this.snoozed = const [],
+    this.pause,
   });
 
   static const empty = AttentionSnapshot(revision: 0, items: []);
@@ -193,6 +195,14 @@ final class AttentionSnapshot extends Equatable {
   /// Активные напоминания. Чат может быть отложен, даже если ничего не ждёт
   /// решения: новые сообщения до срока останутся незамеченными намеренно.
   final List<ChatSnooze> snoozed;
+
+  /// Действующая пауза уведомлений. Null — уведомления включены или срок уже
+  /// прошёл. Поле есть и у пустого снимка нового сервера: по нему клиент
+  /// понимает, что маршрут паузы поддерживается.
+  final NotificationPause? pause;
+
+  /// Выключены ли уведомления на всех устройствах сейчас.
+  bool get notificationsPaused => pause != null;
 
   /// Напоминание о чате, если оно ещё действует.
   ChatSnooze? snoozeOf(String chatId) {
@@ -210,5 +220,5 @@ final class AttentionSnapshot extends Equatable {
   int get unreadCount => items.fold(0, (sum, item) => sum + item.unreadCount);
 
   @override
-  List<Object?> get props => [revision, items, snoozed];
+  List<Object?> get props => [revision, items, snoozed, pause];
 }

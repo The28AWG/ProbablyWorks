@@ -8,6 +8,7 @@ import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
 import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/api/attention_pause_api.dart';
 import 'package:pw_agent/agent/api/attention_snooze_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -20,6 +21,7 @@ import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/domain/project.dart';
 import 'package:pw_agent/agent/domain/search.dart';
 import 'package:pw_agent/agent/domain/steps_display.dart';
@@ -638,6 +640,153 @@ void main() {
     expect(snoozed.single['chatId'], 'c1');
     expect(snoozed.single['until'], '2026-11-28T09:00:00.000Z');
     expect(snoozed.single['revision'], 2);
+  });
+
+  test(
+    'pauses and resumes notifications through the attention route',
+    () async {
+      final until = DateTime.utc(2026, 11, 28, 9);
+      final (status, _) = await _request(
+        client,
+        base,
+        'PUT',
+        '/api/v1/attention/pause',
+        token: _token,
+        body: {'until': until.toIso8601String(), 'reason': 'meeting'},
+      );
+      expect(status, HttpStatus.noContent);
+      expect(backend.paused, [(until, NotificationPauseReason.meeting)]);
+
+      final (deleteStatus, _) = await _request(
+        client,
+        base,
+        'DELETE',
+        '/api/v1/attention/pause',
+        token: _token,
+      );
+      expect(deleteStatus, HttpStatus.noContent);
+      expect(backend.resumed, 1);
+    },
+  );
+
+  test('rejects a pause with an unknown reason', () async {
+    final (status, body) = await _request(
+      client,
+      base,
+      'PUT',
+      '/api/v1/attention/pause',
+      token: _token,
+      body: {'until': '2026-11-28T09:00:00Z', 'reason': 'silent'},
+    );
+    expect(status, HttpStatus.badRequest);
+    final error = (jsonDecode(body) as Map)['error'] as Map;
+    expect(error['code'], 'bad_field');
+    expect(backend.paused, isEmpty);
+  });
+
+  test('the attention snapshot includes the shared pause', () async {
+    backend.attentionValue = AttentionSnapshot(
+      revision: 6,
+      items: const [],
+      pause: NotificationPause(
+        until: DateTime.utc(2026, 11, 28, 9),
+        reason: NotificationPauseReason.overnight,
+        revision: 3,
+      ),
+    );
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/attention',
+      token: _token,
+    );
+    expect(status, HttpStatus.ok);
+    final snapshot = jsonDecode(body) as Map;
+    final pause = snapshot['pause'] as Map;
+    expect(pause['until'], '2026-11-28T09:00:00.000Z');
+    expect(pause['reason'], 'overnight');
+    expect(pause['revision'], 3);
+  });
+
+  test('streams the pause digest over SSE', () async {
+    final request = await client.getUrl(Uri.parse('$base/api/v1/events'));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emitPauseDigest(
+      const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 2,
+          ),
+        ],
+      ),
+    );
+
+    String? event;
+    String? data;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) event = lines.current;
+      if (lines.current.startsWith('data:')) data = lines.current;
+      if (event != null && data != null) break;
+    }
+    await lines.cancel();
+    expect(event, 'event: notificationDigestDue');
+    final digest = jsonDecode(data!.replaceFirst('data: ', '')) as Map;
+    expect(digest['newMessages'], 2);
+    expect((digest['items'] as List).single['chatId'], 'c1');
+  });
+
+  test('streams the pause digest to a chat-filtered stream', () async {
+    final request = await client.getUrl(
+      Uri.parse('$base/api/v1/events?chatId=c1'),
+    );
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_token');
+    final response = await request.close();
+    final lines = StreamIterator(
+      response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .timeout(const Duration(seconds: 3)),
+    );
+    expect(await lines.moveNext(), isTrue);
+    expect(lines.current, ': connected');
+
+    backend.emitPauseDigest(
+      const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 1,
+          ),
+        ],
+      ),
+    );
+
+    String? event;
+    while (await lines.moveNext()) {
+      if (lines.current.startsWith('event:')) {
+        event = lines.current;
+        break;
+      }
+    }
+    await lines.cancel();
+    expect(event, 'event: notificationDigestDue');
   });
 
   test('returns the attention digest', () async {
@@ -3212,7 +3361,8 @@ final class _FakeBackend
         InteractionEventsApi,
         AttentionApi,
         AttentionDigestApi,
-        AttentionSnoozeApi {
+        AttentionSnoozeApi,
+        AttentionPauseApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -3220,11 +3370,14 @@ final class _FakeBackend
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   final _attentionDue = StreamController<String>.broadcast();
+  final _pauseDigest = StreamController<AttentionDigest>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
   AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
   final snoozed = <(String, DateTime)>[];
   final unsnoozed = <String>[];
+  final paused = <(DateTime, NotificationPauseReason)>[];
+  var resumed = 0;
   final sent = <(String, String, bool)>[];
   final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
@@ -3292,6 +3445,7 @@ final class _FakeBackend
     await _resolutions.close();
     await _attention.close();
     await _attentionDue.close();
+    await _pauseDigest.close();
   }
 
   @override
@@ -3325,6 +3479,23 @@ final class _FakeBackend
   Stream<String> get attentionDue => _attentionDue.stream;
 
   void emitDue(String chatId) => _attentionDue.add(chatId);
+
+  @override
+  bool get supportsPause => true;
+
+  @override
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async => paused.add((until, reason));
+
+  @override
+  Future<void> resumeNotifications() async => resumed++;
+
+  @override
+  Stream<AttentionDigest> get pauseDigestDue => _pauseDigest.stream;
+
+  void emitPauseDigest(AttentionDigest digest) => _pauseDigest.add(digest);
 
   /// Публикует снимок входящих так же, как это делает живой сервис.
   void emitAttention(AttentionSnapshot snapshot) {

@@ -270,6 +270,33 @@ class ChatAttentionSnoozes extends Table {
   Set<Column<Object>> get primaryKey => {chatId};
 }
 
+/// Общая пауза уведомлений («тихие часы»).
+///
+/// Одна строка на агента, а не на чат: пауза выключает уведомления сразу на
+/// всех устройствах. Отдельная таблица, как у snooze, не даёт сохранению
+/// настроек или чата случайно сбросить срок, а поток базы оповещает окна и
+/// SSE без отдельного маршрута чтения.
+@DataClassName('NotificationPauseRow')
+class NotificationPauses extends Table {
+  /// Всегда `0`: таблица хранит одну текущую паузу.
+  IntColumn get id => integer()();
+
+  /// До какого момента уведомления молчат. Просроченная строка ещё может
+  /// лежать в базе, если таймер не успел её убрать: сервис внимания сравнивает
+  /// срок с текущим временем и такую паузу не показывает.
+  DateTimeColumn get until => dateTime()();
+
+  /// `focus`, `meeting` или `overnight`: подпись причины для интерфейса.
+  TextColumn get reason => text().withDefault(const Constant('focus'))();
+
+  /// Растёт при каждом изменении срока, чтобы окна отличали свежий снимок от
+  /// запоздавшего.
+  IntColumn get revision => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DataClassName('MessageRow')
 @TableIndex(
   name: 'messages_chat_client_message_id',

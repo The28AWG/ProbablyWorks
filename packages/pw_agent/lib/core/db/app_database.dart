@@ -18,6 +18,7 @@ part 'app_database.g.dart';
     ChatReadStates,
     ChatAttentionStates,
     ChatAttentionSnoozes,
+    NotificationPauses,
     Messages,
     ToolRuns,
     SessionRevisions,
@@ -37,7 +38,7 @@ part 'app_database.g.dart';
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
-  static const currentSchemaVersion = 30;
+  static const currentSchemaVersion = 31;
 
   static const _uuid = Uuid();
 
@@ -225,6 +226,9 @@ class AppDatabase extends _$AppDatabase {
       // сохранение чата не сбрасывало срок, а «напомнить позже» не меняло
       // `updatedAt` и порядок списка.
       if (from < 30) await m.createTable(chatAttentionSnoozes);
+      // Версия 31: общая пауза уведомлений. Одна строка на агента, чтобы срок
+      // был один на все устройства и переживал перезапуск.
+      if (from < 31) await m.createTable(notificationPauses);
     },
   );
 

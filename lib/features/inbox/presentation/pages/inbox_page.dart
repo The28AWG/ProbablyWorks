@@ -37,6 +37,18 @@ class InboxPage extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          BlocBuilder<ChatListCubit, ChatListState>(
+            buildWhen: (previous, current) =>
+                previous.pauseSupported != current.pauseSupported ||
+                previous.attention.pause != current.attention.pause,
+            builder: (context, state) {
+              if (!state.pauseSupported) return const SizedBox.shrink();
+              return NotificationPauseButton(
+                activeUntil: state.attention.pause?.until,
+                onSelected: (choice) => _applyPause(context, choice),
+              );
+            },
+          ),
           IconButton(
             tooltip: l10n.commonRetry,
             icon: const Icon(Icons.refresh),
@@ -65,6 +77,26 @@ class InboxPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Выполняет выбор из меню паузы и сообщает об ошибке, не закрывая экран.
+Future<void> _applyPause(
+  BuildContext context,
+  NotificationPauseChoice choice,
+) async {
+  final cubit = context.read<ChatListCubit>();
+  final l10n = AppLocalizations.of(context);
+  final bool ok;
+  if (choice == NotificationPauseChoice.resume) {
+    ok = await cubit.resumeNotifications();
+  } else {
+    final until = choice.deadline(DateTime.now());
+    final reason = choice.reason;
+    if (until == null || reason == null) return;
+    ok = await cubit.pauseNotifications(until, reason: reason);
+  }
+  if (!context.mounted || ok) return;
+  AppSnackBar.show(context, l10n.settingsPauseFailed);
 }
 
 class _InboxBody extends StatelessWidget {
@@ -154,7 +186,21 @@ class _InboxBody extends StatelessWidget {
         ),
       );
     }
+    final pause = state.attention.pause;
     final content = <Widget>[
+      if (pause != null)
+        AppBanner(
+          message: l10n.settingsPauseActive(
+            notificationPauseReasonLabel(l10n, pause.reason),
+            formatNotificationPauseUntil(l10n, pause.until),
+          ),
+          icon: Icons.notifications_off_outlined,
+          action: TextButton(
+            onPressed: () =>
+                context.read<ChatListCubit>().resumeNotifications(),
+            child: Text(l10n.notificationPauseResume),
+          ),
+        ),
       if (error != null)
         AppBanner(
           message: l10n.inboxLoadFailed(error),

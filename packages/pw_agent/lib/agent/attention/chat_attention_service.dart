@@ -6,6 +6,7 @@ import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/chat_snooze.dart';
+import 'package:pw_agent/agent/domain/notification_pause.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/agent/loop/agent_event.dart';
@@ -49,6 +50,11 @@ final class ChatAttentionService {
       _snoozesSnapshot = snoozes;
       _recompute();
     }, onError: _logSubscriptionError);
+    _pauseSub = _chats.watchNotificationPause().listen((pause) {
+      _pauseSnapshot = pause;
+      _pauseLoaded = true;
+      _recompute();
+    }, onError: _logSubscriptionError);
     _approvalSub = _broker.approvalRequests.listen((_) => _recompute());
     _questionSub = _broker.questions.listen((_) => _recompute());
     _editFilesSub = _broker.editFileChangesRequests.listen((_) => _recompute());
@@ -68,10 +74,12 @@ final class ChatAttentionService {
   final _log = Logger('ChatAttentionService');
   final _changes = StreamController<AttentionSnapshot>.broadcast();
   final _due = StreamController<String>.broadcast();
+  final _pauseDigest = StreamController<AttentionDigest>.broadcast();
 
   late final StreamSubscription<List<Chat>> _chatsSub;
   late final StreamSubscription<List<ChatAttentionRecord>> _statesSub;
   late final StreamSubscription<List<ChatSnooze>> _snoozesSub;
+  late final StreamSubscription<NotificationPause?> _pauseSub;
   late final StreamSubscription<ApprovalRequest> _approvalSub;
   late final StreamSubscription<UserQuestion> _questionSub;
   late final StreamSubscription<EditFileChangesRequest> _editFilesSub;
@@ -84,9 +92,19 @@ final class ChatAttentionService {
   List<ChatAttentionRecord>? _statesSnapshot;
   List<ChatSnooze>? _snoozesSnapshot;
 
+  /// Текущая пауза уведомлений. [NotificationPause] приходит из базы, но
+  /// снимок содержит только действующую паузу: просроченную убирает таймер.
+  NotificationPause? _pauseSnapshot;
+  var _pauseLoaded = false;
+
   /// Таймер ближайшего срока. Один на сервис: входящих мало, а будить окна
   /// нужно только когда срок действительно наступил.
   Timer? _snoozeTimer;
+  Timer? _pauseTimer;
+
+  /// Таймер и событие срока могут сработать почти одновременно. Флаг не даёт
+  /// отправить два дайджеста за одну паузу.
+  var _expiringPause = false;
 
   /// Итог только что записанного хода, пока поток базы не прислал строку.
   ///
@@ -98,11 +116,16 @@ final class ChatAttentionService {
   final Set<String> _running = {};
   List<ChatAttention> _items = const [];
   List<ChatSnooze> _snoozed = const [];
+  NotificationPause? _pause;
   var _revision = 0;
   var _disposed = false;
 
-  AttentionSnapshot get snapshot =>
-      AttentionSnapshot(revision: _revision, items: _items, snoozed: _snoozed);
+  AttentionSnapshot get snapshot => AttentionSnapshot(
+    revision: _revision,
+    items: _items,
+    snoozed: _snoozed,
+    pause: _pause,
+  );
 
   /// Материализует ленивый сервис: подписки и таймер сроков начинают работать
   /// до первого запроса входящих.
@@ -150,6 +173,58 @@ final class ChatAttentionService {
 
   /// Снимает напоминание: чат сразу возвращается во входящие.
   Future<void> unsnooze(String chatId) => _chats.clearAttentionSnooze(chatId);
+
+  /// Сроки пауз, после которых накопился непустой дайджест.
+  ///
+  /// Отдельное событие от снимка: снимок уже показывает, что пауза снята, а
+  /// это событие объясняет, почему стоит вернуться, и позволяет показать одно
+  /// системное уведомление вместо пачки запоздавших.
+  Stream<AttentionDigest> get pauseDigest => _pauseDigest.stream;
+
+  /// Выключены ли уведомления прямо сейчас.
+  ///
+  /// Проверка синхронная: её вызывают уведомления перед показом, и лишний
+  /// запрос к базе здесь не нужен. Пока первый снимок паузы не пришёл,
+  /// считаем, что пауза выключена: лучше показать уведомление, чем потерять
+  /// запрос подтверждения при запуске.
+  bool get isNotificationsPaused {
+    final pause = _pauseSnapshot;
+    return pause != null && pause.isActiveAt(_now());
+  }
+
+  /// Действующая пауза уведомлений для снимка и интерфейса. Null — уведомления
+  /// не выключены или срок уже прошёл.
+  NotificationPause? get notificationPause {
+    final pause = _pauseSnapshot;
+    return pause != null && pause.isActiveAt(_now()) ? pause : null;
+  }
+
+  /// Ставит уведомления на паузу до [until]. Повторный вызов двигает срок.
+  ///
+  /// Срок в прошлом — ошибка, а не мгновенное срабатывание: опечатка в клиенте
+  /// не должна выключать уведомления «уже прошедшей» паузой.
+  Future<void> pauseNotifications(
+    DateTime until, {
+    NotificationPauseReason reason = NotificationPauseReason.focus,
+  }) async {
+    if (!until.isAfter(_now())) {
+      throw const AgentApiException(
+        400,
+        'pause_in_past',
+        'notification pause deadline must be in the future',
+      );
+    }
+    await _chats.setNotificationPause(until, reason);
+    // Уже показанные уведомления больше не должны отвлекать. Сами карточки и
+    // непрочитанное остаются: после паузы о них напомнит один дайджест.
+    await _cancelAllNotices();
+  }
+
+  /// Снимает паузу раньше срока.
+  ///
+  /// Дайджест не отправляется: пользователь сам вернул уведомления и сейчас
+  /// смотрит в приложение. Накопленное остаётся в входящих и в списке чатов.
+  Future<void> resumeNotifications() => _chats.clearNotificationPause();
 
   /// Ход начался: старая проблема больше не показывается, пока идёт работа.
   ///
@@ -236,7 +311,11 @@ final class ChatAttentionService {
     final chats = _chatsSnapshot;
     final states = _statesSnapshot;
     final snoozes = _snoozesSnapshot;
-    if (chats == null || states == null || snoozes == null || _disposed) {
+    if (chats == null ||
+        states == null ||
+        snoozes == null ||
+        !_pauseLoaded ||
+        _disposed) {
       return;
     }
 
@@ -253,11 +332,21 @@ final class ChatAttentionService {
       // срок только что наступил.
       unawaited(_expireSnoozes());
     }
-    if (_sameItems(_items, items) && _sameSnoozes(_snoozed, activeSnoozes)) {
+    final activePause = notificationPause;
+    _schedulePauseTimer(activePause, now);
+    if (_pauseSnapshot != null && activePause == null) {
+      // Пауза истекла, пока приложение было выключено. Таймера ещё не было,
+      // поэтому очищаем запись и собираем один дайджест сейчас.
+      unawaited(_expirePause());
+    }
+    if (_sameItems(_items, items) &&
+        _sameSnoozes(_snoozed, activeSnoozes) &&
+        _samePause(_pause, activePause)) {
       return;
     }
     _items = List.unmodifiable(items);
     _snoozed = List.unmodifiable(activeSnoozes);
+    _pause = activePause;
     _revision++;
     if (!_changes.isClosed) {
       _changes.add(
@@ -265,8 +354,75 @@ final class ChatAttentionService {
           revision: _revision,
           items: _items,
           snoozed: _snoozed,
+          pause: _pause,
         ),
       );
+    }
+  }
+
+  /// Ставит таймер на окончание паузы.
+  ///
+  /// Таймер один: при изменении срока проще пересоздать его, чем держать
+  /// несколько, которые надо не забыть отменить.
+  void _schedulePauseTimer(NotificationPause? pause, DateTime now) {
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
+    if (pause == null || _disposed) return;
+    final delay = pause.until.difference(now);
+    _pauseTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_expirePause()),
+    );
+  }
+
+  /// Пауза закончилась: убирает запись и отправляет один дайджест.
+  ///
+  /// Условие по времени в базе защищает от гонки: если на другом устройстве
+  /// успели поставить новый срок, старая пауза его не снимет.
+  Future<void> _expirePause() async {
+    _pauseTimer = null;
+    if (_disposed || _expiringPause) return;
+    final pause = _pauseSnapshot;
+    if (pause == null || pause.isActiveAt(_now())) return;
+    _expiringPause = true;
+    try {
+      final cleared = await _chats.clearExpiredNotificationPause(_now());
+      if (!cleared || _disposed) return;
+      _pauseSnapshot = null;
+      _recompute();
+      await _notifyPauseDigest();
+    } on Object catch (error, stack) {
+      _log.warning('failed to finish notification pause', error, stack);
+    } finally {
+      _expiringPause = false;
+    }
+  }
+
+  /// Собирает и отправляет дайджест после паузы.
+  ///
+  /// Событие уходит и в поток SSE, чтобы удалённые окна показали своё
+  /// локальное уведомление. Push и локальное уведомление встроенного агента
+  /// отправляет тот же notifier; пустой дайджест не показывается вовсе.
+  Future<void> _notifyPauseDigest() async {
+    final AttentionDigest summary;
+    try {
+      summary = await digest();
+    } on Object catch (error, stack) {
+      _log.warning('failed to build pause digest', error, stack);
+      return;
+    }
+    if (summary.isEmpty) return;
+    if (!_pauseDigest.isClosed) _pauseDigest.add(summary);
+    final sink = notifier;
+    if (sink == null) return;
+    try {
+      await sink.notify(
+        kind: AgentNoticeKind.attentionDigest,
+        chatTitle: '',
+        noticeId: agentNoticeId(kind: AgentNoticeKind.attentionDigest),
+      );
+    } on Object catch (error, stack) {
+      _log.warning('pause digest notification failed', error, stack);
     }
   }
 
@@ -327,6 +483,9 @@ final class ChatAttentionService {
   /// агента — системные уведомления окна. Ошибка доставки не должна ломать
   /// возвращение чата во входящие.
   Future<void> _notifyDue(String chatId) async {
+    // Пока пауза действует, напоминание не показываем: чат останется во
+    // входящих, а после паузы о нём расскажет общий дайджест.
+    if (isNotificationsPaused) return;
     final sink = notifier;
     if (sink == null) return;
     try {
@@ -343,6 +502,31 @@ final class ChatAttentionService {
       );
     } on Object catch (error, stack) {
       _log.warning('snooze reminder failed for $chatId', error, stack);
+    }
+  }
+
+  /// Убирает уведомления всех чатов, когда пользователь включает паузу.
+  ///
+  /// Карточки и сообщения остаются на месте: меняется только доставка. Если
+  /// отмена не удалась, уведомление просто останется в трее до следующего
+  /// действия; сама пауза от этого не ломается.
+  Future<void> _cancelAllNotices() async {
+    final chatIds = <String>{
+      for (final item in _items) item.chatId,
+      for (final request in _broker.allPendingApprovals) request.chatId,
+      for (final question in _broker.allPendingQuestions) question.chatId,
+      for (final request in _broker.allPendingEditFileChanges) request.chatId,
+    };
+    for (final chatId in chatIds) {
+      await _cancelChatNotices(chatId);
+    }
+    // Прошлый дайджест тоже больше неактуален: пауза начинается заново.
+    final sink = notifier;
+    if (sink == null) return;
+    try {
+      await sink.cancel(agentNoticeId(kind: AgentNoticeKind.attentionDigest));
+    } on Object catch (error, stack) {
+      _log.fine('pause digest cancel failed', error, stack);
     }
   }
 
@@ -510,6 +694,13 @@ final class ChatAttentionService {
     return true;
   }
 
+  static bool _samePause(NotificationPause? a, NotificationPause? b) {
+    if (a == null || b == null) return a == b;
+    return a.until == b.until &&
+        a.reason == b.reason &&
+        a.revision == b.revision;
+  }
+
   /// Сравнивает значимые поля, а не объекты: `Set` причин и списки карточек
   /// каждый раз новые, поэтому обычное равенство всегда давало бы «изменение»
   /// и рассылало бы снимок на каждое сохранение черновика.
@@ -538,14 +729,18 @@ final class ChatAttentionService {
     _disposed = true;
     _snoozeTimer?.cancel();
     _snoozeTimer = null;
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
     await _chatsSub.cancel();
     await _statesSub.cancel();
     await _snoozesSub.cancel();
+    await _pauseSub.cancel();
     await _approvalSub.cancel();
     await _questionSub.cancel();
     await _editFilesSub.cancel();
     await _resolutionSub.cancel();
     await _changes.close();
     await _due.close();
+    await _pauseDigest.close();
   }
 }
