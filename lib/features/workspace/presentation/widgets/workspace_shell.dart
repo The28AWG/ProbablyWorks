@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/backend/backend_status.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/inbox/presentation/widgets/attention_digest_host.dart';
 import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';
@@ -297,34 +298,51 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
           // Три ребёнка Row при любой раскладке: иначе при смене ширины содержимое переехало бы в другой слот
           // и пересоздалось бы вместе с вложенным навигатором.
           switch (layout) {
-            .wide => SidebarResizeHandle(
-              enabled: !_collapsed,
-              onDragStart: _beginResize,
-              onDragEnd: _endResize,
-            ),
+            .wide => const SizedBox.shrink(),
             .medium => const VerticalDivider(width: 1),
             .compact => const SizedBox.shrink(),
           },
           Expanded(
-            child: BackendStatusBuilder(
-              builder: (context, status) {
-                final offline = status == AgentStatus.offline;
-                final chatsOffline = offline && activeTab == WorkspaceTab.chats;
-                return Theme(
-                  data: layout == .wide ? _instant(theme) : theme,
-                  child: Column(
-                    children: [
-                      if (offline && !chatsOffline)
-                        const BackendOfflineBanner(),
-                      Expanded(
-                        child: chatsOffline
-                            ? const BackendOfflineView()
-                            : widget.child,
-                      ),
-                    ],
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: BackendStatusBuilder(
+                    builder: (context, status) {
+                      final offline = status == AgentStatus.offline;
+                      final chatsOffline =
+                          offline && activeTab == WorkspaceTab.chats;
+                      return Theme(
+                        data: layout == .wide ? _instant(theme) : theme,
+                        child: Column(
+                          children: [
+                            const AttentionDigestHost(),
+                            if (offline && !chatsOffline)
+                              const BackendOfflineBanner(),
+                            Expanded(
+                              child: chatsOffline
+                                  ? const BackendOfflineView()
+                                  : widget.child,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ),
+                // Ручка лежит на левом краю содержимого: карточка начинается
+                // от края панели, а скроллбар панели остаётся доступным.
+                if (layout == .wide)
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: SidebarResizeHandle(
+                      enabled: !_collapsed,
+                      onDragStart: _beginResize,
+                      onDragEnd: _endResize,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],

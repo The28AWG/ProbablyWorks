@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/hosts_api.dart';
@@ -16,6 +17,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -1214,6 +1216,15 @@ final class ApiServer {
   /// получать тяжёлые карточки, а новый экран — перечитывать весь список
   /// чатов ради одного счётчика.
   Future<void> _routeAttention(HttpRequest request, List<String> rest) async {
+    if (rest.length == 1 && rest.first == 'digest' && request.method == 'GET') {
+      final api = _requireAttentionDigestApi();
+      final digest = await api.attentionDigest();
+      return _json(
+        request.response,
+        HttpStatus.ok,
+        _attentionDigestJson(digest),
+      );
+    }
     final api = _requireAttentionApi();
     if (rest.isEmpty && request.method == 'GET') {
       final snapshot = await api.attention();
@@ -1237,6 +1248,16 @@ final class ApiServer {
       HttpStatus.notImplemented,
       'not_supported',
       'attention API is not available',
+    );
+  }
+
+  AttentionDigestApi _requireAttentionDigestApi() {
+    final Object backend = _backend;
+    if (backend is AttentionDigestApi) return backend;
+    throw const AgentApiException(
+      HttpStatus.notImplemented,
+      'not_supported',
+      'attention digest API is not available',
     );
   }
 
@@ -3398,6 +3419,35 @@ Map<String, Object?> _attentionJson(AttentionSnapshot snapshot) => {
         'running': item.running,
         'turnAt': item.turnAt?.toUtc().toIso8601String(),
         'updatedAt': item.updatedAt.toUtc().toIso8601String(),
+      },
+  ],
+};
+
+/// Дайджест «пока вас не было».
+///
+/// Итоговые счётчики дублируют суммы по `items`: их может использовать
+/// клиент, который не разбирает разбивку по чатам. Текущий клиент считает
+/// итоги по `items`, чтобы раскрытый список и сводка совпадали.
+Map<String, Object?> _attentionDigestJson(AttentionDigest digest) => {
+  'newMessages': digest.newMessages,
+  'finishedTurns': digest.finishedTurns,
+  'approvals': digest.approvals,
+  'questions': digest.questions,
+  'editFileChanges': digest.editFileChanges,
+  'problems': digest.problems,
+  'items': [
+    for (final item in digest.items)
+      {
+        'chatId': item.chatId,
+        'hostId': item.hostId,
+        'projectId': item.projectId,
+        'title': item.title,
+        'unreadMessages': item.unreadMessages,
+        'finishedTurns': item.finishedTurns,
+        'approvals': item.approvals,
+        'questions': item.questions,
+        'editFileChanges': item.editFileChanges,
+        'problems': item.problems,
       },
   ],
 };

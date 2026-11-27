@@ -5,6 +5,7 @@ import 'package:pw_agent/agent/api/chat_run_stopper.dart';
 import 'package:pw_agent/agent/attention/chat_attention_service.dart';
 import 'package:pw_agent/agent/context/context_builder.dart';
 import 'package:pw_agent/agent/context/context_compactor.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/session_state.dart';
@@ -191,6 +192,9 @@ class AgentHub implements ChatRunStopper, SubagentHost {
 
   /// Пользователь разобрал проблемное завершение хода вручную.
   Future<void> dismissAttention(String chatId) => attention.dismiss(chatId);
+
+  /// Дайджест «пока вас не было» по общей базе агента.
+  Future<AttentionDigest> attentionDigest() => attention.digest();
 
   /// Возвращает сессию чата, создавая её при необходимости. Повторное открытие
   /// того же чата получает прежний экземпляр, пока его не вытеснили.

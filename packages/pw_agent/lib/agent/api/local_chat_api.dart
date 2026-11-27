@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/cleanup/chat_deletion_service.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -35,7 +37,8 @@ import 'package:pw_agent/src/agent/loop/agent_hub.dart';
 /// Никакого транспорта, сериализации и токенов. Используется встроенным
 /// агентом клиента и HTTP-сервером демона.
 @lazySingleton
-class LocalChatApi implements ChatApi, ClientSessionApi, AttentionApi {
+class LocalChatApi
+    implements ChatApi, ClientSessionApi, AttentionApi, AttentionDigestApi {
   LocalChatApi(AgentHub hub, [this.runtime, this.changes]) : _hub = hub {
     _mentions = MentionSearchService(hub.projectStore, hub.hosts, hub.runtimes);
     // Удаление живёт в отдельном сервисе: тот же путь использует очистка истории.
@@ -146,6 +149,9 @@ class LocalChatApi implements ChatApi, ClientSessionApi, AttentionApi {
 
   @override
   Future<void> dismissAttention(String chatId) => _hub.dismissAttention(chatId);
+
+  @override
+  Future<AttentionDigest> attentionDigest() => _hub.attentionDigest();
 
   Future<List<Host>> hosts() => _hub.hosts.all();
 

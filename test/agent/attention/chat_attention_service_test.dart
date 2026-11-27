@@ -186,4 +186,88 @@ void main() {
     await pumpEventQueue();
     expect(attention.snapshot.items, isEmpty);
   });
+
+  test('builds a digest from the shared read cursor', () async {
+    await chat('c1');
+    await reply('c1', seq: 1);
+    // Промежуточный шаг с вызовом инструмента — не завершённый ход.
+    await chats.insertMessage(
+      ChatMessage(
+        id: 'c1-2',
+        chatId: 'c1',
+        seq: 2,
+        role: MessageRole.assistant,
+        toolCalls: const [
+          ToolCallRef(id: 'call-1', name: 'run_command', arguments: '{}'),
+        ],
+        createdAt: now,
+      ),
+    );
+    await chat('c2');
+    unawaited(
+      broker.requestApproval(
+        ApprovalRequest(
+          id: 'a1',
+          chatId: 'c2',
+          toolName: 'run_command',
+          summary: 'ls',
+          reason: 'подтверждение',
+        ),
+      ),
+    );
+    await attention.turnFinished('c2', TurnEnd.failed);
+    await pumpEventQueue();
+
+    final digest = await attention.digest();
+    final first = digest.items.firstWhere((item) => item.chatId == 'c1');
+    final second = digest.items.firstWhere((item) => item.chatId == 'c2');
+    expect(first.unreadMessages, 2);
+    expect(first.finishedTurns, 1);
+    expect(second.approvals, 1);
+    expect(second.problems, 1);
+    expect(digest.newMessages, 2);
+    expect(digest.finishedTurns, 1);
+    expect(digest.decisions, 1);
+    expect(digest.problems, 1);
+
+    // Прочитанное на любом устройстве исчезает из дайджеста на всех.
+    await chats.markRead('c1', seq: 2);
+    await pumpEventQueue();
+    final after = await attention.digest();
+    expect(after.newMessages, 0);
+    expect(after.finishedTurns, 0);
+    expect(after.decisions, 1);
+    expect(after.problems, 1);
+  });
+
+  test('a reasoning-only assistant step is not a finished turn', () async {
+    await chat('c1');
+    await chats.insertMessage(
+      ChatMessage(
+        id: 'c1-1',
+        chatId: 'c1',
+        seq: 1,
+        role: MessageRole.assistant,
+        reasoning: 'думаю',
+        createdAt: now,
+      ),
+    );
+    await pumpEventQueue();
+
+    final digest = await attention.digest();
+    final item = digest.items.single;
+    expect(item.unreadMessages, 1);
+    expect(item.finishedTurns, 0);
+  });
+
+  test('does not put subagent chats into the digest', () async {
+    await chat('sub', kind: ChatKind.subagent);
+    await reply('sub');
+    await chat('main');
+    await attention.turnFinished('main', TurnEnd.failed);
+    await pumpEventQueue();
+
+    final digest = await attention.digest();
+    expect(digest.items.map((item) => item.chatId), ['main']);
+  });
 }

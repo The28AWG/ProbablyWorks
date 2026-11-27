@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
 import 'package:pw_agent/agent/api/mcp_api.dart';
@@ -14,6 +15,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -553,6 +555,41 @@ void main() {
     );
     expect(deleteStatus, HttpStatus.noContent);
     expect(backend.dismissedAttention, ['c1']);
+  });
+
+  test('returns the attention digest', () async {
+    backend.digestValue = const AttentionDigest(
+      items: [
+        AttentionDigestItem(
+          chatId: 'c1',
+          hostId: 'local',
+          title: 'Test chat',
+          unreadMessages: 4,
+          finishedTurns: 2,
+          approvals: 1,
+          problems: 1,
+        ),
+      ],
+    );
+
+    final (status, body) = await _request(
+      client,
+      base,
+      'GET',
+      '/api/v1/attention/digest',
+      token: _token,
+    );
+
+    expect(status, HttpStatus.ok);
+    final digest = jsonDecode(body) as Map;
+    expect(digest['newMessages'], 4);
+    expect(digest['finishedTurns'], 2);
+    expect(digest['approvals'], 1);
+    expect(digest['problems'], 1);
+    final items = digest['items'] as List;
+    expect(items, hasLength(1));
+    expect(items.single['chatId'], 'c1');
+    expect(items.single['unreadMessages'], 4);
   });
 
   test('streams attention changes over SSE', () async {
@@ -3060,7 +3097,11 @@ Future<(int, String)> _request(
 }
 
 final class _FakeBackend
-    implements AgentApi, InteractionEventsApi, AttentionApi {
+    implements
+        AgentApi,
+        InteractionEventsApi,
+        AttentionApi,
+        AttentionDigestApi {
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
   final _questions = StreamController<UserQuestion>.broadcast();
@@ -3068,6 +3109,7 @@ final class _FakeBackend
   final _resolutions = StreamController<InteractionResolution>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
+  AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
   final sent = <(String, String, bool)>[];
   final clientMessageIds = <String?>[];
@@ -3139,6 +3181,9 @@ final class _FakeBackend
 
   @override
   Future<AttentionSnapshot> attention() async => attentionValue;
+
+  @override
+  Future<AttentionDigest> attentionDigest() async => digestValue;
 
   @override
   Stream<AttentionSnapshot> get attentionChanges => _attention.stream;

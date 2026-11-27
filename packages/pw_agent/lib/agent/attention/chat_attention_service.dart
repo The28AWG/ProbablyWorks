@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:logging/logging.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -117,6 +118,37 @@ final class ChatAttentionService {
   /// Пользователь разобрал проблему, не начиная новый ход.
   Future<void> dismiss(String chatId) => _chats.clearAttention(chatId);
 
+  /// Дайджест «пока вас не было» по общему read-курсору.
+  ///
+  /// Сводка строится из тех же чатов, карточек и проблем, что и входящие, а
+  /// завершённые ходы считает репозиторий: в снимке входящих их нет, потому
+  /// что обычное завершение не является поводом для решения. Если потоки
+  /// базы ещё не успели прислать первый снимок (например, дайджест
+  /// запрашивают сразу после запуска), читаем их первое значение.
+  Future<AttentionDigest> digest() async {
+    final chats = _chatsSnapshot ?? await _chats.watchChats().first;
+    final states = _statesSnapshot ?? await _chats.watchAttentionStates().first;
+    final items = _buildItems(chats, states);
+    final turns = await _chats.unreadFinishedTurns();
+    return AttentionDigest(
+      items: [
+        for (final item in items)
+          AttentionDigestItem(
+            chatId: item.chatId,
+            hostId: item.hostId,
+            projectId: item.projectId,
+            title: item.title,
+            unreadMessages: item.unreadCount,
+            finishedTurns: turns[item.chatId] ?? 0,
+            approvals: item.approvals.length,
+            questions: item.questions.length,
+            editFileChanges: item.editFileChanges.length,
+            problems: item.hasProblem ? 1 : 0,
+          ),
+      ],
+    );
+  }
+
   /// Собирает снимок заново. Дешёвая операция: чатов в списке немного, а
   /// карточки уже лежат в брокере.
   void _recompute() {
@@ -124,6 +156,20 @@ final class ChatAttentionService {
     final states = _statesSnapshot;
     if (chats == null || states == null || _disposed) return;
 
+    final items = _buildItems(chats, states);
+    if (_sameItems(_items, items)) return;
+    _items = List.unmodifiable(items);
+    _revision++;
+    if (!_changes.isClosed) {
+      _changes.add(AttentionSnapshot(revision: _revision, items: _items));
+    }
+  }
+
+  /// Строит отсортированный список чатов, которые требуют внимания.
+  List<ChatAttention> _buildItems(
+    List<Chat> chats,
+    List<ChatAttentionRecord> states,
+  ) {
     final approvals = <String, List<ApprovalRequest>>{};
     for (final request in _broker.allPendingApprovals) {
       approvals.putIfAbsent(request.chatId, () => []).add(request);
@@ -187,13 +233,7 @@ final class ChatAttentionService {
       if (byPriority != 0) return byPriority;
       return b.updatedAt.compareTo(a.updatedAt);
     });
-
-    if (_sameItems(_items, items)) return;
-    _items = List.unmodifiable(items);
-    _revision++;
-    if (!_changes.isClosed) {
-      _changes.add(AttentionSnapshot(revision: _revision, items: _items));
-    }
+    return items;
   }
 
   static ChatAttentionTurn? _turnOf(TurnEnd end) => switch (end) {

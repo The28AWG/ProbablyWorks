@@ -147,6 +147,41 @@
   "@inboxContinue": {
     "description": "Button that continues a turn after a step limit, budget or stalled state."
   },
+  "inboxDigestTitle": "While you were away",
+  "@inboxDigestTitle": {
+    "description": "Title of the digest card shown after the user returns to the app."
+  },
+  "inboxDigestMessages": "{count, plural, =1{1 new message} other{{count} new messages}}",
+  "@inboxDigestMessages": {
+    "description": "New messages in the digest card.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestDecisions": "{count, plural, =1{1 decision} other{{count} decisions}}",
+  "@inboxDigestDecisions": {
+    "description": "Approvals, questions and file rollback decisions in the digest card.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestProblems": "{count, plural, =1{1 problem} other{{count} problems}}",
+  "@inboxDigestProblems": {
+    "description": "Failed, limited or stalled turns in the digest card.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestReview": "Review",
+  "@inboxDigestReview": {
+    "description": "Button that opens the inbox from the digest card."
+  },
   "inboxBulkApprove": "Approve all ({count})",
   "@inboxBulkApprove": {
     "description": "Button that approves all pending approvals of one chat from the inbox.",
@@ -1111,6 +1146,30 @@
   "settingsThemeDarkHint": "Always dark.",
   "@settingsThemeDarkHint": {
     "description": "Theme option hint: always dark."
+  },
+  "settingsDigestTitle": "Digest after absence",
+  "@settingsDigestTitle": {
+    "description": "Settings section title for the digest card shown after a long absence."
+  },
+  "settingsDigestHint": "Show a short summary after the app has been in the background for at least 15 minutes.",
+  "@settingsDigestHint": {
+    "description": "Settings section hint for the digest card."
+  },
+  "settingsDigestOn": "Show",
+  "@settingsDigestOn": {
+    "description": "Choice card: show the digest after a long absence."
+  },
+  "settingsDigestOnHint": "The summary appears after a long absence.",
+  "@settingsDigestOnHint": {
+    "description": "Choice card hint for showing the digest."
+  },
+  "settingsDigestOff": "Hide",
+  "@settingsDigestOff": {
+    "description": "Choice card: do not show the digest after a long absence."
+  },
+  "settingsDigestOffHint": "The inbox badge and the Inbox tab keep working.",
+  "@settingsDigestOffHint": {
+    "description": "Choice card hint for hiding the digest."
   },
   "settingsStepsGroupOnHint": "The steps of one answer go into one journal.",
   "@settingsStepsGroupOnHint": {

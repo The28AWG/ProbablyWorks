@@ -86,6 +86,7 @@ PATCH  /api/v1/chats/{id}/queue/{itemId}   {"expectedRevision": 3, "position": 0
 DELETE /api/v1/chats/{id}/queue/{itemId}?expectedRevision=3
 
 GET    /api/v1/attention             входящие
+GET    /api/v1/attention/digest      дайджест «пока вас не было»
 DELETE /api/v1/attention/{chatId}    убрать проблемное завершение хода
 
 GET    /api/v1/chats/{id}/messages
@@ -292,6 +293,18 @@ llama.cpp принимаются только тем же `SecretStore`, что 
 `PUT /edit-file-changes/...`; продолжение хода после лимита — `PUT
 /chats/{id}/turn`. `revision` монотонна: запоздавший ответ `GET /attention`
 не должен вернуть уже закрытую карточку.
+
+`GET /attention/digest` возвращает сводку «пока вас не было»:
+`newMessages`, `finishedTurns`, `approvals`, `questions`, `editFileChanges`,
+`problems` и `items` с теми же счётчиками по чатам. Сводка строится по общему
+курсору прочтения, поэтому прочитанное на одном устройстве не появляется на
+другом. `finishedTurns` считает видимые ответы агента после курсора без вызовов
+инструментов: промежуточные шаги хода и пустые шаги без текста и вложений
+готовым ответом не считаются.
+Субагенты и отдельная таблица событий в дайджест не входят — он всегда
+отражает текущее неразобранное состояние. Маршрут необязателен для старых
+демонов: клиент просто не показывает карточку, если получил `501
+not_supported`.
 
 SSE отдаёт `turnStarted`, `turnFinished`, `messageAdded`, `textDelta`,
 `reasoningDelta`, `turnSnapshot`, `runChanged`, `queueChanged`, `failure`,

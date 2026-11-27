@@ -18,6 +18,7 @@ import 'package:probably_works/features/settings/presentation/bloc/settings_cubi
 import 'package:probably_works/features/settings/presentation/settings_navigation.dart';
 import 'package:probably_works/features/settings/presentation/widgets/agent_profiles_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/attachment_limit_fields.dart';
+import 'package:probably_works/features/settings/presentation/widgets/attention_digest_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/data_settings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/keybindings_section.dart';
 import 'package:probably_works/features/settings/presentation/widgets/local_models_section.dart';
@@ -696,6 +697,7 @@ class _SettingsViewState extends State<_SettingsView> {
         ),
       ],
     ),
+    const AttentionDigestSettingsSection(),
     AppSection(
       title: l10n.settingsStepsGroup,
       description: l10n.settingsStepsGroupHint,

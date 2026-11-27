@@ -147,6 +147,41 @@
   "@inboxContinue": {
     "description": "Кнопка, продолжающая ход после лимита шагов, бюджета или застоя."
   },
+  "inboxDigestTitle": "Пока вас не было",
+  "@inboxDigestTitle": {
+    "description": "Заголовок карточки дайджеста после возврата в приложение."
+  },
+  "inboxDigestMessages": "{count, plural, one{{count} новое сообщение} few{{count} новых сообщения} many{{count} новых сообщений} other{{count} нового сообщения}}",
+  "@inboxDigestMessages": {
+    "description": "Новые сообщения в карточке дайджеста.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestDecisions": "{count, plural, one{{count} решение} few{{count} решения} many{{count} решений} other{{count} решения}}",
+  "@inboxDigestDecisions": {
+    "description": "Подтверждения, вопросы и откаты файлов в карточке дайджеста.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestProblems": "{count, plural, one{{count} проблема} few{{count} проблемы} many{{count} проблем} other{{count} проблемы}}",
+  "@inboxDigestProblems": {
+    "description": "Упавшие, ограниченные или застрявшие ходы в карточке дайджеста.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inboxDigestReview": "Разобрать",
+  "@inboxDigestReview": {
+    "description": "Кнопка, открывающая входящие из карточки дайджеста."
+  },
   "inboxBulkApprove": "Разрешить все ({count})",
   "@inboxBulkApprove": {
     "description": "Кнопка, подтверждающая все ожидающие подтверждения одного чата из входящих.",
@@ -1111,6 +1146,30 @@
   "settingsThemeDarkHint": "Всегда тёмное оформление.",
   "@settingsThemeDarkHint": {
     "description": "Пояснение к варианту темы: всегда тёмная."
+  },
+  "settingsDigestTitle": "Дайджест после отсутствия",
+  "@settingsDigestTitle": {
+    "description": "Заголовок раздела настроек: карточка дайджеста после долгого отсутствия."
+  },
+  "settingsDigestHint": "Показывать короткую сводку после того, как приложение было в фоне не меньше 15 минут.",
+  "@settingsDigestHint": {
+    "description": "Подсказка раздела настроек: карточка дайджеста."
+  },
+  "settingsDigestOn": "Показывать",
+  "@settingsDigestOn": {
+    "description": "Вариант: показывать дайджест после долгого отсутствия."
+  },
+  "settingsDigestOnHint": "Сводка появляется после долгого отсутствия.",
+  "@settingsDigestOnHint": {
+    "description": "Пояснение к варианту: показывать дайджест."
+  },
+  "settingsDigestOff": "Скрывать",
+  "@settingsDigestOff": {
+    "description": "Вариант: не показывать дайджест после долгого отсутствия."
+  },
+  "settingsDigestOffHint": "Бейдж и раздел «Входящие» продолжают работать.",
+  "@settingsDigestOffHint": {
+    "description": "Пояснение к варианту: не показывать дайджест."
   },
   "settingsStepsGroupOnHint": "Шаги одного ответа собираются в один журнал.",
   "@settingsStepsGroupOnHint": {

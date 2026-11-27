@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -74,6 +76,91 @@ void main() {
     expect(cubit.state.attentionSupported, isTrue);
     expect(cubit.state.attention.revision, 1);
   });
+
+  test('loads and dismisses the attention digest', () async {
+    final api = _FakeAgent()
+      ..digestValue = const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 4,
+            finishedTurns: 2,
+            approvals: 1,
+            problems: 1,
+          ),
+        ],
+      );
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+
+    await cubit.loadDigest();
+    expect(cubit.state.digest?.newMessages, 4);
+    expect(cubit.state.digest?.finishedTurns, 2);
+
+    cubit.dismissDigest();
+    expect(cubit.state.digest, isNull);
+  });
+
+  test('a digest response that arrives after dismissal is ignored', () async {
+    final api = _FakeAgent()
+      ..digestValue = const AttentionDigest(
+        items: [
+          AttentionDigestItem(
+            chatId: 'c1',
+            hostId: 'local',
+            title: 'Chat',
+            unreadMessages: 1,
+          ),
+        ],
+      );
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+
+    await cubit.loadDigest();
+    expect(cubit.state.digest, isNotNull);
+
+    final gate = Completer<AttentionDigest>();
+    api.digestGate = gate;
+    final pending = cubit.loadDigest();
+    cubit.dismissDigest();
+
+    gate.complete(api.digestValue);
+    await pending;
+    expect(cubit.state.digest, isNull);
+  });
+
+  test('coalesces digest requests while one is in flight', () async {
+    final api = _FakeAgent();
+    final cubit = ChatListCubit(api, ChatDraftStore.unbound());
+    addTearDown(() async {
+      await cubit.close();
+      await api.dispose();
+    });
+    await pumpEventQueue();
+
+    final gate = Completer<AttentionDigest>();
+    api.digestGate = gate;
+    final first = cubit.loadDigest();
+    final second = cubit.loadDigest();
+    final third = cubit.loadDigest();
+    expect(api.digestCalls, 1);
+
+    gate.complete(AttentionDigest.empty);
+    await Future.wait([first, second, third]);
+    await pumpEventQueue();
+    // Событие в полёте даёт один трейлинг-запрос, а не запрос на каждый вызов.
+    expect(api.digestCalls, 2);
+  });
 }
 
 AttentionSnapshot _snapshot({required int revision, required int unread}) =>
@@ -109,12 +196,15 @@ AttentionSnapshot _snapshot({required int revision, required int unread}) =>
       ],
     );
 
-final class _FakeAgent implements AgentApi, AttentionApi {
+final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
   final _statuses = StreamController<AgentStatus>.broadcast();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   final actions = <ApprovalAction>[];
   var failNext = false;
   var attentionFailure = false;
+  var digestValue = AttentionDigest.empty;
+  var digestCalls = 0;
+  Completer<AttentionDigest>? digestGate;
   var _snapshotValue = _snapshot(revision: 1, unread: 0);
 
   void emit(AttentionSnapshot snapshot) {
@@ -144,6 +234,14 @@ final class _FakeAgent implements AgentApi, AttentionApi {
 
   @override
   Future<void> dismissAttention(String chatId) => Future<void>.value();
+
+  @override
+  Future<AttentionDigest> attentionDigest() {
+    digestCalls++;
+    final gate = digestGate;
+    if (gate != null) return gate.future;
+    return Future.value(digestValue);
+  }
 
   @override
   Future<void> resolveApproval(

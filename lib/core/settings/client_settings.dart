@@ -22,6 +22,17 @@ abstract final class ClientSettingsKeys {
   /// Порядок моделей в диалоге выбора: значение `ModelSort.name`.
   static const modelSort = 'modelSort';
 
+  /// Время последней активности окна для дайджеста «пока вас не было».
+  ///
+  /// Хранится на устройстве: сколько приложение было закрыто или в фоне, знает
+  /// только оно. Сами счётчики дайджеста приходят с сервера и общие для всех
+  /// экранов.
+  static const attentionDigestLastActiveAt = 'attentionDigestLastActiveAt';
+
+  /// Показывать дайджест после долгого отсутствия. Отсутствие значения —
+  /// включено; выключение хранится как `'false'`.
+  static const attentionDigestEnabled = 'attentionDigestEnabled';
+
   /// Одноразовый перенос секретов GUI в keyring локального демона.
   static const daemonSecretsMigrated = 'daemonSecretsMigrated';
 
@@ -33,6 +44,7 @@ abstract final class ClientSettingsKeys {
     sidebarWidth,
     keybindings,
     modelSort,
+    attentionDigestEnabled,
   ];
 }
 

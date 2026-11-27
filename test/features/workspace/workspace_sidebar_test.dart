@@ -4,8 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/locale/app_localization_delegates.dart';
 import 'package:probably_works/app/ui/local_host_presentation.dart';
+import 'package:probably_works/core/settings/client_settings.dart';
 import 'package:probably_works/features/chats/presentation/bloc/chat_list_cubit.dart';
+import 'package:probably_works/features/workspace/presentation/bloc/sidebar_cubit.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
+import 'package:probably_works/features/workspace/presentation/widgets/sidebar_resize_handle.dart';
 import 'package:probably_works/features/workspace/presentation/widgets/workspace_sidebar.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:probably_works/test_support/golden_fonts.dart';
@@ -155,12 +158,50 @@ Future<ChatListCubit> _pumpSidebar(
   void Function(WorkspaceTab tab)? onOpenTab,
   VoidCallback? onOpenInbox,
   int inboxCount = 0,
+  bool showResizeHandle = false,
 }) async {
   final cubit = ChatListCubit(
     _FakeApi(chats, hosts, sessions),
     ChatDraftStore(_FakeChats(chats)),
   );
   addTearDown(cubit.close);
+  final sidebar = WorkspaceSidebar(
+    activeTab: activeTab,
+    selectedChatId: selectedChatId,
+    onCollapse: onCollapse ?? () => _collapseCount++,
+    onOpenChat: _openedChats.add,
+    onNewChat: () => _newChatCount++,
+    onOpenTab: onOpenTab ?? _openedTabs.add,
+    onOpenInbox: onOpenInbox,
+    inboxCount: inboxCount,
+  );
+  var resizeStarts = 0;
+  final content = showResizeHandle
+      ? BlocProvider<SidebarCubit>(
+          create: (_) => SidebarCubit(MemoryClientSettings(), 240),
+          child: Stack(
+            children: [
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 280,
+                child: sidebar,
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: SidebarResizeHandle(
+                  enabled: true,
+                  onDragStart: () => resizeStarts++,
+                  onDragEnd: () => resizeStarts++,
+                ),
+              ),
+            ],
+          ),
+        )
+      : sidebar;
   await tester.pumpWidget(
     MaterialApp(
       theme: theme ?? AppTheme.light,
@@ -169,21 +210,9 @@ Future<ChatListCubit> _pumpSidebar(
       supportedLocales: AppLocalizations.supportedLocales,
       home: Scaffold(
         body: SizedBox(
-          width: 280,
+          width: showResizeHandle ? 288 : 280,
           height: 560,
-          child: BlocProvider.value(
-            value: cubit,
-            child: WorkspaceSidebar(
-              activeTab: activeTab,
-              selectedChatId: selectedChatId,
-              onCollapse: onCollapse ?? () => _collapseCount++,
-              onOpenChat: _openedChats.add,
-              onNewChat: () => _newChatCount++,
-              onOpenTab: onOpenTab ?? _openedTabs.add,
-              onOpenInbox: onOpenInbox,
-              inboxCount: inboxCount,
-            ),
-          ),
+          child: BlocProvider.value(value: cubit, child: content),
         ),
       ),
     ),
@@ -417,5 +446,20 @@ void main() {
         );
       });
     }
+  });
+
+  testWidgets('the resize handle does not cover the scrollbar', (tester) async {
+    await _pumpSidebar(
+      tester,
+      chats: [
+        for (var index = 0; index < 30; index++)
+          _chat('c$index', 'Chat $index'),
+      ],
+      showResizeHandle: true,
+    );
+
+    final scrollable = tester.getRect(find.byType(Scrollable).first);
+    final handle = tester.getRect(find.byType(SidebarResizeHandle));
+    expect(scrollable.right, lessThanOrEqualTo(handle.left));
   });
 }

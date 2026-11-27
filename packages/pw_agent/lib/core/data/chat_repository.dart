@@ -684,6 +684,60 @@ class ChatRepository implements DraftPersistence {
   static bool _isUnreadRole(MessageRole role) =>
       role == MessageRole.assistant || role == MessageRole.event;
 
+  /// Сколько завершённых ходов появилось после курсора прочтения по каждому
+  /// чату.
+  ///
+  /// Завершённый ход — видимый ответ агента без вызовов инструментов:
+  /// промежуточные шаги тоже пишутся `assistant`-сообщениями, но готовым
+  /// ответом не являются. Читаются только непрочитанные строки: дайджест
+  /// строится по общему read-курсору и не должен пересчитывать всю историю.
+  Future<Map<String, int>> unreadFinishedTurns() async {
+    final query =
+        _db.select(_messagesTable).join([
+          innerJoin(
+            _chatsTable,
+            _chatsTable.id.equalsExp(_messagesTable.chatId),
+          ),
+          leftOuterJoin(
+            _readTable,
+            _readTable.chatId.equalsExp(_messagesTable.chatId),
+          ),
+        ])..where(
+          _chatsTable.kind.equals(ChatKind.main.name) &
+              _messagesTable.role.equals(MessageRole.assistant.name) &
+              (_readTable.lastReadSeq.isNull() |
+                  _messagesTable.seq.isBiggerThan(_readTable.lastReadSeq)),
+        );
+    final counts = <String, int>{};
+    for (final row in await query.get()) {
+      final message = row.readTable(_messagesTable);
+      if (!_isFinishedTurn(message.payload)) continue;
+      counts.update(message.chatId, (value) => value + 1, ifAbsent: () => 1);
+    }
+    return counts;
+  }
+
+  /// Считается ли сообщение видимым ответом агента.
+  ///
+  /// Промежуточный шаг с вызовом инструмента ответом не является. Шаг без
+  /// вызовов, но и без текста и вложений — тоже: это рассуждение или пустой
+  /// шаг, а не готовый ответ. Повреждённый payload считаем ответом: скрыть
+  /// ход из дайджеста хуже, чем показать лишний.
+  static bool _isFinishedTurn(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) return true;
+      final calls = decoded['toolCalls'];
+      if (calls is List && calls.isNotEmpty) return false;
+      final text = decoded['text'];
+      if (text is String && text.trim().isNotEmpty) return true;
+      final attachments = decoded['attachments'];
+      return attachments is List && attachments.isNotEmpty;
+    } on FormatException {
+      return true;
+    }
+  }
+
   // ---- attention ---------------------------------------------------------
 
   /// Проблемные завершения ходов, которые ещё ждут пользователя.

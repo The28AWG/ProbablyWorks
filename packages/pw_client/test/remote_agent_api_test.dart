@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -15,6 +16,7 @@ import 'package:pw_agent/agent/api/plugin_api.dart';
 import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -634,6 +636,30 @@ void main() {
 
     await remote.dismissAttention('c1');
     expect(backend.dismissedAttention, ['c1']);
+  });
+
+  test('reads the attention digest', () async {
+    backend.digestValue = const AttentionDigest(
+      items: [
+        AttentionDigestItem(
+          chatId: 'c1',
+          hostId: 'local',
+          title: 'Test chat',
+          unreadMessages: 4,
+          finishedTurns: 2,
+          approvals: 1,
+          problems: 1,
+        ),
+      ],
+    );
+
+    final digest = await remote.attentionDigest();
+
+    expect(digest.newMessages, 4);
+    expect(digest.finishedTurns, 2);
+    expect(digest.approvals, 1);
+    expect(digest.problems, 1);
+    expect(digest.items.single.chatId, 'c1');
   });
 
   test('streams draft changes from another client', () async {
@@ -1883,10 +1909,11 @@ final class _FakeData implements DataApi {
   Future<void> resetSettings() async => resets++;
 }
 
-final class _FakeAgent implements AgentApi, AttentionApi {
+final class _FakeAgent implements AgentApi, AttentionApi, AttentionDigestApi {
   final changes = DomainChangeBus();
   final _attention = StreamController<AttentionSnapshot>.broadcast();
   AttentionSnapshot attentionValue = AttentionSnapshot.empty;
+  AttentionDigest digestValue = AttentionDigest.empty;
   final dismissedAttention = <String>[];
   final _events = StreamController<AgentEvent>.broadcast();
   final _approvals = StreamController<ApprovalRequest>.broadcast();
@@ -1970,6 +1997,9 @@ final class _FakeAgent implements AgentApi, AttentionApi {
 
   @override
   Future<AttentionSnapshot> attention() async => attentionValue;
+
+  @override
+  Future<AttentionDigest> attentionDigest() async => digestValue;
 
   @override
   Stream<AttentionSnapshot> get attentionChanges => _attention.stream;

@@ -7,6 +7,7 @@ import 'package:plugin_api/plugin_api.dart' as plugins;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/agent_settings_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
 import 'package:pw_agent/agent/api/data_api.dart';
@@ -17,6 +18,7 @@ import 'package:pw_agent/agent/api/projects_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/api/security_audit_api.dart';
 import 'package:pw_agent/agent/api/state_events_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/domain/project.dart';
@@ -67,7 +69,8 @@ class RemoteAgentApi
         InteractionEventsApi,
         StateEventsApi,
         ClientSessionApi,
-        AttentionApi {
+        AttentionApi,
+        AttentionDigestApi {
   RemoteAgentApi({
     required this.baseUri,
     required this.token,
@@ -367,6 +370,12 @@ class RemoteAgentApi
   @override
   Future<void> dismissAttention(String chatId) async {
     await _send('DELETE', '/attention/$chatId');
+  }
+
+  @override
+  Future<AttentionDigest> attentionDigest() async {
+    final json = await _get('/attention/digest');
+    return _attentionDigestFrom(json);
   }
 
   /// Применяет снимок, только если он не старше уже показанного.
@@ -2967,6 +2976,29 @@ ChatAttention _chatAttention(Map<String, dynamic> json) => ChatAttention(
   turnAt: _date(json['turnAt']),
   updatedAt: _time(json, 'updatedAt'),
 );
+
+AttentionDigest _attentionDigestFrom(Map<String, dynamic> json) =>
+    AttentionDigest(
+      items: [
+        for (final item in (json['items'] as List? ?? const []))
+          if (item is Map)
+            _attentionDigestItem(Map<String, dynamic>.from(item)),
+      ],
+    );
+
+AttentionDigestItem _attentionDigestItem(Map<String, dynamic> json) =>
+    AttentionDigestItem(
+      chatId: _string(json, 'chatId'),
+      hostId: _string(json, 'hostId'),
+      projectId: json['projectId'] as String?,
+      title: '${json['title'] ?? ''}',
+      unreadMessages: _int(json, 'unreadMessages'),
+      finishedTurns: _int(json, 'finishedTurns'),
+      approvals: _int(json, 'approvals'),
+      questions: _int(json, 'questions'),
+      editFileChanges: _int(json, 'editFileChanges'),
+      problems: _int(json, 'problems'),
+    );
 
 ApprovalRequest _approval(Map<String, dynamic> json) => ApprovalRequest(
   id: _string(json, 'id'),

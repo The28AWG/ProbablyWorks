@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/attention_api.dart';
+import 'package:pw_agent/agent/api/attention_digest_api.dart';
 import 'package:pw_agent/agent/api/chat_api.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
+import 'package:pw_agent/agent/domain/attention_digest.dart';
 import 'package:pw_agent/agent/domain/chat_attention.dart';
 import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/interaction/edit_file_changes_request.dart';
@@ -26,6 +28,7 @@ class ChatListState extends Equatable {
     this.attentionLoading = false,
     this.attentionError,
     this.attentionSupported = true,
+    this.digest,
   });
 
   final List<Chat> chats;
@@ -58,6 +61,10 @@ class ChatListState extends Equatable {
   /// `GET /attention`; экран показывает пояснение вместо пустого списка.
   final bool attentionSupported;
 
+  /// Дайджест «пока вас не было». Null — сводка ещё не запрошена или сервер
+  /// её не поддерживает; пустой объект скрывает карточку.
+  final AttentionDigest? digest;
+
   /// Сколько решений ждёт пользователя. Бейдж навигации считает их, а не
   /// непрочитанные сообщения.
   int get actionableCount => attention.actionableCount;
@@ -89,6 +96,8 @@ class ChatListState extends Equatable {
     String? attentionError,
     bool clearAttentionError = false,
     bool? attentionSupported,
+    AttentionDigest? digest,
+    bool clearDigest = false,
   }) => ChatListState(
     chats: chats ?? this.chats,
     hosts: hosts ?? this.hosts,
@@ -101,6 +110,7 @@ class ChatListState extends Equatable {
         ? null
         : (attentionError ?? this.attentionError),
     attentionSupported: attentionSupported ?? this.attentionSupported,
+    digest: clearDigest ? null : (digest ?? this.digest),
   );
 
   @override
@@ -114,6 +124,7 @@ class ChatListState extends Equatable {
     attentionLoading,
     attentionError,
     attentionSupported,
+    digest,
   ];
 }
 
@@ -160,6 +171,7 @@ class ChatListCubit extends Cubit<ChatListState> {
     _presenceSub = presence?.clientSessions.listen(_onSessions);
     if (presence != null) unawaited(_refreshSessions(presence));
     _attentionApi = api is AttentionApi ? api : null;
+    _digestApi = api is AttentionDigestApi ? api : null;
     if (_attentionApi == null) {
       emit(state.copyWith(attentionSupported: false));
     }
@@ -191,6 +203,19 @@ class ChatListCubit extends Cubit<ChatListState> {
   /// в тестовой раскладке, где список чатов собирается без экрана чата.
   final ChatApi? chatApi;
   AttentionApi? _attentionApi;
+  AttentionDigestApi? _digestApi;
+  Future<void>? _digestInFlight;
+
+  /// Поколение карточки: растёт при каждом скрытии. Ответ на запрос, начатый
+  /// до скрытия, не должен вернуть уже убранную карточку.
+  var _digestGeneration = 0;
+
+  /// Поколение, для которого сейчас выполняется [_digestInFlight].
+  var _digestRequestGeneration = 0;
+
+  /// События входящих пришли, пока запрос дайджеста был в полёте.
+  var _digestDirty = false;
+
   late final StreamSubscription<List<Chat>> _chatsSub;
   late final StreamSubscription<List<Host>> _hostsSub;
   late final StreamSubscription<AgentEvent> _activitySub;
@@ -236,6 +261,11 @@ class ChatListCubit extends Cubit<ChatListState> {
         clearAttentionError: true,
       ),
     );
+    // Пока карточка дайджеста видна, её счётчики должны успевать за
+    // закрытием карточек и прочтением. Новых запросов без показанной карточки
+    // не делаем: сводка нужна только после возврата.
+    final digest = state.digest;
+    if (digest != null && !digest.isEmpty) unawaited(loadDigest());
   }
 
   /// Перечитывает входящие. Ошибка остаётся в состоянии, но не трогает
@@ -271,6 +301,55 @@ class ChatListCubit extends Cubit<ChatListState> {
       if (isClosed) return;
       emit(state.copyWith(attentionLoading: false, attentionError: '$error'));
     }
+  }
+
+  /// Запрашивает дайджест «пока вас не было».
+  ///
+  /// Ошибка намеренно не попадает в состояние: дайджест — подсказка, а старый
+  /// сервер без маршрута не должен показывать ошибку поверх списка чатов.
+  /// События входящих приходят пачками: пока один запрос в полёте, следующий
+  /// не нужен — после ответа хватит одного перечитывания.
+  Future<void> loadDigest() {
+    final api = _digestApi;
+    if (api == null || isClosed) return Future<void>.value();
+    final inFlight = _digestInFlight;
+    if (inFlight != null && _digestRequestGeneration == _digestGeneration) {
+      _digestDirty = true;
+      return inFlight;
+    }
+    final generation = _digestGeneration;
+    _digestRequestGeneration = generation;
+    _digestDirty = false;
+    final future = _loadDigest(api, generation);
+    _digestInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_digestInFlight, future)) _digestInFlight = null;
+      if (_digestDirty && !isClosed && generation == _digestGeneration) {
+        unawaited(loadDigest());
+      }
+    });
+  }
+
+  Future<void> _loadDigest(AttentionDigestApi api, int generation) async {
+    try {
+      final digest = await api.attentionDigest();
+      // Пока шёл запрос, карточку могли убрать: такой ответ уже не нужен.
+      if (isClosed || generation != _digestGeneration) return;
+      emit(state.copyWith(digest: digest));
+    } on Object {
+      // Дайджест необязателен: список чатов и входящие продолжают работать.
+    }
+  }
+
+  /// Скрывает карточку дайджеста до следующего возврата.
+  ///
+  /// Ответ на запрос, начатый до скрытия, не должен вернуть карточку: для
+  /// этого растёт поколение.
+  void dismissDigest() {
+    if (isClosed || state.digest == null) return;
+    _digestGeneration++;
+    _digestDirty = false;
+    emit(state.copyWith(clearDigest: true));
   }
 
   /// Подтверждение карточки прямо из входящих. Сервер проверяет, что она
