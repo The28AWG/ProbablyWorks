@@ -6,6 +6,7 @@ import 'package:pw_agent/core/db/db_connection.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 import 'package:pw_agent/core/notify/push_service.dart';
 import 'package:pw_agent/core/security/secret_store.dart';
+import 'package:pw_server/pw_server.dart';
 import 'package:pw_server/src/daemon/push_app_notifier.dart';
 import 'package:test/test.dart';
 
@@ -62,6 +63,59 @@ void main() {
 
     await notifier.notify(kind: AgentNoticeKind.attentionDigest, chatTitle: '');
 
+    expect(client.requests, hasLength(1));
+  });
+
+  test('an open but idle chat does not suppress push', () async {
+    var now = DateTime.utc(2026, 11, 27, 12);
+    final sessions = ClientSessionRegistry(
+      ttl: const Duration(minutes: 30),
+      sweepInterval: const Duration(hours: 1),
+      now: () => now,
+    );
+    addTearDown(sessions.dispose);
+    final session = sessions.handshake(
+      info: const ClientSessionInfo(
+        deviceId: 'device-a',
+        clientId: 'client-a',
+        app: 'ProbablyWorks',
+        package: 'probably_works',
+        version: '1.0.0',
+        build: '1',
+        platform: 'linux',
+      ),
+    );
+    sessions.updatePresence(
+      session.id,
+      focused: true,
+      activeChatId: 'c1',
+      visibility: 'foreground',
+      visibilitySpecified: true,
+      lastInteractionAt: now,
+      interactionSpecified: true,
+    );
+    final notifier = PushAppNotifier(
+      () => push,
+      clientSessions: sessions,
+      isPaused: () => false,
+    );
+
+    // Пользователь смотрит чат: уведомление не нужно.
+    await notifier.notify(
+      kind: AgentNoticeKind.turnFinished,
+      chatTitle: 'Fix login',
+      chatId: 'c1',
+    );
+    expect(client.requests, isEmpty);
+
+    // Окно осталось открытым, но пользователь давно ушёл. Раньше такой фокус
+    // навсегда подавлял push; теперь уведомление уходит.
+    now = now.add(const Duration(minutes: 6));
+    await notifier.notify(
+      kind: AgentNoticeKind.turnFinished,
+      chatTitle: 'Fix login',
+      chatId: 'c1',
+    );
     expect(client.requests, hasLength(1));
   });
 }

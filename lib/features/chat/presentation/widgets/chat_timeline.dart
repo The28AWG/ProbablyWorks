@@ -96,6 +96,11 @@ class _ChatTimelineState extends State<ChatTimeline>
   late final ScrollController _scroll;
   var _follow = true;
 
+  /// Куда сообщить, находится ли лента у нижней границы. Присутствие
+  /// использует это, чтобы не подавлять push, пока пользователь читает старые
+  /// сообщения при открытом чате.
+  ValueChanged<bool>? _reportAtEnd;
+
   /// Чат, к которому относится текущая позиция прокрутки.
   String? _chatId;
 
@@ -158,12 +163,27 @@ class _ChatTimelineState extends State<ChatTimeline>
     super.didChangeDependencies();
     final enabled = TickerMode.valuesOf(context).enabled;
     final scope = VisibleChatScope.maybeOf(context);
+    _reportAtEnd = scope?.onAtEndChanged;
     final routeVisible = scope == null || scope.chatId == widget.state.chatId;
     if ((enabled && !_tickerEnabled) || (routeVisible && !_routeVisible)) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _reportRead());
     }
     _tickerEnabled = enabled;
     _routeVisible = routeVisible;
+    // Лента могла открыться сразу на непрочитанном или наоборот у конца:
+    // после кадра сообщаем фактическую позицию, а не догадку присутствия.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _publishAtEnd();
+    });
+  }
+
+  /// Сообщает присутствию текущее положение ленты.
+  ///
+  /// Скрытая вкладка или чат в стеке под другим маршрутом не должен диктовать
+  /// `activeChatAtEnd` видимому чату.
+  void _publishAtEnd() {
+    if (!_routeVisible) return;
+    _reportAtEnd?.call(_follow);
   }
 
   @override
@@ -196,6 +216,9 @@ class _ChatTimelineState extends State<ChatTimeline>
         _highlightPendingJump = widget.jumpToMessageId != null;
         WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToPending());
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _publishAtEnd();
+      });
       return;
     }
     final target = widget.jumpToMessageId;
@@ -360,6 +383,7 @@ class _ChatTimelineState extends State<ChatTimeline>
     setState(() {
       _follow = atEnd;
     });
+    _publishAtEnd();
     if (atEnd) _reportRead();
   }
 
@@ -369,6 +393,7 @@ class _ChatTimelineState extends State<ChatTimeline>
     _pendingJumpId = null;
     _jumping = false;
     setState(() => _follow = true);
+    _publishAtEnd();
     unawaited(_animateToLatest());
   }
 
@@ -384,6 +409,7 @@ class _ChatTimelineState extends State<ChatTimeline>
     }
     if (!mounted) return;
     if (!_follow) setState(() => _follow = true);
+    _publishAtEnd();
     _reportRead();
   }
 

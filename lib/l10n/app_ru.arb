@@ -494,6 +494,10 @@
   "@chatPresenceFocused": {
     "description": "Клиентская сессия на переднем плане."
   },
+  "chatPresenceActiveNow": "Активно сейчас",
+  "@chatPresenceActiveNow": {
+    "description": "Устройство на экране, и пользователь недавно с ним взаимодействовал."
+  },
   "chatPresenceBackground": "В фоне",
   "@chatPresenceBackground": {
     "description": "Клиентская сессия подключена, но не на переднем плане."

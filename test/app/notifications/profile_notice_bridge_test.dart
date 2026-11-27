@@ -460,6 +460,139 @@ void main() {
 
     expect(notifier.cancelled, contains('p1:attentionDigest:'));
   });
+
+  test(
+    'a card for another attention device appears when it becomes mine',
+    () async {
+      final presence = StreamController<void>.broadcast();
+      addTearDown(presence.close);
+      var target = false;
+      final bridge = ProfileNoticeBridge(
+        api: api,
+        notifier: notifier,
+        profileId: 'p1',
+        isNotificationTarget: () async => target,
+        presenceChanges: presence.stream,
+      );
+      _listen(bridge);
+
+      const approval = ApprovalRequest(
+        id: 'a1',
+        chatId: 'c1',
+        toolName: 'run_command',
+        summary: 'ls',
+        reason: 'ask',
+      );
+      api
+        ..pendingApprovalsResult = [approval]
+        ..addApproval(approval);
+      await pumpEventQueue();
+
+      // Внимание на другом устройстве: телефон молчит.
+      expect(notifier.notices, isEmpty);
+
+      // Пользователь взял телефон: присутствие изменилось, карточка всплывает
+      // здесь и не дублируется на исходном устройстве.
+      target = true;
+      presence.add(null);
+      await pumpEventQueue();
+
+      expect(notifier.notices, hasLength(1));
+      expect(notifier.notices.single.noticeId, 'p1:approvalNeeded:a1');
+    },
+  );
+
+  test(
+    'a card hidden by another screen appears after the user leaves it',
+    () async {
+      final presence = StreamController<void>.broadcast();
+      addTearDown(presence.close);
+      var visible = true;
+      final bridge = ProfileNoticeBridge(
+        api: api,
+        notifier: notifier,
+        profileId: 'p1',
+        isVisible: (_) async => visible,
+        presenceChanges: presence.stream,
+      );
+      _listen(bridge);
+
+      const approval = ApprovalRequest(
+        id: 'a1',
+        chatId: 'c1',
+        toolName: 'run_command',
+        summary: 'ls',
+        reason: 'ask',
+      );
+      api
+        ..pendingApprovalsResult = [approval]
+        ..addApproval(approval);
+      await pumpEventQueue();
+      expect(notifier.notices, isEmpty);
+
+      // Пользователь ушёл с другого активного экрана к этому устройству:
+      // присутствие обновилось, и отложенная карточка становится видимой.
+      visible = false;
+      presence.add(null);
+      await pumpEventQueue();
+
+      expect(notifier.notices, hasLength(1));
+      expect(notifier.notices.single.noticeId, 'p1:approvalNeeded:a1');
+    },
+  );
+
+  test(
+    'a presence event during an evaluation rechecks the deferred queue',
+    () async {
+      final presence = StreamController<void>.broadcast();
+      addTearDown(presence.close);
+      final gate = Completer<void>();
+      var probes = 0;
+      final bridge = ProfileNoticeBridge(
+        api: api,
+        notifier: notifier,
+        profileId: 'p1',
+        isNotificationTarget: () async {
+          probes++;
+          // Первая проверка оставляет карточку в очереди. Вторая — та, во
+          // время которой приходит новое событие, — читает устаревший ответ.
+          if (probes == 1) return false;
+          if (probes == 2) {
+            await gate.future;
+            return false;
+          }
+          return true;
+        },
+        presenceChanges: presence.stream,
+      );
+      _listen(bridge);
+
+      const approval = ApprovalRequest(
+        id: 'a1',
+        chatId: 'c1',
+        toolName: 'run_command',
+        summary: 'ls',
+        reason: 'ask',
+      );
+      api
+        ..pendingApprovalsResult = [approval]
+        ..addApproval(approval);
+      await pumpEventQueue();
+      expect(notifier.notices, isEmpty);
+
+      // Первое событие запускает проверку и зависает на чтении присутствия.
+      presence.add(null);
+      await pumpEventQueue();
+      // Второе приходит, пока проверка ещё идёт. Оно не должно потеряться.
+      presence.add(null);
+      await pumpEventQueue();
+      gate.complete();
+      await pumpEventQueue();
+
+      expect(notifier.notices, hasLength(1));
+      expect(notifier.notices.single.noticeId, 'p1:approvalNeeded:a1');
+    },
+  );
 }
 
 /// Снимок входящих с действующей паузой уведомлений.

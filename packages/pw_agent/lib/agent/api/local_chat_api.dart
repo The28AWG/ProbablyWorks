@@ -141,8 +141,16 @@ class LocalChatApi
     bool? focused,
     String? activeChatId,
     bool clearActiveChat = false,
+    ClientVisibility? visibility,
+    bool? activeChatAtEnd,
   }) {
     // Встроенный агент не имеет внешних клиентских сессий.
+    return;
+  }
+
+  @override
+  void noteInteraction([DateTime? at]) {
+    // Встроенному агенту не нужен idle-детект: у него нет других устройств.
     return;
   }
 

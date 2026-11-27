@@ -15,6 +15,9 @@ ClientSessionView _session(
   String? activeChatId,
   bool current = false,
   bool focused = false,
+  bool? active,
+  bool attention = true,
+  bool activeChatAtEnd = true,
   String platform = 'linux',
   String clientId = '',
   String? deviceId,
@@ -31,6 +34,11 @@ ClientSessionView _session(
   lastSeenAt: _now,
   expiresAt: _now.add(const Duration(minutes: 1)),
   focused: focused,
+  // По умолчанию активность совпадает с фокусом: старые тесты описывают
+  // присутствие до появления idle-детекта.
+  active: active ?? focused,
+  attention: attention,
+  activeChatAtEnd: activeChatAtEnd,
   online: true,
   current: current,
 );
@@ -122,7 +130,9 @@ void main() {
 
     await tester.tap(find.text('ProbablyWorks · 2.0.0 · linux'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Focused'), findsOneWidget);
+    // Активная сессия показывает «Активно сейчас»; «В фокусе» остаётся для
+    // случая, когда фокус есть, а недавнего взаимодействия уже нет.
+    expect(find.textContaining('Active now'), findsWidgets);
   });
 
   testWidgets('a device stays open when a second screen appears', (
@@ -208,6 +218,53 @@ void main() {
         _session('background', activeChatId: 'c1'),
       ], 'c1'),
       isFalse,
+    );
+  });
+
+  test('an idle focused chat is not treated as visible', () {
+    // Приложение в фокусе, но пользователь давно не взаимодействовал:
+    // сервер уже не считает устройство активным, и уведомление уместно.
+    final sessions = [
+      _session('forgotten', activeChatId: 'c1', focused: true, active: false),
+    ];
+
+    expect(isChatVisibleInPresence(sessions, 'c1'), isFalse);
+  });
+
+  test('a chat scrolled away from the end is not treated as visible', () {
+    final sessions = [
+      _session(
+        'reader',
+        activeChatId: 'c1',
+        focused: true,
+        activeChatAtEnd: false,
+      ),
+    ];
+
+    expect(isChatVisibleInPresence(sessions, 'c1'), isFalse);
+  });
+
+  test('only the attention device shows notifications', () {
+    final sessions = [
+      _session('desktop', current: true, active: true, attention: false),
+      _session('phone', attention: true),
+    ];
+
+    expect(isNotificationTargetInPresence(sessions), isFalse);
+    expect(
+      isNotificationTargetInPresence([
+        _session('desktop', current: true, active: true),
+        _session('phone', attention: false),
+      ]),
+      isTrue,
+    );
+    // Старый сервер без адресации: поведение прежнее, показывают все.
+    expect(
+      isNotificationTargetInPresence([
+        _session('desktop', current: true),
+        _session('phone'),
+      ]),
+      isTrue,
     );
   });
 

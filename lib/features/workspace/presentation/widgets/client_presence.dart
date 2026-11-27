@@ -81,6 +81,10 @@ final class ClientSessionDeviceGroup {
 
   /// Есть ли в группе экран в фокусе.
   bool get hasFocused => sessions.any((session) => session.focused);
+
+  /// Есть ли в группе действительно активное устройство: приложение на экране
+  /// и пользователь недавно взаимодействовал.
+  bool get hasActive => sessions.any((session) => session.active);
 }
 
 /// Группирует сессии по устройству и упорядочивает их для диалога.
@@ -301,7 +305,10 @@ class _ClientPresenceDialogState extends State<ClientPresenceDialog> {
       _expanded.putIfAbsent(
         group.key,
         () =>
-            group.sessions.length == 1 || group.hasCurrent || group.hasFocused,
+            group.sessions.length == 1 ||
+            group.hasCurrent ||
+            group.hasActive ||
+            group.hasFocused,
       );
     }
   }
@@ -443,7 +450,7 @@ class _DeviceGroup extends StatelessWidget {
                 Icon(
                   clientSessionIcon(group.primary),
                   size: 20,
-                  color: group.hasFocused
+                  color: group.hasActive || group.hasFocused
                       ? scheme.primary
                       : scheme.onSurfaceVariant,
                 ),
@@ -460,6 +467,13 @@ class _DeviceGroup extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (group.hasActive) ...[
+                  StatusChip(
+                    label: l10n.chatPresenceActiveNow,
+                    tone: AppTone.success,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                ],
                 MetaChip(
                   label: l10n.chatPresenceDeviceScreens(group.sessions.length),
                 ),
@@ -532,9 +546,14 @@ class _SessionRow extends StatelessWidget {
     final activeChat = activeChatId == null
         ? null
         : (chatTitle ?? activeChatId);
+    final presence = session.active
+        ? l10n.chatPresenceActiveNow
+        : session.focused
+        ? l10n.chatPresenceFocused
+        : l10n.chatPresenceBackground;
     final status = [
       if (session.clientPlatform.isNotEmpty) session.clientPlatform,
-      session.focused ? l10n.chatPresenceFocused : l10n.chatPresenceBackground,
+      presence,
       activeChat == null
           ? l10n.chatPresenceNoChat
           : l10n.chatPresenceViewing(activeChat),
@@ -578,13 +597,15 @@ class _SessionRow extends StatelessWidget {
 /// Текущий экран сверху, затем активные окна, затем остальные.
 int _compareSessions(ClientSessionView a, ClientSessionView b) {
   if (a.current != b.current) return a.current ? -1 : 1;
+  if (a.active != b.active) return a.active ? -1 : 1;
   if (a.focused != b.focused) return a.focused ? -1 : 1;
   return a.label.compareTo(b.label);
 }
 
-/// Устройства с текущим и активным экраном поднимаются наверх.
+/// Устройства с текущим, активным и находящимся в фокусе экраном — наверху.
 int _compareGroups(ClientSessionDeviceGroup a, ClientSessionDeviceGroup b) {
   if (a.hasCurrent != b.hasCurrent) return a.hasCurrent ? -1 : 1;
+  if (a.hasActive != b.hasActive) return a.hasActive ? -1 : 1;
   if (a.hasFocused != b.hasFocused) return a.hasFocused ? -1 : 1;
   final byName = a.primary.label.compareTo(b.primary.label);
   if (byName != 0) return byName;

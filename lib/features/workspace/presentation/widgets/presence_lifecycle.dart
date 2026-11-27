@@ -1,4 +1,5 @@
 import 'package:auto_route/auto_route.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:probably_works/features/workspace/presentation/navigation/workspace_navigation.dart';
 import 'package:pw_agent/agent/api/client_session_api.dart';
@@ -13,12 +14,20 @@ import 'package:pw_agent/agent/api/client_session_api.dart';
 class VisibleChatScope extends InheritedWidget {
   const VisibleChatScope({
     required this.chatId,
+    this.onAtEndChanged,
     required super.child,
     super.key,
   });
 
   /// Открытый чат или null, если пользователь не на вкладке чатов.
   final String? chatId;
+
+  /// Сообщает, находится ли лента у нижней границы.
+  ///
+  /// Нужно присутствию: открытый чат на разделителе непрочитанного или при
+  /// прокрутке вверх ещё не значит, что пользователь увидел новое сообщение.
+  /// Уведомление в этот момент уместно.
+  final ValueChanged<bool>? onAtEndChanged;
 
   static VisibleChatScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<VisibleChatScope>();
@@ -69,7 +78,19 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
   /// прежним до перезагрузки.
   StackRouter? _chatsStack;
   String? _lastChatId;
+
+  /// Видимость приложения для idle-детекта на сервере.
+  ///
+  /// `focused` остаётся для старого сервера, но новый различает «окно в
+  /// фокусе» и «приложение на экране». Свёрнутая вкладка не должна выглядеть
+  /// как пользователь, который смотрит чат.
+  ClientVisibility _visibility = ClientVisibility.foreground;
+
   bool _focused = false;
+
+  /// Находится ли открытая лента у нижней границы. Сбрасывается при смене
+  /// чата: новая лента может открыться на непрочитанном.
+  bool _chatAtEnd = true;
 
   /// Присутствие уже отправлялось в этой сборке. Нужно, чтобы первая отправка
   /// прошла даже при `null` (нет открытого чата), а последующие дубли не слали
@@ -87,8 +108,15 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
     // ignore: always-remove-listener, снимается в dispose вместе с _tabs
     _tabs = widget.tabs..addListener(_onTabsChanged);
     _watchChatsStack();
-    _focused =
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _visibility = lifecycle == null || lifecycle == AppLifecycleState.resumed
+        ? ClientVisibility.foreground
+        : ClientVisibility.background;
+    _focused = _visibility == ClientVisibility.foreground;
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
+    // Старт приложения тоже взаимодействие: без отметки сервер считал бы
+    // только что открытое окно давно забытым.
+    _noteInteraction();
     _publishPresence(includeFocus: true);
     // Первый кадр достраивает стек вкладки: после него повторяем отправку,
     // чтобы чат из deep link не остался без activeChatId.
@@ -118,17 +146,45 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
     // сессия профиля живёт в [ProfileService] и продолжает heartbeat. Без
     // сброса сервер до конца сессии считал бы этот экран активным для чата:
     // список экранов врал бы, а push по этому чату не отправлялся бы.
-    widget.sessionApi?.setPresence(focused: false, clearActiveChat: true);
+    widget.sessionApi?.setPresence(
+      focused: false,
+      visibility: ClientVisibility.background,
+      clearActiveChat: true,
+    );
     _tabs.removeListener(_onTabsChanged);
     _chatsStack?.removeListener(_onChatsStackChanged);
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _listener.dispose();
     _visibleChat.dispose();
     super.dispose();
   }
 
   void _onLifecycle(AppLifecycleState state) {
-    _focused = state == AppLifecycleState.resumed;
-    widget.sessionApi?.setPresence(focused: _focused);
+    _visibility = state == AppLifecycleState.resumed
+        ? ClientVisibility.foreground
+        : ClientVisibility.background;
+    _focused = _visibility == ClientVisibility.foreground;
+    // Возврат в приложение — это взаимодействие: иначе после долгой паузы
+    // устройство ещё несколько секунд выглядело бы неактивным.
+    if (_focused) _noteInteraction();
+    widget.sessionApi?.setPresence(focused: _focused, visibility: _visibility);
+  }
+
+  /// Отмечает ввод, нажатие или прокрутку для idle-детекта.
+  void _noteInteraction() => widget.sessionApi?.noteInteraction();
+
+  /// Клавиатура не всегда попадает в [Listener]: поле ввода может не быть
+  /// потомком рабочей области, а глобальный обработчик видит все нажатия.
+  bool _onHardwareKey(KeyEvent event) {
+    if (event is KeyDownEvent) _noteInteraction();
+    return false;
+  }
+
+  /// Сообщает, что лента доехала до конца или ушла выше.
+  void _reportAtEnd(bool atEnd) {
+    if (_chatAtEnd == atEnd || _visibleChat.value == null) return;
+    _chatAtEnd = atEnd;
+    widget.sessionApi?.setPresence(activeChatAtEnd: atEnd);
   }
 
   void _onTabsChanged() {
@@ -165,6 +221,9 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
   void _publishPresence({bool includeFocus = false}) {
     final chatId = visibleChatIdOf(_tabs);
     if (!includeFocus && _presenceSent && chatId == _lastChatId) return;
+    // Другой чат открывается на непрочитанном или у конца — до первого
+    // сообщения от ленты считаем, что пользователь видит последние сообщения.
+    if (chatId != _lastChatId) _chatAtEnd = true;
     _presenceSent = true;
     _lastChatId = chatId;
     // Лента зависит от видимости: при уходе на другую вкладку она перестаёт
@@ -172,16 +231,29 @@ class _PresenceLifecycleState extends State<PresenceLifecycle> {
     _visibleChat.value = chatId;
     widget.sessionApi?.setPresence(
       focused: includeFocus ? _focused : null,
+      visibility: includeFocus ? _visibility : null,
       activeChatId: chatId,
       clearActiveChat: chatId == null,
+      activeChatAtEnd: _chatAtEnd,
     );
   }
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder<String?>(
-    valueListenable: _visibleChat,
-    builder: (context, chatId, child) =>
-        VisibleChatScope(chatId: chatId, child: child!),
-    child: widget.child,
+  Widget build(BuildContext context) => Listener(
+    // Listener не поглощает события: он только замечает ввод, чтобы сервер
+    // мог отличить активного пользователя от забытого открытого окна.
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (_) => _noteInteraction(),
+    onPointerMove: (_) => _noteInteraction(),
+    onPointerSignal: (_) => _noteInteraction(),
+    child: ValueListenableBuilder<String?>(
+      valueListenable: _visibleChat,
+      builder: (context, chatId, child) => VisibleChatScope(
+        chatId: chatId,
+        onAtEndChanged: _reportAtEnd,
+        child: child!,
+      ),
+      child: widget.child,
+    ),
   );
 }

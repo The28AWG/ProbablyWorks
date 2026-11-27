@@ -1315,6 +1315,146 @@ void main() {
     expect(sessions.single.focused, isTrue);
   });
 
+  test('a refresh with the same revision does not re-emit', () async {
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final now = DateTime.now().toUtc();
+    final expiresAt = now.add(const Duration(minutes: 1)).toIso8601String();
+    httpServer.listen((request) async {
+      final response = request.response..headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/api/v1/client/handshake':
+          response.write(
+            jsonEncode({
+              'sessionId': 's1',
+              'instanceId': 'instance-1',
+              'deviceId': 'device-1',
+              'protocol': 1,
+              'expiresAt': expiresAt,
+              'heartbeatIntervalMs': 60000,
+            }),
+          );
+        case '/api/v1/client/sessions':
+          response.write(
+            jsonEncode({
+              'currentSessionId': 's1',
+              'presenceRevision': 1,
+              'sessions': [
+                {
+                  'id': 's1',
+                  'deviceId': 'device-1',
+                  'clientApp': 'ProbablyWorks',
+                  'clientVersion': '1.0.0',
+                  'clientBuild': '1',
+                  'clientPlatform': 'linux',
+                  'createdAt': now.toIso8601String(),
+                  'lastSeenAt': now.toIso8601String(),
+                  'expiresAt': expiresAt,
+                  'focused': true,
+                  'online': true,
+                  'current': true,
+                },
+              ],
+            }),
+          );
+        default:
+          response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    final emitted = <List<ClientSessionView>>[];
+    final sub = api.clientSessions.listen(emitted.add);
+    addTearDown(sub.cancel);
+
+    await api.refreshClientSessions();
+    await api.refreshClientSessions();
+    await Future<void>.delayed(Duration.zero);
+
+    // Подписчик, который сам запросил снимок, не должен получать событие с
+    // тем же `presenceRevision`: иначе мост уведомлений пересматривал бы
+    // очередь бесконечно.
+    expect(emitted, hasLength(1));
+    expect(emitted.single.single.current, isTrue);
+  });
+
+  test('sends visibility, the end position and interaction age', () async {
+    final presence = <Map<String, dynamic>>[];
+    final firstReceived = Completer<void>();
+    final secondReceived = Completer<void>();
+    final httpServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final expiresAt = DateTime.now()
+        .toUtc()
+        .add(const Duration(minutes: 1))
+        .toIso8601String();
+    httpServer.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      final response = request.response;
+      response.headers.contentType = ContentType.json;
+      final path = request.uri.path;
+      if (path == '/api/v1/client/handshake') {
+        response.write(
+          jsonEncode({
+            'sessionId': 's1',
+            'instanceId': 'instance-1',
+            'deviceId': 'device-1',
+            'protocol': 1,
+            'expiresAt': expiresAt,
+            'heartbeatIntervalMs': 60000,
+          }),
+        );
+      } else if (path == '/api/v1/client/sessions') {
+        response.write(
+          jsonEncode({'currentSessionId': 's1', 'sessions': <Object>[]}),
+        );
+      } else if (path == '/api/v1/client/session' && request.method == 'PUT') {
+        presence.add(jsonDecode(body) as Map<String, dynamic>);
+        if (presence.length == 1 && !firstReceived.isCompleted) {
+          firstReceived.complete();
+        }
+        if (presence.length == 2 && !secondReceived.isCompleted) {
+          secondReceived.complete();
+        }
+        response.write(jsonEncode({'expiresAt': expiresAt}));
+      } else if (path == '/api/v1/client/session' &&
+          request.method == 'DELETE') {
+        response.statusCode = HttpStatus.noContent;
+      } else {
+        response.statusCode = HttpStatus.notFound;
+      }
+      await response.close();
+    });
+    addTearDown(() => httpServer.close(force: true));
+    final api = RemoteAgentApi(
+      baseUri: Uri.parse('http://127.0.0.1:${httpServer.port}'),
+      token: _token,
+    );
+    addTearDown(api.dispose);
+
+    api.setPresence(
+      focused: true,
+      activeChatId: 'c1',
+      visibility: ClientVisibility.foreground,
+      activeChatAtEnd: false,
+    );
+    await firstReceived.future.timeout(const Duration(seconds: 2));
+    expect(presence.first['visibility'], 'foreground');
+    expect(presence.first['activeChatAtEnd'], isFalse);
+    // Без явного взаимодействия возраст не выдумывается: старый сервер не
+    // должен получить поле, которого не понимает.
+    expect(presence.first.containsKey('idleMs'), isFalse);
+
+    api.noteInteraction();
+    await secondReceived.future.timeout(const Duration(seconds: 2));
+    expect(presence.last['idleMs'], isA<int>());
+    expect(presence.last['idleMs'], greaterThanOrEqualTo(0));
+  });
+
   test('serializes presence and sends the latest revision in order', () async {
     final presence = <Map<String, dynamic>>[];
     final firstStarted = Completer<void>();

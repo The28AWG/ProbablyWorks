@@ -494,6 +494,10 @@
   "@chatPresenceFocused": {
     "description": "Client session is in the foreground."
   },
+  "chatPresenceActiveNow": "Active now",
+  "@chatPresenceActiveNow": {
+    "description": "Device is in the foreground and the user interacted with it recently."
+  },
   "chatPresenceBackground": "In background",
   "@chatPresenceBackground": {
     "description": "Client session is connected but not in the foreground."

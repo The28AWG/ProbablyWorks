@@ -409,6 +409,8 @@ class ProfileService {
     isVisible: (chatId) => _chatVisibleInFocusedSession(api, chatId),
     isSnoozed: (chatId) => _chatSnoozed(api, chatId),
     isPaused: () => _notificationsPaused(api),
+    isNotificationTarget: () => _isNotificationTarget(api),
+    presenceChanges: _presenceChanges(api),
   ).listen();
 
   /// Читает входящие и проверяет, отложен ли чат.
@@ -468,6 +470,40 @@ class ProfileService {
       }
     }
     return false;
+  }
+
+  /// Проверяет, выбрано ли это устройство для системных уведомлений.
+  ///
+  /// Сервер помечает одно устройство по активности, чтобы approval не всплывал
+  /// сразу на всех экранах. Если сервер старый или проверка не удалась,
+  /// возвращается `true`: пропустить запрос подтверждения хуже лишнего
+  /// напоминания.
+  Future<bool> _isNotificationTarget(AgentApi api) async {
+    final Object source = api;
+    if (source is! ClientSessionApi) return true;
+    try {
+      final sessions = await _refreshPresence(
+        api,
+        source,
+      ).timeout(const Duration(seconds: 2));
+      return isNotificationTargetInPresence(sessions);
+    } on Object catch (error) {
+      AppLog.root.fine('notification target check failed: $error');
+      return true;
+    }
+  }
+
+  /// Изменения присутствия как повод пересмотреть отложенные карточки.
+  ///
+  /// Поток отдаёт только сигнал: снимок уже кэшируется в клиенте, а мосту
+  /// нужен момент, когда внимание могло перейти на этот экран.
+  Stream<Object?>? _presenceChanges(AgentApi api) {
+    final Object source = api;
+    if (source is! ClientSessionApi) return null;
+    // Мосту нужен только сам факт изменения: снимок уже кэширует клиент.
+    return source.clientSessions.handleError((Object error) {
+      AppLog.root.fine('presence changes for notices failed: $error');
+    });
   }
 
   /// Читает список присутствия, объединяя одновременные запросы профиля.

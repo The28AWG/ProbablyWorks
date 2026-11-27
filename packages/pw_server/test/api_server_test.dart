@@ -2908,6 +2908,45 @@ void main() {
       expect(current['online'], isTrue);
     });
 
+    test('heartbeat reports activity and the end of the chat', () async {
+      sessionNow = sessionNow.add(const Duration(seconds: 5));
+      final (status, _) = await _request(
+        client,
+        sessionBase,
+        'PUT',
+        '/api/v1/client/session',
+        token: _token,
+        session: sessionId,
+        body: {
+          'focused': true,
+          'activeChatId': 'c1',
+          'visibility': 'foreground',
+          'idleMs': 0,
+          'activeChatAtEnd': false,
+        },
+      );
+      expect(status, HttpStatus.ok);
+
+      final (_, body) = await _request(
+        client,
+        sessionBase,
+        'GET',
+        '/api/v1/client/sessions',
+        token: _token,
+        session: sessionId,
+      );
+      final current = ((jsonDecode(body) as Map)['sessions'] as List)
+          .cast<Map>()
+          .firstWhere((entry) => entry['current'] == true);
+      expect(current['visibility'], 'foreground');
+      expect(current['lastInteractionAt'], isNotNull);
+      expect(current['activeChatAtEnd'], isFalse);
+      // Единственная сессия активна и получает уведомления, но чат
+      // прокручен вверх: push по нему всё равно нужен.
+      expect(current['active'], isTrue);
+      expect(current['attention'], isTrue);
+    });
+
     test('an out-of-order presence request does not roll back', () async {
       final (ackStatus, ackBody) = await _request(
         client,

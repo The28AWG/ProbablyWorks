@@ -96,10 +96,16 @@ final class ApiServer {
         // присутствия делало бы отдельный GET /client/sessions, и нагрузка
         // росла бы вместе с числом экранов.
         final at = _clientSessions.now;
+        final attentionKey = _clientSessions.attentionDeviceKeyAt(at);
         _stateEvents.add(
           _ClientSessionsChanged([
             for (final session in _clientSessions.list())
-              _clientSessionJson(session, current: false, now: at),
+              _clientSessionJson(
+                session,
+                current: false,
+                now: at,
+                attentionDeviceKey: attentionKey,
+              ),
           ], _clientSessions.revision),
         );
       }
@@ -1071,6 +1077,32 @@ final class ApiServer {
     final hasActiveChatId = body.containsKey('activeChatId');
     final focused = body['focused'];
     final revision = body['presenceRevision'];
+    // Неизвестное значение не должно сделать устройство навсегда неактивным:
+    // считаем его отсутствующим и сохраняем прежнее поведение по `focused`.
+    final rawVisibility = body['visibility'];
+    final visibility = switch (rawVisibility) {
+      'foreground' || 'background' || 'locked' => rawVisibility as String,
+      _ => null,
+    };
+    final hasVisibility = visibility != null;
+    // Клиент присылает возраст последнего взаимодействия, а не абсолютное
+    // время: часы устройства и сервера могут расходиться. Сервер переводит
+    // возраст в свою отметку.
+    final idleMs = body['idleMs'];
+    final hasInteraction = idleMs is num && idleMs.isFinite && idleMs >= 0;
+    DateTime? lastInteractionAt;
+    if (hasInteraction) {
+      // Ограничение защищает от абсурдного значения в теле и переполнения
+      // Duration: для решения «активно или нет» достаточно суток.
+      final idle = idleMs
+          .toDouble()
+          .clamp(0.0, const Duration(days: 1).inMilliseconds.toDouble())
+          .toInt();
+      lastInteractionAt = _clientSessions.now.subtract(
+        Duration(milliseconds: idle),
+      );
+    }
+    final atEnd = body['activeChatAtEnd'];
     final session = _clientSessions.updatePresence(
       sessionId,
       focused: focused is bool ? focused : null,
@@ -1078,6 +1110,11 @@ final class ApiServer {
           ? body['activeChatId'] as String
           : null,
       activeChatIdSpecified: hasActiveChatId,
+      visibility: visibility,
+      visibilitySpecified: hasVisibility,
+      lastInteractionAt: lastInteractionAt,
+      interactionSpecified: hasInteraction,
+      activeChatAtEnd: atEnd is bool ? atEnd : null,
       revision: revision is num && revision.isFinite ? revision.toInt() : null,
     );
     if (session == null) {
@@ -1135,6 +1172,7 @@ final class ApiServer {
     final current = request.headers.value(_clientSessionHeader);
     final at = _clientSessions.now;
     final sessions = _clientSessions.list();
+    final attentionKey = _clientSessions.attentionDeviceKeyAt(at);
     _json(request.response, HttpStatus.ok, {
       'currentSessionId': current == null
           ? null
@@ -1143,7 +1181,12 @@ final class ApiServer {
       'presenceRevision': _clientSessions.revision,
       'sessions': [
         for (final session in sessions)
-          _clientSessionJson(session, current: session.id == current, now: at),
+          _clientSessionJson(
+            session,
+            current: session.id == current,
+            now: at,
+            attentionDeviceKey: attentionKey,
+          ),
       ],
     });
     return Future<void>.value();
@@ -1192,26 +1235,37 @@ final class ApiServer {
     ClientSession session, {
     required bool current,
     required DateTime now,
-  }) => {
-    // Короткий fingerprint вместо сырого id: список нужен для группировки и
-    // подписи, а не для продолжения сессии.
-    'id': ApiAccessLog.fingerprint(session.id),
-    'deviceId': session.deviceId,
-    'clientId': session.clientId,
-    'clientApp': session.clientApp,
-    'clientPackage': session.clientPackage,
-    'clientVersion': session.clientVersion,
-    'clientBuild': session.clientBuild,
-    'clientPlatform': session.clientPlatform,
-    'createdAt': session.createdAt.toUtc().toIso8601String(),
-    'lastSeenAt': session.lastSeenAt.toUtc().toIso8601String(),
-    'expiresAt': session.expiresAt.toUtc().toIso8601String(),
-    'focused': session.focused,
-    'activeChatId': session.activeChatId,
-    'presenceRevision': session.presenceRevision,
-    'online': !session.isExpiredAt(now),
-    'current': current,
-  };
+    required String? attentionDeviceKey,
+  }) {
+    final deviceKey = ClientSessionRegistry.deviceKeyOf(session);
+    return {
+      // Короткий fingerprint вместо сырого id: список нужен для группировки и
+      // подписи, а не для продолжения сессии.
+      'id': ApiAccessLog.fingerprint(session.id),
+      'deviceId': session.deviceId,
+      'clientId': session.clientId,
+      'clientApp': session.clientApp,
+      'clientPackage': session.clientPackage,
+      'clientVersion': session.clientVersion,
+      'clientBuild': session.clientBuild,
+      'clientPlatform': session.clientPlatform,
+      'createdAt': session.createdAt.toUtc().toIso8601String(),
+      'lastSeenAt': session.lastSeenAt.toUtc().toIso8601String(),
+      'expiresAt': session.expiresAt.toUtc().toIso8601String(),
+      'focused': session.focused,
+      'visibility': session.visibility,
+      'lastInteractionAt': session.lastInteractionAt?.toUtc().toIso8601String(),
+      'activeChatId': session.activeChatId,
+      'activeChatAtEnd': session.activeChatAtEnd,
+      // Именно экран, а не всё устройство: фоновое окно того же клиента не
+      // должно выглядеть как «пользователь здесь» и глушить уведомления.
+      'active': session.isPresentAt(now, _clientSessions.activeTimeout),
+      'attention': deviceKey == attentionDeviceKey,
+      'presenceRevision': session.presenceRevision,
+      'online': !session.isExpiredAt(now),
+      'current': current,
+    };
+  }
 
   /// Входящие: сводный снимок и ручное скрытие проблемы.
   ///

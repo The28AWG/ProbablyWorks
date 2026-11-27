@@ -149,6 +149,24 @@ class RemoteAgentApi
   bool _focused = false;
   String? _activeChatId;
 
+  /// Видимость приложения из последнего обновления. `null` — старый клиент
+  /// без поля: сервер тогда довольствуется одним `focused`.
+  ClientVisibility? _visibility;
+
+  /// Открытый чат находится у нижней границы ленты. Для старого сервера поле
+  /// просто игнорируется.
+  bool _activeChatAtEnd = true;
+
+  /// Время последнего взаимодействия. Уходит на сервер как возраст, чтобы
+  /// расхождение часов не решало, какое устройство активно.
+  DateTime? _lastInteractionAt;
+
+  /// Когда взаимодействие в последний раз отправлялось отдельным heartbeat.
+  /// Ограничивает сеть при непрерывной прокрутке или наборе текста.
+  DateTime? _lastInteractionPublishedAt;
+
+  static const _interactionPublishInterval = Duration(seconds: 15);
+
   /// Монотонный номер состояния присутствия.
   ///
   /// Назначается каждой отправке и всегда растёт. Рукопожатие может вернуть
@@ -188,14 +206,57 @@ class RemoteAgentApi
     bool? focused,
     String? activeChatId,
     bool clearActiveChat = false,
+    ClientVisibility? visibility,
+    bool? activeChatAtEnd,
   }) {
-    if (focused != null) _focused = focused;
+    if (visibility != null) {
+      _visibility = visibility;
+      // Видимость и фокус описывают одно состояние. Держим `focused` в
+      // согласии, чтобы старый сервер без `visibility` вёл себя как раньше.
+      _focused = visibility == ClientVisibility.foreground;
+    } else if (focused != null) {
+      _focused = focused;
+      // Сервер предпочитает `visibility`, поэтому обновление только `focused`
+      // потерялось бы, если видимость уже отправлялась. Синхронизируем поле,
+      // не затирая неизвестное клиенту `locked`.
+      if (_visibility != null && _visibility != ClientVisibility.locked) {
+        _visibility = focused
+            ? ClientVisibility.foreground
+            : ClientVisibility.background;
+      }
+    }
+    if (activeChatAtEnd != null) _activeChatAtEnd = activeChatAtEnd;
     if (clearActiveChat) {
       _activeChatId = null;
     } else if (activeChatId != null) {
       _activeChatId = activeChatId;
     }
     if (!_disposed) unawaited(_publishPresence());
+  }
+
+  @override
+  void noteInteraction([DateTime? at]) {
+    if (_disposed) return;
+    final now = at ?? DateTime.now();
+    final previous = _lastInteractionAt;
+    _lastInteractionAt = now;
+    // До рукопожатия отдельный запрос не нужен: первый heartbeat отправит
+    // отметку вместе с остальным присутствием.
+    if (_sessionId == null) return;
+    // Первое взаимодействие после простоя публикуем сразу: иначе ушедший в
+    // фон компьютер ещё несколько секунд считался бы активным. При
+    // непрерывном вводе ограничиваемся редкими heartbeat.
+    final published = _lastInteractionPublishedAt;
+    if (published != null &&
+        now.difference(published) < _interactionPublishInterval) {
+      return;
+    }
+    if (previous != null &&
+        now.difference(previous) < _interactionPublishInterval) {
+      return;
+    }
+    _lastInteractionPublishedAt = now;
+    unawaited(_sendHeartbeat());
   }
 
   /// Отправляет актуальное присутствие и сразу перечитывает список экранов.
@@ -654,6 +715,9 @@ class RemoteAgentApi
   ///
   /// Возвращается последний принятый снимок. Устаревший ответ не отдаётся
   /// вызывающему даже как результат: применять его к своему состоянию нельзя.
+  /// Снимок с уже применённой ревизией тоже не публикуется в
+  /// [clientSessions]: подписчик, который сам запросил обновление, иначе
+  /// получал бы событие на каждый свой запрос и мог зациклиться.
   @override
   Future<List<ClientSessionView>> refreshClientSessions() async {
     final sequence = ++_clientSessionsRefreshSequence;
@@ -664,9 +728,17 @@ class RemoteAgentApi
     if (revision is num && revision.toInt() < _clientSessionsRevision) {
       return _clientSessions;
     }
-    if (revision is num) _clientSessionsRevision = revision.toInt();
+    var announced = true;
+    if (revision is num) {
+      final value = revision.toInt();
+      // Одинаковая ревизия — тот же снимок. Повторная отправка в поток
+      // заставила бы подписчиков, которые сами же запросили обновление
+      // (например, ProfileNoticeBridge), бесконечно его пересматривать.
+      announced = value > _clientSessionsRevision;
+      _clientSessionsRevision = value;
+    }
     _clientSessions = sessions;
-    if (!_clientSessionChanges.isClosed) {
+    if (announced && !_clientSessionChanges.isClosed) {
       _clientSessionChanges.add(sessions);
     }
     return sessions;
@@ -2085,12 +2157,23 @@ class RemoteAgentApi
       await _ensureSession();
       if (_disposed || _sessionId == null) return;
       final revision = ++_presenceRevision;
+      final interaction = _lastInteractionAt;
       final json = await _send(
         'PUT',
         '/client/session',
         body: {
           'focused': _focused,
           'activeChatId': _activeChatId,
+          // Новые поля отправляем только когда клиент ими пользуется:
+          // старый сервер их проигнорирует, а старые тесты и клиенты не
+          // получают лишних изменений протокола.
+          if (_visibility case final visibility?) 'visibility': visibility.name,
+          if (interaction != null)
+            'idleMs': max(
+              0,
+              DateTime.now().difference(interaction).inMilliseconds,
+            ),
+          if (_visibility != null) 'activeChatAtEnd': _activeChatAtEnd,
           'presenceRevision': revision,
         },
       );
@@ -2935,23 +3018,35 @@ List<ClientSessionView> _clientSessionsFrom(Map<String, dynamic> json) => [
     if (item is Map) _clientSessionView(Map<String, dynamic>.from(item)),
 ];
 
-ClientSessionView _clientSessionView(Map<String, dynamic> item) =>
-    ClientSessionView(
-      id: _string(item, 'id'),
-      deviceId: '${item['deviceId'] ?? ''}',
-      clientId: '${item['clientId'] ?? ''}',
-      clientApp: '${item['clientApp'] ?? ''}',
-      clientVersion: '${item['clientVersion'] ?? ''}',
-      clientBuild: '${item['clientBuild'] ?? ''}',
-      clientPlatform: '${item['clientPlatform'] ?? ''}',
-      activeChatId: item['activeChatId'] as String?,
-      createdAt: _time(item, 'createdAt'),
-      lastSeenAt: _time(item, 'lastSeenAt'),
-      expiresAt: _time(item, 'expiresAt'),
-      focused: item['focused'] == true,
-      online: item['online'] != false,
-      current: item['current'] == true,
-    );
+ClientSessionView _clientSessionView(Map<String, dynamic> item) {
+  final focused = item['focused'] == true;
+  return ClientSessionView(
+    id: _string(item, 'id'),
+    deviceId: '${item['deviceId'] ?? ''}',
+    clientId: '${item['clientId'] ?? ''}',
+    clientApp: '${item['clientApp'] ?? ''}',
+    clientVersion: '${item['clientVersion'] ?? ''}',
+    clientBuild: '${item['clientBuild'] ?? ''}',
+    clientPlatform: '${item['clientPlatform'] ?? ''}',
+    activeChatId: item['activeChatId'] as String?,
+    createdAt: _time(item, 'createdAt'),
+    lastSeenAt: _time(item, 'lastSeenAt'),
+    expiresAt: _time(item, 'expiresAt'),
+    focused: focused,
+    // Старый сервер не присылает `active`: для совместимости фокус остаётся
+    // признаком присутствия, как было до появления idle-детекта.
+    active: item['active'] is bool ? item['active'] as bool : focused,
+    // Старый сервер не адресует уведомления: все экраны остаются целями,
+    // иначе после обновления клиента уведомления пропали бы везде.
+    attention: item['attention'] != false,
+    visibility: ClientVisibility.parse(item['visibility']),
+    lastInteractionAt: _date(item['lastInteractionAt']),
+    // Старый сервер не присылал поле: открытый чат считался видимым целиком.
+    activeChatAtEnd: item['activeChatAtEnd'] != false,
+    online: item['online'] != false,
+    current: item['current'] == true,
+  );
+}
 
 TurnSnapshot _turnSnapshot(Map<String, dynamic> json) => TurnSnapshot(
   text: '${json['text'] ?? ''}',

@@ -177,10 +177,20 @@ final class ClientSession {
   ///
   /// Возвращает true, если видимое присутствие изменилось. Устаревшая ревизия
   /// возвращает false, но сама сессия уже продлена вызывающим кодом.
+  ///
+  /// Время взаимодействия обновляется только заметным шагом вперёд. Heartbeat
+  /// присылает возраст последнего ввода, который при простое растёт вместе с
+  /// часами сервера; без порога каждое такое сообщение считалось бы изменением
+  /// присутствия и рассылало бы снимок всем окнам.
   bool updatePresence({
     bool? focused,
     String? activeChatId,
     bool activeChatIdSpecified = true,
+    String? visibility,
+    bool visibilitySpecified = false,
+    DateTime? lastInteractionAt,
+    bool interactionSpecified = false,
+    bool? activeChatAtEnd,
     int? revision,
   }) {
     if (revision != null && revision <= presenceRevision) return false;
@@ -188,10 +198,27 @@ final class ClientSession {
     final nextActiveChatId = activeChatIdSpecified
         ? activeChatId
         : this.activeChatId;
+    final nextVisibility = visibilitySpecified ? visibility : this.visibility;
+    final nextActiveChatAtEnd = activeChatAtEnd ?? this.activeChatAtEnd;
+    var nextInteraction = this.lastInteractionAt;
+    if (interactionSpecified &&
+        lastInteractionAt != null &&
+        (nextInteraction == null ||
+            lastInteractionAt.difference(nextInteraction) >
+                const Duration(seconds: 2))) {
+      nextInteraction = lastInteractionAt;
+    }
     final changed =
-        nextFocused != this.focused || nextActiveChatId != this.activeChatId;
+        nextFocused != this.focused ||
+        nextActiveChatId != this.activeChatId ||
+        nextVisibility != this.visibility ||
+        nextInteraction != this.lastInteractionAt ||
+        nextActiveChatAtEnd != this.activeChatAtEnd;
     if (focused != null) this.focused = focused;
     if (activeChatIdSpecified) this.activeChatId = activeChatId;
+    if (visibilitySpecified) this.visibility = visibility;
+    this.lastInteractionAt = nextInteraction;
+    this.activeChatAtEnd = nextActiveChatAtEnd;
     if (revision != null) presenceRevision = revision;
     return changed;
   }
@@ -219,6 +246,51 @@ final class ClientSession {
   /// сообщений и снимка хода; карточки, удаление чата и присутствие остаются
   /// глобальными, иначе другое окно не узнало бы о запросе подтверждения.
   Set<String>? chatSubscriptions;
+
+  /// Видимость приложения: `foreground`, `background` или `locked`.
+  ///
+  /// `null` — старый клиент, который присылает только [focused]. Тогда сервер
+  /// сохраняет прежнее поведение и считает фокус достаточным признаком
+  /// присутствия. Новый клиент присылает видимость, чтобы свёрнутое окно не
+  /// выглядело как «пользователь здесь».
+  String? visibility;
+
+  /// Когда пользователь последний раз взаимодействовал с этим экраном.
+  ///
+  /// Сервер хранит время в своих часах: клиент присылает возраст последнего
+  /// взаимодействия, а не абсолютную отметку, чтобы расхождение часов не
+  /// превращало активное устройство в «давно ушедшее» и наоборот.
+  DateTime? lastInteractionAt;
+
+  /// Находится ли открытый чат у нижней границы ленты.
+  ///
+  /// Для старых клиентов и серверов значение `true`: раньше открытый чат
+  /// считался видимым целиком. Новый клиент сообщает, что пользователь
+  /// прокрутил вверх или стоит на разделителе непрочитанного, — тогда
+  /// уведомление о новом сообщении уместно.
+  bool activeChatAtEnd = true;
+
+  /// Видимо ли приложение на экране с учётом совместимости.
+  bool get isForeground =>
+      visibility == null ? focused : visibility == 'foreground';
+
+  /// Время последней активности для выбора активного устройства.
+  ///
+  /// Старый клиент отметки не присылает, поэтому для него используется
+  /// [lastSeenAt]: поведение остаётся прежним, пока клиент не обновится.
+  DateTime get activityAt => lastInteractionAt ?? lastSeenAt;
+
+  /// Считается ли устройство активным к моменту [now].
+  ///
+  /// Нужен недавний ввод и видимое приложение. Одно лишь открытое окно не
+  /// делает устройство активным: иначе забытый на столе десктоп навсегда
+  /// подавлял бы уведомления на телефоне.
+  bool isPresentAt(DateTime now, Duration idleTimeout) {
+    if (isExpiredAt(now) || !isForeground) return false;
+    final interaction = lastInteractionAt;
+    if (interaction == null) return true;
+    return now.difference(interaction) <= idleTimeout;
+  }
 }
 
 /// Причина, по которой сессия не подошла.
@@ -248,6 +320,7 @@ final class ClientSessionRegistry {
     this.ttl = const Duration(seconds: 60),
     this.sweepInterval = const Duration(seconds: 10),
     this.closeGrace = const Duration(seconds: 5),
+    this.activeTimeout = const Duration(minutes: 5),
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now {
     _sweepTimer = Timer.periodic(sweepInterval, (_) => sweep());
@@ -260,6 +333,14 @@ final class ClientSessionRegistry {
   /// сессию. Перезагрузка вкладки успевает снять отметку.
   final Duration closeGrace;
 
+  /// Сколько устройство остаётся «активным» без нового взаимодействия.
+  ///
+  /// Окно может быть открыто и в фокусе, но пользователь давно ушёл. Через
+  /// этот срок устройство перестаёт подавлять уведомления и уступает
+  /// активному телефону. Пять минут — компромисс: короче — уведомления
+  /// приходят от ещё не забытого экрана, длиннее — телефон молчит слишком долго.
+  final Duration activeTimeout;
+
   /// Как часто удалять истёкшие сессии.
   final Duration sweepInterval;
 
@@ -268,6 +349,14 @@ final class ClientSessionRegistry {
   Timer? _sweepTimer;
   final _changes = StreamController<void>.broadcast();
   var _revision = 0;
+
+  /// Последний вычисленный набор активных сессий.
+  ///
+  /// Нужен, чтобы заметить, что пользователь ушёл и истёк idle-таймаут, когда
+  /// нового запроса от клиента нет. Без этого снимок с `active` не обновился
+  /// бы до следующего heartbeat, а отложенная карточка не переехала бы на
+  /// другое устройство.
+  Set<String> _lastPresentSessionIds = const {};
 
   /// Монотонная ревизия снимка присутствия.
   ///
@@ -379,6 +468,11 @@ final class ClientSessionRegistry {
     bool? focused,
     String? activeChatId,
     bool activeChatIdSpecified = true,
+    String? visibility,
+    bool visibilitySpecified = false,
+    DateTime? lastInteractionAt,
+    bool interactionSpecified = false,
+    bool? activeChatAtEnd,
     int? revision,
   }) {
     final session = _sessions[id];
@@ -388,6 +482,11 @@ final class ClientSessionRegistry {
       focused: focused,
       activeChatId: activeChatId,
       activeChatIdSpecified: activeChatIdSpecified,
+      visibility: visibility,
+      visibilitySpecified: visibilitySpecified,
+      lastInteractionAt: lastInteractionAt,
+      interactionSpecified: interactionSpecified,
+      activeChatAtEnd: activeChatAtEnd,
       revision: revision,
     );
     if (changed) _notify();
@@ -500,20 +599,111 @@ final class ClientSessionRegistry {
       final session = _sessions.remove(id);
       if (session != null) _close(session);
     }
-    if (expired.isNotEmpty) _notify();
+    // Устройство могло перестать быть активным без запроса: пользователь
+    // просто ушёл. Смена набора активных сессий — такое же изменение
+    // присутствия, как новый фокус, и о ней нужно сообщить подписчикам.
+    // Адресат уведомлений здесь не сравнивается: при отсутствии активных он
+    // выбирается по `lastSeenAt`, который обновляют heartbeat и SSE-ping, и
+    // сравнение рассылало бы снимок на каждом sweep.
+    final presentIds = _presentSessionIdsAt(at);
+    final presenceChanged = !_sameSessionIds(
+      presentIds,
+      _lastPresentSessionIds,
+    );
+    if (expired.isNotEmpty || presenceChanged) _notify();
   }
 
-  /// Открыт ли чат в активной (focused) сессии. Нужно, чтобы не отправлять
-  /// push туда, где пользователь и так видит событие.
-  bool hasFocusedChat(String? chatId) {
+  /// Ключ устройства для группировки окон и адресации.
+  ///
+  /// Стабильный [ClientSession.clientId] важнее отпечатка заголовков: две
+  /// вкладки одного браузера или два окна одной установки должны считаться
+  /// одним устройством.
+  static String deviceKeyOf(ClientSession session) =>
+      session.clientId.isNotEmpty ? session.clientId : session.deviceId;
+
+  /// Активен ли экран этой сессии к моменту [now].
+  bool isPresent(ClientSession session, DateTime now) =>
+      session.isPresentAt(now, activeTimeout);
+
+  /// Идентификаторы сессий, которые сейчас считаются активными.
+  ///
+  /// `active` в снимке рассчитывается для каждого экрана отдельно, поэтому
+  /// смена ловится по всем сессиям, а не только по выбранному устройству.
+  Set<String> _presentSessionIdsAt(DateTime at) => {
+    for (final session in _sessions.values)
+      if (session.isPresentAt(at, activeTimeout)) session.id,
+  };
+
+  static bool _sameSessionIds(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  /// Сессия, на которую сейчас направлено внимание пользователя.
+  ///
+  /// Сначала выбираются действительно активные экраны, затем — самое свежее
+  /// живое. Второй шаг нужен, когда пользователь свернул всё: push всё равно
+  /// должен прийти на одно устройство, а не на все сразу. Заблокированные
+  /// экраны уступают место остальным, если такие есть.
+  ClientSession? attentionSessionAt(DateTime at) {
+    final live = [
+      for (final session in _sessions.values)
+        if (!session.isExpiredAt(at)) session,
+    ];
+    if (live.isEmpty) return null;
+    final present = [
+      for (final session in live)
+        if (isPresent(session, at)) session,
+    ];
+    if (present.isNotEmpty) {
+      present.sort(_comparePresent);
+      return present.first;
+    }
+    final available = [
+      for (final session in live)
+        if (session.visibility != 'locked') session,
+    ];
+    final pool = available.isEmpty ? live : available;
+    return pool.reduce((a, b) => _compareSeen(a, b) <= 0 ? a : b);
+  }
+
+  /// Ключ устройства, которое должно показывать системные уведомления.
+  ///
+  /// При отсутствии активных экранов это самое свежее живое устройство: ровно
+  /// одно, чтобы событие не всплыло сразу на всех экранах. Свежесть здесь —
+  /// выбор момента, а не повод рассылать снимок: sweep сравнивает только набор
+  /// активных сессий, иначе heartbeat переставлял бы устройства на каждом шаге.
+  String? attentionDeviceKeyAt(DateTime at) {
+    final session = attentionSessionAt(at);
+    return session == null ? null : deviceKeyOf(session);
+  }
+
+  /// Открыт ли чат там, где пользователь действительно его видит.
+  ///
+  /// Одного фокуса недостаточно: окно могло остаться открытым после ухода.
+  /// Дополнительно нужен конец ленты — если пользователь читает старые
+  /// сообщения, уведомление о новом не будет лишним.
+  bool hasVisibleChat(String? chatId) {
     if (chatId == null) return false;
     final at = now;
     return _sessions.values.any(
       (session) =>
-          !session.isExpiredAt(at) &&
-          session.focused &&
-          session.activeChatId == chatId,
+          isPresent(session, at) &&
+          session.activeChatId == chatId &&
+          session.activeChatAtEnd,
     );
+  }
+
+  /// Сортировка активных сессий: недавнее взаимодействие важнее свежести
+  /// heartbeat. При равенстве выигрывает более свежая сессия.
+  static int _comparePresent(ClientSession a, ClientSession b) {
+    final byActivity = b.activityAt.compareTo(a.activityAt);
+    if (byActivity != 0) return byActivity;
+    return _compareSeen(a, b);
+  }
+
+  static int _compareSeen(ClientSession a, ClientSession b) {
+    final bySeen = b.lastSeenAt.compareTo(a.lastSeenAt);
+    if (bySeen != 0) return bySeen;
+    return b.createdAt.compareTo(a.createdAt);
   }
 
   /// Останавливает таймер и закрывает все SSE-соединения реестра.
@@ -528,6 +718,10 @@ final class ClientSessionRegistry {
   }
 
   void _notify() {
+    final at = now;
+    // Снимок и следующий sweep сравнивают именно с этими значениями: так
+    // изменение присутствия не рассылает второй такой же снимок.
+    _lastPresentSessionIds = _presentSessionIdsAt(at);
     _revision++;
     if (!_changes.isClosed) _changes.add(null);
   }

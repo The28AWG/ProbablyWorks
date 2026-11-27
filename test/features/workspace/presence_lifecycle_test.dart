@@ -11,11 +11,14 @@ typedef _PresenceCall = ({
   bool? focused,
   String? activeChatId,
   bool clearActiveChat,
+  ClientVisibility? visibility,
+  bool? activeChatAtEnd,
 });
 
 /// Поддельный API присутствия: запоминает вызовы и ничего не отправляет.
 final class _RecordingSessionApi implements ClientSessionApi {
   final calls = <_PresenceCall>[];
+  var interactions = 0;
 
   _PresenceCall get last => calls.last;
 
@@ -34,13 +37,20 @@ final class _RecordingSessionApi implements ClientSessionApi {
     bool? focused,
     String? activeChatId,
     bool clearActiveChat = false,
+    ClientVisibility? visibility,
+    bool? activeChatAtEnd,
   }) {
     calls.add((
       focused: focused,
       activeChatId: activeChatId,
       clearActiveChat: clearActiveChat,
+      visibility: visibility,
+      activeChatAtEnd: activeChatAtEnd,
     ));
   }
+
+  @override
+  void noteInteraction([DateTime? at]) => interactions++;
 }
 
 /// Маршрут стека: тесту важны только имя и параметры.

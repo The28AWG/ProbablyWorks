@@ -34,6 +34,13 @@ typedef ChatSnoozedProbe = Future<bool> Function(String chatId);
 /// уведомление, чем пропущенный запрос подтверждения.
 typedef NotificationsPausedProbe = Future<bool> Function();
 
+/// Проверяет, должно ли текущее устройство показывать уведомление.
+///
+/// Сервер выбирает одно активное устройство, чтобы событие не всплыло сразу на
+/// всех экранах. Ошибку проверки вызывающий код трактует как «показывать»:
+/// пропустить запрос подтверждения хуже, чем показать лишнее уведомление.
+typedef NotificationTargetProbe = Future<bool> Function();
+
 /// Переводит события удалённого агента в системные уведомления профиля.
 ///
 /// Сервер не умеет показывать системные уведомления GUI, поэтому клиент
@@ -50,6 +57,12 @@ typedef NotificationsPausedProbe = Future<bool> Function();
 ///
 /// Уведомления отложенного чата не показываются и снимаются при откладывании,
 /// а наступивший срок приходит отдельным событием `attentionDue`.
+///
+/// Карточка, скрытая из-за того, что чат уже виден на другом активном
+/// устройстве или внимание сейчас на нём, не теряется: при следующем изменении
+/// присутствия мост проверяет её снова. Так подтверждение, пришедшее, пока
+/// пользователь был у компьютера, появляется на телефоне, как только он его
+/// взял, — без таймеров и без дубля на обоих экранах.
 final class ProfileNoticeBridge {
   ProfileNoticeBridge({
     required this.api,
@@ -58,6 +71,8 @@ final class ProfileNoticeBridge {
     this.isVisible,
     this.isSnoozed,
     this.isPaused,
+    this.isNotificationTarget,
+    this.presenceChanges,
   });
 
   final AgentApi api;
@@ -66,6 +81,12 @@ final class ProfileNoticeBridge {
   final ChatVisibleProbe? isVisible;
   final ChatSnoozedProbe? isSnoozed;
   final NotificationsPausedProbe? isPaused;
+  final NotificationTargetProbe? isNotificationTarget;
+
+  /// Изменения присутствия: повод пересмотреть отложенные карточки.
+  ///
+  /// Значение события не важно; мост ждёт сам факт изменения снимка.
+  final Stream<Object?>? presenceChanges;
 
   /// Карточки, для которых уведомление показано или ещё показывается.
   ///
@@ -74,6 +95,24 @@ final class ProfileNoticeBridge {
   /// показать уже отменённое уведомление после `cancel`. Она же нужна, чтобы
   /// после обрыва связи сверить уведомления с карточками на сервере.
   final _cards = <String, _CardNotice>{};
+
+  /// Карточки, скрытые из-за видимости чата на другом устройстве или потому,
+  /// что внимание сейчас не здесь.
+  ///
+  /// Это не потерянные уведомления, а очередь на эскалацию: когда присутствие
+  /// меняется и внимание переходит на этот экран, карточка показывается. Так
+  /// approval не дублируется на обоих устройствах и не пропадает, если
+  /// пользователь взял телефон.
+  final _deferred = <String, _CardNotice>{};
+
+  /// Идёт проверка отложенных карточек: параллельные события присутствия не
+  /// должны запускать несколько одинаковых запросов и показов.
+  var _evaluatingDeferred = false;
+
+  /// Событие присутствия пришло во время проверки. После текущего прохода
+  /// очередь пересматривается ещё раз, иначе свежая смена внимания потеряется
+  /// до следующего изменения.
+  var _deferredRecheck = false;
 
   /// Чаты, отложенные по последнему снимку входящих. Хранится, чтобы
   /// заметить именно новое откладывание и снять уведомления его карточек.
@@ -159,6 +198,12 @@ final class ProfileNoticeBridge {
     if (source case final ChatReconnectApi reconnect) {
       subscriptions.add(
         reconnect.reconnects.listen((_) => unawaited(_reconcileCards())),
+      );
+    }
+    final presence = presenceChanges;
+    if (presence != null) {
+      subscriptions.add(
+        presence.listen((_) => unawaited(_showDeferredIfTarget())),
       );
     }
     return subscriptions;
@@ -259,12 +304,15 @@ final class ProfileNoticeBridge {
 
   /// Убирает уведомления всех карточек удалённого чата.
   void _cancelChatCards(String chatId) {
-    final noticeIds = [
+    final noticeIds = {
       for (final entry in _cards.entries)
         if (entry.value.chatId == chatId) entry.key,
-    ];
+      for (final entry in _deferred.entries)
+        if (entry.value.chatId == chatId) entry.key,
+    };
     for (final noticeId in noticeIds) {
       _cards.remove(noticeId);
+      _deferred.remove(noticeId);
       unawaited(_cancel(noticeId));
     }
   }
@@ -294,6 +342,7 @@ final class ProfileNoticeBridge {
     };
     if (noticeId == null) return;
     _cards.remove(noticeId);
+    _deferred.remove(noticeId);
     unawaited(_cancel(noticeId));
   }
 
@@ -305,9 +354,9 @@ final class ProfileNoticeBridge {
   /// к неактуальному действию. Ошибка чтения оставляет уведомление: убрать
   /// актуальное хуже, чем показать лишнее.
   Future<void> _reconcileCards() async {
-    if (_cards.isEmpty) return;
+    if (_cards.isEmpty && _deferred.isEmpty) return;
     final byChat = <String, List<String>>{};
-    for (final entry in _cards.entries) {
+    for (final entry in [..._cards.entries, ..._deferred.entries]) {
       byChat.putIfAbsent(entry.value.chatId, () => []).add(entry.key);
     }
     for (final entry in byChat.entries) {
@@ -327,7 +376,8 @@ final class ProfileNoticeBridge {
         continue;
       }
       for (final noticeId in entry.value) {
-        final card = _cards[noticeId];
+        // Карточка могла быть скрыта, но ещё ждать очереди на эскалацию.
+        final card = _cards[noticeId] ?? _deferred[noticeId];
         if (card == null) continue;
         final pending = switch (card.kind) {
           AgentNoticeKind.approvalNeeded => approvals.contains(card.cardId),
@@ -336,6 +386,7 @@ final class ProfileNoticeBridge {
         };
         if (pending) continue;
         _cards.remove(noticeId);
+        _deferred.remove(noticeId);
         await _cancel(noticeId);
       }
     }
@@ -357,6 +408,7 @@ final class ProfileNoticeBridge {
           approvalId: approvalId,
           questionId: questionId,
         );
+    final card = _cardOf(chatId, kind, approvalId, questionId);
     if (_paused || await _pausedElsewhere()) {
       // Карточку не убираем из _cards: решение по ней всё ещё может прийти,
       // а после паузы о накопленном расскажет один дайджест.
@@ -364,12 +416,22 @@ final class ProfileNoticeBridge {
     }
     if (await _visibleElsewhere(chatId)) {
       _cards.remove(resolvedNoticeId);
+      if (card != null) _deferred[resolvedNoticeId] = card;
       return;
     }
     // Отложенный чат намеренно молчит до срока. Напоминание о наступившем
     // сроке сюда не попадает: к этому моменту чат уже не отложен.
     if (kind != AgentNoticeKind.snoozeDue && await _snoozedElsewhere(chatId)) {
       _cards.remove(resolvedNoticeId);
+      _deferred.remove(resolvedNoticeId);
+      return;
+    }
+    // Внимание сейчас на другом устройстве. Карточку не показываем, но
+    // оставляем в очереди: когда пользователь возьмёт этот экран, присутствие
+    // изменится и `_showDeferredIfTarget` покажет её здесь.
+    if (!await _targetHere()) {
+      _cards.remove(resolvedNoticeId);
+      if (card != null) _deferred[resolvedNoticeId] = card;
       return;
     }
     var title = '';
@@ -379,7 +441,15 @@ final class ProfileNoticeBridge {
       // Название не критично: уведомление покажет только действие.
     }
     // Карточку могли закрыть, пока читались presence и название.
-    if (_isCard(kind) && !_cards.containsKey(resolvedNoticeId)) return;
+    if (card != null &&
+        !_cards.containsKey(resolvedNoticeId) &&
+        !_deferred.containsKey(resolvedNoticeId)) {
+      return;
+    }
+    if (card != null) {
+      _cards[resolvedNoticeId] = card;
+      _deferred.remove(resolvedNoticeId);
+    }
     try {
       await notifier.notify(
         kind: kind,
@@ -391,7 +461,7 @@ final class ProfileNoticeBridge {
       );
       // Карточку могли закрыть, пока показывалось уведомление: отмена успела
       // пройти раньше платформенного показа, поэтому убираем его повторно.
-      if (_isCard(kind) && !_cards.containsKey(resolvedNoticeId)) {
+      if (card != null && !_cards.containsKey(resolvedNoticeId)) {
         await _cancel(resolvedNoticeId);
       }
     } on Object catch (error) {
@@ -399,9 +469,70 @@ final class ProfileNoticeBridge {
     }
   }
 
-  static bool _isCard(AgentNoticeKind kind) =>
-      kind == AgentNoticeKind.approvalNeeded ||
-      kind == AgentNoticeKind.questionAsked;
+  /// Показывает отложенные карточки, если внимание перешло на этот экран.
+  ///
+  /// Вызывается на каждое изменение присутствия. Если активным стал телефон,
+  /// подтверждение, пришедшее на забытый десктоп, появится здесь. Повторный
+  /// вызов для уже показанной карточки обновляет её по тому же `noticeId`, а не
+  /// создаёт вторую. Событие, пришедшее во время проверки, не теряется: после
+  /// текущего прохода очередь пересматривается ещё раз.
+  Future<void> _showDeferredIfTarget() async {
+    if (_deferred.isEmpty) return;
+    if (_evaluatingDeferred) {
+      _deferredRecheck = true;
+      return;
+    }
+    _evaluatingDeferred = true;
+    try {
+      do {
+        _deferredRecheck = false;
+        if (_deferred.isEmpty) break;
+        if (!await _targetHere()) {
+          // Пока читали присутствие, внимание могло перейти сюда. Новое
+          // событие уже отмечено флагом — повторяем с более свежим снимком.
+          if (_deferredRecheck) continue;
+          break;
+        }
+        // Решение могли принять на другом устройстве, а событие закрытия —
+        // потеряться в обрыве связи. Перед показом сверяем очередь с сервером.
+        await _reconcileCards();
+        if (_deferred.isEmpty) break;
+        for (final entry in [..._deferred.entries]) {
+          final card = _deferred[entry.key];
+          if (card == null) continue;
+          await _notify(
+            card.chatId,
+            card.kind,
+            noticeId: entry.key,
+            approvalId: card.kind == AgentNoticeKind.approvalNeeded
+                ? card.cardId
+                : null,
+            questionId: card.kind == AgentNoticeKind.questionAsked
+                ? card.cardId
+                : null,
+          );
+        }
+      } while (_deferredRecheck && _deferred.isNotEmpty);
+    } finally {
+      _evaluatingDeferred = false;
+    }
+  }
+
+  /// Описание карточки для отложенной очереди; null — событие не карточка.
+  static _CardNotice? _cardOf(
+    String chatId,
+    AgentNoticeKind kind,
+    String? approvalId,
+    String? questionId,
+  ) {
+    final cardId = switch (kind) {
+      AgentNoticeKind.approvalNeeded => approvalId,
+      AgentNoticeKind.questionAsked => questionId,
+      _ => null,
+    };
+    if (cardId == null || cardId.isEmpty) return null;
+    return _CardNotice(chatId: chatId, kind: kind, cardId: cardId);
+  }
 
   Future<bool> _visibleElsewhere(String chatId) async {
     final probe = isVisible;
@@ -433,6 +564,21 @@ final class ProfileNoticeBridge {
     } on Object catch (error) {
       AppLog.root.fine('pause check before notice failed: $error');
       return false;
+    }
+  }
+
+  /// Проверяет, выбрано ли это устройство для уведомлений.
+  ///
+  /// Без проверки или при ошибке возвращает `true`: лучше лишнее уведомление,
+  /// чем пропущенный запрос подтверждения.
+  Future<bool> _targetHere() async {
+    final probe = isNotificationTarget;
+    if (probe == null) return true;
+    try {
+      return await probe();
+    } on Object catch (error) {
+      AppLog.root.fine('notification target check failed: $error');
+      return true;
     }
   }
 

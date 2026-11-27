@@ -105,9 +105,17 @@ class _FakeApi implements AgentApi, ClientSessionApi {
     bool? focused,
     String? activeChatId,
     bool clearActiveChat = false,
+    ClientVisibility? visibility,
+    bool? activeChatAtEnd,
   }) {
     presenceUpdates++;
   }
+
+  /// Сколько раз экран сообщил о взаимодействии.
+  var interactions = 0;
+
+  @override
+  void noteInteraction([DateTime? at]) => interactions++;
 
   @override
   AgentStatus get status => AgentStatus.online;

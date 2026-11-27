@@ -29,9 +29,10 @@ final class PushAppNotifier implements AppNotifier {
     String? approvalId,
     String? noticeId,
   }) {
-    // Если чат открыт и в фокусе, пользователь уже видит событие. Push нужен
-    // только когда все клиенты свернуты или закрыты.
-    if (_clientSessions?.hasFocusedChat(chatId) ?? false) {
+    // Push не нужен только там, где пользователь действительно смотрит чат:
+    // открытое, но давно забытое окно больше не подавляет уведомление. Конец
+    // ленты тоже важен: при прокрутке вверх новое сообщение ещё не видно.
+    if (_clientSessions?.hasVisibleChat(chatId) ?? false) {
       return Future<void>.value();
     }
     // Общая пауза выключает уведомления на всех устройствах. Событие не

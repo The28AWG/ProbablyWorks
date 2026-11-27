@@ -176,19 +176,237 @@ void main() {
     expect(sessions, hasLength(2));
   });
 
-  test('reports a focused chat and publishes presence changes', () async {
+  test('reports a visible chat and publishes presence changes', () async {
     final session = registry.handshake(info: info);
     final changes = <void>[];
     final sub = registry.changes.listen(changes.add);
     addTearDown(sub.cancel);
 
-    expect(registry.hasFocusedChat('c1'), isFalse);
+    expect(registry.hasVisibleChat('c1'), isFalse);
     registry.updatePresence(session.id, focused: true, activeChatId: 'c1');
     await Future<void>.delayed(Duration.zero);
 
-    expect(registry.hasFocusedChat('c1'), isTrue);
-    expect(registry.hasFocusedChat('c2'), isFalse);
+    expect(registry.hasVisibleChat('c1'), isTrue);
+    expect(registry.hasVisibleChat('c2'), isFalse);
     expect(changes, isNotEmpty);
+  });
+
+  test('an idle window stops suppressing notifications', () {
+    // Долгий TTL: проверяем именно idle-детект, а не истечение сессии.
+    final longLived = ClientSessionRegistry(
+      ttl: const Duration(minutes: 30),
+      sweepInterval: const Duration(hours: 1),
+      now: () => now,
+    );
+    addTearDown(longLived.dispose);
+    final session = longLived.handshake(info: info);
+    longLived.updatePresence(
+      session.id,
+      focused: true,
+      activeChatId: 'c1',
+      visibility: 'foreground',
+      visibilitySpecified: true,
+      lastInteractionAt: now,
+      interactionSpecified: true,
+    );
+
+    expect(longLived.hasVisibleChat('c1'), isTrue);
+
+    // Окно осталось в фокусе, но пользователь давно не взаимодействовал:
+    // сервер не считает его присутствием, хотя heartbeat продлевает сессию.
+    now = now.add(const Duration(minutes: 6));
+    longLived.touch(session.id);
+
+    expect(longLived.hasVisibleChat('c1'), isFalse);
+    expect(longLived.isPresent(session, now), isFalse);
+    // Уведомление всё равно адресуется одному устройству, а не всем.
+    expect(longLived.attentionDeviceKeyAt(now), 'client-a');
+  });
+
+  test('a chat scrolled away from the end does not suppress notifications', () {
+    final session = registry.handshake(info: info);
+    registry.updatePresence(
+      session.id,
+      focused: true,
+      activeChatId: 'c1',
+      activeChatAtEnd: false,
+    );
+
+    expect(registry.hasVisibleChat('c1'), isFalse);
+  });
+
+  test('the most recent interaction selects the attention device', () {
+    final desktop = registry.handshake(info: info);
+    final phone = registry.handshake(info: otherInfo);
+    registry
+      ..updatePresence(
+        desktop.id,
+        focused: true,
+        visibility: 'foreground',
+        visibilitySpecified: true,
+        lastInteractionAt: now.subtract(const Duration(minutes: 3)),
+        interactionSpecified: true,
+        activeChatId: 'c1',
+      )
+      ..updatePresence(
+        phone.id,
+        focused: true,
+        visibility: 'foreground',
+        visibilitySpecified: true,
+        lastInteractionAt: now.subtract(const Duration(seconds: 5)),
+        interactionSpecified: true,
+        activeChatId: 'c1',
+      );
+
+    expect(registry.isPresent(desktop, now), isTrue);
+    expect(registry.isPresent(phone, now), isTrue);
+    expect(registry.attentionDeviceKeyAt(now), 'client-b');
+    // Оба устройства видят один чат, но на телефоне пользователь активен:
+    // push не нужен ни на одно из них.
+    expect(registry.hasVisibleChat('c1'), isTrue);
+  });
+
+  test('a background window does not make its device present', () {
+    final focused = registry.handshake(info: info);
+    final background = registry.handshake(info: info);
+    registry
+      ..updatePresence(
+        focused.id,
+        visibility: 'foreground',
+        visibilitySpecified: true,
+        lastInteractionAt: now,
+        interactionSpecified: true,
+      )
+      ..updatePresence(
+        background.id,
+        visibility: 'background',
+        visibilitySpecified: true,
+        lastInteractionAt: now,
+        interactionSpecified: true,
+      );
+
+    expect(registry.isPresent(focused, now), isTrue);
+    expect(registry.isPresent(background, now), isFalse);
+    // Устройство считается активным, пока активен хотя бы один его экран.
+    expect(registry.attentionDeviceKeyAt(now), 'client-a');
+  });
+
+  test('sweep moves attention when the active device goes idle', () async {
+    final longLived = ClientSessionRegistry(
+      ttl: const Duration(minutes: 30),
+      sweepInterval: const Duration(hours: 1),
+      now: () => now,
+    );
+    addTearDown(longLived.dispose);
+    final desktop = longLived.handshake(info: info);
+    final phone = longLived.handshake(info: otherInfo);
+    longLived
+      ..updatePresence(
+        desktop.id,
+        focused: true,
+        visibility: 'foreground',
+        visibilitySpecified: true,
+        lastInteractionAt: now,
+        interactionSpecified: true,
+      )
+      ..updatePresence(
+        phone.id,
+        focused: false,
+        visibility: 'background',
+        visibilitySpecified: true,
+        lastInteractionAt: now.subtract(const Duration(minutes: 1)),
+        interactionSpecified: true,
+      );
+    expect(longLived.isPresent(desktop, now), isTrue);
+    expect(longLived.isPresent(phone, now), isFalse);
+
+    final changes = <void>[];
+    final sub = longLived.changes.listen(changes.add);
+    addTearDown(sub.cancel);
+
+    // Пользователь ушёл, heartbeat продолжает идти, но взаимодействия нет.
+    now = now.add(const Duration(minutes: 6));
+    longLived.touch(desktop.id);
+    now = now.add(const Duration(seconds: 10));
+    longLived
+      ..touch(phone.id)
+      ..sweep();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(longLived.isPresent(desktop, now), isFalse);
+    expect(longLived.attentionDeviceKeyAt(now), 'client-b');
+    // Смена адресата — повод пересмотреть отложенные карточки на телефоне.
+    expect(changes, isNotEmpty);
+  });
+
+  test(
+    'sweep ignores heartbeat reordering while all screens are idle',
+    () async {
+      final longLived = ClientSessionRegistry(
+        ttl: const Duration(minutes: 30),
+        sweepInterval: const Duration(hours: 1),
+        now: () => now,
+      );
+      addTearDown(longLived.dispose);
+      final desktop = longLived.handshake(info: info);
+      final phone = longLived.handshake(info: otherInfo);
+      longLived
+        ..updatePresence(
+          desktop.id,
+          visibility: 'background',
+          visibilitySpecified: true,
+          lastInteractionAt: now.subtract(const Duration(minutes: 2)),
+          interactionSpecified: true,
+        )
+        ..updatePresence(
+          phone.id,
+          visibility: 'background',
+          visibilitySpecified: true,
+          lastInteractionAt: now.subtract(const Duration(minutes: 3)),
+          interactionSpecified: true,
+        );
+
+      final changes = <void>[];
+      final sub = longLived.changes.listen(changes.add);
+      addTearDown(sub.cancel);
+
+      // Оба экрана в фоне, heartbeat переставляет их по lastSeenAt. Набор
+      // активных сессий не меняется, поэтому снимок рассылать незачем.
+      now = now.add(const Duration(seconds: 10));
+      longLived
+        ..touch(desktop.id)
+        ..sweep();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(changes, isEmpty);
+    },
+  );
+
+  test('a background device yields to the most recent session', () {
+    final desktop = registry.handshake(info: info);
+    final phone = registry.handshake(info: otherInfo);
+    registry.updatePresence(
+      desktop.id,
+      focused: true,
+      visibility: 'background',
+      visibilitySpecified: true,
+      lastInteractionAt: now.subtract(const Duration(minutes: 1)),
+      interactionSpecified: true,
+    );
+    now = now.add(const Duration(seconds: 10));
+    registry.updatePresence(
+      phone.id,
+      focused: false,
+      visibility: 'background',
+      visibilitySpecified: true,
+      lastInteractionAt: now.subtract(const Duration(minutes: 2)),
+      interactionSpecified: true,
+    );
+
+    expect(registry.isPresent(desktop, now), isFalse);
+    expect(registry.isPresent(phone, now), isFalse);
+    // Оба в фоне: уведомление получает самое свежее устройство, а не оба.
+    expect(registry.attentionDeviceKeyAt(now), 'client-b');
   });
 
   test('unchanged presence does not publish another change', () async {
