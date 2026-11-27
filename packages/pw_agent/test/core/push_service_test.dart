@@ -4,8 +4,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
+import 'package:pw_agent/agent/domain/chat_models.dart';
 import 'package:pw_agent/agent/state/domain_change_bus.dart';
 import 'package:pw_agent/agent/state/shared_state.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
+import 'package:pw_agent/core/data/host_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/db/app_database.dart';
 import 'package:pw_agent/core/db/db_connection.dart';
@@ -259,5 +262,48 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('includes the server unread total in the push payload', () async {
+    final now = DateTime.utc(2026, 11, 28, 12);
+    final chats = ChatRepository(db);
+    await HostRepository(db, MemorySecretStore()).ensureLocalHost(now);
+    await chats.saveChat(
+      Chat(
+        id: 'c1',
+        hostId: 'local',
+        title: 'Chat',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await chats.insertMessage(
+      ChatMessage(
+        id: 'm1',
+        chatId: 'c1',
+        seq: 1,
+        role: MessageRole.assistant,
+        text: 'готово',
+        createdAt: now,
+      ),
+    );
+
+    expect(await chats.unreadTotal(), 1);
+    final client = _FakeClient(204);
+    final push = PushService.withClient(settings, secrets, client, null, chats);
+    await push.save(
+      const PushSettings(enabled: true, relayUrl: 'https://relay.test'),
+      token: 'relay-token',
+    );
+    await push.notify(
+      kind: AgentNoticeKind.turnFinished,
+      chatTitle: 'Chat',
+      chatId: 'c1',
+    );
+
+    final body =
+        jsonDecode(client.requests.single.body) as Map<String, dynamic>;
+    // Устройство-получатель ставит на иконку то же число, что видят окна.
+    expect(body['badge'], 1);
   });
 }

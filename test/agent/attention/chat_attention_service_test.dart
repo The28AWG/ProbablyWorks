@@ -71,6 +71,8 @@ void main() {
 
       expect(item('c1').reasons, {ChatAttentionReason.unread});
       expect(item('c1').unreadCount, 1);
+      // Сумма для бейджа считается по всем чатам, а не только по входящим.
+      expect(attention.snapshot.unreadTotal, 1);
 
       unawaited(
         broker.requestApproval(
@@ -286,6 +288,9 @@ void main() {
     await pumpEventQueue();
 
     expect(attention.snapshot.items, isEmpty);
+    // Из входящих чат ушёл, но сообщение всё ещё непрочитано: бейдж
+    // приложения не должен обнуляться из-за напоминания.
+    expect(attention.snapshot.unreadTotal, 1);
     expect(attention.snapshot.snoozed.single.chatId, 'c1');
     expect(
       attention.snapshot.snoozed.single.until.isAtSameMomentAs(until),
@@ -637,4 +642,7 @@ final class _RecordingNotifier implements AppNotifier {
     cancelled.add(noticeId);
     notices.remove(noticeId);
   }
+
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }

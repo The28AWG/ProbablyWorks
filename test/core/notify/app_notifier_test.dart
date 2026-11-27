@@ -1,7 +1,11 @@
 import 'dart:ui' show AppLifecycleState;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/widgets.dart' show Locale;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/notify/app_notifier_plugin.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -180,4 +184,84 @@ void main() {
       expect(notice.body, contains('failed'));
     });
   });
+
+  group('setUnreadCount', () {
+    late _FakeIosNotifications platform;
+    late PluginAppNotifier notifier;
+
+    setUp(() {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      platform = _FakeIosNotifications();
+      FlutterLocalNotificationsPlatform.instance = platform;
+      notifier = PluginAppNotifier.withPlugin(
+        FlutterLocalNotificationsPlugin(),
+        LocaleController()..apply('en'),
+      );
+    });
+
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('does not ask for the badge permission at startup', () async {
+      // Оболочка при открытии всегда применяет нулевой снимок: системный
+      // запрос разрешения здесь недопустим.
+      await notifier.setUnreadCount(0);
+      expect(platform.permissionRequests, 0);
+      expect(platform.shownBadges, [0]);
+
+      await notifier.setUnreadCount(2);
+      expect(platform.permissionRequests, 1);
+      expect(platform.shownBadges, [0, 2]);
+    });
+
+    test('asks for the badge permission once', () async {
+      // Отказ или согласие уже получены: второй раз не спрашиваем.
+      await notifier.setUnreadCount(1);
+      await notifier.setUnreadCount(4);
+      expect(platform.permissionRequests, 1);
+      expect(platform.shownBadges, [1, 4]);
+    });
+  });
+}
+
+/// iOS-платформа плагина, которая запоминает вызовы вместо method channel.
+final class _FakeIosNotifications extends IOSFlutterLocalNotificationsPlugin {
+  var permissionRequests = 0;
+  final shownBadges = <int?>[];
+
+  @override
+  Future<bool?> initialize({
+    required DarwinInitializationSettings settings,
+    DidReceiveNotificationResponseCallback? onDidReceiveNotificationResponse,
+    DidReceiveBackgroundNotificationResponseCallback?
+    onDidReceiveBackgroundNotificationResponse,
+  }) async => true;
+
+  @override
+  Future<NotificationAppLaunchDetails?>
+  getNotificationAppLaunchDetails() async => null;
+
+  @override
+  Future<void> show({
+    required int id,
+    String? title,
+    String? body,
+    DarwinNotificationDetails? notificationDetails,
+    String? payload,
+  }) async {
+    shownBadges.add(notificationDetails?.badgeNumber);
+  }
+
+  @override
+  Future<bool?> requestPermissions({
+    bool sound = false,
+    bool alert = false,
+    bool badge = false,
+    bool provisional = false,
+    bool critical = false,
+    bool carPlay = false,
+    bool providesAppNotificationSettings = false,
+  }) async {
+    permissionRequests++;
+    return true;
+  }
 }

@@ -515,6 +515,7 @@ void main() {
   test('returns the attention snapshot and dismisses one chat', () async {
     backend.attentionValue = AttentionSnapshot(
       revision: 3,
+      unreadTotal: 5,
       items: [
         ChatAttention(
           chatId: 'c1',
@@ -544,6 +545,8 @@ void main() {
     expect(status, HttpStatus.ok);
     final snapshot = jsonDecode(body) as Map;
     expect(snapshot['revision'], 3);
+    // Сумма для бейджа не зависит от состава items: она включает отложенные.
+    expect(snapshot['unreadTotal'], 5);
     final items = snapshot['items'] as List;
     expect(items, hasLength(1));
     expect(items.single['chatId'], 'c1');

@@ -162,6 +162,9 @@ class _RecordingNotifier implements AppNotifier {
     cancelled.add(noticeId);
     events.add('cancel:$noticeId');
   }
+
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }
 
 LlmToolCall _call(String id, String name, String args) =>

@@ -76,6 +76,7 @@ import 'core/data/virtual_host_provisioner.dart' as _i400;
 import 'core/db/app_database.dart' as _i232;
 import 'core/notify/app_notifier.dart' as _i14;
 import 'core/notify/push_service.dart' as _i737;
+import 'core/notify/push_service_module.dart' as _i725;
 import 'core/platform/external_url_opener.dart' as _i1019;
 import 'core/security/secret_store.dart' as _i249;
 import 'core/security/security_audit_service.dart' as _i376;
@@ -105,6 +106,7 @@ extension GetItInjectableX on _i174.GetIt {
   }) async {
     final gh = _i526.GetItHelper(this, environment, environmentFilter);
     final agentCoreModule = _$AgentCoreModule();
+    final pushServiceModule = _$PushServiceModule();
     final draftPersistenceModule = _$DraftPersistenceModule();
     gh.singleton<_i1048.ActiveExecRegistry>(() => _i1048.ActiveExecRegistry());
     gh.singleton<_i378.LiveOutputBus>(() => _i378.LiveOutputBus());
@@ -167,6 +169,14 @@ extension GetItInjectableX on _i174.GetIt {
       ),
     );
     gh.lazySingleton<_i363.PtyLauncher>(() => const _i127.FlutterPtyLauncher());
+    gh.lazySingleton<_i737.PushService>(
+      () => pushServiceModule.pushService(
+        gh<_i384.SettingsRepository>(),
+        gh<_i249.SecretStore>(),
+        gh<_i906.ChatRepository>(),
+        gh<_i206.DomainChangeBus>(),
+      ),
+    );
     gh.lazySingleton<_i262.StartupRecovery>(
       () => _i262.StartupRecovery(
         gh<_i906.ChatRepository>(),
@@ -216,13 +226,6 @@ extension GetItInjectableX on _i174.GetIt {
       () => _i985.HostRepository(
         gh<_i232.AppDatabase>(),
         gh<_i249.SecretStore>(),
-      ),
-    );
-    gh.lazySingleton<_i737.PushService>(
-      () => _i737.PushService(
-        gh<_i384.SettingsRepository>(),
-        gh<_i249.SecretStore>(),
-        gh<_i206.DomainChangeBus>(),
       ),
     );
     gh.lazySingleton<_i1055.WorkspaceContextLoader>(
@@ -490,5 +493,7 @@ extension GetItInjectableX on _i174.GetIt {
 }
 
 class _$AgentCoreModule extends _i200.AgentCoreModule {}
+
+class _$PushServiceModule extends _i725.PushServiceModule {}
 
 class _$DraftPersistenceModule extends _i855.DraftPersistenceModule {}

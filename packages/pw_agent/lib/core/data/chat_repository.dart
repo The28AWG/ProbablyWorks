@@ -532,6 +532,24 @@ class ChatRepository implements DraftPersistence {
 
   // ---- read state --------------------------------------------------------
 
+  /// Непрочитанное по всем основным чатам.
+  ///
+  /// Нужно push-уведомлениям: устройство, которое получит событие, должно
+  /// обновить бейдж тем же числом, что и открытые окна, а не своим локальным
+  /// счётчиком. Сумма берётся из уже поддерживаемого `unread_count` строки
+  /// прочтения, поэтому не пересчитывает историю.
+  Future<int> unreadTotal() async {
+    final unread = _readTable.unreadCount.sum();
+    final query =
+        _db.selectOnly(_readTable).join([
+            innerJoin(_chatsTable, _chatsTable.id.equalsExp(_readTable.chatId)),
+          ])
+          ..addColumns([unread])
+          ..where(_chatsTable.kind.equals(ChatKind.main.name));
+    final row = await query.getSingle();
+    return row.read(unread) ?? 0;
+  }
+
   /// Сдвигает общий курсор прочтения вперёд и возвращает чат с новым unread.
   ///
   /// [seq] ограничивается серверным `lastMessageSeq`: клиент не может

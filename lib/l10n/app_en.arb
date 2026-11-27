@@ -3319,6 +3319,12 @@
   },
   "notifyGroupSummaryBody": "Open the chat to review them.",
   "@notifyGroupSummaryBody": {"description": "Body of the grouped notification summary."},
+  "notifyUnreadChannelName": "Unread messages",
+  "@notifyUnreadChannelName": {"description": "Name of the Android notification channel that carries the unread badge. Visible in system notification settings."},
+  "notifyUnreadChannelDescription": "Shows the number of unread messages on the app icon.",
+  "@notifyUnreadChannelDescription": {"description": "Description of the Android notification channel that carries the unread badge. The badge shows the total number of unread messages."},
+  "notifyUnreadSummaryBody": "Open ProbablyWorks to read them.",
+  "@notifyUnreadSummaryBody": {"description": "Body of the silent tray card that keeps the unread count on the app icon on Android."},
   "notifyQuestionBody": "Answer the agent's question so it can continue.",
   "@notifyQuestionBody": {
     "description": "System notification body when the agent waits for an answer to its question."

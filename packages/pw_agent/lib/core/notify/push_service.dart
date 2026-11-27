@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:injectable/injectable.dart';
 import 'package:pw_agent/agent/api/agent_api.dart';
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/agent/state/domain_change_bus.dart';
 import 'package:pw_agent/agent/state/shared_state.dart';
+import 'package:pw_agent/core/data/chat_repository.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
@@ -16,9 +16,12 @@ import 'package:pw_agent/core/security/secret_store.dart';
 ///
 /// Relay получает обычный JSON и сам решает, как доставить его в FCM/APNs
 /// или другой транспорт. Без URL и токена сервис не делает сетевых запросов.
-@lazySingleton
+///
+/// Регистрируется модулем `PushServiceModule`: конструктору нужен
+/// HTTP-клиент, который создаётся внутри, и необязательный шинный поток
+/// изменений.
 final class PushService {
-  PushService(this._settings, this._secrets, [this._changes])
+  PushService(this._settings, this._secrets, this._chats, {this._changes})
     : _client = http.Client();
 
   /// Конструктор для тестов с подменённым HTTP-клиентом.
@@ -27,12 +30,20 @@ final class PushService {
     this._secrets,
     this._client, [
     this._changes,
+    this._chats,
   ]);
 
   final SettingsRepository _settings;
   final SecretStore _secrets;
   final http.Client _client;
   final DomainChangeBus? _changes;
+
+  /// Источник общего числа непрочитанного для payload.
+  ///
+  /// Необязателен: узкие тесты и сборки без базы отправляют push без бейджа,
+  /// как раньше. Решение «сколько непрочитанного» принимает агент, а relay
+  /// остаётся тупым транспортом.
+  final ChatRepository? _chats;
 
   static const _settingsKey = 'push.settings';
   static const _tokenKey = 'push.relayToken';
@@ -190,6 +201,21 @@ final class PushService {
     return token != null && token.isNotEmpty;
   }
 
+  /// Общее непрочитанное или null, если счётчика нет или он недоступен.
+  ///
+  /// Ошибка чтения не должна отменять уведомление: пропущенный approve хуже
+  /// устаревшего бейджа. Следующая доставка или открытое окно исправят число.
+  Future<int?> _unreadTotal() async {
+    final chats = _chats;
+    if (chats == null) return null;
+    try {
+      return await chats.unreadTotal();
+    } on Object catch (error) {
+      AppLog.root.fine('push badge count unavailable: $error');
+      return null;
+    }
+  }
+
   Future<void> _send(
     PushSettings settings, {
     required AgentNoticeKind kind,
@@ -209,6 +235,10 @@ final class PushService {
     );
     final request = _request(settings, token, {
       'event': kind.name,
+      // Бейдж на устройстве-получателе должен совпасть с открытыми окнами,
+      // поэтому сумму считает агент. null — счётчика нет (узкая сборка или
+      // ошибка базы): relay не должен угадывать число.
+      'badge': await _unreadTotal(),
       'title': title,
       'detail': detail,
       'profileId': profileId,

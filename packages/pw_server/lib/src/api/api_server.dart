@@ -3567,6 +3567,10 @@ Map<String, Object?> _searchHitJson(SearchHit hit) => {
 /// не разбирало один и тот же объект двумя способами.
 Map<String, Object?> _attentionJson(AttentionSnapshot snapshot) => {
   'revision': snapshot.revision,
+  // Готовое число для бейджа приложения. Считается по всем чатам, а не по
+  // `items`: отложенный чат не требует внимания, но остаётся непрочитанным.
+  // Поле присутствует всегда, даже с null, — старый сервер его не присылает.
+  'unreadTotal': snapshot.unreadTotal,
   'items': [
     for (final item in snapshot.items)
       {

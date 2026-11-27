@@ -185,12 +185,26 @@ final class AttentionSnapshot extends Equatable {
     required this.items,
     this.snoozed = const [],
     this.pause,
+    this.unreadTotal,
   });
 
   static const empty = AttentionSnapshot(revision: 0, items: []);
 
   final int revision;
   final List<ChatAttention> items;
+
+  /// Непрочитанное по всем чатам профиля, включая отложенные.
+  ///
+  /// Это готовое число для бейджа приложения и вкладки браузера: его считает
+  /// сервер, поэтому телефон и десктоп не расходятся, а прочтение в одном
+  /// окне уменьшает бейдж во всех остальных. `null` означает, что снимок
+  /// пришёл от старого сервера, который такого поля не отдаёт; тогда клиент
+  /// считает сумму по снимку списка чатов.
+  ///
+  /// В отличие от [unreadCount], поле не зависит от состава [items]: чат со
+  /// сроком «напомнить позже» не требует внимания, но его непрочитанные
+  /// сообщения всё равно остаются непрочитанными.
+  final int? unreadTotal;
 
   /// Активные напоминания. Чат может быть отложен, даже если ничего не ждёт
   /// решения: новые сообщения до срока останутся незамеченными намеренно.
@@ -217,8 +231,12 @@ final class AttentionSnapshot extends Equatable {
   int get actionableCount =>
       items.fold(0, (sum, item) => sum + item.actionableCount);
 
+  /// Непрочитанное только по чатам, попавшим во входящие.
+  ///
+  /// Для бейджа приложения используйте [unreadTotal]: отложенные чаты сюда
+  /// не попадают, хотя их сообщения остаются непрочитанными.
   int get unreadCount => items.fold(0, (sum, item) => sum + item.unreadCount);
 
   @override
-  List<Object?> get props => [revision, items, snoozed, pause];
+  List<Object?> get props => [revision, items, snoozed, pause, unreadTotal];
 }

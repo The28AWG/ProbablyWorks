@@ -3190,6 +3190,11 @@ AttentionSnapshot _attentionSnapshotFrom(Map<String, dynamic> json) =>
       pause: json['pause'] is Map
           ? _notificationPause(Map<String, dynamic>.from(json['pause'] as Map))
           : null,
+      // Старый сервер не присылает `unreadTotal`: null означает «считай
+      // сумму сам по снимку списка чатов», а не «непрочитанных нет».
+      unreadTotal: json['unreadTotal'] is num
+          ? (json['unreadTotal'] as num).toInt()
+          : null,
     );
 
 /// Пауза уведомлений из снимка входящих. Битое поле читается как отсутствие

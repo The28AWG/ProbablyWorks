@@ -239,6 +239,32 @@ void main() {
     // Событие в полёте даёт один трейлинг-запрос, а не запрос на каждый вызов.
     expect(api.digestCalls, 2);
   });
+
+  test('prefers the server unread total and falls back to the chat list', () {
+    final chat = Chat(
+      id: 'c1',
+      hostId: 'local',
+      title: 'Chat',
+      createdAt: DateTime.utc(2026, 11, 28),
+      updatedAt: DateTime.utc(2026, 11, 28),
+      lastReadSeq: 0,
+      lastMessageSeq: 3,
+      unreadCount: 3,
+    );
+    final fallback = ChatListState(chats: [chat]);
+    expect(fallback.unreadCount, 3);
+
+    // Новый сервер присылает готовую сумму: она включает отложенные чаты и
+    // поэтому важнее суммы по загруженному списку.
+    final server = fallback.copyWith(
+      attention: const AttentionSnapshot(
+        revision: 1,
+        items: [],
+        unreadTotal: 7,
+      ),
+    );
+    expect(server.unreadCount, 7);
+  });
 }
 
 AttentionSnapshot _snapshot({required int revision, required int unread}) =>

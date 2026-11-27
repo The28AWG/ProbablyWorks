@@ -778,4 +778,7 @@ final class _RecordingNotifier implements AppNotifier {
     cancelled.add(noticeId);
     events.add('cancel:$noticeId');
   }
+
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }

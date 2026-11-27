@@ -62,4 +62,9 @@ final class PushAppNotifier implements AppNotifier {
   /// следующего действия с карточкой.
   @override
   Future<void> cancel(String noticeId) => _service().cancel(noticeId);
+
+  /// Бейдж рисует устройство-получатель по полю `badge` в push payload.
+  /// У сервера нет своей иконки, поэтому здесь обновлять нечего.
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }

@@ -216,6 +216,9 @@ final class _FakeNotifier implements AppNotifier {
 
   @override
   Future<void> cancel(String noticeId) => Future<void>.value();
+
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }
 
 final class _FakeMcpApi implements McpApi {

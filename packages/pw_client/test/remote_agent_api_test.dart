@@ -614,6 +614,7 @@ void main() {
   test('reads attention and applies an SSE snapshot', () async {
     backend.attentionValue = AttentionSnapshot(
       revision: 2,
+      unreadTotal: 7,
       items: [
         ChatAttention(
           chatId: 'c1',
@@ -633,6 +634,7 @@ void main() {
     );
     final loaded = await remote.attention();
     expect(loaded.revision, 2);
+    expect(loaded.unreadTotal, 7);
     expect(loaded.items.single.reasons, {ChatAttentionReason.failed});
 
     await remote.startEvents();

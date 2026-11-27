@@ -18,4 +18,8 @@ final class NoopAppNotifier implements AppNotifier {
 
   @override
   Future<void> cancel(String noticeId) => Future<void>.value();
+
+  /// У демона нет ни иконки, ни вкладки браузера.
+  @override
+  Future<void> setUnreadCount(int count) => Future<void>.value();
 }

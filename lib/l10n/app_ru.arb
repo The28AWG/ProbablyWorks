@@ -3319,6 +3319,12 @@
   },
   "notifyGroupSummaryBody": "Откройте чат, чтобы разобрать их.",
   "@notifyGroupSummaryBody": {"description": "Текст сводки сгруппированных уведомлений."},
+  "notifyUnreadChannelName": "Непрочитанные сообщения",
+  "@notifyUnreadChannelName": {"description": "Название канала уведомлений Android, который держит бейдж непрочитанного. Видно в настройках уведомлений системы."},
+  "notifyUnreadChannelDescription": "Показывает число непрочитанных сообщений на иконке приложения.",
+  "@notifyUnreadChannelDescription": {"description": "Описание канала уведомлений Android, который держит бейдж непрочитанного. Бейдж показывает суммарное число непрочитанных сообщений."},
+  "notifyUnreadSummaryBody": "Откройте ProbablyWorks, чтобы прочитать их.",
+  "@notifyUnreadSummaryBody": {"description": "Текст тихой карточки в трее, которая держит число непрочитанного на иконке приложения в Android."},
   "notifyQuestionBody": "Ответьте на вопрос агента, чтобы он продолжил работу.",
   "@notifyQuestionBody": {
     "description": "Текст системного уведомления, когда агент ждёт ответа на свой вопрос."

@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
-import 'package:flutter/scheduler.dart';
+import 'package:flutter/scheduler.dart'
+    show AppLifecycleState, SchedulerBinding;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
@@ -106,8 +107,12 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
   /// надёжный счётчик для заголовка.
   final _groups = NoticeGroupTracker();
 
+  Future<void>? _badgePermission;
+
   static const _channelId = 'agent_events';
   static const _channelName = 'Agent events';
+  static const _unreadChannelId = 'unread_badge';
+  static const _unreadTag = 'unread-badge';
   static const _approvalCategory = 'agent_approval';
   static const _questionCategory = 'agent_question';
   static const _actionApprove = 'approve';
@@ -268,6 +273,149 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
     } on Object catch (error) {
       _log.fine('notification cancel skipped: $error');
     }
+  }
+
+  /// Обновляет бейдж приложения и трея.
+  ///
+  /// Android показывает число на иконке через активное уведомление: отдельного
+  /// API у плагина нет. Поэтому при непрочитанном появляется тихая
+  /// несбрасываемая карточка со счётчиком, а при нуле она снимается. iOS и
+  /// macOS получают badge без видимой карточки: уведомление нужно только как
+  /// носитель `badgeNumber`.
+  ///
+  /// Разрешение спрашивается лениво и один раз, при первом непрочитанном;
+  /// отказ не ломает чат и не повторяется на каждом сообщении. Нулевой счётчик
+  /// только снимает бейдж: системный запрос без непрочитанного не появляется.
+  @override
+  Future<void> setUnreadCount(int count) async {
+    if (count < 0) return;
+    try {
+      final ready = _ready ??= _initialize();
+      if (!await ready) return;
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          await _setAndroidBadge(count);
+        case TargetPlatform.iOS:
+          await _setDarwinBadge(count, macOS: false);
+        case TargetPlatform.macOS:
+          await _setDarwinBadge(count, macOS: true);
+        case TargetPlatform.linux ||
+            TargetPlatform.windows ||
+            TargetPlatform.fuchsia:
+          // На Linux и Windows стандартного бейджа иконки нет: не выдаём
+          // системное уведомление только ради числа.
+          return;
+      }
+    } on Object catch (error) {
+      _log.fine('badge update skipped: $error');
+    }
+  }
+
+  /// Счётчик на иконке Android через тихую карточку в трее.
+  ///
+  /// Карточка нужна платформе: лаунчер считает бейдж по активным
+  /// уведомлениям. Она не звучит, не вибрирует и не обновляется по времени,
+  /// поэтому не мешает карточкам подтверждений.
+  Future<void> _setAndroidBadge(int count) async {
+    final id = notificationPluginId(_unreadTag);
+    if (count == 0) {
+      await _plugin.cancel(id: id, tag: _unreadTag);
+      return;
+    }
+    await (_badgePermission ??= _requestBadgePermission());
+    final strings = _strings();
+    await _plugin.show(
+      id: id,
+      title: strings.chatUnreadCount(count),
+      body: strings.notifyUnreadSummaryBody,
+      payload: null,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _unreadChannelId,
+          strings.notifyUnreadChannelName,
+          channelDescription: strings.notifyUnreadChannelDescription,
+          importance: Importance.low,
+          priority: Priority.low,
+          channelShowBadge: true,
+          playSound: false,
+          enableVibration: false,
+          silent: true,
+          onlyAlertOnce: true,
+          ongoing: true,
+          autoCancel: false,
+          showWhen: false,
+          number: count,
+          tag: _unreadTag,
+          styleInformation: BigTextStyleInformation(
+            strings.notifyUnreadSummaryBody,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Бейдж иконки iOS/macOS без видимой карточки.
+  ///
+  /// `presentList`/`presentBanner` выключены, поэтому уведомление не попадает
+  /// в центр уведомлений: оно только переносит `badgeNumber`. Ноль снимает
+  /// бейдж. Разрешение для нуля не запрашивается: первый счётчик при открытии
+  /// оболочки всегда нулевой, и системный запрос не должен появляться без
+  /// непрочитанного. Если разрешение выдано в прошлой сессии, показ нуля
+  /// по-прежнему снимает оставшийся бейдж; без разрешения он просто не
+  /// доставляется.
+  Future<void> _setDarwinBadge(int count, {required bool macOS}) async {
+    if (count > 0) {
+      await (_badgePermission ??= _requestBadgePermission());
+    }
+    await _plugin.show(
+      id: notificationPluginId(_unreadTag),
+      title: null,
+      body: null,
+      payload: null,
+      notificationDetails: NotificationDetails(
+        iOS: macOS
+            ? null
+            : DarwinNotificationDetails(
+                badgeNumber: count,
+                presentAlert: false,
+                presentBadge: true,
+                presentSound: false,
+                presentBanner: false,
+                presentList: false,
+                threadIdentifier: _unreadTag,
+              ),
+        macOS: macOS
+            ? DarwinNotificationDetails(
+                badgeNumber: count,
+                presentAlert: false,
+                presentBadge: true,
+                presentSound: false,
+                presentBanner: false,
+                presentList: false,
+                threadIdentifier: _unreadTag,
+              )
+            : null,
+      ),
+    );
+  }
+
+  /// Разрешение только на бейдж: обычные уведомления остаются на своём пороге.
+  Future<void> _requestBadgePermission() async {
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >()
+        ?.requestPermissions(alert: false, badge: true, sound: false);
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >()
+        ?.requestPermissions(alert: false, badge: true, sound: false);
   }
 
   /// Убирает уведомление по устойчивому ключу.

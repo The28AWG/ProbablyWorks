@@ -2,6 +2,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:probably_works/app/di/injection.dart';
+import 'package:probably_works/app/notifications/unread_badge_sync.dart';
 import 'package:probably_works/app/profiles/agent_profile.dart';
 import 'package:probably_works/app/profiles/profile_scope.dart';
 import 'package:probably_works/app/profiles/profile_service.dart';
@@ -74,12 +75,14 @@ class WorkspacePage extends StatelessWidget {
             ),
           ),
         ],
-        child: AutoTabsRouter(
-          routes: workspaceTabRoutes(agentApi.status),
-          builder: (context, child) => PresenceLifecycle(
-            tabs: AutoTabsRouter.of(context),
-            sessionApi: _sessionApi(agentApi),
-            child: CommandPaletteHost(child: WorkspaceShell(child: child)),
+        child: UnreadBadgeSync(
+          child: AutoTabsRouter(
+            routes: workspaceTabRoutes(agentApi.status),
+            builder: (context, child) => PresenceLifecycle(
+              tabs: AutoTabsRouter.of(context),
+              sessionApi: _sessionApi(agentApi),
+              child: CommandPaletteHost(child: WorkspaceShell(child: child)),
+            ),
           ),
         ),
       ),

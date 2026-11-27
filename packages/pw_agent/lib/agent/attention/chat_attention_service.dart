@@ -117,6 +117,7 @@ final class ChatAttentionService {
   List<ChatAttention> _items = const [];
   List<ChatSnooze> _snoozed = const [];
   NotificationPause? _pause;
+  var _unreadTotal = 0;
   var _revision = 0;
   var _disposed = false;
 
@@ -125,6 +126,7 @@ final class ChatAttentionService {
     items: _items,
     snoozed: _snoozed,
     pause: _pause,
+    unreadTotal: _unreadTotal,
   );
 
   /// Материализует ленивый сервис: подписки и таймер сроков начинают работать
@@ -321,6 +323,14 @@ final class ChatAttentionService {
 
     final now = _now();
     final items = _buildItems(chats, states, snoozes);
+    // Сумма по всем чатам, а не по items: отложенный чат не требует внимания,
+    // но его непрочитанные сообщения всё равно должны быть на бейдже. Список
+    // чатов уже отфильтрован по основным чатам, поэтому субагенты и служебные
+    // записи сюда не попадают.
+    final unreadTotal = chats.fold<int>(
+      0,
+      (sum, chat) => sum + chat.unreadCount,
+    );
     final activeSnoozes = [
       for (final snooze in snoozes)
         if (snooze.isActiveAt(now)) snooze,
@@ -341,12 +351,14 @@ final class ChatAttentionService {
     }
     if (_sameItems(_items, items) &&
         _sameSnoozes(_snoozed, activeSnoozes) &&
-        _samePause(_pause, activePause)) {
+        _samePause(_pause, activePause) &&
+        _unreadTotal == unreadTotal) {
       return;
     }
     _items = List.unmodifiable(items);
     _snoozed = List.unmodifiable(activeSnoozes);
     _pause = activePause;
+    _unreadTotal = unreadTotal;
     _revision++;
     if (!_changes.isClosed) {
       _changes.add(
@@ -355,6 +367,7 @@ final class ChatAttentionService {
           items: _items,
           snoozed: _snoozed,
           pause: _pause,
+          unreadTotal: _unreadTotal,
         ),
       );
     }
