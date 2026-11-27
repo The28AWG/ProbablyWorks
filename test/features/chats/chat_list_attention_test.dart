@@ -406,7 +406,8 @@ final class _FakeAgent
   }
 
   @override
-  Future<void> answerQuestion(String id, String? text) => Future<void>.value();
+  Future<void> answerQuestion(String id, String? text, {String? answerId}) =>
+      Future<void>.value();
 
   @override
   Future<void> resolveEditFileChanges(

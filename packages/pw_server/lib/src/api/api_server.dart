@@ -2913,7 +2913,16 @@ final class ApiServer {
   Future<void> _answer(HttpRequest request, String id) async {
     final body = await _body(request);
     final value = body['answer'];
-    await _backend.answerQuestion(id, value is String ? value : null);
+    final answerId = body['answerId'] is String
+        ? body['answerId'] as String
+        : null;
+    // Ключ идемпотентности приходит только из действий уведомлений.
+    // Обычный ответ из карточки обходится без него.
+    await _backend.answerQuestion(
+      id,
+      value is String ? value : null,
+      answerId: answerId,
+    );
     _json(request.response, HttpStatus.noContent, {});
   }
 

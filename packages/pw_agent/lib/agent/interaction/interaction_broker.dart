@@ -200,6 +200,19 @@ class InteractionBroker {
   final Map<String, UserQuestion> _pendingQuestions = {};
   final Map<String, EditFileChangesRequest> _pendingEditFileChanges = {};
 
+  /// Ключи действий, уже применивших ответ к вопросу. Повторная доставка
+  /// действия из уведомления несёт тот же [answerId] и не должна будить агента
+  /// второй раз, даже если карточка уже удалена из очереди.
+  ///
+  /// Значение — набор ключей одного вопроса: дубликатом считается совпадение
+  /// ключа, а не самого id вопроса. Запись живёт до `askUser` с тем же id:
+  /// карточку могли показать снова после перезапуска или открытия чата, и
+  /// новый ответ не должен блокироваться старым.
+  final Map<String, Set<String>> _answeredActions = {};
+
+  /// Сколько вопросов помнить для защиты от повторов.
+  static const _maxAnsweredQuestions = 256;
+
   /// Разрешения «для хода» и «для чата». Ключ — точная пара инструмента и
   /// текста карточки; широких шаблонов здесь нет.
   final Map<String, Set<String>> _turnGrants = {};
@@ -302,6 +315,10 @@ class InteractionBroker {
   void clearTurnGrants(String turnId) => _turnGrants.remove(turnId);
 
   Future<String?> askUser(String chatId, String id, String text) {
+    // Вопрос могли показать снова после перезапуска или повторного открытия
+    // чата: старые ключи действий на тот же run id больше не должны
+    // блокировать новый ответ.
+    _answeredActions.remove(id);
     final completer = Completer<String?>();
     final question = UserQuestion(id: id, chatId: chatId, text: text);
     _answers[id] = completer;
@@ -310,14 +327,40 @@ class InteractionBroker {
     return completer.future;
   }
 
-  void answer(String questionId, String? text) {
+  /// Отвечает на вопрос. Повторная доставка того же действия ничего не делает.
+  ///
+  /// [answerId] — ключ идемпотентности действия из уведомления. Повтор с тем
+  /// же ключом не создаёт второй ответ и не будит агента второй раз; ключ
+  /// хранится, чтобы повторная доставка оставалась безопасной и после того,
+  /// как карточка исчезла из очереди. Ответ без ключа от повторного действия
+  /// не отличить: его отсекает отсутствие вопроса в очереди.
+  void answer(String questionId, String? text, {String? answerId}) {
+    final answered = _answeredActions[questionId];
+    // Ключ проверяется до очереди: повторная доставка уже применённого
+    // действия не должна отвечать на вопрос повторно.
+    if (answered != null && (answerId == null || answered.contains(answerId))) {
+      return;
+    }
     final question = _pendingQuestions.remove(questionId);
     final completer = _answers.remove(questionId);
     if (completer != null && !completer.isCompleted) completer.complete(text);
     if (question != null) {
+      if (answerId != null) _rememberAnsweredAction(questionId, answerId);
       _resolutions.add(
         QuestionResolved(chatId: question.chatId, questionId: questionId),
       );
+    }
+  }
+
+  /// Запоминает ключ уже применённого действия, ограничивая память.
+  ///
+  /// Окно повторов невелико: действие из уведомления доставляется один раз,
+  /// максимум с короткой задержкой. Держать историю за весь срок жизни демона
+  /// незачем, иначе она росла бы вместе с числом вопросов.
+  void _rememberAnsweredAction(String questionId, String answerId) {
+    (_answeredActions[questionId] ??= <String>{}).add(answerId);
+    while (_answeredActions.length > _maxAnsweredQuestions) {
+      _answeredActions.remove(_answeredActions.keys.first);
     }
   }
 

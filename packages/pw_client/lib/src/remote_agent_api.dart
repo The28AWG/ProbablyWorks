@@ -1305,9 +1305,19 @@ class RemoteAgentApi
     if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);
   }
 
+  /// [answerId] приходит из действия системного уведомления; сервер по нему
+  /// отличает повторную доставку от нового ответа.
   @override
-  Future<void> answerQuestion(String id, String? text) async {
-    await _send('PUT', '/questions/$id/answer', body: {'answer': text});
+  Future<void> answerQuestion(
+    String id,
+    String? text, {
+    String? answerId,
+  }) async {
+    await _send(
+      'PUT',
+      '/questions/$id/answer',
+      body: {'answer': text, 'answerId': answerId},
+    );
     _questionsById.remove(id);
     final chatId = _questionChats.remove(id);
     if (chatId != null && !_hasPending(chatId)) _waiting.remove(chatId);

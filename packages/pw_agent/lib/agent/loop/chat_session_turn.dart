@@ -373,6 +373,7 @@ extension _ChatSessionTurn on ChatSession {
         detail: detail,
         chatId: chatId,
         approvalId: approvalId,
+        questionId: questionId,
         noticeId: id,
       );
       // Карточку могли закрыть, пока показывалось уведомление: отмена успела

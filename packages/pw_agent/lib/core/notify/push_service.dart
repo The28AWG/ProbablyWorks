@@ -135,6 +135,11 @@ final class PushService {
   }
 
   /// Отправляет уведомление, если push настроен. Ошибки не ломают ход агента.
+  ///
+  /// [noticeId] уходит в relay вместе с остальными полями: по нему устройство
+  /// обновляет уже показанное уведомление, а [cancel] убирает его. [groupKey]
+  /// объединяет карточки одного чата и типа в одну группу, `collapseKey`
+  /// оставляет в группе одну строку на карточку при повторной доставке.
   Future<void> notify({
     required AgentNoticeKind kind,
     required String chatTitle,
@@ -142,6 +147,8 @@ final class PushService {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
+    String? noticeId,
   }) async {
     final settings = await load();
     if (!settings.configured) return;
@@ -154,9 +161,27 @@ final class PushService {
         profileId: profileId,
         chatId: chatId,
         approvalId: approvalId,
+        questionId: questionId,
+        noticeId: noticeId,
       );
     } on Object catch (error) {
       AppLog.root.warning('push delivery failed', error);
+    }
+  }
+
+  /// Убирает уведомление из доставленных, если push настроен.
+  ///
+  /// Отмена адресуется по [noticeId], а не по тексту или позиции: карточку
+  /// могли закрыть на другом устройстве, и relay должен снять ровно ту строку,
+  /// которую показал. Ошибка отмены не ломает ход агента: устаревшее
+  /// уведомление просто останется до следующего действия.
+  Future<void> cancel(String noticeId, {String? profileId}) async {
+    final settings = await load();
+    if (!settings.configured) return;
+    try {
+      await _sendCancel(settings, noticeId: noticeId, profileId: profileId);
+    } on Object catch (error) {
+      AppLog.root.warning('push cancel failed', error);
     }
   }
 
@@ -173,7 +198,62 @@ final class PushService {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
+    String? noticeId,
   }) async {
+    final token = await _readToken();
+    final groupKey = agentNoticeGroupKey(
+      kind: kind,
+      scope: profileId,
+      chatId: chatId,
+    );
+    final request = _request(settings, token, {
+      'event': kind.name,
+      'title': title,
+      'detail': detail,
+      'profileId': profileId,
+      'chatId': chatId,
+      'approvalId': approvalId,
+      'questionId': questionId,
+      // Ключ ответа детерминирован для вопроса: повтор действия из
+      // уведомления не создаст второй ответ.
+      'answerId': questionId == null ? null : agentNoticeAnswerId(questionId),
+      'noticeId': noticeId,
+      'groupKey': groupKey,
+      // Одна карточка — одна строка группы: повторная доставка того же
+      // события обновляет её, а не добавляет вторую.
+      'collapseKey': noticeId,
+      'ttlSeconds': 3600,
+      'priority': _priorityOf(kind),
+      'actions': _actionsOf(kind),
+      'replyInput': kind == AgentNoticeKind.questionAsked,
+      'sentAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    await _deliver(request);
+  }
+
+  /// Отправляет отмену отдельным событием `cancel`.
+  ///
+  /// Контракт relay намеренно не зависит от устройства: агент говорит «сними
+  /// уведомление с ключом noticeId», а relay доставляет отмену туда же, куда
+  /// ушло исходное событие. Политика выбора устройства остаётся на агенте.
+  Future<void> _sendCancel(
+    PushSettings settings, {
+    required String noticeId,
+    String? profileId,
+  }) async {
+    final token = await _readToken();
+    await _deliver(
+      _request(settings, token, {
+        'event': 'cancel',
+        'noticeId': noticeId,
+        'profileId': profileId,
+        'sentAt': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
+  }
+
+  Future<String> _readToken() async {
     final token = await _secrets.read(_tokenKey);
     if (token == null || token.isEmpty) {
       throw const AgentApiException(
@@ -182,18 +262,19 @@ final class PushService {
         'push relay token is missing',
       );
     }
-    final request = http.Request('POST', Uri.parse(settings.relayUrl))
-      ..headers['Authorization'] = 'Bearer $token'
-      ..headers['Content-Type'] = 'application/json'
-      ..body = jsonEncode({
-        'event': kind.name,
-        'title': title,
-        'detail': detail,
-        'profileId': profileId,
-        'chatId': chatId,
-        'approvalId': approvalId,
-        'sentAt': DateTime.now().toUtc().toIso8601String(),
-      });
+    return token;
+  }
+
+  http.Request _request(
+    PushSettings settings,
+    String token,
+    Map<String, Object?> body,
+  ) => http.Request('POST', Uri.parse(settings.relayUrl))
+    ..headers['Authorization'] = 'Bearer $token'
+    ..headers['Content-Type'] = 'application/json'
+    ..body = jsonEncode(body);
+
+  Future<void> _deliver(http.Request request) async {
     final response = await _client.send(request).timeout(_timeout);
     await response.stream.drain<void>();
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -204,6 +285,34 @@ final class PushService {
       );
     }
   }
+
+  /// Важность уведомления для платформенного канала.
+  ///
+  /// Решения и проблемы прерывают пользователя, обычное завершение хода —
+  /// нет. Relay лишь передаёт значение в FCM/APNs, поэтому решение остаётся
+  /// на агенте, а не на внешнем сервисе.
+  static String _priorityOf(AgentNoticeKind kind) => switch (kind) {
+    AgentNoticeKind.approvalNeeded ||
+    AgentNoticeKind.questionAsked ||
+    AgentNoticeKind.turnFailed ||
+    AgentNoticeKind.stepLimitReached ||
+    AgentNoticeKind.turnBudgetReached ||
+    AgentNoticeKind.progressStalled => 'high',
+    AgentNoticeKind.turnFinished ||
+    AgentNoticeKind.snoozeDue ||
+    AgentNoticeKind.attentionDigest ||
+    AgentNoticeKind.backgroundFinished => 'default',
+  };
+
+  /// Набор действий, который умеет показать получатель.
+  ///
+  /// Заголовки кнопок не передаются: их переводит клиент, а relay остаётся
+  /// тупым транспортом. `reply` означает ввод текста прямо в уведомлении.
+  static List<String> _actionsOf(AgentNoticeKind kind) => switch (kind) {
+    AgentNoticeKind.approvalNeeded => const ['approve', 'deny', 'open'],
+    AgentNoticeKind.questionAsked => const ['reply', 'open'],
+    _ => const ['open'],
+  };
 
   static void _validateUrl(String value) {
     final uri = Uri.tryParse(value);

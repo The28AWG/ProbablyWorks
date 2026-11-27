@@ -27,6 +27,7 @@ final class PushAppNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) {
     // Push не нужен только там, где пользователь действительно смотрит чат:
@@ -41,13 +42,24 @@ final class PushAppNotifier implements AppNotifier {
     if (isPaused?.call() ?? false) {
       return Future<void>.value();
     }
-    return _service().notify(kind: kind, chatTitle: chatTitle, detail: detail);
+    return _service().notify(
+      kind: kind,
+      chatTitle: chatTitle,
+      detail: detail,
+      profileId: profileId,
+      chatId: chatId,
+      approvalId: approvalId,
+      questionId: questionId,
+      noticeId: noticeId,
+    );
   }
 
-  /// Relay пока не принимает отмену уведомлений: у него нет адресации по
-  /// устройству. Локальная отмена карточки не должна ломать ход, поэтому здесь
-  /// операция ничего не делает. Когда появятся device-токены, отмена станет
-  /// частью того же контракта.
+  /// Отменяет уведомление в relay по устойчивому ключу.
+  ///
+  /// Карточку могли закрыть на любом устройстве; отмена уходит туда же, куда
+  /// исходное событие, и снимает ровно его. Если push не настроен или relay
+  /// недоступен, ошибка не ломает ход: устаревшая строка просто останется до
+  /// следующего действия с карточкой.
   @override
-  Future<void> cancel(String noticeId) => Future<void>.value();
+  Future<void> cancel(String noticeId) => _service().cancel(noticeId);
 }

@@ -457,6 +457,7 @@ final class ProfileNoticeBridge {
         profileId: profileId,
         chatId: chatId,
         approvalId: approvalId,
+        questionId: questionId,
         noticeId: resolvedNoticeId,
       );
       // Карточку могли закрыть, пока показывалось уведомление: отмена успела

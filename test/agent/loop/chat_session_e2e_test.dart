@@ -148,6 +148,7 @@ class _RecordingNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) async {
     final pending = gate;

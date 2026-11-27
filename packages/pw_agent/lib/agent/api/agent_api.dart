@@ -166,7 +166,14 @@ abstract interface class AgentApi {
     ApprovalAction action, {
     String? reason,
   });
-  Future<void> answerQuestion(String id, String? text);
+
+  /// Отвечает на вопрос агента.
+  ///
+  /// [answerId] — ключ идемпотентности для действия из системного
+  /// уведомления: платформа может доставить одно и то же нажатие дважды, а
+  /// вопрос уже закрыт первым ответом. Сервер не создаёт второй ответ и не
+  /// продолжает ход повторно. Обычный ответ из карточки передаёт `null`.
+  Future<void> answerQuestion(String id, String? text, {String? answerId});
   Future<void> resolveEditFileChanges(String id, EditFileChangesChoice choice);
 
   Future<List<ApprovalRequest>> pendingApprovals(String chatId);

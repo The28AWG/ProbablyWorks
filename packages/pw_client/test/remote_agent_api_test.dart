@@ -192,6 +192,13 @@ void main() {
     expect(backend.answers, ['yes']);
   });
 
+  test('sends an idempotent inline answer', () async {
+    await remote.answerQuestion('q1', 'yes', answerId: 'inline:q1');
+
+    expect(backend.answers, ['yes']);
+    expect(backend.answerIds, ['inline:q1']);
+  });
+
   test('upserts a chat through the remote API', () async {
     await remote.saveChat(
       Chat(
@@ -2161,6 +2168,7 @@ final class _FakeAgent
   final clientMessageIds = <String?>[];
   final decisions = <ApprovalAction>[];
   final answers = <String?>[];
+  final answerIds = <String>[];
   final searchQueries = <SearchQuery>[];
   String? updatedModel;
   String? savedChatId;
@@ -2477,8 +2485,13 @@ final class _FakeAgent
   }
 
   @override
-  Future<void> answerQuestion(String id, String? text) async {
+  Future<void> answerQuestion(
+    String id,
+    String? text, {
+    String? answerId,
+  }) async {
     answers.add(text);
+    if (answerId != null) answerIds.add(answerId);
   }
 
   @override

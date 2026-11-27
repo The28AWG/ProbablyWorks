@@ -3299,6 +3299,26 @@
   "@notifyActionDeny": {"description": "Notification action: deny the agent action."},
   "notifyActionOpen": "Open",
   "@notifyActionOpen": {"description": "Notification action: open the chat."},
+  "notifyActionReply": "Reply",
+  "@notifyActionReply": {"description": "Notification action: type an answer to the agent's question from the notification. Sending it opens the app so the answer reaches the agent."},
+  "notifyActionSendReply": "Send",
+  "@notifyActionSendReply": {"description": "Button that sends the text typed into a notification reply on iOS."},
+  "notifyReplyPlaceholder": "Your answer",
+  "@notifyReplyPlaceholder": {"description": "Placeholder of the text field shown by a notification reply action."},
+  "notifyActionReview": "Review",
+  "@notifyActionReview": {"description": "Action on the grouped notification summary: open the chat and review the pending cards."},
+  "notifyGroupSummaryTitle": "{count, plural, =1{1 event} other{{count} events}}",
+  "@notifyGroupSummaryTitle": {
+    "description": "Title of the grouped notification summary.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "notifyGroupSummaryBody": "Open the chat to review them.",
+  "@notifyGroupSummaryBody": {"description": "Body of the grouped notification summary."},
   "notifyQuestionBody": "Answer the agent's question so it can continue.",
   "@notifyQuestionBody": {
     "description": "System notification body when the agent waits for an answer to its question."

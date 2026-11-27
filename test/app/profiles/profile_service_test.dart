@@ -210,6 +210,7 @@ final class _FakeNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) => Future<void>.value();
 

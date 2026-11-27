@@ -3299,6 +3299,26 @@
   "@notifyActionDeny": {"description": "Действие уведомления: отклонить действие агента."},
   "notifyActionOpen": "Открыть",
   "@notifyActionOpen": {"description": "Действие уведомления: открыть чат."},
+  "notifyActionReply": "Ответить",
+  "@notifyActionReply": {"description": "Действие уведомления: набрать ответ на вопрос агента прямо в уведомлении. При отправке открывается приложение, чтобы ответ дошёл до агента."},
+  "notifyActionSendReply": "Отправить",
+  "@notifyActionSendReply": {"description": "Кнопка отправки текста, набранного в ответе из уведомления на iOS."},
+  "notifyReplyPlaceholder": "Ваш ответ",
+  "@notifyReplyPlaceholder": {"description": "Подсказка поля ввода, которое открывает действие ответа в уведомлении."},
+  "notifyActionReview": "Разобрать",
+  "@notifyActionReview": {"description": "Действие сводки группы: открыть чат и разобрать ожидающие карточки."},
+  "notifyGroupSummaryTitle": "{count, plural, one{{count} событие} few{{count} события} many{{count} событий} other{{count} события}}",
+  "@notifyGroupSummaryTitle": {
+    "description": "Заголовок сводки сгруппированных уведомлений.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "notifyGroupSummaryBody": "Откройте чат, чтобы разобрать их.",
+  "@notifyGroupSummaryBody": {"description": "Текст сводки сгруппированных уведомлений."},
   "notifyQuestionBody": "Ответьте на вопрос агента, чтобы он продолжил работу.",
   "@notifyQuestionBody": {
     "description": "Текст системного уведомления, когда агент ждёт ответа на свой вопрос."

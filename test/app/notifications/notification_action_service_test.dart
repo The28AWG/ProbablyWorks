@@ -73,6 +73,51 @@ void main() {
     expect(opened, ('p1', 'c1'));
   });
 
+  test('inline answer responds once and keeps the current screen', () async {
+    final api = _RecordingAgent();
+    String? opened;
+    final service = NotificationActionService(
+      profiles: _FakeProfiles(api),
+      openChat: (profileId, chatId) async => opened = chatId,
+    );
+
+    await service.handle(
+      const NotificationActionRequest(
+        action: NotificationActionKind.answer,
+        chatId: 'c1',
+        questionId: 'q1',
+        answerText: 'yes',
+        answerId: 'inline:q1',
+      ),
+    );
+
+    expect(api.answerId, 'q1');
+    expect(api.answerText, 'yes');
+    expect(api.idempotencyKey, 'inline:q1');
+    expect(opened, isNull);
+  });
+
+  test('an empty inline answer falls back to opening the chat', () async {
+    final api = _RecordingAgent();
+    String? opened;
+    final service = NotificationActionService(
+      profiles: _FakeProfiles(api),
+      openChat: (profileId, chatId) async => opened = chatId,
+    );
+
+    await service.handle(
+      const NotificationActionRequest(
+        action: NotificationActionKind.answer,
+        chatId: 'c1',
+        questionId: 'q1',
+        answerText: '   ',
+      ),
+    );
+
+    expect(api.answerId, isNull);
+    expect(opened, 'c1');
+  });
+
   test('failed approval falls back to opening the chat', () async {
     final api = _RecordingAgent(fail: true);
     String? opened;
@@ -99,6 +144,9 @@ final class _RecordingAgent implements AgentApi {
   final bool fail;
   String? approvalId;
   ApprovalAction? action;
+  String? answerId;
+  String? answerText;
+  String? idempotencyKey;
 
   @override
   Future<void> resolveApproval(
@@ -109,6 +157,18 @@ final class _RecordingAgent implements AgentApi {
     if (fail) throw StateError('approval is gone');
     approvalId = id;
     this.action = action;
+  }
+
+  @override
+  Future<void> answerQuestion(
+    String id,
+    String? text, {
+    String? answerId,
+  }) async {
+    if (fail) throw StateError('question is gone');
+    this.answerId = id;
+    answerText = text;
+    idempotencyKey = answerId;
   }
 
   @override
@@ -152,6 +212,7 @@ final class _NoopNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) => Future<void>.value();
 

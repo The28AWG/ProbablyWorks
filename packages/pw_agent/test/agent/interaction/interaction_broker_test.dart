@@ -62,6 +62,53 @@ void main() {
     expect(resolutions[1], isA<EditFileChangesResolved>());
   });
 
+  test('a repeated answer does not resolve or publish twice', () async {
+    final resolutions = <InteractionResolution>[];
+    final sub = broker.resolutions.listen(resolutions.add);
+    addTearDown(sub.cancel);
+
+    final question = broker.askUser('chat', 'q1', 'continue?');
+    broker.answer('q1', 'yes', answerId: 'inline:q1');
+    expect(await question, 'yes');
+    await Future<void>.delayed(Duration.zero);
+
+    broker
+      ..answer('q1', 'yes', answerId: 'inline:q1')
+      ..answer('q1', 'no');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolutions, hasLength(1));
+    expect(resolutions.single, isA<QuestionResolved>());
+  });
+
+  test('a different action key does not answer a closed question', () async {
+    final resolutions = <InteractionResolution>[];
+    final sub = broker.resolutions.listen(resolutions.add);
+    addTearDown(sub.cancel);
+
+    final question = broker.askUser('chat', 'q1', 'continue?');
+    broker.answer('q1', 'yes', answerId: 'inline:q1');
+    expect(await question, 'yes');
+    await Future<void>.delayed(Duration.zero);
+
+    broker.answer('q1', 'no', answerId: 'inline:q1-other');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(resolutions, hasLength(1));
+  });
+
+  test('reopening a question allows a new answer', () async {
+    final first = broker.askUser('chat', 'q1', 'continue?');
+    broker.answer('q1', 'yes');
+    expect(await first, 'yes');
+
+    // Карточку показали снова (перезапуск или повторное открытие чата):
+    // старый ответ не должен блокировать новый.
+    final second = broker.askUser('chat', 'q1', 'continue?');
+    broker.answer('q1', 'no');
+    expect(await second, 'no');
+  });
+
   test('cancelChat emits a resolution for every pending card', () async {
     final resolutions = <InteractionResolution>[];
     final sub = broker.resolutions.listen(resolutions.add);

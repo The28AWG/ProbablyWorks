@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:pw_agent/agent/api/push_api.dart';
 import 'package:pw_agent/core/data/settings_repository.dart';
@@ -64,6 +66,35 @@ void main() {
     await notifier.notify(kind: AgentNoticeKind.attentionDigest, chatTitle: '');
 
     expect(client.requests, hasLength(1));
+  });
+
+  test('passes the stable notice id to the relay', () async {
+    final notifier = PushAppNotifier(() => push, isPaused: () => false);
+
+    await notifier.notify(
+      kind: AgentNoticeKind.approvalNeeded,
+      chatTitle: 'Fix login',
+      chatId: 'c1',
+      approvalId: 'a1',
+      noticeId: 'local:approvalNeeded:a1',
+    );
+
+    final body =
+        jsonDecode(client.requests.single.body) as Map<String, dynamic>;
+    expect(body['noticeId'], 'local:approvalNeeded:a1');
+    expect(body['approvalId'], 'a1');
+    expect(body['groupKey'], 'local:approvalNeeded:c1');
+  });
+
+  test('closing a card cancels its push by notice id', () async {
+    final notifier = PushAppNotifier(() => push, isPaused: () => false);
+
+    await notifier.cancel('local:approvalNeeded:a1');
+
+    final body =
+        jsonDecode(client.requests.single.body) as Map<String, dynamic>;
+    expect(body['event'], 'cancel');
+    expect(body['noticeId'], 'local:approvalNeeded:a1');
   });
 
   test('an open but idle chat does not suppress push', () async {

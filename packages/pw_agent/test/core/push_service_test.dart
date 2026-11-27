@@ -110,6 +110,63 @@ void main() {
     expect(body['title'], 'Fix login');
   });
 
+  test('sends grouping metadata and the stable notice id', () async {
+    final client = _FakeClient(204);
+    final push = PushService.withClient(settings, secrets, client);
+    await push.save(
+      const PushSettings(enabled: true, relayUrl: 'https://relay.test'),
+      token: 'relay-token',
+    );
+
+    await push.notify(
+      kind: AgentNoticeKind.questionAsked,
+      chatTitle: 'Fix login',
+      profileId: 'p1',
+      chatId: 'c1',
+      questionId: 'q1',
+      noticeId: 'p1:questionAsked:q1',
+    );
+
+    final body =
+        jsonDecode(client.requests.single.body) as Map<String, dynamic>;
+    expect(body['event'], 'questionAsked');
+    expect(body['noticeId'], 'p1:questionAsked:q1');
+    expect(body['questionId'], 'q1');
+    expect(body['answerId'], 'inline:q1');
+    expect(body['groupKey'], 'p1:questionAsked:c1');
+    expect(body['collapseKey'], 'p1:questionAsked:q1');
+    expect(body['priority'], 'high');
+    expect(body['actions'], ['reply', 'open']);
+    expect(body['replyInput'], isTrue);
+    expect(body['ttlSeconds'], 3600);
+  });
+
+  test('cancel addresses the notification by notice id', () async {
+    final client = _FakeClient(204);
+    final push = PushService.withClient(settings, secrets, client);
+    await push.save(
+      const PushSettings(enabled: true, relayUrl: 'https://relay.test'),
+      token: 'relay-token',
+    );
+
+    await push.cancel('p1:approvalNeeded:a1', profileId: 'p1');
+
+    final body =
+        jsonDecode(client.requests.single.body) as Map<String, dynamic>;
+    expect(body['event'], 'cancel');
+    expect(body['noticeId'], 'p1:approvalNeeded:a1');
+    expect(body['profileId'], 'p1');
+  });
+
+  test('cancel is silent when push is not configured', () async {
+    final client = _FakeClient(204);
+    final push = PushService.withClient(settings, secrets, client);
+
+    await push.cancel('p1:approvalNeeded:a1');
+
+    expect(client.requests, isEmpty);
+  });
+
   test('versions push settings and publishes the change', () async {
     final changes = DomainChangeBus();
     addTearDown(changes.close);

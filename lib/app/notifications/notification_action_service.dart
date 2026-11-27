@@ -2,17 +2,19 @@ import 'package:probably_works/app/profiles/profile_service.dart';
 import 'package:probably_works/core/notify/notification_action.dart';
 import 'package:pw_agent/agent/interaction/interaction_broker.dart';
 import 'package:pw_agent/core/logging/app_log.dart';
+import 'package:pw_agent/core/notify/app_notifier.dart';
 
 /// Открывает чат по профилю и id. Вынесено в тип, чтобы сервис не зависел
 /// от маршрутизатора напрямую и его можно было проверить без навигации.
 typedef ChatOpener = Future<void> Function(String profileId, String chatId);
 
 /// Выполняет действие из системного уведомления: разрешает или отклоняет
-/// карточку либо открывает чат.
+/// карточку, отвечает на вопрос либо открывает чат.
 ///
-/// Действия подтверждения выполняются только через API профиля. Если карточка
-/// уже исчезла (ход завершился, приложение перезапустилось), ошибка не ломает
-/// уведомление: пользователь просто увидит чат.
+/// Действия карточек выполняются только через API профиля. Если карточка уже
+/// исчезла (ход завершился, приложение перезапустилось), ошибка не ломает
+/// уведомление: пользователь просто увидит чат. Ответ на вопрос несёт
+/// `answerId`, поэтому повторная доставка действия не создаёт второй ответ.
 final class NotificationActionService {
   const NotificationActionService({
     required this.profiles,
@@ -29,10 +31,10 @@ final class NotificationActionService {
         : profiles.byId(request.profileId!);
     if (profile == null) return;
 
+    final api = profiles.agentApiFor(profile);
     var resolved = false;
     final approvalId = request.approvalId;
     if (approvalId != null) {
-      final api = profiles.agentApiFor(profile);
       try {
         switch (request.action) {
           case NotificationActionKind.approve:
@@ -41,11 +43,29 @@ final class NotificationActionService {
           case NotificationActionKind.deny:
             await api.resolveApproval(approvalId, ApprovalAction.deny);
             resolved = true;
-          case NotificationActionKind.open:
+          case NotificationActionKind.open || NotificationActionKind.answer:
             break;
         }
       } on Object catch (error) {
         AppLog.root.warning('notification approval failed', error);
+      }
+    }
+
+    final questionId = request.questionId;
+    final answerText = request.answerText?.trim();
+    if (request.action == NotificationActionKind.answer &&
+        questionId != null &&
+        answerText != null &&
+        answerText.isNotEmpty) {
+      try {
+        await api.answerQuestion(
+          questionId,
+          answerText,
+          answerId: request.answerId ?? agentNoticeAnswerId(questionId),
+        );
+        resolved = true;
+      } on Object catch (error) {
+        AppLog.root.warning('notification answer failed', error);
       }
     }
 

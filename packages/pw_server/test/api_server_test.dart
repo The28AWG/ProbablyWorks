@@ -3760,7 +3760,11 @@ final class _FakeBackend
   }
 
   @override
-  Future<void> answerQuestion(String id, String? text) async {
+  Future<void> answerQuestion(
+    String id,
+    String? text, {
+    String? answerId,
+  }) async {
     answers.add(text);
   }
 

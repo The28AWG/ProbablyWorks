@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:injectable/injectable.dart';
 import 'package:logging/logging.dart';
 import 'package:probably_works/app/locale/locale_controller.dart';
 import 'package:probably_works/core/notify/notification_action.dart';
+import 'package:probably_works/core/notify/notification_group.dart';
 import 'package:probably_works/l10n/generated/app_localizations.dart';
 import 'package:pw_agent/core/notify/app_notifier.dart';
 
@@ -98,11 +101,18 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
   NotificationActionHandler? _actionHandler;
   NotificationActionRequest? _pendingAction;
 
+  /// Состав групп текущей сессии. По нему строится сводка «3 подтверждения
+  /// в чате X»; платформа группирует карточки и без него, но не отдаёт
+  /// надёжный счётчик для заголовка.
+  final _groups = NoticeGroupTracker();
+
   static const _channelId = 'agent_events';
   static const _channelName = 'Agent events';
   static const _approvalCategory = 'agent_approval';
+  static const _questionCategory = 'agent_question';
   static const _actionApprove = 'approve';
   static const _actionDeny = 'deny';
+  static const _actionReply = 'reply';
   static const _actionOpen = 'open';
 
   @override
@@ -131,6 +141,7 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) async {
     if (!shouldShowNotification(SchedulerBinding.instance.lifecycleState)) {
@@ -149,35 +160,92 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
       final permission = _permission ??= _requestPermissions();
       await permission;
       final approval = kind == AgentNoticeKind.approvalNeeded;
-      final id = notificationPluginId(
-        noticeId ??
-            agentNoticeId(kind: kind, chatId: chatId, approvalId: approvalId),
+      final question = kind == AgentNoticeKind.questionAsked;
+      final resolvedId =
+          noticeId ??
+          agentNoticeId(
+            kind: kind,
+            scope: profileId,
+            chatId: chatId,
+            approvalId: approvalId,
+            questionId: questionId,
+          );
+      final groupKey = agentNoticeGroupKey(
+        kind: kind,
+        scope: profileId,
+        chatId: chatId,
+      );
+      final payload = _encodePayload(
+        profileId: profileId,
+        chatId: chatId,
+        approvalId: approvalId,
+        questionId: questionId,
+        noticeId: resolvedId,
+        groupKey: groupKey,
+        chatTitle: chatTitle.trim(),
       );
       await _plugin.show(
-        id: id,
+        id: notificationPluginId(resolvedId),
         title: text.title,
         body: text.body,
-        payload: _encodePayload(
-          profileId: profileId,
-          chatId: chatId,
-          approvalId: approvalId,
-        ),
+        payload: payload,
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
-            actions: approval ? _androidActions(strings) : null,
+            groupKey: groupKey,
+            // Тег повторяет устойчивый ключ: `getActiveNotifications` не отдаёт
+            // payload, и после перезапуска состав групп восстанавливается по
+            // паре tag + groupKey.
+            tag: resolvedId,
+            // Каждая новая карточка должна звучать отдельно: сводка не
+            // заменяет её звук и не будит пользователя второй раз.
+            groupAlertBehavior: GroupAlertBehavior.children,
+            // Смахивание карточки должно уменьшать сводку группы. Без этого
+            // трекер считает снятую пользователем карточку всё ещё показанной.
+            dismissIsolate: NotificationDismissedIsolate.main,
+            actions: switch (kind) {
+              AgentNoticeKind.approvalNeeded => _androidApprovalActions(
+                strings,
+              ),
+              AgentNoticeKind.questionAsked => _androidQuestionActions(strings),
+              _ => null,
+            },
           ),
           iOS: DarwinNotificationDetails(
-            categoryIdentifier: approval ? _approvalCategory : null,
+            threadIdentifier: groupKey,
+            categoryIdentifier: approval
+                ? _approvalCategory
+                : question
+                ? _questionCategory
+                : null,
           ),
           macOS: DarwinNotificationDetails(
-            categoryIdentifier: approval ? _approvalCategory : null,
+            threadIdentifier: groupKey,
+            categoryIdentifier: approval
+                ? _approvalCategory
+                : question
+                ? _questionCategory
+                : null,
           ),
           linux: const LinuxNotificationDetails(),
           windows: const WindowsNotificationDetails(),
         ),
       );
+      if (groupKey != null) {
+        _groups.show(
+          GroupedNotice(
+            noticeId: resolvedId,
+            groupKey: groupKey,
+            title: text.title,
+            body: text.body,
+            chatTitle: chatTitle.trim(),
+            chatId: chatId,
+            profileId: profileId,
+          ),
+        );
+        await _refreshGroupSummary(groupKey);
+      }
     } on Object catch (error) {
       _log.fine('notification skipped: $error');
     }
@@ -192,13 +260,98 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
       // запрашиваются: они остаются заботой показа.
       final ready = _ready ??= _initialize();
       if (!await ready) return;
-      await _plugin.cancel(id: notificationPluginId(noticeId));
+      final group = _groups.remove(noticeId);
+      await _cancelById(noticeId);
+      // Закрытая карточка могла быть последней в группе: сводка не должна
+      // звать к уже разобранным решениям.
+      if (group != null) await _refreshGroupSummary(group.groupKey);
     } on Object catch (error) {
       _log.fine('notification cancel skipped: $error');
     }
   }
 
-  List<AndroidNotificationAction> _androidActions(AppLocalizations l10n) => [
+  /// Убирает уведомление по устойчивому ключу.
+  ///
+  /// Новые уведомления показываются с `tag`, совпадающим с ключом, поэтому
+  /// отмена без тега их не находит. Бестеговый вызов оставлен для уведомлений,
+  /// показанных прошлыми версиями.
+  Future<void> _cancelById(String noticeId) async {
+    final id = notificationPluginId(noticeId);
+    await _plugin.cancel(id: id, tag: noticeId);
+    // Старые версии показывали уведомления без tag; на Android это отдельная
+    // запись, поэтому снимаем и её.
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _plugin.cancel(id: id);
+    }
+  }
+
+  /// Обновляет сводку группы по её текущему составу.
+  ///
+  /// Сводка нужна только на Android: iOS и macOS сами объединяют карточки по
+  /// `threadIdentifier`, и вторая строка «3 события» была бы лишней. С одной
+  /// карточкой сводка тоже не показывается: она повторяла бы саму карточку.
+  Future<void> _refreshGroupSummary(String groupKey) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    final summary = _groups.summary(groupKey);
+    final summaryId = _summaryNoticeId(groupKey);
+    final id = notificationPluginId(summaryId);
+    if (summary == null || summary.count < 2) {
+      await _cancelById(summaryId);
+      return;
+    }
+    final strings = _strings();
+    final count = summary.count;
+    final title = strings.notifyGroupSummaryTitle(count);
+    final chat = summary.chatTitle;
+    await _plugin.show(
+      id: id,
+      title: chat.isEmpty ? title : '$title · $chat',
+      body: strings.notifyGroupSummaryBody,
+      payload: _encodePayload(
+        profileId: summary.profileId,
+        chatId: summary.chatId,
+        noticeId: summaryId,
+        groupKey: groupKey,
+        chatTitle: summary.chatTitle,
+      ),
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          groupKey: groupKey,
+          setAsGroupSummary: true,
+          tag: summaryId,
+          dismissIsolate: NotificationDismissedIsolate.main,
+          groupAlertBehavior: GroupAlertBehavior.children,
+          onlyAlertOnce: true,
+          styleInformation: InboxStyleInformation(
+            [for (final notice in summary.notices.take(5)) notice.title],
+            contentTitle: chat.isEmpty ? title : '$title · $chat',
+            summaryText: strings.notifyGroupSummaryBody,
+          ),
+          actions: [
+            AndroidNotificationAction(
+              _actionOpen,
+              strings.notifyActionReview,
+              showsUserInterface: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Суффикс id сводки группы. По нему обработчик смахивания отличает сводку
+  /// от карточки: у сводки нет своего элемента в трекере.
+  static const _summarySuffix = '#summary';
+
+  /// Сводка группы живёт отдельным id: обновление карточки не должно
+  /// перезаписывать заголовок группы, а отмена карточки — попадать в неё.
+  static String _summaryNoticeId(String groupKey) => '$groupKey$_summarySuffix';
+
+  List<AndroidNotificationAction> _androidApprovalActions(
+    AppLocalizations l10n,
+  ) => [
     AndroidNotificationAction(
       _actionApprove,
       l10n.notifyActionApprove,
@@ -216,36 +369,103 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
     ),
   ];
 
-  /// Категория iOS/macOS с теми же действиями. Кнопка «Открыть» не нужна:
+  /// Ответ на вопрос прямо из уведомления: RemoteInput открывает поле ввода.
+  ///
+  /// Действие обязано показывать интерфейс: без этого платформа отдаёт ответ
+  /// фоновому изоляту, а у приложения нет фоновой точки входа для ответа на
+  /// вопрос. Поэтому после «Отправить» открывается приложение, а текст уходит
+  /// в обычный обработчик действий. Идемпотентность ответа обеспечивает
+  /// `agentNoticeAnswerId`.
+  List<AndroidNotificationAction> _androidQuestionActions(
+    AppLocalizations l10n,
+  ) => [
+    AndroidNotificationAction(
+      _actionReply,
+      l10n.notifyActionReply,
+      inputs: [
+        AndroidNotificationActionInput(label: l10n.notifyReplyPlaceholder),
+      ],
+      allowGeneratedReplies: true,
+      showsUserInterface: true,
+    ),
+    AndroidNotificationAction(
+      _actionOpen,
+      l10n.notifyActionOpen,
+      showsUserInterface: true,
+    ),
+  ];
+
+  /// Категории iOS/macOS с теми же действиями. Кнопка «Открыть» не нужна:
   /// нажатие на само уведомление уже открывает чат, поэтому в категории
-  /// остаются только approve/deny.
-  DarwinNotificationCategory _darwinCategory(AppLocalizations l10n) =>
-      DarwinNotificationCategory(
-        _approvalCategory,
-        actions: [
-          DarwinNotificationAction.plain(
-            _actionApprove,
-            l10n.notifyActionApprove,
-            options: const {DarwinNotificationActionOption.foreground},
-          ),
-          DarwinNotificationAction.plain(
-            _actionDeny,
-            l10n.notifyActionDeny,
-            options: const {DarwinNotificationActionOption.foreground},
-          ),
-        ],
-      );
+  /// остаются только решения.
+  ///
+  /// Текстовое действие помечено `foreground`: иначе ответ ушёл бы фоновому
+  /// изоляту, а у приложения нет фоновой точки входа для вопроса. Плата —
+  /// открытие приложения после отправки ответа.
+  List<DarwinNotificationCategory> _darwinCategories(AppLocalizations l10n) => [
+    DarwinNotificationCategory(
+      _approvalCategory,
+      actions: [
+        DarwinNotificationAction.plain(
+          _actionApprove,
+          l10n.notifyActionApprove,
+          options: const {DarwinNotificationActionOption.foreground},
+        ),
+        DarwinNotificationAction.plain(
+          _actionDeny,
+          l10n.notifyActionDeny,
+          options: const {DarwinNotificationActionOption.foreground},
+        ),
+      ],
+    ),
+    DarwinNotificationCategory(
+      _questionCategory,
+      actions: [
+        DarwinNotificationAction.text(
+          _actionReply,
+          l10n.notifyActionReply,
+          buttonTitle: l10n.notifyActionSendReply,
+          placeholder: l10n.notifyReplyPlaceholder,
+          options: const {DarwinNotificationActionOption.foreground},
+        ),
+      ],
+    ),
+  ];
 
   static String? _encodePayload({
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
+    String? noticeId,
+    String? groupKey,
+    String? chatTitle,
   }) {
-    if (profileId == null && chatId == null && approvalId == null) return null;
+    if (profileId == null &&
+        chatId == null &&
+        approvalId == null &&
+        questionId == null &&
+        noticeId == null &&
+        groupKey == null &&
+        (chatTitle == null || chatTitle.isEmpty)) {
+      return null;
+    }
     final data = <String, String>{};
     if (profileId != null) data['profileId'] = profileId;
     if (chatId != null) data['chatId'] = chatId;
     if (approvalId != null) data['approvalId'] = approvalId;
+    if (questionId != null) {
+      data['questionId'] = questionId;
+      data['answerId'] = agentNoticeAnswerId(questionId);
+    }
+    // Ключ и группа нужны обработчику смахивания: по ним карточку находят без
+    // её текста. На Android `getActiveNotifications` не отдаёт payload, поэтому
+    // для восстановления после перезапуска те же значения дублируются в tag.
+    if (noticeId != null) data['noticeId'] = noticeId;
+    if (groupKey != null) data['groupKey'] = groupKey;
+    if (chatTitle != null && chatTitle.isNotEmpty) {
+      data['chatTitle'] = chatTitle;
+    }
     return jsonEncode(data);
   }
 
@@ -267,25 +487,60 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
 
   Future<void> _onResponse(NotificationResponse response) async {
     final data = _decodePayload(response.payload);
+    // Смахивание карточки не является действием: его нужно только снять с
+    // учёта, иначе сводка группы останется с прежним счётчиком.
+    if (response.notificationResponseType ==
+        NotificationResponseType.notificationDismissed) {
+      await _handleDismissed(data);
+      return;
+    }
     final rawAction = switch (response.actionId) {
       _actionApprove => NotificationActionKind.approve,
       _actionDeny => NotificationActionKind.deny,
+      _actionReply => NotificationActionKind.answer,
       _ => NotificationActionKind.open,
     };
     final approvalId = data['approvalId'] as String?;
-    // Без id карточки подтверждение невозможно: остаётся открыть чат.
-    final action =
-        rawAction == NotificationActionKind.open || approvalId == null
-        ? NotificationActionKind.open
-        : rawAction;
+    final questionId = data['questionId'] as String?;
+    final answerText = response.input?.trim();
+    // Без id карточки действие невозможно: остаётся открыть чат. Пустой
+    // ответ не отправляем: пользователь мог закрыть поле ввода.
+    final action = switch (rawAction) {
+      NotificationActionKind.approve || NotificationActionKind.deny =>
+        approvalId == null ? NotificationActionKind.open : rawAction,
+      NotificationActionKind.answer =>
+        questionId == null || answerText == null || answerText.isEmpty
+            ? NotificationActionKind.open
+            : rawAction,
+      NotificationActionKind.open => NotificationActionKind.open,
+    };
     await _dispatch(
       NotificationActionRequest(
         action: action,
         profileId: data['profileId'] as String?,
         chatId: data['chatId'] as String?,
         approvalId: approvalId,
+        questionId: questionId,
+        answerText: answerText,
+        answerId: data['answerId'] as String?,
       ),
     );
+  }
+
+  /// Снимает с учёта карточку, которую пользователь убрал из трея.
+  ///
+  /// Для сводки забывается вся группа: платформа смахивает её вместе с
+  /// карточками, а собственная запись сводки в трекере не хранится.
+  Future<void> _handleDismissed(Map<String, Object?> data) async {
+    final noticeId = data['noticeId'] as String?;
+    if (noticeId == null) return;
+    if (noticeId.endsWith(_summarySuffix)) {
+      final groupKey = data['groupKey'] as String?;
+      if (groupKey != null) _groups.clearGroup(groupKey);
+      return;
+    }
+    final group = _groups.remove(noticeId);
+    if (group != null) await _refreshGroupSummary(group.groupKey);
   }
 
   Future<void> _dispatch(NotificationActionRequest request) async {
@@ -313,13 +568,13 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
           requestAlertPermission: false,
           requestBadgePermission: false,
           requestSoundPermission: false,
-          notificationCategories: [_darwinCategory(l10n)],
+          notificationCategories: _darwinCategories(l10n),
         ),
         macOS: DarwinInitializationSettings(
           requestAlertPermission: false,
           requestBadgePermission: false,
           requestSoundPermission: false,
-          notificationCategories: [_darwinCategory(l10n)],
+          notificationCategories: _darwinCategories(l10n),
         ),
         linux: LinuxInitializationSettings(
           defaultActionName: l10n.notifyActionOpen,
@@ -333,8 +588,88 @@ final class PluginAppNotifier implements AppNotifier, NotificationActionSink {
       onDidReceiveNotificationResponse: _onResponse,
     );
     final ready = ok ?? false;
-    if (ready) await _handleLaunchDetails();
+    if (ready) {
+      // Сначала восстанавливаем группы по оставшимся в трее уведомлениям:
+      // действие из launch details может закрыть карточку, и она должна быть
+      // уже известна трекеру.
+      await _restoreGroups();
+      await _handleLaunchDetails();
+    }
     return ready;
+  }
+
+  /// Восстанавливает состав групп по уведомлениям, оставшимся в трее.
+  ///
+  /// После перезапуска трекер пуст, а карточки и сводка могли остаться. У
+  /// Android `getActiveNotifications` не отдаёт payload, поэтому ключ карточки
+  /// берётся из `tag`, а чат — из её `groupKey`. Это возвращает сводке
+  /// правильный счётчик и позволяет следующей отмене её обновить.
+  Future<void> _restoreGroups() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      final active =
+          await _plugin
+              .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin
+              >()
+              ?.getActiveNotifications() ??
+          const <ActiveNotification>[];
+      final groupKeys = <String>{};
+      final chatTitles = <String, String>{};
+      for (final notification in active) {
+        final groupKey = notification.groupKey;
+        final tag = notification.tag;
+        final channel = notification.channelId;
+        if (groupKey == null || tag == null) continue;
+        if (channel != null && channel != _channelId) continue;
+        groupKeys.add(groupKey);
+        if (!tag.endsWith(_summarySuffix)) continue;
+        // Заголовок сводки — «N событий · Чат». Отдельного поля с названием
+        // чата в активном уведомлении нет, поэтому берём хвост заголовка.
+        final parts = (notification.title ?? '').split(' · ');
+        if (parts.length > 1) {
+          chatTitles[groupKey] = parts.sublist(1).join(' · ').trim();
+        }
+      }
+      for (final notification in active) {
+        final groupKey = notification.groupKey;
+        final tag = notification.tag;
+        final channel = notification.channelId;
+        if (groupKey == null || tag == null) continue;
+        if (channel != null && channel != _channelId) continue;
+        if (tag.endsWith(_summarySuffix)) continue;
+        final location = _parseGroupKey(groupKey);
+        if (location == null) continue;
+        _groups.show(
+          GroupedNotice(
+            noticeId: tag,
+            groupKey: groupKey,
+            title: notification.title ?? '',
+            body: notification.body ?? '',
+            chatTitle: chatTitles[groupKey] ?? '',
+            chatId: location.chatId,
+            profileId: location.profileId,
+          ),
+        );
+      }
+      for (final groupKey in groupKeys) {
+        await _refreshGroupSummary(groupKey);
+      }
+    } on Object catch (error) {
+      _log.fine('notification group restore skipped: $error');
+    }
+  }
+
+  /// Разбирает ключ группы `scope:kind:chatId` обратно на профиль и чат.
+  static ({String? profileId, String chatId})? _parseGroupKey(String groupKey) {
+    final parts = groupKey.split(':');
+    if (parts.length < 3) return null;
+    final chatId = parts.sublist(2).join(':');
+    if (chatId.isEmpty) return null;
+    return (
+      profileId: parts.first == 'local' ? null : parts.first,
+      chatId: chatId,
+    );
   }
 
   /// Приложение могли запустить нажатием на действие. Плагин отдаёт это

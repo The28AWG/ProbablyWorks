@@ -13,6 +13,7 @@ final class WebAppNotifier implements AppNotifier {
     String? profileId,
     String? chatId,
     String? approvalId,
+    String? questionId,
     String? noticeId,
   }) => Future<void>.value();
 

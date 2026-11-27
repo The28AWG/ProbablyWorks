@@ -462,8 +462,8 @@ class LocalChatApi
     return Future<void>.value();
   }
 
-  Future<void> answerQuestion(String id, String? text) {
-    _hub.broker.answer(id, text);
+  Future<void> answerQuestion(String id, String? text, {String? answerId}) {
+    _hub.broker.answer(id, text, answerId: answerId);
     return Future<void>.value();
   }
 
